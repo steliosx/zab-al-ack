@@ -150,7 +150,12 @@ def test_T41_native_an_older_projection_never_overwrites_a_newer_staging(native,
     assert reasons == {"projection_action_generation_mismatch"}
     after = attributes_of(native, alert_id)
     assert after[ACTION_KEY] == second["action_id"] and after["zabbix_ack_sync"] == "pending"
-    assert INTENT not in after, "B's intent was retired by the sweep"
+    assert newest(native, alert_id) == second["action_id"]
+    # The racing pass may have found the row locked by the projection and left
+    # it to the next pass (SKIP LOCKED); retirement is a property of the sweep,
+    # not of that pass. The next pass retires it, and the fence is unchanged.
+    sweep(native, grace=0)
+    assert INTENT not in attributes_of(native, alert_id), "B's intent is retired by the sweep"
     assert newest(native, alert_id) == second["action_id"]
     with connect_role(native, "zabalack_owner") as owner:
         assert owner.execute("SELECT projection_reason FROM zabalack.actions WHERE action_id=%s",
@@ -333,7 +338,9 @@ def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(n
         # A live row whose intent is malformed — no action_id — must not abort the
         # upgrade; the sweep retires it later and it records no generation.
         malformed, _, broken = stage(lab, staged=False)
-        stage_pre_fence(lab, malformed, {key: value for key, value in broken.items() if key != "action_id"})
+        with connect_role(lab, "alerta_app") as conn:
+            conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                         (Jsonb({INTENT: {key: value for key, value in broken.items() if key != "action_id"}}), malformed))
         # The upgrade, through the real entry points.
         migrator.ROOT = real_root
         with psycopg.connect(dsn, autocommit=True) as db:
