@@ -77,7 +77,7 @@ previously produced exports are out of its reach and remain governed by G8. Reco
 after, the re-seal of the readiness manifest, and the principal that performed each step. A passing disposable
 lab does not close this item.
 
-Upgrade sequence, with the principal recorded for each step. Apply migrations 008 through 012 —
+Upgrade sequence, with the principal recorded for each step. Apply migrations 008 through 013 —
 `008_intent_retirement.sql`, `009_generation_guard_corrections.sql`, `010_staging_ledger_repair.sql`,
 `011_ledger_repair_authentication.sql`, `012_repair_deletes_only.sql` and
 `013_seed_ledger_on_verification.sql` — through the ordinary migration path and
@@ -89,10 +89,11 @@ including entries whose only evidence was an uncaptured staged attribute, becaus
 distinguishes a genuine one from a forged one. After the whole sequence the ledger therefore holds an entry only
 for alerts with a verified action, and verification itself seeds one from then on; the rest fall to their generation marker, and an alert with neither refuses
 projection with `projection_generation_unknown` until the bounded sweep re-admits a genuine staging on its next
-pass. An operator checking for a fully populated ledger at schema 8 will not find one, and should not. The whole sequence is mandatory, not a menu: 008 alone carries the superseded generation
+pass. An operator checking for a fully populated ledger at schema 9 will not find one, and should not. The whole sequence is mandatory, not a menu: 008 alone carries the superseded generation
 guard and an unbounded ledger, 009 bounds new entries but repairs none, and 010's repair keeps a forged entry
-whose window merely looks plausible. Workers are pinned to 9 and report unhealthy until every one has applied, and
-`011` re-runs the repair so a database that stopped at 010 is corrected when it catches up. No applied migration
+whose window merely looks plausible. Workers are pinned to 9 and report unhealthy until every one has applied. Each of 010, 011 and 012 re-runs
+the repair immediately after redefining it, so a database that stopped at an earlier one is corrected when it
+catches up rather than keeping whatever that version's repair admitted. No applied migration
 may be edited — `sql/migrate.py` refuses with `Migration drift` and the database cannot move forward — so a
 further correction always ships as another migration. Then run
 `sql/install/12_reseal.sql` as the approved alerts owner/installation principal — the same identity that ran
