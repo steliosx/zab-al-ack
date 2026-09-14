@@ -36,7 +36,37 @@
   "native_shutdown_exit_code": 0,
   "new_release_created": false,
   "visibility": "private",
-  "handoff_status": "PREPARED_NOT_CREATED_AUTO_REVIEW_REJECTED",
+  "handoff_status": "UPLOADED_VERIFIED",
   "verified_account": "steliosx",
-  "prepared_handoff_secret_scan_findings": 0
+  "prepared_handoff_secret_scan_findings": 0,
+  "handoff_branch": "handoff/a16",
+  "handoff_archive_commit": "0a536674505f01194c41f42fe8f549d60e84acf2",
+  "handoff_archive_tree": "1fff747fa6d5a09f9a381dc967e9b7fddbb10aea",
+  "handoff_files_verified": 37,
+  "current_main_commit": "89a93b1f641a0f978b04862c747b8d4161df3f5a",
+  "current_main_tree": "7ff7ff30fa1e9cfd9a7655a6de0a364e34be69d6",
+  "hosted_checks_scope": "Historical CI-bootstrap run at ci_fix_commit; see latest_hosted_checks for final corrected main.",
+  "latest_hosted_checks": {
+    "commit": "89a93b1f641a0f978b04862c747b8d4161df3f5a",
+    "run_id": 34804234276,
+    "quality": "success",
+    "reference": "success",
+    "mutation": "success",
+    "native": "success",
+    "package": "success",
+    "native_counts": {
+      "passed": 42,
+      "failed": 0,
+      "skipped": 0
+    },
+    "security": {
+      "run_id": 34804234254,
+      "conclusion": "success"
+    },
+    "codeql": {
+      "run_id": 34804234331,
+      "conclusion": "skipped"
+    },
+    "deployment_e2e": "NOT_INVOKED"
+  }
 }
