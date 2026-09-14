@@ -398,25 +398,122 @@ search predicate and the pre-signing interval open. Stored copies remain in
 reachable through `attributes.<key>:<term>` queries until stage two removes them.
 Stage one must never be described as closing A5 or T40.
 
-**Correction, stage two (forward migration).** Cover both retirement shapes:
-removal of the stored attribute after capture, and guarded retirement of staging
-that never produced a capture. Apply this across every lifecycle path above, not
-only projection, preserving
-`zabalack.captures.intent` byte-for-byte as restricted signed evidence. The
-generation guard comparing `attrs#>>'{zabbix_ack_sync_intent,action_id}'` must be
-replaced by protection that survives intent removal: a cleanup path that removes
-a newer unverified intent would otherwise leave an older projection with neither
-that check nor the `capture_order` check, which cannot see an unverified capture
-because no `actions` row exists before `verify_complete`. `zabbix_ack_sync_action_id`
-is not a drop-in carrier — it is written both at staging, holding the newest
-intent's identity, and by `project()`, holding its own possibly older action —
-so write ordering must be settled and the race tested before either cleanup path
-ships. Bounded backfill covers existing and abandoned attributes **on live
-`public.alerts` rows only**. It does not reach historical backups, replicas or
-previously produced exports, which continue under G8's access and retention
-policy; backfill must not be described as erasing those copies. Schema version
-moves 3→4 with the two runtime literals that pin it, and the readiness manifest
-is re-sealed.
+**Correction, stage two (forward migration, shipped as `008_generation_fence.sql`).**
+Cover both retirement shapes: removal of the stored attribute after capture, and
+guarded retirement of staging that never produced a capture. Apply this across
+every lifecycle path above, not only projection, preserving
+`zabalack.captures.intent` byte-for-byte as restricted signed evidence. Bounded
+backfill covers existing and abandoned attributes **on live `public.alerts` rows
+only**. It does not reach historical backups, replicas or previously produced
+exports, which continue under G8's access and retention policy; backfill must
+not be described as erasing those copies. Schema version moves 3→4 with the two
+runtime literals that pin it, and the readiness manifest is re-sealed.
+
+*Cleanup eligibility is not the 60-second capture window as first proposed.*
+`capture_ack()` performs no lifetime check of its own: it inserts a capture row
+whenever the trigger predicate is satisfied, however late. The lifetime test
+lives in `verify_complete` (`003_worker.sql:88`, and the fenced form at
+`006_late_response_fencing.sql:102`), which rejects a capture whose `captured_at`
+falls outside `[issued_at, capture_expires_at]`. Two consequences follow. A
+staged intent can still produce a capture after its window closes, so "the value
+can no longer produce a capture" is not a correct justification for sweeping it.
+And a capture recorded *inside* the window stays valid while it waits for
+verification — which may be indefinite under `verifier_hold` — so the sweep must
+leave `zabalack.captures.intent` intact and must not prevent that capture being
+verified, authorised and delivered afterwards. The sweep therefore operates on
+`public.alerts.attributes` alone, retires the intent once its window has closed
+by a grace margin (or at once when its timestamps fail the signer's own bounds,
+since the attribute is API-writable), and is demonstrably independent of whether
+verification or delivery ever succeeds.
+
+**The generation guard.** `project()` compared
+`attrs#>>'{zabbix_ack_sync_intent,action_id}'` against its own action, and that
+check covered a window nothing else sees: between a new staging and its capture,
+`take_action` has popped `zabbix_ack_sync_local_at` and no newer `actions` row
+exists yet, so neither the `local_at` test nor the `capture_order` test can fire.
+Retiring the intent removes the comparison, and nothing carried in
+`public.alerts.attributes` can replace it. `PUT /alert/<id>/attributes` runs no
+plugin hook, and `db.update_attributes` (`postgres/base.py:339-349`) merges the
+caller's dictionary into the one its own request loaded, drops every key whose
+value is `None`, and writes the result back with `SET attributes=%(attrs)s` — a
+whole-object replace, not a `||` merge. Executed on PostgreSQL 18.3 in PGlite: a
+`write:alerts` holder scoped to the alert's customer sent
+`{"zabbix_ack_sync_action_id": null}` and received HTTP 200 with the key
+deleted, and sent `{"zabbix_ack_sync_forged": "client-supplied"}` and had it
+stored verbatim, because `strip_reserved()` never sees that path. The same
+whole-object replace is how a stale attribute dictionary reinstates an older
+generation. An attribute-borne marker can therefore be erased, forged or rolled
+back, and a record fed only by *observation* — capture, sweep, verification —
+cannot protect a staging that was replaced before anything observed it: the
+loss of that acknowledgement's generation is then permanent, not bounded by any
+sweep interval, and a later replay of the older dictionary restores a marker such
+a guard accepts. (A first implementation of stage two, kept unmerged as the
+record in its own pull request, had exactly that shape and was withdrawn.)
+
+**Requirement.** Every committed staging synchronously establishes protected
+generation state. Attribute replacement, cleanup, repair and delayed
+verification cannot erase it or move it backwards. Projection checks that state
+atomically with its update. Ordering is assigned by the database, not read from
+a client-supplied timestamp.
+
+**The generation fence.** `zabalack.alert_generations` is append-only, keyed by
+an identity sequence the database assigns, in the schema the Alerta application
+holds no table privilege on. Nothing updates or deletes a row — not the sweep,
+not projection, not migration — and there is no repair because there is nothing
+to repair. Every staging is a protected database operation:
+`zabalack.stage_generation(alert_id, action_id, intent)` records the generation
+and writes the reserved `zabbix_ack_sync*` staging keys in one statement, under
+the per-alert generation lock and then the alert row. The signer calls it on the
+request's own Alerta connection — so it runs as the role Alerta connects as, the
+only role granted it — and commits it explicitly before returning, because
+`process_action()` commits `update_tags()` before `update_attributes()` and a
+write left pending would ride the wrong commit. Alerta's later whole-object write
+of the same dictionary changes nothing. If the operation fails for any reason the
+transaction is rolled back and the acknowledgement is refused with
+`zabalack_generation_unavailable` (503): no staging exists without its generation
+recorded, and the plugin fails closed when deployed ahead of the grant.
+
+The newest generation for an alert is the highest-sequence row recorded at
+staging; rows recorded by observation — `capture_ack()` as a fallback for
+acknowledgements staged before the fence existed or by a plugin that predates
+it, and the migration's backfill — rank below every staging-recorded row
+whatever their sequence, so a capture arriving late can never promote an older
+acknowledgement above a newer staging. A replayed older `action_id` already
+exists and is a no-op; a never-seen forged id can only be recorded at the
+observation tier, and only through a capture, which `PUT /alert/<id>/attributes`
+cannot produce. `project()` takes its action row, the generation lock, then the
+alert row — the order staging takes the last two — and refuses with
+`projection_action_generation_mismatch` unless its action is the newest
+generation, or with `projection_generation_unknown` when none is recorded. The
+guard takes no expiry: `execution_expires_at` bounds delivery, while
+`projection_due_at` carries no equivalent deadline. The `local_at`, customer,
+source-identity and `capture_order` checks from 002 stay in front of it.
+
+**Privilege.** `12_application_grant.sql`, run as `zabalack_owner` with the
+application role named, grants that role `USAGE` on the schema and `EXECUTE` on
+`stage_generation()` and nothing else. `USAGE` confers nothing on its own only
+while no function in the schema is executable by `PUBLIC` and the fence admits no
+grantee but its owner; `capture_health()` asserts both under `functions_ok`, so a
+regression there marks every worker unhealthy. The function is `SECURITY
+DEFINER` with a pinned `search_path`, binds the intent to the staging (its
+`action_id`, `alert_id` and the row's customer) and refuses an `action_id`
+already recorded rather than re-staging it.
+
+**Migration policy.** 008 records a generation for every `zabalack.actions` row
+in capture order — assigned by the database at capture, the best pre-fence order
+available — and one for the intent currently on each live row, all at the
+observation tier; a row with neither acquires its generation at its first
+staging and refuses projection until then. Acknowledgement paths are fenced
+across the upgrade, as the deployment guide requires, so no staging is in flight
+between the backfill and the plugin that records generations synchronously. A
+shipped migration is immutable: `sql/migrate.py` records each file's digest and
+refuses with `Migration drift` when a recorded file's bytes change, so a
+correction is always a further migration.
+
+**Reader-visible surface.** `zabbix_ack_sync_action_id` remains the only
+generation-related key a reader sees; it is informational and consulted by
+nothing. The stage-one query guard stays: it protects the pre-signing interval,
+which retirement cannot close.
 
 **Safety consequence:** stage one reduces reader exposure and does not close the
 finding. Until stage two completes, an operator acknowledging an alert continues
@@ -467,24 +564,64 @@ migration. Neither implies the other: retirement alone leaves the interval open,
 and the guard alone leaves the value stored. A5 remains open until both have
 passed their installed-environment checks.
 
-**Acceptance, stage two (T41).** Safe retirement of stored intents, executed
-against real PostgreSQL: removal after capture; guarded retirement of abandoned
-and uncaptured staging; preservation of `zabalack.captures.intent`,
-source-identity keys, unrelated custom attributes and the separately protected
-columns; bounded backfill; and the concurrency case in which cleanup removes a
-newer unverified intent while an older projection is in flight. Where those
-races overlap existing requirements, cross-reference T7 (replayed proof, stale
-attribute dictionary reintroduced) and T38 (projection under the deployed owner
-and caller roles).
+**Acceptance, stage two (T41).** Executed against real PostgreSQL, through
+the real entry points: the HTTP action, status and attribute handlers under a
+customer-scoped `write:alerts` token, `worker_call('verify_complete')` as
+`zabalack_worker`, `sql/migrate.py` on a populated database, and `project()` as
+`zabalack_worker`. Every refusal asserts its exact reason, so removing a guard
+branch changes the result rather than the route.
 
-T38's preservation requirement is read as preserving source-identity keys,
-unrelated attributes and the protected columns. It does not require preserving
-the intent after a valid cleanup, which occurs inside the `zabbix_ack_sync*`
-namespace the projection function already owns.
+*Lifecycle coverage is the exposure table above, case by case, not a summary of
+it.* Each of its eight rows is a separate case, and the sweep must be shown to
+retire the staged attribute in each without depending on verification or
+delivery having succeeded: staging that failed at `status_change`; a cohort
+enabled in configuration but absent from `zabalack.cohorts`; capture-side
+evidence failure; `capture_bypass`; worker-side `reject_capture`; `verifier_hold`
+with the verification key unavailable; a worker stopped or backlogged with the
+capture still unclaimed; and `verify_complete`. `project_skip` and the
+`project()` refusal branches are *additional* coverage on top of those.
 
-The existing dispatcher assertions that the intent is unchanged between staging
-and signing, and that a duplicate callback reuses one identity, are anti-tamper
-coverage for §5.1 and are retained unchanged in both stages.
+*The fence and the staging are one transaction.* After a real acknowledgement the
+fence row carries `recorded_by='staging'` — the capture fallback writes
+`'capture'`, so a missing call cannot be masked. A fault on the fence insert
+refuses the acknowledgement and leaves no staging; a fault on the staging write
+rolls the fence insert back with it. Two stagings of one alert from two sessions
+serialise on the generation lock and receive sequences in commit order; a
+staging and a projection serialise in either order without deadlock.
+
+*Preservation and refusal.* B staged and uncaptured, its reserved keys deleted
+through the API, and separately A's whole dictionary replayed through the API:
+A stays refused and the newest generation stays B. B observed and retired by the
+sweep, then A's proof replayed and verified again as a replay: the same. A late
+capture of an acknowledgement staged before the fence never outranks a staged
+generation. Forged markers and intents written through the API leave the fence
+untouched and the current action projects; a later legitimate acknowledgement on
+the same alert becomes the newest generation. A row with no generation recorded
+refuses.
+
+*Upgrade.* A schema-3 database with A verified and projected and B staged as an
+attribute alone, upgraded by `sql/migrate.py`, the grant and the re-seal: the
+fence holds A then B at the migration tier, A's projection is refused, B
+captures, verifies and projects, the first staging through the protected
+operation outranks both, and `capture_health()` reports healthy.
+
+*The decisive native race.* Stage A, then stage B on the same alert; retire B's
+intent without ever creating a B action row; resume A's projection six hours
+later, past `execution_expires_at`; assert A cannot overwrite B's state, in both
+lock orders and with a stale attribute dictionary replayed against the row.
+Native only: it needs two concurrent sessions and a committed row observed from
+the other.
+
+Where these overlap existing requirements, cross-reference T7 (replayed proof,
+stale attribute dictionary reintroduced) and T38 (projection under the deployed
+owner and caller roles). T38's preservation requirement is read as preserving
+source-identity keys, unrelated attributes and the protected columns; it does
+not require preserving the intent after a valid cleanup, which occurs inside the
+`zabbix_ack_sync*` namespace the projection function already owns. The existing
+dispatcher assertions that the intent is unchanged between staging and signing,
+and that a duplicate callback reuses one identity, are anti-tamper coverage for
+§5.1 and are retained unchanged; a further one asserts the generation is
+recorded before any attribute write and that a refused recording stages nothing.
 
 **Deployment gate:** G4 and G8. T41 reaches PASS when retirement executes on the
 installed environment. T40 additionally requires the search path and the

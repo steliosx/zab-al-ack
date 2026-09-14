@@ -16,6 +16,14 @@
       "sha256": "c6210d8810999e22e16b1972d1c0857b28249b6341145f0bab924f098588e32b"
     },
     {
+      "path": "sql/install/12_application_grant.sql",
+      "sha256": "5c608132f39a9c512d2ab523050b58ce658e74b8c3be100b864071ac71cf5387"
+    },
+    {
+      "path": "sql/install/13_reseal.sql",
+      "sha256": "67b17e8ccd0881524e780b605751fcf8e6a3cbc4d9922f86d8c8f9b6a12a84d6"
+    },
+    {
       "path": "sql/migrate.py",
       "sha256": "d2585da0b62a34b6237700ebc261aa3b27117bfccead150e81097ee90c4a42ce"
     },
@@ -46,6 +54,10 @@
     {
       "path": "sql/migrations/007_settled_expiry.sql",
       "sha256": "bacfd9f7d0612f2b52869b8054aad2a39ddd836110bb47a93a0d59c1efab84a0"
+    },
+    {
+      "path": "sql/migrations/008_generation_fence.sql",
+      "sha256": "b86847799b073e82fcd48cd5c7bdffa7a0d5baabb5b015a8143253b3eed2f031"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",

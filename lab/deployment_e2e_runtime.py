@@ -171,6 +171,12 @@ def provision_database(passwords):
         subprocess.run([sys.executable, "sql/migrate.py", "--set-role", "zabalack_owner"], cwd=ROOT,
                        env={"PATH": os.environ["PATH"], "TZ": "UTC", "ZABALACK_MIGRATION_DSN": dsns["migrator"]},
                        check=True, timeout=60, stdout=log, stderr=subprocess.STDOUT)
+    # The application role's single entry point into zabalack, granted by the
+    # schema owner. psql would substitute the variable; the runtime splices it.
+    with psycopg.connect(dsns["migrator"], autocommit=True) as migrator:
+        migrator.execute("SET ROLE zabalack_owner")
+        migrator.execute((ROOT / "sql/install/12_application_grant.sql").read_text()
+                         .replace(':"alert_app_role"', '"alerta_app"'))
     return admin_dsn, dsns
 
 

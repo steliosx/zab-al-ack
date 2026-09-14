@@ -33,6 +33,10 @@ export async function bootstrap(db) {
   await db.exec('SET ROLE zabalack_owner');
   const files = (await fs.readdir(path.join(repo, 'sql/migrations'))).filter(x => x.endsWith('.sql')).sort();
   for (const file of files) await sqlFile(db, 'sql/migrations/' + file);
+  // The application role's single entry point. psql would substitute the
+  // variable; here the lab's application role is spliced in the same way.
+  await db.exec((await fs.readFile(path.join(repo, 'sql/install/12_application_grant.sql'), 'utf8'))
+    .replaceAll(':"alert_app_role"', '"alerta_app"'));
   await db.exec('RESET ROLE; SET ROLE alerta_owner');
   await sqlFile(db, 'sql/install/10_trigger.sql');
   await db.exec('RESET ROLE');

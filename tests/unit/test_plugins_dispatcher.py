@@ -76,12 +76,16 @@ def context(monkeypatch):
     hooks.init_app(app)
     configure_app(app)
     probe = Probe()
-    signer = AckSigningPlugin(settings=SETTINGS, probe=probe, keys={"lab": b"synthetic-test-key-only-32bytes!!!!"})
+    generations = []
+    updates = []
+    # No PostgreSQL behind this app: the protected staging operation is recorded
+    # instead of executed, in the order it is called relative to the writes.
+    signer = AckSigningPlugin(settings=SETTINGS, probe=probe, keys={"lab": b"synthetic-test-key-only-32bytes!!!!"},
+                              stager=lambda alert_id, intent: generations.append((alert_id, intent["action_id"], len(updates))) or 1)
     observer = Observer()
     monkeypatch.setattr(plugins, "plugins", OrderedDict(observer=observer, signer=signer))
     monkeypatch.setattr(plugins, "rules", None)
     monkeypatch.setattr(plugins, "config", app.config)
-    updates = []
     monkeypatch.setattr(Alert, "update_tags", lambda self, tags: True)
     monkeypatch.setattr(Alert, "tag", lambda self, tags: True)
 
@@ -97,7 +101,8 @@ def context(monkeypatch):
         g.scopes = ["write:alerts"]
         alert = Alert("unchanged-resource", "stable-trigger-family", id=ALERT_ID,
                       attributes=deepcopy(SOURCE), customer="synthetic-a", status="open", severity="major")
-        yield SimpleNamespace(app=app, signer=signer, observer=observer, probe=probe, alert=alert, updates=updates)
+        yield SimpleNamespace(app=app, signer=signer, observer=observer, probe=probe, alert=alert, updates=updates,
+                              generations=generations)
 
 
 def stage(context):
@@ -325,3 +330,31 @@ def test_non_eligible_activity_does_not_load_broken_capture_config(context):
     context.alert.attributes = {"source_system": "unrelated"}
     assert context.signer.take_action(context.alert, "ack", "note", config=context.app.config) is None
     assert ZabbixNormaliser().pre_receive(context.alert, config=context.app.config) is context.alert
+
+
+def test_T41_the_generation_is_recorded_before_any_attribute_write(context):
+    """The protected staging operation runs before Alerta writes anything.
+
+    The stager records how many attribute writes had happened when it was
+    called: zero. The generation it recorded is the one the staged intent
+    carries, and the write that follows carries that same intent.
+    """
+    alert, action, note, timeout = stage(context)
+    action_id = alert.attributes["zabbix_ack_sync_intent"]["action_id"]
+    assert context.generations == [(str(alert.id), action_id, 0)]
+    assert context.updates and context.updates[-1]["zabbix_ack_sync_intent"]["action_id"] == action_id
+    stage(context)
+    assert len(context.generations) == 1, "a duplicate callback reuses its staged identity and records nothing new"
+
+
+def test_T41_a_refused_generation_refuses_the_acknowledgement_and_stages_nothing(context):
+    """No staging exists without its generation recorded."""
+    def refuse(alert_id, intent):
+        raise RuntimeError("synthetic fence unavailable")
+    context.signer.stager = refuse
+    with pytest.raises(AlertaException) as refused:
+        stage(context)
+    assert refused.value.code == 503 and "zabalack_generation_unavailable" in str(refused.value)
+    assert context.updates == [], "Alerta must not have been asked to write anything"
+    assert "zabbix_ack_sync_intent" not in context.alert.attributes
+    assert context.alert.attributes.get("zabbix_ack_sync") is None

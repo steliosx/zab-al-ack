@@ -184,7 +184,7 @@ class Worker:
         self._healthy = (health.get("in_recovery") is False and
                          health.get("database_name") == self.settings.database_name and
                          str(health.get("deployment_id")) == str(self.settings.deployment_id) and
-                         str(health.get("zabalack_schema_version")) == "3" and
+                         str(health.get("zabalack_schema_version")) == "4" and
                          health.get("trigger_ok") is True and health.get("functions_ok") is True and
                          health.get("capture_disabled") is False and
                          health.get("config_revision") == self.settings.config_revision)

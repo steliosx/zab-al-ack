@@ -158,3 +158,270 @@ def test_T19_T22_real_capture_failure_rolls_back_ack_only(persisted_api):
     finally:
         with lab.pgdb("zabalack_owner") as owner:
             owner.execute("ALTER TABLE zabalack.captures DROP CONSTRAINT http_fault")
+
+
+# --- A5 stage two (T41): the generation fence through the real entry point ---
+# Each case below drives the real `PUT /alert/<id>/action`, `PUT /alert/<id>/status`
+# and `PUT /alert/<id>/attributes` handlers with a customer-scoped write:alerts
+# JWT, verifies through `worker_call('verify_complete')` as zabalack_worker, and
+# projects as zabalack_worker. Nothing is hand-inserted.
+
+from psycopg.types.json import Jsonb  # noqa: E402
+
+
+def fence_rows(lab, alert_id):
+    with lab.pgdb("zabalack_owner") as owner:
+        return owner.execute("SELECT action_id::text,recorded_by FROM zabalack.alert_generations "
+                             "WHERE alert_id=%s ORDER BY seq", (alert_id,)).fetchall()
+
+
+def newest_generation(lab, alert_id):
+    with lab.pgdb("zabalack_owner") as owner:
+        value = owner.execute("SELECT zabalack.newest_generation(%s)", (alert_id,)).fetchone()[0]
+    return str(value) if value is not None else None
+
+
+def alert_row(lab, alert_id):
+    with lab.pgdb("alerta_app") as app:
+        return app.execute("SELECT status,attributes,(history[1]).text FROM alerts WHERE id=%s", (alert_id,)).fetchone()
+
+
+def verify_newest_capture(lab, alert_id):
+    """Claim and verify this alert's newest capture through `worker_call`.
+
+    Other tests in this module leave captures unverified; they are postponed,
+    not touched, so the claim below can only return this alert's capture.
+    """
+    rows = capture_rows(lab, alert_id)
+    assert rows, "precondition: a capture exists"
+    capture_id, intent = rows[-1][0], rows[-1][5]
+    with lab.pgdb("zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.outbox SET due_at=clock_timestamp()+interval '1 hour' "
+                      "WHERE capture_id<>%s AND due_at<=clock_timestamp()", (capture_id,))
+    # A fresh worker identity per call: a verifier holds at most four live
+    # leases, and this module verifies more than that inside one lease lifetime.
+    lease = {"worker_id": "http-verifier-" + uuid4().hex[:8]}
+    with lab.pgdb("zabalack_worker") as worker:
+        claimed = worker.execute("SELECT zabalack.worker_call('claim_verification',%s)", (Jsonb(lease),)).fetchone()[0]
+        assert claimed is not None and claimed["capture_id"] == str(capture_id), claimed
+        return worker.execute("SELECT zabalack.worker_call('verify_complete',%s)", (Jsonb(
+            lease | {"capture_id": claimed["capture_id"], "lease_generation": claimed["lease_generation"],
+                     "intent": intent, "actor_ref": "http-actor"}),)).fetchone()[0]
+
+
+def project(lab, action_id):
+    with lab.pgdb("zabalack_worker") as worker:
+        return worker.execute("SELECT zabalack.project(%s)", (action_id,)).fetchone()[0]["reason"]
+
+
+def acknowledge(lab, identity, *, expect=200):
+    response = lab.client.put(f"/alert/{identity}/action", headers=lab.headers,
+                              json={"action": "ack", "text": "synthetic note"})
+    assert response.status_code == expect, response.get_json()
+    assert "[zabalack:" not in response.get_data(as_text=True)
+    return response
+
+
+def reopen(lab, identity):
+    """Reopen the alert so it can be acknowledged again, as the source would leave it.
+
+    Alerta's attribute write drops every key whose value is None, so after one
+    acknowledgement the row no longer carries the nullable source-contract keys
+    (`zabbix_cause_event_id`, `zabbix_recovery_event_id`) and the plugin would
+    skip a second acknowledgement with `legacy_missing_mapping`. In production
+    the next source update re-normalises them through `pre_receive`; here the
+    row is restored to that ingestion shape directly.
+    """
+    response = lab.client.put(f"/alert/{identity}/status", headers=lab.headers, json={"status": "open"})
+    assert response.status_code == 200, response.get_json()
+    with lab.pgdb("alerta_app") as app:
+        app.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                    (Jsonb({"zabbix_cause_event_id": None, "zabbix_recovery_event_id": None}), identity))
+
+
+def put_attributes(lab, identity, attributes):
+    response = lab.client.put(f"/alert/{identity}/attributes", headers=lab.headers,
+                              json={"attributes": attributes})
+    assert response.status_code == 200, response.get_json()
+
+
+def test_T41_real_action_records_the_generation_at_staging(persisted_api):
+    lab = persisted_api
+    identity = lab.new_alert()
+    acknowledge(lab, identity)
+    (action_id, recorded_by), = fence_rows(lab, identity)
+    assert recorded_by == "staging", "the protected operation, not the capture fallback, recorded it"
+    status, attributes, _ = alert_row(lab, identity)
+    assert status == "ack" and attributes["zabbix_ack_sync_action_id"] == action_id
+    assert capture_rows(lab, identity)[0][5]["action_id"] == action_id
+    with lab.pgdb("zabalack_owner") as owner:
+        assert owner.execute("SELECT count(*) FROM zabalack.audit WHERE operation='stage_generation' "
+                             "AND object_ref=%s", (identity,)).fetchone()[0] == 1
+
+
+def test_T41_real_action_is_refused_when_the_generation_cannot_be_recorded(persisted_api):
+    """No staging exists without its generation: the request fails closed."""
+    lab = persisted_api
+    identity = lab.new_alert()
+    with lab.pgdb("zabalack_owner") as owner:
+        owner.execute(sql.SQL("ALTER TABLE zabalack.alert_generations ADD CONSTRAINT http_fence_fault "
+                              "CHECK(alert_id<>{})").format(sql.Literal(identity)))
+    try:
+        response = acknowledge(lab, identity, expect=503)
+        assert response.get_json().get("message") == "zabalack_generation_unavailable"
+        assert fence_rows(lab, identity) == []
+        status, attributes, _ = alert_row(lab, identity)
+        assert status == "open" and "zabbix_ack_sync_intent" not in attributes
+        assert attributes.get("zabbix_ack_sync") is None, "nothing was staged"
+        assert capture_rows(lab, identity) == []
+        unrelated = lab.new_alert()
+        acknowledge(lab, unrelated)
+        assert [row[1] for row in fence_rows(lab, unrelated)] == ["staging"], "the fault is scoped to one alert"
+    finally:
+        with lab.pgdb("zabalack_owner") as owner:
+            owner.execute("ALTER TABLE zabalack.alert_generations DROP CONSTRAINT http_fence_fault")
+
+
+def test_T41_the_generation_and_the_staging_commit_together(persisted_api):
+    """A failure of the staging write rolls the generation back with it.
+
+    The fault sits on the alert row's attributes, after the fence insert inside
+    the same function has succeeded. If the two were separate transactions the
+    fence row would survive; it must not.
+    """
+    lab = persisted_api
+    identity = lab.new_alert()
+    with lab.pgdb("alerta_owner") as owner:
+        owner.execute(sql.SQL("ALTER TABLE alerts ADD CONSTRAINT http_staging_fault "
+                              "CHECK(NOT(id={} AND attributes ? 'zabbix_ack_sync_intent')) NOT VALID")
+                      .format(sql.Literal(identity)))
+    try:
+        acknowledge(lab, identity, expect=503)
+        assert fence_rows(lab, identity) == [], "the fence insert rolled back with the staging write"
+        status, attributes, _ = alert_row(lab, identity)
+        assert status == "open" and "zabbix_ack_sync_intent" not in attributes
+    finally:
+        with lab.pgdb("alerta_owner") as owner:
+            owner.execute("ALTER TABLE alerts DROP CONSTRAINT http_staging_fault")
+    acknowledge(lab, identity)
+    assert [row[1] for row in fence_rows(lab, identity)] == ["staging"]
+    assert "zabbix_ack_sync_intent" in alert_row(lab, identity)[1]
+
+
+def stage_unsigned(lab, identity):
+    """A second acknowledgement whose staging commits and whose signing fails.
+
+    T19's fault: the capture insert fails, so Alerta rolls the history write
+    back; the staging, committed earlier by the protected operation and again by
+    Alerta's own attribute write, stays. This is the "staged, never signed" row
+    of A5's lifecycle table, reached through the real entry point.
+    """
+    reopen(lab, identity)
+    with lab.pgdb("zabalack_owner") as owner:
+        owner.execute(sql.SQL("ALTER TABLE zabalack.captures ADD CONSTRAINT http_sign_fault CHECK(alert_id<>{}) NOT VALID")
+                      .format(sql.Literal(identity)))
+    try:
+        response = lab.client.put(f"/alert/{identity}/action", headers=lab.headers, json={"action": "ack"})
+        assert response.status_code >= 400
+    finally:
+        with lab.pgdb("zabalack_owner") as owner:
+            owner.execute("ALTER TABLE zabalack.captures DROP CONSTRAINT http_sign_fault")
+    status, attributes, _ = alert_row(lab, identity)
+    assert status == "open" and "zabbix_ack_sync_intent" in attributes
+    return attributes["zabbix_ack_sync_action_id"]
+
+
+def test_T41_an_older_projection_never_overwrites_a_newer_staging_through_the_api(persisted_api):
+    """Your case 1. B staged and uncaptured; B's keys deleted through the API;
+    separately, A's whole dictionary replayed through the API. A stays refused."""
+    lab = persisted_api
+    identity = lab.new_alert()
+    acknowledge(lab, identity)
+    first = verify_newest_capture(lab, identity)
+    assert project(lab, first["action_id"]) == "projected"
+    stale = alert_row(lab, identity)[1]
+    # Verified but not delivered: the projected display state is `pending` with A's id.
+    assert stale["zabbix_ack_sync"] == "pending" and stale["zabbix_ack_sync_action_id"] == first["action_id"]
+    second = stage_unsigned(lab, identity)
+    assert [row[1] for row in fence_rows(lab, identity)] == ["staging", "staging"]
+    assert newest_generation(lab, identity) == second
+    # Forgery one: delete B's keys.
+    put_attributes(lab, identity, {"zabbix_ack_sync_action_id": None, "zabbix_ack_sync_intent": None})
+    assert "zabbix_ack_sync_action_id" not in alert_row(lab, identity)[1]
+    assert project(lab, first["action_id"]) == "projection_action_generation_mismatch"
+    # Forgery two: replay A's dictionary wholesale.
+    put_attributes(lab, identity, stale)
+    assert alert_row(lab, identity)[1]["zabbix_ack_sync_action_id"] == first["action_id"], "precondition: the row says A"
+    assert project(lab, first["action_id"]) == "projection_action_generation_mismatch"
+    assert newest_generation(lab, identity) == second
+    with lab.pgdb("zabalack_owner") as owner:
+        assert owner.execute("SELECT projection_reason FROM zabalack.actions WHERE action_id=%s",
+                             (first["action_id"],)).fetchone()[0] == "projection_action_generation_mismatch"
+
+
+def test_T41_a_swept_staging_keeps_its_protection_against_a_reverified_replay(persisted_api):
+    """Your case 2. B observed and retired by the sweep; A's capture replayed and
+    verified again as a replay. B's protection holds throughout."""
+    lab = persisted_api
+    identity = lab.new_alert()
+    acknowledge(lab, identity)
+    first = verify_newest_capture(lab, identity)
+    assert project(lab, first["action_id"]) == "projected"
+    signed_text = alert_row(lab, identity)[2]
+    assert "[zabalack:" in signed_text
+    second = stage_unsigned(lab, identity)
+    # B was staged seconds ago, so its capture window is still open and the sweep
+    # would defer it. Only the attribute's own timestamps decide when it is
+    # retired — the attribute is API-writable, and this is what a client can do
+    # to it — while the fence row is what protects B; move the window into the past.
+    with lab.pgdb("alerta_app") as app:
+        app.execute("UPDATE alerts SET attributes=jsonb_set(jsonb_set(attributes,'{zabbix_ack_sync_intent,issued_at}',"
+                    "to_jsonb((clock_timestamp()-interval '10 minutes')::text)),'{zabbix_ack_sync_intent,capture_expires_at}',"
+                    "to_jsonb((clock_timestamp()-interval '9 minutes')::text)) WHERE id=%s", (identity,))
+    with lab.pgdb("zabalack_owner") as owner:
+        assert owner.execute("SELECT zabalack.retire_intents(1000,0)").fetchone()[0]["retired"] >= 1
+    assert "zabbix_ack_sync_intent" not in alert_row(lab, identity)[1]
+    assert project(lab, first["action_id"]) == "projection_action_generation_mismatch"
+    # A's proof replayed as a fresh history entry: captured again, verified as a replay.
+    # (Read the intent before opening the writing connection: PGlite multiplexes
+    # sessions onto one backend, so a nested connection's SET ROLE leaks.)
+    first_intent = capture_rows(lab, identity)[0][5]
+    with lab.pgdb("alerta_app") as app:
+        app.execute("UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,'stable-trigger-family',NULL,'ack',NULL,%s,"
+                    "'ack',clock_timestamp() AT TIME ZONE 'UTC','http-human',NULL)::history]||history,"
+                    "attributes=attributes||%s WHERE id=%s",
+                    (str(uuid4()), signed_text, Jsonb({"zabbix_ack_sync_intent": first_intent}), identity))
+    assert len(capture_rows(lab, identity)) == 2
+    replay = verify_newest_capture(lab, identity)
+    assert replay.get("replay") is True and replay["action_id"] == first["action_id"]
+    assert [row[1] for row in fence_rows(lab, identity)] == ["staging", "staging"], "a replay records nothing new"
+    assert newest_generation(lab, identity) == second
+    assert project(lab, first["action_id"]) == "projection_action_generation_mismatch"
+
+
+def test_T41_forged_attributes_establish_no_generation_and_legitimate_work_still_projects(persisted_api):
+    """Your case 3. Forged markers and intents written through the API leave the
+    fence untouched; the current action projects; a later legitimate
+    acknowledgement on the same alert becomes the newest generation."""
+    lab = persisted_api
+    identity = lab.new_alert()
+    acknowledge(lab, identity)
+    first = verify_newest_capture(lab, identity)
+    forged_id = str(uuid4())
+    forged_intent = dict(capture_rows(lab, identity)[0][5], action_id=forged_id)
+    put_attributes(lab, identity, {"zabbix_ack_sync_action_id": forged_id, "zabbix_ack_sync_intent": forged_intent,
+                                   "zabbix_ack_sync_forged": "client-supplied"})
+    assert alert_row(lab, identity)[1]["zabbix_ack_sync_action_id"] == forged_id, "precondition: stored verbatim"
+    assert [row[0] for row in fence_rows(lab, identity)] == [first["action_id"]]
+    assert newest_generation(lab, identity) == first["action_id"]
+    assert project(lab, first["action_id"]) == "projected"
+    attributes = alert_row(lab, identity)[1]
+    assert attributes["zabbix_ack_sync_action_id"] == first["action_id"] and "zabbix_ack_sync_intent" not in attributes
+    reopen(lab, identity)
+    acknowledge(lab, identity)
+    third = verify_newest_capture(lab, identity)
+    assert third["action_id"] != first["action_id"]
+    assert [row[1] for row in fence_rows(lab, identity)] == ["staging", "staging"]
+    assert newest_generation(lab, identity) == third["action_id"]
+    assert project(lab, third["action_id"]) == "projected"
+    assert project(lab, first["action_id"]) == "projection_action_generation_mismatch"

@@ -6,7 +6,8 @@ from functools import wraps
 from importlib.metadata import version as installed_version
 import logging
 import traceback
-from typing import Any
+import json
+from typing import Any, Callable
 from uuid import UUID
 
 from flask import current_app, g, has_request_context, request
@@ -221,15 +222,45 @@ def _safe_status_receivers(alert: Any) -> bool:
             and getattr(receivers[0], "__func__", None) is HookTrigger.process_status_change)
 
 
+def stage_generation(alert_id: str, intent: dict[str, Any]) -> int:
+    """Stage through the protected operation, as one committed transaction.
+
+    `zabalack.stage_generation()` records the generation in the fence and writes
+    the reserved staging keys to the alert row in one statement. It runs on the
+    request's own Alerta connection, so it executes as the role Alerta connects
+    as — the only role granted that function — and it is committed here
+    explicitly: `process_action()` commits `update_tags()` before
+    `update_attributes()`, so a write left pending on this connection would ride
+    the wrong commit. Any failure rolls the transaction back and refuses the
+    acknowledgement; nothing is ever staged without its generation recorded.
+    """
+    from alerta.app import db
+    connection = db.get_db()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
+                           (alert_id, intent["action_id"], json.dumps(intent)))
+            row = cursor.fetchone()
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return int(row[0])
+
+
 class AckSigningPlugin(PluginBase):
     """Stage unsigned intent; append binding only in the final effective hook."""
 
     def __init__(self, name: str | None = None, *, settings: Settings | None = None,
-                 probe: Any = None, keys: dict[str, bytes] | None = None) -> None:
+                 probe: Any = None, keys: dict[str, bytes] | None = None,
+                 stager: Callable[[str, dict[str, Any]], int] | None = None) -> None:
         super().__init__(name)
         self.settings = settings
         self.probe = probe
         self.keys = keys
+        # The protected staging operation. Injected only by tests with no
+        # PostgreSQL behind them; the real one is the database function.
+        self.stager = stager if stager is not None else stage_generation
         observe_routing()
 
     def pre_receive(self, alert: Any, **kwargs: Any) -> Any:
@@ -317,6 +348,16 @@ class AckSigningPlugin(PluginBase):
                 actor=actor, cohort_revision=cohort["revision"], policy_revision=settings.policy_revision)
         except Exception:
             raise AlertaException("zabalack_intent_invalid", code=503) from None
+        # A5 stage two: the staging is a protected database operation, committed
+        # before anything below is written from memory. It records the
+        # generation in zabalack.alert_generations and writes exactly the
+        # reserved keys set here, so Alerta's later whole-object write of this
+        # dictionary changes nothing. If it fails, nothing is staged and the
+        # acknowledgement is refused: no staging exists without its generation.
+        try:
+            self.stager(str(alert.id), intent)
+        except Exception:
+            raise AlertaException("zabalack_generation_unavailable", code=503) from None
         contexts[intent["action_id"]] = {"intent": deepcopy(intent), "signed": False,
                                         "config_revision": settings.config_revision}
         alert.attributes.pop("zabbix_ack_sync_local_at", None)

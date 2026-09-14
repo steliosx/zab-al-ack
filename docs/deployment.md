@@ -21,9 +21,16 @@ Drain or fence all eligible acknowledgement paths during readiness changes; inva
 ```sh
 # ZABALACK_MIGRATION_DSN contains a reviewed libpq service reference, not a literal password.
 ZABALACK_MIGRATION_DSN='service=reviewed_zabalack_migration' python sql/migrate.py --set-role zabalack_owner
-# Run with the separately authorised alerts-owner/installer service.
+# A5 stage two: the Alerta application role's single entry point into zabalack, granted by the schema owner.
+# alert_app_role is the role the application connects as (the alerts owner under the upstream default).
+psql -X --no-password --set ON_ERROR_STOP=1 --dbname 'service=reviewed_zabalack_migration' \
+  --set alert_app_role=alerta_app --command 'SET ROLE zabalack_owner' --file sql/install/12_application_grant.sql
+# Run with the separately authorised alerts-owner/installer service. On a fresh install this seals the manifest;
+# on an upgrade of an already-sealed installation run sql/install/13_reseal.sql as zabalack_owner instead.
 psql -X --no-password --set ON_ERROR_STOP=1 --dbname 'service=reviewed_trigger_installer' --file sql/install/10_trigger.sql
 ```
+
+`12_application_grant.sql` grants `USAGE` on `zabalack` and `EXECUTE` on `zabalack.stage_generation(text,uuid,jsonb)` to the application role and nothing else; the role holds no table privilege there and no other function. That is safe only while no function in the schema is executable by `PUBLIC` and the generation fence admits no grantee but its owner, both of which `capture_health()` asserts under `functions_ok`. The grant changes ACLs the readiness manifest hashes, so it precedes sealing. The application refuses an acknowledgement with `zabalack_generation_unavailable` (503) while the grant is absent, so a plugin deployed ahead of it fails closed rather than staging without generation protection.
 
 The migration runner checks migration SHA-256 records; an applied checksum mismatch aborts instead of replacing definitions. `02_zabalack_migrations.yml` and `03_trigger_install.yml` are independently opt-in, select no hosts by default and do not start workers. Use role-specific test assertions after installation. A DBA/superuser provisioning success is not evidence for T35/T38/T39. A principal with only a TRIGGER grant is insufficient for physical disable/enable; use the actual table-owner authority for that separately controlled step.
 
@@ -31,8 +38,8 @@ Before unfencing, verify catalog attachment/mode, function identity/signatures, 
 
 ## 3. Shadow plugin rollout
 
-The a9 baseline installs all seven migrations into the fresh `zabalack` schema.
-It includes the late-response fencing (006) and settled-expiry (007) corrections.
+The baseline installs all eight migrations into the fresh `zabalack` schema.
+It includes the late-response fencing (006), settled-expiry (007) and generation-fence (008, A5 stage two) corrections.
 Do not apply these files to an Ackline database. Historical Ackline a3→a4/a5
 and a4/a5→a6 upgrade instructions are retained in the original a8 handoff;
 they are not a9 transition instructions. See [RENAME.md](RENAME.md).

@@ -51,8 +51,10 @@ def http_lab(monkeypatch):
         g.request_id = "synthetic-request"
 
     settings = Settings(enabled=True, config_revision="lab-r1", signing_kid="lab", cohorts=(COHORT,))
+    # Mocked storage: the protected staging operation is recorded, not executed.
     signer = AckSigningPlugin(settings=settings, probe=SimpleNamespace(check=lambda: {}),
-                              keys={"lab": b"synthetic-hmac-lab-only-32bytes!!!"})
+                              keys={"lab": b"synthetic-hmac-lab-only-32bytes!!!"},
+                              stager=lambda alert_id, intent: 1)
     monkeypatch.setattr(plugins, "plugins", OrderedDict(signer=signer))
     monkeypatch.setattr(plugins, "rules", None)
     monkeypatch.setattr(plugins, "config", app.config)

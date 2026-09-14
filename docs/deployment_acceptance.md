@@ -63,17 +63,63 @@ committed history proof is intact. Reader protection applied only to response bo
 ## T41
 
 Prerequisites: the approved installed database under the exact deployment principals, and authorisation to
-observe stored rows. For each lifecycle path recorded in amendment A5 — verified capture, capture-side evidence
-failure, capture bypass, worker-side rejection, verifier hold, stopped worker, a missing database cohort, and an
-acknowledgement abandoned before its history write — establish the state on an eligible alert, then confirm the
-stored intent is retired from `public.alerts.attributes` and that `zabalack.captures.intent` is preserved
-byte-for-byte alongside source-identity keys, unrelated operator attributes and the separately protected
-columns. Prove the generation protection under concurrency: retire a newer unverified intent while an older
-projection is in flight, and confirm the older projection does not overwrite the newer state. Run the bounded
-backfill against live rows and record its scope, its bound and its completion; historical backups, replicas and
-previously produced exports are out of its reach and remain governed by G8. Record the schema version before and
-after, the re-seal of the readiness manifest, and the principal that performed each step. A passing disposable
-lab does not close this item.
+observe stored rows. This item covers A5 stage two as shipped in migration 008: retirement of the staged intent
+from `public.alerts.attributes`, and the generation fence `zabalack.alert_generations` that replaces the guard
+which read it.
+
+Upgrade sequence, with the principal recorded for each step. Apply `008_generation_fence.sql` through the
+ordinary migration path as `zabalack_owner` and record the schema version moving 3 to 4. Then run
+`sql/install/12_application_grant.sql` as `zabalack_owner` with `alert_app_role` set to the role the Alerta
+application connects as; record which role that is (the alerts owner under the upstream default, a separate
+login role where the deployment splits them). Then re-seal the readiness manifest with
+`sql/install/13_reseal.sql`, also as `zabalack_owner`; it refuses unless the schema version is 4, the version-4
+objects are present and the trigger fingerprint still matches the sealed one, since 008 does not change the
+trigger. Confirm `zabalack.capture_health()` reports `functions_ok` and `trigger_ok` afterwards, and that workers
+pinned to schema 3 report unhealthy until upgraded. Deploy the plugin only after the grant: a plugin that cannot
+reach `zabalack.stage_generation()` refuses every acknowledgement with `zabalack_generation_unavailable` (503),
+which is the intended failure. Acknowledgement paths must be fenced across the whole sequence, as §2 of the
+deployment guide already requires; an acknowledgement staged by the old plugin between the migration and the
+plugin deployment is recorded only when it captures, at the observation tier.
+
+Record the grant's exact extent: the application role holds `USAGE` on `zabalack`, `EXECUTE` on
+`zabalack.stage_generation(text,uuid,jsonb)` and nothing else — no table privilege in the schema and no other
+function. Confirm that no function in `zabalack` is executable by `PUBLIC` and that `zabalack.alert_generations`
+admits no grantee but its owner; `capture_health()` asserts both under `functions_ok`, and a false value there is
+a real misconfiguration, not a probe fault.
+
+Record the backfill's result. 008 records one generation for every `zabalack.actions` row, in capture order, and
+one for every staged intent found on a live row, all at the observation tier; a row with neither acquires its
+generation at its first staging. Run it against live rows and record its scope, its bound and its completion;
+historical backups, replicas and previously produced exports are out of its reach and remain governed by G8.
+
+For each lifecycle path recorded in amendment A5 — verified capture, capture-side evidence failure, capture
+bypass, worker-side rejection, verifier hold, stopped worker, a missing database cohort, and an acknowledgement
+abandoned before its history write — establish the state on an eligible alert, then confirm the stored intent is
+retired from `public.alerts.attributes` and that `zabalack.captures.intent` is preserved byte-for-byte alongside
+source-identity keys, unrelated operator attributes and the separately protected columns.
+
+Prove the generation protection on the installed environment, through the real entry points: acknowledge A
+through `/alert/<id>/action`, verify and project it; stage B on the same alert and let it fail before its
+history write; delete B's reserved keys through `/alert/<id>/attributes`, and separately replay A's whole
+attribute dictionary through the same endpoint; confirm A's projection is refused in both cases with
+`projection_action_generation_mismatch` and that `zabalack.newest_generation(<id>)` still names B. Retire B's
+intent with the sweep and confirm the same. Confirm a fence row after a real acknowledgement carries
+`recorded_by='staging'`, and that a failed acknowledgement leaves neither a fence row nor a staged intent.
+
+Record the retirement cadence actually observed across the fleet: the slot is claimed in the installation row,
+so exactly one worker per `retirement_interval_seconds` performs the scan however many workers run; the rest
+return `skipped: not_due`. Confirm the interval is set to a value the deployment accepts, since it bounds how
+long a staged intent persists, and measure the sweep's cost on the installed table: `public.alerts` carries no
+index for the `attributes ? 'zabbix_ack_sync_intent'` predicate and `zabalack_owner` cannot create one, so the
+bounded batch limits matching rows, not rows scanned. Where that cost is unacceptable, the alerts owner may add
+`CREATE INDEX CONCURRENTLY … ON public.alerts (id) WHERE attributes ? 'zabbix_ack_sync_intent'` as an approved
+change under the same principal that installs the trigger; it is optional and changes no `zabalack` object.
+
+Rollback: the sweep and the fence can be left in place harmlessly, but reverting `project()` to its 002 form
+restores a guard that reads an attribute the sweep has removed, so a rollback must also stop the sweep. Nothing
+shipped deletes a fence row; a rollback does not either.
+
+A passing disposable lab does not close this item.
 
 ## Additional deployed clauses
 

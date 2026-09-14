@@ -51,7 +51,8 @@ def read_xml(path, layer):
         # executed or were skipped for want of a native backend.
         if ('native_concurrent' in name or 'migration_rerun' in name or 'test_native_login' in classname
                 or 'test_native_delivery_faults' in classname
-                or 'test_native_staging_interval' in classname):
+                or 'test_native_staging_interval' in classname
+                or 'test_native_generation_fence' in classname):
             actual_layer = 'native_postgres'
         if 'pgbouncer' in (classname + name).lower():
             actual_layer = 'pgbouncer'
