@@ -224,12 +224,19 @@ intent returns zero, while probes for the undisclosed customer and for the
 acknowledging login both match. Native execution of that module is a separate
 layer and is not established by it.
 
-A third surface reaches the same value. `/alerts/history`
+Two further surfaces reach the same value. `/alerts/history`
 (`@permission(Scope.read_alerts)`, also `@jsonp`) serialises through
 `RichHistory`, a class distinct from `Alert`, whose rows come from
 `SELECT … attributes … FROM alerts, unnest(history[…])` — so every entry carries
 the alert row's *current* attributes rather than a historical copy. A filter
-applied to `Alert.serialize` alone leaves the intent fully readable there.
+applied to `Alert.serialize` alone leaves the intent fully readable there. And
+`get_topn_count` interpolates the grouping expression into both `SELECT` and
+`GROUP BY` and returns it under that key, so `group-by=attributes` on
+`/alerts/topn/count` — and its `top10`, flapping and standing siblings — hands
+the reader the whole attributes object as a plain dictionary, bypassing every
+serialiser. That query reads `FROM alerts, UNNEST(service) svc`, so an alert with
+an empty `service` array is dropped and a regression without one passes
+vacuously.
 
 **A response filter therefore cannot establish this invariant on its own.** It
 closes bodies, not the predicate.
@@ -244,6 +251,22 @@ what reader queries may inspect, or never committing readable plaintext there �
 and a cleanup-only design closes neither. **Completing T41 does not by itself
 establish T40**, which depends on demonstrated confidentiality across the
 interval as well as after it.
+
+**Chosen design: query restriction.** Restricting what reader queries may inspect
+protects the interval without altering the signing and capture protocol, which
+retirement cannot do. The guard installs at the shared alert query-builder
+boundary — `qb.alerts.from_params`, the single point that sees `q`, `q.df`,
+direct filters, `sort-by` and `group-by` — so the list, history, count and
+aggregate endpoints inherit one control instead of each view being patched. It
+validates *resolved* fields: the query string is parsed and the produced SQL and
+bound parameters are inspected, because a substring blacklist over raw text
+cannot see through the `_.key` alias, sub-expressions, `_exists_` or the default
+field. Restricted selectors and whole-`attributes` operations are refused with a
+stable `400` that does not depend on whether any alert or intent exists, so the
+refusal is not itself an oracle; ordinary keyed attribute searches and approved
+sorting and grouping are preserved. It applies to every API reader including
+administrators, and **it stays in place after retirement ships** — it is what
+protects the interval, which cleanup cannot reach.
 
 **Evidence (this implementation):** `src/zabalack/plugins.py`, `_human_actor()`,
 returns `{"login", "customers": sorted(set(g.customers)), "admin", "auth_type"}`.
@@ -362,16 +385,26 @@ lab-a and lab-c — neither scope containing the other — must learn nothing ab
 lab-b. Asserted before worker processing, after worker processing, with the
 worker unavailable and after a failed acknowledgement; each in both the JSON and
 JSONP response modes; across the single-alert response, the collection response
-and `/alerts/history`; through `attributes.<key>:<term>` probes against
-`/alerts/count` and `/alerts`; and, on native PostgreSQL, from a second session
-while an acknowledgement is paused between its staged-attribute commit and its
-history write, plus the failed and never-captured paths.
+and `/alerts/history`; through every restricted selector — keyed term, `_.key` alias, phrase,
+sub-expression, `_exists_`, `q.df=attributes`, the `attributes.<key>` direct
+filter, restricted and whole-column `sort-by`, and `group-by=attributes` on the
+aggregate endpoints — against `/alerts/count`, `/alerts` and `/alerts/history`;
+and, on native PostgreSQL, from a second session while an acknowledgement is
+paused between its staged-attribute commit and its history write, plus the failed
+and never-captured paths, with both HTTP sessions bound to the application role.
 
-Controls, because zero assertions are cheap to satisfy wrongly. Each probe is
-scoped to its own alert by conjoining the source event id, so counts cannot
-accumulate. A probe for a term in no intent is the negative control. A probe on
-a permitted projection field is the positive control: a mitigation that disabled
-attribute search wholesale must fail it rather than pass everything else. The
+Restricted selectors are asserted to be **refused with a stable 400**, not to
+return zero: a zero count is satisfied by an empty database. The refusals for a
+present and an absent term are compared to each other, which is what
+demonstrates the absence of an oracle.
+
+Controls, because refusal and zero assertions are both cheap to satisfy wrongly.
+Each query is scoped to its own alert by conjoining the source event id. A
+permitted keyed attribute search, a permitted `sort-by` and a permitted
+`group-by` are positive controls: a mitigation that disabled attribute querying
+wholesale must fail them rather than pass everything else. The aggregate cases
+require the fixture alert to carry a nonempty `service` array, or the
+`UNNEST(service)` join drops it and the case passes on an empty result. The
 precondition for a meaningful run is restricted capture evidence in
 `zabalack.captures`, never the continued presence of the alert attribute, which
 a correct stage-two retirement removes. Every case also asserts the read left the
@@ -380,10 +413,12 @@ history proof intact, and that `/alerts/history` still carries its permitted
 `user` attribution, so a sanitiser that stripped fields from the response or
 mutated the shared attribute dictionary cannot satisfy it.
 
-**T40 does not pass on stage one, and does not follow from T41.** The response
-and history cases go green when the filter ships. The search cases and the
-interval cases need a design that restricts reader queries or never commits
-readable plaintext; retirement alone leaves the interval open.
+**T40 and T41 are independent.** T40 is the response filter plus the query guard,
+and is established by its own evidence; its native interval cases must execute
+natively, which the single-backend WASM layer cannot do. T41 is the retirement
+migration. Neither implies the other: retirement alone leaves the interval open,
+and the guard alone leaves the value stored. A5 remains open until both have
+passed their installed-environment checks.
 
 **Acceptance, stage two (T41).** Safe retirement of stored intents, executed
 against real PostgreSQL: removal after capture; guarded retirement of abandoned

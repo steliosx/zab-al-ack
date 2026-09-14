@@ -14,6 +14,7 @@ from alerta.exceptions import AlertaException
 from alerta.plugins import PluginBase
 
 from .config import Settings, read_protected_file
+from . import query_guard
 from .crypto import INTENT_ATTRIBUTE, build_intent, load_key_files, sign_intent
 from .health import CaptureUnhealthy, ProbeConfig, get_probe
 from .normalizer import project_skip, settings_for
@@ -137,8 +138,26 @@ def configure_app(app: Any) -> Any:
         return response
 
     exclude_intent_from_responses()
+    restrict_intent_queries()
     app.extensions["zabalack_privacy_ready"] = True
     return app
+
+
+def restrict_intent_queries() -> None:
+    """Refuse reader queries that can inspect the staged intent (A5, T40).
+
+    Installed at the shared alert query-builder boundary so the list, history,
+    count and aggregate endpoints inherit one control. See `query_guard` for the
+    selectors this covers and why resolved fields are validated rather than raw
+    text. Runs after the upstream factory, which is when `qb.alerts` exists.
+    """
+    from alerta.app import qb
+    from alerta.exceptions import ApiError
+    from alerta.database.backends.postgres.queryparser import QueryParser
+    builder = getattr(qb, "alerts", None)
+    if builder is None:  # pragma: no cover - non-initialised builder
+        return
+    query_guard.install(builder, QueryParser, ApiError)
 
 
 def create_app(config_override: dict[str, Any] | None = None, environment: str | None = None) -> Any:

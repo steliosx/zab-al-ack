@@ -12,19 +12,26 @@ so each entry carries the alert row's *current* attributes; filtering
 
 Alerta's PostgreSQL query parser compiles `attributes.<key>:<term>` into
 `"attributes"::jsonb ->> '<key>' ILIKE '%<term>%'`, and `->>` on a JSON object
-yields that object's whole serialised text. A reader entitled to an alert can
-therefore probe whether an arbitrary string occurs anywhere inside the intent
-attached to it and read the answer from `/alerts/count` or `/alerts`, without the
-intent appearing in any body.
+yields that object's whole serialised text. A reader entitled to an alert could
+therefore probe whether an arbitrary string occurs anywhere inside the intent and
+read the answer from a count, without the intent appearing in any body. The same
+reach exists through `_exists_`, the `_.key` alias, sub-expressions, `q.df`,
+direct filters, sorting, and `group-by=attributes`, which makes the aggregate
+endpoints return the whole attributes object as a plain dictionary.
 
-Controls. Every probe is scoped to its own alert by conjoining the source event
-id, so counts cannot accumulate across cases. A probe for a term in no intent is
-the negative control. A probe on a *permitted* projection field is the positive
-control: disabling attribute search wholesale would satisfy every zero assertion
-without protecting anything, and must fail that case instead. The precondition
-for a meaningful run is that restricted capture evidence exists in
-`zabalack.captures`, not that the alert attribute still holds the intent — the
-latter would reject a correct stage-two retirement.
+The guard refuses those selectors with a **stable 400**, identical whether or not
+a matching alert or intent exists, so the refusal is not itself an oracle. These
+cases therefore assert a refusal, not a zero count: a zero count would be
+satisfied by an empty database.
+
+Controls. A permitted keyed attribute search, a permitted sort and a permitted
+grouping must keep working, so a mitigation that disabled attribute querying
+wholesale fails rather than passing everything. Refusals for a present and an
+absent term are compared to each other, which is what demonstrates the absence of
+an oracle. Every query is scoped to its own alert by conjoining the source event
+id. The precondition for a meaningful run is that restricted capture evidence
+exists in `zabalack.captures`, not that the alert attribute still holds the
+intent — the latter would reject a correct stage-two retirement.
 
 Execution layer. Under the reference runner these execute on PostgreSQL 18.3 in
 PGlite (WASM), which is supplemental single-backend evidence. Native execution is
@@ -32,8 +39,10 @@ a separate layer and is not established here. The pre-signing interval needs two
 concurrent sessions, which PGlite cannot provide, and lives in
 `test_native_staging_interval.py`.
 """
+import ast
 from collections import OrderedDict
 from copy import deepcopy
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
@@ -118,8 +127,12 @@ def search_api(pg_lab, pgdb, monkeypatch):
             source = deepcopy(SOURCE)
             source["zabbix_event_id"] = str(event_id)
             source[UNRELATED_ATTRIBUTE] = UNRELATED_VALUE
+            # `get_topn_count` reads FROM alerts, UNNEST(service) svc, which drops
+            # any alert whose service array is empty; without one the aggregate
+            # cases would pass vacuously on an empty result.
             alert = Alert("synthetic-" + str(uuid4()), "search-trigger-family", attributes=source,
-                          customer=ALERT_CUSTOMER, severity="major", status="open")
+                          customer=ALERT_CUSTOMER, severity="major", status="open",
+                          service=["search-lab-service"])
             return alert.create().id
 
     yield SimpleNamespace(
@@ -157,56 +170,146 @@ def assert_capture_evidence(lab, identity):
     assert row[0]["actor"]["customers"] == sorted(ENGINEER_CUSTOMERS)
 
 
-def probe(lab, field, term, event_id, endpoint="/alerts/count"):
-    """Scope a probe to exactly one alert so counts cannot accumulate."""
-    query = f"attributes.{field}:{term} AND attributes.zabbix_event_id:{event_id}"
-    response = lab.client.get(endpoint, query_string={"q": query},
-                              headers={"Authorization": lab.reader})
-    assert response.status_code == 200, response.get_json()
-    return response.get_json()["total"]
+def unwrap(response, mode):
+    """Parse either response mode into a dictionary.
+
+    The `jsonp` decorator builds its body as `str(response.data)`, so the JSON
+    arrives inside a Python bytes literal wrapped in the callback.
+    """
+    text = response.get_data(as_text=True)
+    if mode != "jsonp":
+        return json.loads(text)
+    inner = text[text.index("(") + 1:text.rindex(")")]
+    if inner[:2] in ("b'", 'b"'):
+        return json.loads(ast.literal_eval(inner).decode())
+    return json.loads(inner)
 
 
-# --- search path ------------------------------------------------------------
-
-def test_T40_absent_term_probe_is_negative_control(search_api):
-    lab = search_api
-    identity, event_id = acknowledge(lab)
-    assert_capture_evidence(lab, identity)
-    assert probe(lab, INTENT_ATTRIBUTE, ABSENT_TERM, event_id) == 0
+def scoped(event_id, selector=None):
+    base = f"attributes.zabbix_event_id:{event_id}"
+    return f"{selector} AND {base}" if selector else base
 
 
-def test_T40_permitted_projection_field_remains_searchable(search_api):
-    """Positive control: disabling attribute search wholesale must not pass T40.
+def request(lab, endpoint="/alerts/count", mode="json", **params):
+    if mode == "jsonp":
+        params["callback"] = "synthetic_cb"
+    return lab.client.get(endpoint, query_string=params, headers={"Authorization": lab.reader})
 
-    `zabbix_ack_sync` is a permitted projection field. If a mitigation made every
-    attribute query return nothing, the zero assertions below would all succeed
-    while breaking legitimate operator search, so this case must stay green.
+
+def assert_refused(response):
+    """A restricted selector is refused identically however it is phrased.
+
+    The comparable part is the status and the message; Alerta stamps a fresh
+    `requestId` on every error body, which is not part of the contract.
+    """
+    assert response.status_code == 400, response.get_data(as_text=True)
+    body = json.loads(response.get_data(as_text=True))
+    return response.status_code, body.get("status"), body.get("message")
+
+
+def permitted_total(lab, endpoint="/alerts/count", mode="json", **params):
+    response = request(lab, endpoint=endpoint, mode=mode, **params)
+    assert response.status_code == 200, response.get_data(as_text=True)
+    return unwrap(response, mode)["total"]
+
+
+# --- the guard refuses every route to the restricted key --------------------
+
+def test_T40_restricted_selector_refusal_does_not_depend_on_the_term(search_api):
+    """The refusal must be identical for a present and an absent term.
+
+    This is what shows the 400 is not itself an oracle: if a restricted selector
+    were refused only when it matched, the status code would carry the answer.
     """
     lab = search_api
     identity, event_id = acknowledge(lab)
     assert_capture_evidence(lab, identity)
-    assert probe(lab, "zabbix_ack_sync", "pending", event_id) == 1
+    present = request(lab, q=scoped(event_id, f"attributes.{INTENT_ATTRIBUTE}:{UNDISCLOSED_CUSTOMER}"))
+    absent = request(lab, q=scoped(event_id, f"attributes.{INTENT_ATTRIBUTE}:{ABSENT_TERM}"))
+    assert assert_refused(present) == assert_refused(absent)
 
 
-def test_T40_reader_search_cannot_probe_undisclosed_customer(search_api):
+@pytest.mark.parametrize("selector", [
+    pytest.param(f"attributes.{INTENT_ATTRIBUTE}:{UNDISCLOSED_CUSTOMER}", id="keyed-term"),
+    pytest.param(f"attributes.{INTENT_ATTRIBUTE}:{ENGINEER_LOGIN}", id="keyed-identity"),
+    pytest.param(f"_.{INTENT_ATTRIBUTE}:{UNDISCLOSED_CUSTOMER}", id="underscore-alias"),
+    pytest.param(f'attributes.{INTENT_ATTRIBUTE}:"{UNDISCLOSED_CUSTOMER}"', id="phrase"),
+    pytest.param(f"_exists_:{INTENT_ATTRIBUTE}", id="exists"),
+    pytest.param(f"attributes.{INTENT_ATTRIBUTE}:({UNDISCLOSED_CUSTOMER} OR {ABSENT_TERM})", id="subquery"),
+])
+@pytest.mark.parametrize("endpoint", ["/alerts/count", "/alerts", "/alerts/history"])
+def test_T40_restricted_query_selectors_are_refused(search_api, selector, endpoint):
     lab = search_api
     identity, event_id = acknowledge(lab)
     assert_capture_evidence(lab, identity)
-    assert probe(lab, INTENT_ATTRIBUTE, UNDISCLOSED_CUSTOMER, event_id) == 0
+    assert_refused(request(lab, endpoint=endpoint, q=scoped(event_id, selector)))
 
 
-def test_T40_reader_search_cannot_probe_acknowledging_identity(search_api):
+def test_T40_whole_attributes_default_field_is_refused(search_api):
+    """`q.df=attributes` turns a bare term into a whole-column search."""
     lab = search_api
     identity, event_id = acknowledge(lab)
     assert_capture_evidence(lab, identity)
-    assert probe(lab, INTENT_ATTRIBUTE, ENGINEER_LOGIN, event_id) == 0
+    response = lab.client.get("/alerts/count", query_string={"q": UNDISCLOSED_CUSTOMER, "q.df": "attributes"},
+                              headers={"Authorization": lab.reader})
+    assert_refused(response)
 
 
-def test_T40_reader_alerts_query_cannot_probe_undisclosed_customer(search_api):
+def test_T40_restricted_direct_filter_is_refused(search_api):
+    """`attributes` is absent from EXCLUDE_FROM_QUERY, so this reaches `@>`."""
     lab = search_api
     identity, event_id = acknowledge(lab)
     assert_capture_evidence(lab, identity)
-    assert probe(lab, INTENT_ATTRIBUTE, UNDISCLOSED_CUSTOMER, event_id, endpoint="/alerts") == 0
+    response = lab.client.get("/alerts/count",
+                              query_string={f"attributes.{INTENT_ATTRIBUTE}": UNDISCLOSED_CUSTOMER},
+                              headers={"Authorization": lab.reader})
+    assert_refused(response)
+
+
+@pytest.mark.parametrize("sort_by", [f"attributes.{INTENT_ATTRIBUTE}", f"-attributes.{INTENT_ATTRIBUTE}",
+                                     "attributes"])
+def test_T40_restricted_sort_is_refused(search_api, sort_by):
+    lab = search_api
+    acknowledge(lab)
+    assert_refused(request(lab, endpoint="/alerts", **{"sort-by": sort_by}))
+
+
+@pytest.mark.parametrize("endpoint", ["/alerts/topn/count", "/alerts/topn/flapping", "/alerts/topn/standing"])
+def test_T40_whole_attributes_grouping_is_refused(search_api, endpoint):
+    """`group-by=attributes` makes the aggregates select the whole object.
+
+    `get_topn_count` interpolates the grouping expression into both SELECT and
+    GROUP BY and returns it under that key, so the attributes dictionary reaches
+    the reader as a plain value, bypassing both patched serialisers.
+    """
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    assert_refused(request(lab, endpoint=endpoint, **{"group-by": "attributes"}))
+
+
+# --- positive controls: legitimate attribute querying still works -----------
+
+def test_T40_permitted_projection_field_remains_searchable(search_api):
+    """A mitigation that disabled attribute search wholesale must fail here."""
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    assert permitted_total(lab, q=scoped(event_id, "attributes.zabbix_ack_sync:pending")) == 1
+
+
+def test_T40_permitted_sort_and_grouping_still_work(search_api):
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    sorted_response = request(lab, endpoint="/alerts", q=scoped(event_id),
+                              **{"sort-by": "attributes.zabbix_ack_sync"})
+    assert sorted_response.status_code == 200, sorted_response.get_data(as_text=True)
+    grouped = request(lab, endpoint="/alerts/topn/count", q=scoped(event_id), **{"group-by": "event"})
+    assert grouped.status_code == 200, grouped.get_data(as_text=True)
+    # The UNNEST(service) join keeps the fixture alert only because it carries a
+    # service; an empty result here would make the aggregate cases vacuous.
+    assert unwrap(grouped, "json")["total"] == 1
 
 
 # --- collection and history responses ---------------------------------------
@@ -214,7 +317,7 @@ def test_T40_reader_alerts_query_cannot_probe_undisclosed_customer(search_api):
 def collection(lab, event_id, mode):
     # `show-history` defaults to false upstream, so the collection omits history
     # unless asked; it is requested here to prove the committed proof survives.
-    params = {"q": f"attributes.zabbix_event_id:{event_id}", "show-history": "true"}
+    params = {"q": scoped(event_id), "show-history": "true"}
     if mode == "jsonp":
         params["callback"] = "synthetic_cb"
     response = lab.client.get("/alerts", query_string=params, headers={"Authorization": lab.reader})
@@ -223,6 +326,18 @@ def collection(lab, event_id, mode):
         assert response.mimetype == "application/javascript"
         assert response.get_data(as_text=True).startswith("synthetic_cb(")
     return response
+
+
+def assert_alert_payload(alert, event_id):
+    """The intent is gone; everything the reader is entitled to survives."""
+    attributes = alert["attributes"]
+    assert attributes.get(INTENT_ATTRIBUTE) is None
+    assert attributes["zabbix_event_id"] == event_id
+    assert attributes["zabbix_instance"] == SOURCE["zabbix_instance"]
+    assert attributes[UNRELATED_ATTRIBUTE] == UNRELATED_VALUE
+    assert attributes["zabbix_ack_sync"] == "pending"
+    acked = [entry for entry in alert["history"] if entry.get("type") == "ack"]
+    assert acked and "[zabalack:" in acked[0]["text"], "the committed proof was stripped"
 
 
 @pytest.mark.parametrize("mode", ["json", "jsonp"])
@@ -235,18 +350,11 @@ def test_T40_collection_response_excludes_the_intent(search_api, mode):
     body = response.get_data(as_text=True)
     assert INTENT_ATTRIBUTE not in body, "collection response carries the staged intent"
     assert UNDISCLOSED_CUSTOMER not in body, "collection response discloses the undisclosed membership"
-    if mode == "json":
-        alerts = response.get_json()["alerts"]
-        assert len(alerts) == 1, "precondition: the collection returned the target alert"
-        attributes = alerts[0]["attributes"]
-        assert attributes.get(INTENT_ATTRIBUTE) is None
-        # Permitted fields and the committed proof survive the exclusion.
-        assert attributes["zabbix_event_id"] == event_id
-        assert attributes["zabbix_instance"] == SOURCE["zabbix_instance"]
-        assert attributes[UNRELATED_ATTRIBUTE] == UNRELATED_VALUE
-        assert attributes["zabbix_ack_sync"] == "pending"
-        acked = [entry for entry in alerts[0]["history"] if entry.get("type") == "ack"]
-        assert acked and "[zabalack:" in acked[0]["text"], "the committed proof was stripped"
+    # Parsed in both modes: a nonempty result and the permitted fields are
+    # asserted for JSONP too, not only for JSON.
+    alerts = unwrap(response, mode)["alerts"]
+    assert len(alerts) == 1, "precondition: the collection returned the target alert"
+    assert_alert_payload(alerts[0], event_id)
 
 
 @pytest.mark.parametrize("mode", ["json", "jsonp"])
@@ -255,7 +363,7 @@ def test_T40_alerts_history_endpoint_excludes_the_intent(search_api, mode):
     lab = search_api
     identity, event_id = acknowledge(lab)
     assert_capture_evidence(lab, identity)
-    params = {"q": f"attributes.zabbix_event_id:{event_id}"}
+    params = {"q": scoped(event_id)}
     if mode == "jsonp":
         params["callback"] = "synthetic_cb"
     response = lab.client.get("/alerts/history", query_string=params,
@@ -266,16 +374,15 @@ def test_T40_alerts_history_endpoint_excludes_the_intent(search_api, mode):
     body = response.get_data(as_text=True)
     assert INTENT_ATTRIBUTE not in body, "history response carries the staged intent"
     assert UNDISCLOSED_CUSTOMER not in body, "history response discloses the undisclosed membership"
-    if mode == "json":
-        entries = response.get_json()["history"]
-        acked = [entry for entry in entries if entry.get("type") == "ack"]
-        assert acked, "precondition: the acknowledgement entry is present"
-        # A1 retains the committed proof, and §12's history layer permits the
-        # acknowledging attribution; only the staged intent is excluded.
-        assert "[zabalack:" in acked[0]["text"]
-        assert acked[0]["user"] == ENGINEER_LOGIN
-        assert acked[0]["attributes"].get(INTENT_ATTRIBUTE) is None
-        assert acked[0]["attributes"][UNRELATED_ATTRIBUTE] == UNRELATED_VALUE
+    entries = unwrap(response, mode)["history"]
+    acked = [entry for entry in entries if entry.get("type") == "ack"]
+    assert acked, "precondition: the acknowledgement entry is present"
+    # A1 retains the committed proof, and §12's history layer permits the
+    # acknowledging attribution; only the staged intent is excluded.
+    assert "[zabalack:" in acked[0]["text"]
+    assert acked[0]["user"] == ENGINEER_LOGIN
+    assert acked[0]["attributes"].get(INTENT_ATTRIBUTE) is None
+    assert acked[0]["attributes"][UNRELATED_ATTRIBUTE] == UNRELATED_VALUE
 
 
 def test_T40_backing_state_is_unchanged_by_reads(search_api):

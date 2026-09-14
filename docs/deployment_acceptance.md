@@ -40,14 +40,22 @@ history layer of §12, and A1 retains the committed proof. Confirm instead that 
 history attribution and never inside `attributes`. Repeat the retrievals before the worker verifies the capture, after projection completes,
 with the worker stopped, and after an acknowledgement that failed before its history write. Then exercise the
 search path: submit `attributes.zabbix_ack_sync_intent:<term>` probes to `/alerts/count` and `/alerts` as the
-reader, using a term present only in the withheld scope and a control term present in no intent, and confirm
-both return zero. A zero from the control alone proves nothing. Scope each probe to a single alert, and also
-probe a permitted projection field to confirm legitimate attribute search still works — a deployment that
-disabled attribute search wholesale would return zero everywhere without protecting anything. Repeat the
-retrievals through `/alerts/history`, which serialises separately and carries the alert's current attributes.
-Finally, with a second session, observe an acknowledgement paused between its staged-attribute commit and its
-history write and confirm the probe returns zero during that interval, and after a failed acknowledgement and
-one for which no database cohort exists. Record the exact account scopes, the alert
+reader and confirm each is refused with HTTP 400, not answered with a zero count — a zero count is satisfied by
+an empty database. Submit the same selector with a term present only in the withheld scope and with a term
+present in no intent, and confirm the two refusals are identical in status and message; a refusal that varied
+with the term would itself be the oracle. Cover every route to the value: the keyed term, the `_.key` alias, a
+phrase, a sub-expression, `_exists_`, `q.df=attributes`, the `attributes.<key>` direct filter, restricted and
+whole-column `sort-by`, and `group-by=attributes` on `/alerts/topn/count` and its flapping and standing
+siblings, which otherwise return the whole attributes object as a plain dictionary. Those aggregate endpoints
+read `FROM alerts, UNNEST(service) svc`, so the exercised alert must carry a nonempty service array or the
+check passes on an empty result. Then confirm legitimate querying still works: a permitted keyed attribute
+search, a permitted `sort-by` and a permitted `group-by` must all succeed, because a deployment that disabled
+attribute querying wholesale would refuse everything without protecting anything. Repeat the retrievals through
+`/alerts/history`, which serialises separately and carries the alert's current attributes. Finally, with a
+second session and both sessions bound to the application role, observe an acknowledgement paused between its
+staged-attribute commit and its history write and confirm the selector is refused during that interval while
+permitted data for the same alert remains visible, and repeat after a failed acknowledgement and one for which
+no database cohort exists. Record the exact account scopes, the alert
 identity, every endpoint and response mode exercised, and the observed counts. Confirm in the same session that
 capture still succeeds, the operator's unrelated attributes and source-identity keys are unchanged, and the
 committed history proof is intact. Reader protection applied only to response bodies does not pass T40.

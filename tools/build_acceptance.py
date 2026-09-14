@@ -46,7 +46,12 @@ def read_xml(path, layer):
             reason = (case.find('skipped').get('message') or '')
             status = 'BLOCKED_ENVIRONMENT' if 'BLOCKED_ENVIRONMENT' in reason else 'NOT_RUN'
         actual_layer = layer
-        if 'native_concurrent' in name or 'migration_rerun' in name or 'test_native_login' in classname or 'test_native_delivery_faults' in classname:
+        # The optional phase defaults to the real_zabbix layer. Cases that are
+        # native-PostgreSQL evidence must be classified as such, whether they
+        # executed or were skipped for want of a native backend.
+        if ('native_concurrent' in name or 'migration_rerun' in name or 'test_native_login' in classname
+                or 'test_native_delivery_faults' in classname
+                or 'test_native_staging_interval' in classname):
             actual_layer = 'native_postgres'
         if 'pgbouncer' in (classname + name).lower():
             actual_layer = 'pgbouncer'
