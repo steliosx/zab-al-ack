@@ -2,6 +2,7 @@
 """Fresh native PostgreSQL/PgBouncer phases on a local disposable Docker daemon."""
 from __future__ import annotations
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -99,6 +100,7 @@ def main() -> int:
                     '--junitxml=' + str(raw_xml), '--basetemp=' + str(raw / ('native-' + phase + '-' + run_id))], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=600).returncode
             result['exit_code'] = code
             if raw_xml.exists():
+                result['raw_junit_sha256'] = hashlib.sha256(raw_xml.read_bytes()).hexdigest()
                 redact_junit(raw_xml, public_xml, ROOT)
                 rows = cases(public_xml)
                 result['counts'] = {s: sum(row['status'] == s for row in rows) for s in ('passed', 'failed', 'skipped')}

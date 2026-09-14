@@ -41,6 +41,16 @@ resets source acknowledgements. Use a unique `--basetemp` inside
 pytest clears an existing basetemp at startup. Keep these raw files out of source
 archives, and redact JUnit with the existing evidence tooling.
 
+On a failed native phase, `tools/native_failure_summary.py` exports only bounded
+allowlisted process/ledger facts and aggregated pytest failure classifications.
+The latter contain exception classes, fixed categories, known SQLSTATEs inferred
+from PostgreSQL exception classes, and counts; no test identifiers, tracebacks,
+messages, connection details or raw files are exported. The summary is bound to
+the current source/harness record, written to `evidence/native-failure-summary.json`
+and printed as JSON in the hosted job log. Missing, unsafe or oversized JUnit
+input is explicitly unavailable. This diagnostic summary is not acceptance
+evidence and does not replace a successful native rerun.
+
 The native runners (`tools/native_ci.py` on Compose; `tools/native_local.py`
 on locally installed PostgreSQL 18 and PgBouncer, see `docs/local-services.md`)
 select `tests/postgres/test_native_delivery_faults.py` in their

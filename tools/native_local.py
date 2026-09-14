@@ -20,6 +20,7 @@ build/ is written.
 from __future__ import annotations
 
 import argparse
+import hashlib
 from datetime import datetime, timezone
 import json
 import os
@@ -204,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
                                       cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=900).returncode
             result['exit_code'] = code
             if raw_xml.exists():
+                result['raw_junit_sha256'] = hashlib.sha256(raw_xml.read_bytes()).hexdigest()
                 redact_junit(raw_xml, public_xml, ROOT)
                 rows = cases(public_xml)
                 result['counts'] = {status: sum(row['status'] == status for row in rows) for status in ('passed', 'failed', 'skipped')}

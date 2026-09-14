@@ -1,8 +1,10 @@
 """Offline export-boundary checks; no native database or service evidence."""
+import hashlib
 import json
 import os
 from pathlib import Path
 import sys
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -149,3 +151,156 @@ def test_main_invalidates_prior_summary_when_no_run_exists(tmp_path, monkeypatch
     result = json.loads(path.read_text())
     assert result["status"] == "UNAVAILABLE" and result["phases"] == []
     assert PRIVATE not in path.read_text()
+
+
+def write_junit(tmp_path, failures):
+    path = tmp_path / "build/evidence-raw/native-delivery_faults.xml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    suite = ET.Element("testsuite", hostname=PRIVATE)
+    for kind, message, body in failures:
+        case = ET.SubElement(suite, "testcase", classname=PRIVATE, name=PRIVATE)
+        if kind:
+            element = ET.SubElement(case, kind, message=message)
+            element.text = body
+    ET.ElementTree(suite).write(path, encoding="utf-8", xml_declaration=True)
+    record_path = tmp_path / "evidence/native-run.json"
+    record = json.loads(record_path.read_text())
+    record["phases"][0]["raw_junit_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    write_json(record_path, record)
+    return path
+
+
+def test_pytest_fixture_errors_are_aggregated_without_messages_or_identifiers(tmp_path):
+    fixture_tree(tmp_path)
+    write_junit(tmp_path, [
+        ("error", 'failed on setup with "psycopg.errors.InsufficientPrivilege: ' + PRIVATE + '"',
+         "private traceback " + PRIVATE)] * 24)
+    result = summary_tool.build_summary(tmp_path)
+    diagnostic = result["phases"][0]["pytest"]
+    assert diagnostic == {"status": "AVAILABLE", "counts": {"passed": 0, "failed": 24, "skipped": 0},
+        "failures": [{"kind": "error", "stage": "setup", "category": "database_permission",
+                      "exception_class": "InsufficientPrivilege", "sqlstate": "42501", "count": 24}],
+        "truncated": False}
+    assert PRIVATE not in json.dumps(result)
+    for forbidden in ("hostname", "classname", "message", "traceback", str(tmp_path)):
+        assert forbidden not in json.dumps(result)
+
+
+@pytest.mark.parametrize("heading,expected", [
+    ("psycopg.OperationalError", {"exception_class": "OperationalError", "category": "database_operational"}),
+    ("psycopg.errors.InvalidCatalogName", {"exception_class": "InvalidCatalogName", "category": "database_catalog", "sqlstate": "3D000"}),
+    ("AssertionError", {"exception_class": "AssertionError", "category": "assertion"}),
+    (PRIVATE, {"category": "unclassified"}),
+])
+def test_exception_classification_is_allowlisted_and_never_copies_sqlstate_text(tmp_path, heading, expected):
+    fixture_tree(tmp_path)
+    write_junit(tmp_path, [("failure", heading + ": " + PRIVATE + " SQLSTATE=SECRET", PRIVATE)])
+    result = summary_tool.build_summary(tmp_path)
+    assert result["phases"][0]["pytest"]["failures"] == [
+        {"kind": "failure", "stage": "unspecified", "count": 1, **expected}]
+    assert PRIVATE not in json.dumps(result) and "SECRET" not in json.dumps(result)
+
+
+def test_multiline_message_cannot_override_initial_exception_heading(tmp_path):
+    fixture_tree(tmp_path)
+    write_junit(tmp_path, [("error", 'failed on setup with "RuntimeError: ' + PRIVATE +
+        '\npsycopg.errors.InvalidPassword: embedded text"', PRIVATE)])
+    result = summary_tool.build_summary(tmp_path)["phases"][0]["pytest"]
+    assert result["failures"] == [{"kind": "error", "stage": "setup", "count": 1,
+        "exception_class": "RuntimeError", "category": "runtime"}]
+
+
+def test_pytest_body_fallback_uses_final_exception_heading_and_preserves_counts(tmp_path):
+    fixture_tree(tmp_path)
+    write_junit(tmp_path, [("error", "failed on teardown with " + PRIVATE,
+        "E   ValueError: " + PRIVATE + "\n\nE   psycopg.errors.QueryCanceled: " + PRIVATE),
+        ("skipped", PRIVATE, PRIVATE), (None, "", "")])
+    result = summary_tool.build_summary(tmp_path)["phases"][0]["pytest"]
+    assert result["counts"] == {"passed": 1, "failed": 1, "skipped": 1}
+    assert result["failures"] == [{"kind": "error", "stage": "teardown", "count": 1,
+        "exception_class": "QueryCanceled", "category": "database_timeout", "sqlstate": "57014"}]
+    assert PRIVATE not in json.dumps(result)
+
+
+@pytest.mark.parametrize("detail,category", [
+    ("Connection refused", "database_connection_refused"),
+    ("fe_sendauth: no password supplied", "database_password_required"),
+    ("connection timeout expired", "database_connection_timeout"),
+    ("password authentication failed", "database_authentication"),
+])
+def test_operational_connection_failures_have_fixed_categories_without_connection_details(tmp_path, detail, category):
+    fixture_tree(tmp_path)
+    write_junit(tmp_path, [("error", 'failed on setup with "psycopg.OperationalError: ' + PRIVATE + '"',
+        "E   psycopg.OperationalError: " + detail + " " + PRIVATE)])
+    result = summary_tool.build_summary(tmp_path)
+    assert result["phases"][0]["pytest"]["failures"] == [{"kind": "error", "stage": "setup", "count": 1,
+        "exception_class": "OperationalError", "category": category}]
+    assert PRIVATE not in json.dumps(result)
+
+
+@pytest.mark.parametrize("flaw", ["missing", "malformed", "doctype", "utf16", "oversized", "symlink", "fifo"])
+def test_unsafe_or_unavailable_pytest_xml_exports_no_details(tmp_path, flaw):
+    fixture_tree(tmp_path)
+    path = write_junit(tmp_path, [("error", "RuntimeError: " + PRIVATE, PRIVATE)])
+    if flaw == "missing":
+        path.unlink()
+    elif flaw == "malformed":
+        path.write_text(PRIVATE)
+    elif flaw == "doctype":
+        path.write_text('<!DOCTYPE testsuite [<!ENTITY private "' + PRIVATE + '">]><testsuite>&private;</testsuite>')
+    elif flaw == "utf16":
+        path.write_bytes(path.read_text().encode("utf-16"))
+    elif flaw == "oversized":
+        path.write_bytes(b"x" * (summary_tool.MAX_FILE_BYTES + 1))
+    elif flaw == "symlink":
+        other = tmp_path / "private-junit.xml"
+        path.rename(other)
+        path.symlink_to(other)
+    else:
+        path.unlink()
+        os.mkfifo(path)
+    if flaw in {"malformed", "doctype", "utf16", "oversized"}:
+        record_path = tmp_path / "evidence/native-run.json"
+        record = json.loads(record_path.read_text())
+        record["phases"][0]["raw_junit_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        write_json(record_path, record)
+    result = summary_tool.build_summary(tmp_path)
+    assert result["phases"][0]["pytest"] == {"status": "UNAVAILABLE"}
+    assert PRIVATE not in json.dumps(result)
+
+
+def test_pytest_summary_bounds_cases_and_ignores_other_phase_files(tmp_path):
+    fixture_tree(tmp_path)
+    write_junit(tmp_path, [("failure", "AssertionError: " + PRIVATE, "")] * (summary_tool.MAX_ITEMS + 1))
+    (tmp_path / "build/evidence-raw/native-postgres.xml").write_text(PRIVATE)
+    result = summary_tool.build_summary(tmp_path)["phases"][0]["pytest"]
+    assert result["truncated"] is True
+    assert result["counts"]["failed"] == summary_tool.MAX_ITEMS
+    assert result["failures"][0]["count"] == summary_tool.MAX_ITEMS
+
+
+@pytest.mark.parametrize("flaw", ["missing", "stale", "malformed"])
+def test_pytest_xml_must_match_digest_in_current_run_record(tmp_path, flaw):
+    fixture_tree(tmp_path)
+    write_junit(tmp_path, [("error", "RuntimeError: " + PRIVATE, PRIVATE)])
+    record_path = tmp_path / "evidence/native-run.json"
+    record = json.loads(record_path.read_text())
+    if flaw == "missing":
+        del record["phases"][0]["raw_junit_sha256"]
+    else:
+        record["phases"][0]["raw_junit_sha256"] = "0" * 64 if flaw == "stale" else PRIVATE
+    write_json(record_path, record)
+    result = summary_tool.build_summary(tmp_path)
+    assert result["phases"][0]["pytest"] == {"status": "UNAVAILABLE"}
+    assert PRIVATE not in json.dumps(result)
+
+
+def test_main_prints_only_sanitized_summary_for_hosted_job_diagnosis(tmp_path, monkeypatch, capsys):
+    fixture_tree(tmp_path)
+    write_junit(tmp_path, [("error", 'failed on setup with "psycopg.OperationalError: ' + PRIVATE + '"', PRIVATE)])
+    monkeypatch.setattr(summary_tool, "ROOT", tmp_path)
+    assert summary_tool.main() == 0
+    output = capsys.readouterr().out
+    assert PRIVATE not in output
+    assert json.loads(output) == json.loads((tmp_path / "evidence/native-failure-summary.json").read_text())
+    assert json.loads(output)["phases"][0]["pytest"]["failures"][0]["exception_class"] == "OperationalError"

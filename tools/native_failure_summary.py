@@ -8,6 +8,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import xml.etree.ElementTree as ET
 
 from evidence_utils import binding_error, code_digests
 
@@ -30,6 +31,112 @@ CHECKPOINTS = {"ready", "done", "error"} | {
 MAX_FILE_BYTES = 1024 * 1024
 MAX_FILES = 256
 MAX_ITEMS = 128
+# Values originate here, never from exception messages or arbitrary SQLSTATEs.
+EXCEPTIONS = {
+    "AssertionError": ("assertion", None), "Failed": ("pytest_failure", None),
+    "ImportError": ("import", None), "ModuleNotFoundError": ("import", None),
+    "RuntimeError": ("runtime", None), "ValueError": ("value", None),
+    "TypeError": ("type", None), "KeyError": ("lookup", None),
+    "AttributeError": ("lookup", None), "FileNotFoundError": ("filesystem", None),
+    "PermissionError": ("filesystem", None), "TimeoutError": ("timeout", None),
+    "OperationalError": ("database_operational", None),
+    "InterfaceError": ("database_interface", None),
+    "ProgrammingError": ("database_programming", None),
+    "InsufficientPrivilege": ("database_permission", "42501"),
+    "InvalidPassword": ("database_authentication", "28P01"),
+    "InvalidAuthorizationSpecification": ("database_authentication", "28000"),
+    "InvalidCatalogName": ("database_catalog", "3D000"),
+    "InvalidSchemaName": ("database_schema", "3F000"),
+    "UndefinedTable": ("database_schema", "42P01"),
+    "UndefinedColumn": ("database_schema", "42703"),
+    "UndefinedFunction": ("database_schema", "42883"),
+    "DuplicateObject": ("database_schema", "42710"),
+    "DuplicateTable": ("database_schema", "42P07"),
+    "SyntaxError": ("syntax", None),
+    "UniqueViolation": ("database_constraint", "23505"),
+    "CheckViolation": ("database_constraint", "23514"),
+    "NotNullViolation": ("database_constraint", "23502"),
+    "ForeignKeyViolation": ("database_constraint", "23503"),
+    "SerializationFailure": ("database_concurrency", "40001"),
+    "DeadlockDetected": ("database_concurrency", "40P01"),
+    "QueryCanceled": ("database_timeout", "57014"),
+    "ConnectionFailure": ("database_connection", "08006"),
+    "ConnectionDoesNotExist": ("database_connection", "08003"),
+    "CannotConnectNow": ("database_connection", "57P03"),
+    "TooManyConnections": ("database_connection", "53300"),
+}
+EXCEPTION_LINE = re.compile(
+    r"(?:^|\n)(?:E\s+)?(?:failed on (?:setup|teardown) with )?[\"']?"
+    r"(?:(?:psycopg(?:\.errors)?|builtins)\.)?(?P<name>"
+    + "|".join(sorted(EXCEPTIONS, key=len, reverse=True)) + r")(?=[:\s\"']|$)")
+OPERATIONAL_CATEGORIES = (
+    ("fe_sendauth: no password supplied", "database_password_required"),
+    ("password authentication failed", "database_authentication"),
+    ("connection refused", "database_connection_refused"),
+    ("connection timeout expired", "database_connection_timeout"),
+    ("timeout expired", "database_connection_timeout"),
+    ("could not translate host name", "database_name_resolution"),
+    ("server closed the connection unexpectedly", "database_connection_closed"),
+)
+
+
+def _failure_facts(element) -> dict:
+    message = element.get("message", "")
+    stage = "setup" if message.startswith("failed on setup with ") else (
+        "teardown" if message.startswith("failed on teardown with ") else "unspecified")
+    result = {"kind": element.tag, "stage": stage, "category": "unclassified"}
+    # The exception heading is authoritative; do not scrape assertion bodies,
+    # arbitrary test identifiers, or free-form SQLSTATE-looking strings.
+    heading = EXCEPTION_LINE.match(message)
+    if heading is None:
+        matches = list(EXCEPTION_LINE.finditer(element.text or ""))
+        heading = matches[-1] if matches else None
+    if heading:
+        name = heading["name"]
+        category, sqlstate = EXCEPTIONS[name]
+        if name == "OperationalError":
+            private_text = (message + "\n" + (element.text or "")).lower()
+            for marker, known_category in OPERATIONAL_CATEGORIES:
+                if marker in private_text:
+                    category = known_category
+                    break
+        result.update(exception_class=name, category=category)
+        if sqlstate:
+            result["sqlstate"] = sqlstate
+    return result
+
+
+def _pytest_summary(root: Path, phase: str, expected_digest) -> dict:
+    """Classify only this phase's JUnit; return no raw XML strings or paths."""
+    raw = _safe_bytes(root / "build/evidence-raw" / ("native-" + phase + ".xml"), root)
+    if (not isinstance(expected_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_digest)
+            or hashlib.sha256(raw).hexdigest() != expected_digest):
+        raise ValueError("unbound JUnit")
+    # No DTDs/entities, including declarations obscured by UTF-16 encoding.
+    xml = raw.decode("utf-8")
+    if "<!DOCTYPE" in xml or "<!ENTITY" in xml or "\x00" in xml:
+        raise ValueError("unsafe XML")
+    document = ET.fromstring(xml)
+    if document.tag not in {"testsuite", "testsuites"}:
+        raise ValueError("invalid JUnit root")
+    result = {"status": "AVAILABLE", "counts": {"passed": 0, "failed": 0, "skipped": 0},
+              "failures": [], "truncated": False}
+    groups = {}
+    for index, case in enumerate(document.iter("testcase")):
+        if index >= MAX_ITEMS:
+            result["truncated"] = True
+            break
+        failures = [child for child in case if child.tag in {"failure", "error"}]
+        state = "failed" if failures else "skipped" if case.find("skipped") is not None else "passed"
+        result["counts"][state] += 1
+        for failure in failures[:2]:
+            facts = _failure_facts(failure)
+            key = tuple(sorted(facts.items()))
+            if key not in groups:
+                groups[key] = {**facts, "count": 0}
+            groups[key]["count"] += 1
+    result["failures"] = list(groups.values())
+    return result
 
 
 def _pairs(items):
@@ -168,6 +275,10 @@ def build_summary(root: Path) -> dict:
                 if _integer(phase.get(key), -255, 255):
                     item[key] = phase[key]
             try:
+                item["pytest"] = _pytest_summary(root, name, phase.get("raw_junit_sha256"))
+            except (OSError, ValueError, TypeError, UnicodeError, ET.ParseError):
+                item["pytest"] = {"status": "UNAVAILABLE"}
+            try:
                 item["diagnostics"] = _diagnostics(root, _directory(root, phase.get("diagnostic_dir"), name))
             except (OSError, ValueError, TypeError, UnicodeError):
                 item["diagnostics_status"] = "UNAVAILABLE"
@@ -194,7 +305,7 @@ def main() -> int:
     except (OSError, ValueError, TypeError, UnicodeError):
         print("Native failure summary unavailable: export could not be written")
         return 1
-    print("Native failure summary: " + summary["status"])
+    print(json.dumps(summary, sort_keys=True))
     return 0
 
 

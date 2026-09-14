@@ -1,4 +1,5 @@
 """Mocked runner failures: no native service or deployment evidence is created."""
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -84,6 +85,7 @@ def test_native_success_records_only_fresh_selected_reports(tmp_path, monkeypatc
     assert native_ci.main() == 0
     report = json.loads((evidence / 'native-run.json').read_text())
     assert report['status'] == 'PASS'
+    assert report['phases'][0]['raw_junit_sha256'] == hashlib.sha256(PASS_XML.encode()).hexdigest()
     assert report['phases'][0]['counts'] == {'passed': 1, 'failed': 0, 'skipped': 0}
     assert [path.name for path in evidence.glob('native-*.xml')] == ['native-postgres.xml']
 
