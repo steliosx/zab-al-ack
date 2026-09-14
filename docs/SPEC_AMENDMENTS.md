@@ -275,6 +275,19 @@ would reach the restricted key; selectors with extra components are refused.
 `attributes=` or `attributes!=` direct filter is a whole-object operation and is
 refused alongside the keyed ones.
 
+Two boundaries need explicit allowlists rather than syntactic tests. A grouping
+token that is merely a plain identifier is not safe: PostgreSQL reads a bare
+table-name reference as the whole row, so `group-by=alerts` selects every column
+of the row — attributes included — and the aggregate returns it under that key.
+Reproduced on PGlite: that request returned HTTP 200 with the intent, the actor's
+full customer list and the committed proof marker serialised into the row value.
+Only explicitly supported alert fields are therefore permitted. And a negation
+marker is honoured by upstream only in trailing position — `filter_query` tests
+`field.endswith('!')` while its column lookup strips every `!` — so
+`attributes!.<key>` compiles as a whole-object comparison on `attributes`;
+stripping the marker globally would make the guard read the same input as a
+permitted keyed selector, which is how interpretation mismatches become bypasses.
+
 Column tokens are resolved canonically rather than compared as spelled.
 PostgreSQL folds an unquoted identifier and honours a quoted one, so
 `ATTRIBUTES`, `Attributes`, `"attributes"` and a padded spelling all reach the

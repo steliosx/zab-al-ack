@@ -398,6 +398,48 @@ def test_T40_direct_filter_column_variants_are_refused(search_api, field):
                                   headers={"Authorization": lab.reader}))
 
 
+@pytest.mark.parametrize("group_by", [
+    pytest.param("alerts", id="table-name-whole-row"),
+    pytest.param("public", id="schema-name"),
+    pytest.param("ALERTS", id="table-name-upper"),
+    pytest.param("not_a_field", id="unknown-field"),
+])
+def test_T40_grouping_outside_the_supported_fields_is_refused(search_api, group_by):
+    """A plain identifier is not a sufficient test for a grouping token.
+
+    PostgreSQL reads a bare table-name reference as the whole row, so
+    `SELECT alerts … GROUP BY alerts` would select every column of the row,
+    `attributes` included, and the aggregate returns the grouping value under its
+    own key. Only explicitly supported alert fields are allowed through.
+    """
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    assert_refused(request(lab, endpoint="/alerts/topn/count", **{"group-by": group_by}))
+
+
+@pytest.mark.parametrize("field", [
+    pytest.param(f"attributes!.{UNRELATED_ATTRIBUTE}", id="marker-before-key"),
+    pytest.param(f"attributes!.{INTENT_ATTRIBUTE}", id="marker-before-restricted-key"),
+    pytest.param(f"attr!ibutes.{UNRELATED_ATTRIBUTE}", id="marker-inside-column"),
+    pytest.param(f"attributes.{UNRELATED_ATTRIBUTE}!!", id="doubled-marker"),
+])
+def test_T40_misplaced_negation_marker_is_refused(search_api, field):
+    """Upstream honours `!` only as a trailing marker.
+
+    `filter_query` tests `field.endswith('!')` while its column lookup strips
+    every `!`, so `attributes!.runbook_url` is compiled as a *whole-object*
+    comparison on `attributes` — `startswith('attributes.')` is false. Stripping
+    the marker globally would make the guard read it as a permitted keyed
+    selector, which is a different interpretation from the one that reaches SQL.
+    """
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    assert_refused(lab.client.get("/alerts/count", query_string={field: "{}"},
+                                  headers={"Authorization": lab.reader}))
+
+
 # --- positive controls: legitimate attribute querying still works -----------
 
 def test_T40_permitted_projection_field_remains_searchable(search_api):
@@ -426,6 +468,14 @@ def test_T40_permitted_sort_and_grouping_still_work(search_api):
     sorted_response = request(lab, endpoint="/alerts", q=scoped(event_id),
                               **{"sort-by": "attributes.zabbix_ack_sync"})
     assert sorted_response.status_code == 200, sorted_response.get_data(as_text=True)
+    for group_by in ("event", "severity", "status", "resource"):
+        grouped = request(lab, endpoint="/alerts/topn/count", q=scoped(event_id),
+                          **{"group-by": group_by})
+        assert grouped.status_code == 200, grouped.get_data(as_text=True)
+    # A trailing `!` is upstream's supported negation placement and must survive.
+    negated = lab.client.get("/alerts/count", query_string={f"attributes.{UNRELATED_ATTRIBUTE}!": "other"},
+                             headers={"Authorization": lab.reader})
+    assert negated.status_code == 200, negated.get_data(as_text=True)
     grouped = request(lab, endpoint="/alerts/topn/count", q=scoped(event_id), **{"group-by": "event"})
     assert grouped.status_code == 200, grouped.get_data(as_text=True)
     # The UNNEST(service) join keeps the fixture alert only because it carries a

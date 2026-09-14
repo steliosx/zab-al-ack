@@ -59,16 +59,26 @@ _ATTRIBUTE_MENTION = re.compile(r'\battributes\b', re.IGNORECASE)
 # token raw into SELECT and GROUP BY, so anything that is not a plain name is
 # unsupported syntax and is refused rather than passed through.
 _SAFE_ATTRIBUTE_KEY = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')
-_SAFE_IDENTIFIER = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 
 def _restricted(name: Any) -> bool:
     return isinstance(name, str) and name in RESTRICTED_ATTRIBUTES
 
 
-def _components(field: str) -> list[str]:
-    """Split a selector the way upstream does, ignoring its negation marker."""
-    return field.replace("!", "").split(".")
+def _components(field: str) -> list[str] | None:
+    """Split a selector, or return None if its negation marker is misplaced.
+
+    Upstream honours `!` only as a trailing negation marker: `filter_query` tests
+    `field.endswith('!')`, while its column lookup strips every `!`. So
+    `attributes!.runbook_url` is read by upstream as a *whole-object* comparison
+    on `attributes` — `field.startswith('attributes.')` is false — even though
+    stripping the marker globally makes it look like a permitted keyed selector.
+    Interpreting an input differently from upstream is exactly how a guard is
+    bypassed, so an unsupported placement is refused rather than normalised.
+    """
+    if "!" in field.rstrip("!") or field.endswith("!!"):
+        return None
+    return field.rstrip("!").split(".")
 
 
 def _canonical_column(token: str) -> str:
@@ -110,27 +120,34 @@ def _attribute_selector_refusal(components: list[str]) -> str | None:
 def selector_refusal(params: Any, parse: Callable[..., tuple[str, dict[str, Any]]] | None = None,
                      supported_fields: Iterable[str] = ()) -> str | None:
     """Return the refusal reason if these request parameters reach restricted staging."""
+    permitted_fields = {name for name in supported_fields
+                        if _canonical_column(name) != ATTRIBUTE_COLUMN}
+
     for field in _keys(params):
         if field in _NON_FILTER_PARAMS:
             continue
-        refusal = _attribute_selector_refusal(_components(field))
+        components = _components(field)
+        if components is None:
+            return REFUSAL
+        refusal = _attribute_selector_refusal(components)
         if refusal:
             return refusal
 
     for sort_by in _listed(params, "sort-by"):
-        refusal = _attribute_selector_refusal(_components(sort_by.lstrip("-")))
+        components = _components(sort_by.lstrip("-"))
+        if components is None:
+            return REFUSAL
+        refusal = _attribute_selector_refusal(components)
         if refusal:
             return refusal
 
     for group_by in _listed(params, "group-by"):
-        # The aggregate endpoints interpolate the grouping expression into both
-        # SELECT and GROUP BY and return it under that key, so any grouping that
-        # names the column hands back every attribute.
-        if not _SAFE_IDENTIFIER.match(group_by.strip()):
-            # The grouping token is interpolated into SELECT and GROUP BY with no
-            # validation upstream, so only a plain identifier is supported.
-            return REFUSAL
-        if _canonical_column(group_by) == ATTRIBUTE_COLUMN:
+        # The grouping token is interpolated into SELECT and GROUP BY with no
+        # upstream validation, and PostgreSQL reads a table-name reference as the
+        # whole row — `GROUP BY alerts` would select every column, attributes
+        # included. A plain identifier is therefore not a sufficient test; only
+        # an explicitly supported alert field is allowed through.
+        if group_by.strip() not in permitted_fields:
             return REFUSAL
 
     default_field = params.get("q.df")
@@ -139,9 +156,7 @@ def selector_refusal(params: Any, parse: Callable[..., tuple[str, dict[str, Any]
         # `"__default_field__"`, unquoted, so an arbitrary string becomes a raw
         # expression. Only a supported field name is accepted, and never the
         # attributes column itself.
-        allowed = {name for name in supported_fields
-                   if _canonical_column(name) != ATTRIBUTE_COLUMN}
-        if not isinstance(default_field, str) or default_field not in allowed:
+        if not isinstance(default_field, str) or default_field not in permitted_fields:
             return REFUSAL
 
     query = params.get("q", None)
