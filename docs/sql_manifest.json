@@ -17,7 +17,7 @@
     },
     {
       "path": "sql/install/12_reseal.sql",
-      "sha256": "acad182b33dc6556141adabdc0e40a3774d34f326ba76bc299a2b483b372122e"
+      "sha256": "8b8296027372a960a9531b91c90c6803d0b9e9d7829012e665ebaa5059d44b08"
     },
     {
       "path": "sql/migrate.py",

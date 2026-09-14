@@ -19,15 +19,17 @@ BEGIN
  END IF;
  IF to_regprocedure('zabalack.retire_intents(integer,integer)') IS NULL
   OR to_regprocedure('zabalack.note_staging(text,uuid,timestamptz,text)') IS NULL
+  OR to_regprocedure('zabalack.claim_retirement_slot()') IS NULL
+  OR to_regprocedure('zabalack.repair_staging_ledger()') IS NULL
   OR to_regclass('zabalack.alert_staging') IS NULL THEN
-  RAISE EXCEPTION 'schema version 4 objects absent; refusing to seal an incomplete tree';
+  RAISE EXCEPTION 'schema version 9 objects absent; refusing to seal an incomplete tree';
  END IF;
- -- The trigger definition is unchanged by 008, so its fingerprint must still
- -- match the sealed one. A mismatch here means something else moved.
+ -- No migration in 008-013 touches the trigger definition, so its fingerprint
+ -- must still match the sealed one. A mismatch here means something else moved.
  IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m JOIN pg_trigger t
    ON t.tgrelid='public.alerts'::regclass AND t.tgname='zabalack_capture'
    WHERE m.singleton AND md5(pg_get_triggerdef(t.oid))=m.trigger_md5) THEN
-  RAISE EXCEPTION 'trigger fingerprint changed; this is not a 008-only upgrade';
+  RAISE EXCEPTION 'trigger fingerprint changed; this is not an 008-013 upgrade';
  END IF;
 END $$;
 SELECT zabalack.seal_installation();
