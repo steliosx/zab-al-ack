@@ -145,9 +145,9 @@ def test_T41_native_an_older_projection_never_overwrites_a_newer_staging(native,
     alert_id, action_id, first, second = two_generations(native)
     steps = (sweep_in_own_session(native), project_in_own_session(native, action_id))
     outcome = run_concurrently(*(steps if order == "sweep_first" else steps[::-1]))
-    reasons = {outcome["first"], outcome["second"]} if isinstance(outcome["first"], str) else \
-        {outcome["second"], outcome["first"]}
-    assert "projection_action_generation_mismatch" in {value for value in reasons if isinstance(value, str)}
+    # One step returns the projection's reason, the other the sweep's result dict.
+    reasons = {value for value in (outcome["first"], outcome["second"]) if isinstance(value, str)}
+    assert reasons == {"projection_action_generation_mismatch"}
     after = attributes_of(native, alert_id)
     assert after[ACTION_KEY] == second["action_id"] and after["zabbix_ack_sync"] == "pending"
     assert INTENT not in after, "B's intent was retired by the sweep"
