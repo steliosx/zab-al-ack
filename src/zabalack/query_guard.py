@@ -40,6 +40,10 @@ from typing import Any, Callable, Iterable
 from .crypto import INTENT_ATTRIBUTE
 
 RESTRICTED_ATTRIBUTES = frozenset({INTENT_ATTRIBUTE})
+# Reserved request parameters upstream never treats as direct filters.
+_NON_FILTER_PARAMS = frozenset({'q', 'q.df', 'sort-by', 'group-by', 'callback', 'id',
+                               'from-date', 'to-date', 'page', 'page-size', 'limit',
+                               'show-raw-data', 'show-history', '_', 'token', 'api-key'})
 ATTRIBUTE_COLUMN = "attributes"
 # A stable, content-free refusal. It must not reveal whether the selector matched
 # anything, or the refusal becomes the oracle it is meant to remove.
@@ -48,37 +52,68 @@ REFUSAL = "Query selector is not permitted on restricted attributes"
 # `"attributes"::jsonb ->>%(p)s` and `"attributes"::jsonb ? %(p)s`, the two
 # keyed forms the parser emits for attribute access.
 _KEYED = re.compile(r'"attributes"::jsonb\s*(?:->>|\?)\s*%\((\w+)\)s')
-_ATTRIBUTE_MENTION = re.compile(r'"attributes"')
+# Quoted or bare, in any casing: a substituted default field can inject
+# `attributes::text` with no quotes at all.
+_ATTRIBUTE_MENTION = re.compile(r'\battributes\b', re.IGNORECASE)
 
 
 def _restricted(name: Any) -> bool:
     return isinstance(name, str) and name in RESTRICTED_ATTRIBUTES
 
 
-def _dotted(field: str) -> tuple[str, str | None]:
-    """Split `attributes.key` (or `attributes.key!`) into column and key."""
-    bare = field.replace("!", "")
-    head, _, tail = bare.partition(".")
-    return head, tail or None
+def _components(field: str) -> list[str]:
+    """Split a selector the way upstream does, ignoring its negation marker."""
+    return field.replace("!", "").split(".")
 
 
-def selector_refusal(params: Any, parse: Callable[..., tuple[str, dict[str, Any]]] | None = None) -> str | None:
+def _attribute_selector_refusal(components: list[str]) -> str | None:
+    """Apply the contract to one resolved `attributes[...]` selector.
+
+    Upstream keeps only the second component (`sort_by.split('.')[1]`) and
+    silently discards anything further, so `attributes.<restricted>.ignored`
+    would otherwise reach the restricted key through a spelling the guard did not
+    recognise. Unsupported forms are refused rather than normalised, and a bare
+    `attributes` is a whole-object operation.
+    """
+    if not components or components[0] != ATTRIBUTE_COLUMN:
+        return None
+    if len(components) == 1:
+        return REFUSAL  # whole-object selector
+    if len(components) > 2:
+        return REFUSAL  # unsupported syntax; upstream would discard the excess
+    return REFUSAL if _restricted(components[1]) else None
+
+
+def selector_refusal(params: Any, parse: Callable[..., tuple[str, dict[str, Any]]] | None = None,
+                     supported_fields: Iterable[str] = ()) -> str | None:
     """Return the refusal reason if these request parameters reach restricted staging."""
     for field in _keys(params):
-        column, key = _dotted(field)
-        if column == ATTRIBUTE_COLUMN and _restricted(key):
-            return REFUSAL
+        if field in _NON_FILTER_PARAMS:
+            continue
+        refusal = _attribute_selector_refusal(_components(field))
+        if refusal:
+            return refusal
 
     for sort_by in _listed(params, "sort-by"):
-        column, key = _dotted(sort_by.lstrip("-"))
-        if column == ATTRIBUTE_COLUMN and (key is None or _restricted(key)):
-            return REFUSAL
+        refusal = _attribute_selector_refusal(_components(sort_by.lstrip("-")))
+        if refusal:
+            return refusal
 
     for group_by in _listed(params, "group-by"):
-        column, key = _dotted(group_by)
-        # The aggregate endpoints select the grouping expression itself, so a
-        # whole-column grouping returns every attribute including this one.
-        if column == ATTRIBUTE_COLUMN:
+        # The aggregate endpoints interpolate the grouping expression into both
+        # SELECT and GROUP BY and return it under that key, so any grouping that
+        # names the column hands back every attribute.
+        if _components(group_by)[:1] == [ATTRIBUTE_COLUMN]:
+            return REFUSAL
+
+    default_field = params.get("q.df")
+    if default_field is not None:
+        # `QueryParser.parse` substitutes this into the SQL *inside* the quotes of
+        # `"__default_field__"`, unquoted, so an arbitrary string becomes a raw
+        # expression. Only a supported field name is accepted, and never the
+        # attributes column itself.
+        allowed = {name for name in supported_fields if name != ATTRIBUTE_COLUMN}
+        if not isinstance(default_field, str) or default_field not in allowed:
             return REFUSAL
 
     query = params.get("q", None)
@@ -94,14 +129,13 @@ def selector_refusal(params: Any, parse: Callable[..., tuple[str, dict[str, Any]
 
 def _sql_refusal(sql: str, variables: dict[str, Any]) -> str | None:
     """Inspect generated SQL and its bound parameters for restricted access."""
-    remainder = sql
     for parameter in _KEYED.findall(sql):
         if _restricted(variables.get(parameter)):
             return REFUSAL
-    remainder = _KEYED.sub("", remainder)
-    # Anything still naming the column operates on the whole object — a
-    # `q.df=attributes` default field, or `attributes` used as a plain field —
-    # and therefore reads the restricted value along with everything else.
+    remainder = _KEYED.sub("", sql)
+    # Anything still naming the column operates on the whole object. The match is
+    # deliberately quote-insensitive: a substituted default field can introduce an
+    # unquoted `attributes::text`, which a quoted-spelling check would miss.
     if _ATTRIBUTE_MENTION.search(remainder):
         return REFUSAL
     return None
@@ -132,8 +166,10 @@ def install(builder: Any, parser_factory: Callable[[], Any], api_error: Callable
     if getattr(original, "_zabalack_guarded", False):
         return
 
+    supported = tuple(getattr(builder, "VALID_PARAMS", {}) or ())
+
     def from_params(params: Any, customers: Any = None, query_time: Any = None) -> Any:
-        reason = selector_refusal(params, parse=parser_factory().parse)
+        reason = selector_refusal(params, parse=parser_factory().parse, supported_fields=supported)
         if reason:
             raise api_error(reason, 400)
         return original(params, customers=customers, query_time=query_time)

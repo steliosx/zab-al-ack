@@ -288,6 +288,68 @@ def test_T40_whole_attributes_grouping_is_refused(search_api, endpoint):
     assert_refused(request(lab, endpoint=endpoint, **{"group-by": "attributes"}))
 
 
+def test_T40_crafted_default_field_cannot_restore_the_disclosure(search_api):
+    """`q.df` is substituted *inside* the quotes of `"__default_field__"`.
+
+    `QueryParser.parse` replaces the unquoted token, so a crafted default field
+    becomes a raw expression — here a concatenation naming `attributes::text`
+    with no quotes at all, which a quoted-spelling check would not see. The
+    default field is validated against supported names before compilation.
+    """
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    crafted = 'text" || attributes::text || "text'
+    response = lab.client.get("/alerts/count", query_string={"q": UNDISCLOSED_CUSTOMER, "q.df": crafted},
+                              headers={"Authorization": lab.reader})
+    assert_refused(response)
+
+
+@pytest.mark.parametrize("default_field", ["attributes", "attributes.zabbix_ack_sync",
+                                           "history", "not_a_field", ""])
+def test_T40_unsupported_default_fields_are_refused(search_api, default_field):
+    lab = search_api
+    acknowledge(lab)
+    assert_refused(lab.client.get("/alerts/count",
+                                  query_string={"q": ABSENT_TERM, "q.df": default_field},
+                                  headers={"Authorization": lab.reader}))
+
+
+@pytest.mark.parametrize("sort_by", [
+    pytest.param(f"attributes.{INTENT_ATTRIBUTE}.ignored", id="extra-component"),
+    pytest.param(f"-attributes.{INTENT_ATTRIBUTE}.ignored", id="extra-component-reversed"),
+    pytest.param(f"attributes.{INTENT_ATTRIBUTE}.a.b", id="several-extra-components"),
+])
+def test_T40_sort_with_extra_components_is_refused(search_api, sort_by):
+    """Upstream keeps only `split('.')[1]` and discards the rest.
+
+    `attributes.<restricted>.ignored` would otherwise sort by the restricted key
+    through a spelling the guard did not recognise, so unsupported selector forms
+    are refused rather than normalised.
+    """
+    lab = search_api
+    acknowledge(lab)
+    assert_refused(request(lab, endpoint="/alerts", **{"sort-by": sort_by}))
+
+
+@pytest.mark.parametrize("field", ["attributes", "attributes!"])
+def test_T40_whole_object_direct_filter_is_refused(search_api, field):
+    """`VALID_PARAMS['attributes']` is filterable, so a bare selector reaches SQL."""
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    assert_refused(lab.client.get("/alerts/count", query_string={field: "{}"},
+                                  headers={"Authorization": lab.reader}))
+
+
+@pytest.mark.parametrize("field", [f"attributes.{INTENT_ATTRIBUTE}.ignored"])
+def test_T40_direct_filter_with_extra_components_is_refused(search_api, field):
+    lab = search_api
+    acknowledge(lab)
+    assert_refused(lab.client.get("/alerts/count", query_string={field: UNDISCLOSED_CUSTOMER},
+                                  headers={"Authorization": lab.reader}))
+
+
 # --- positive controls: legitimate attribute querying still works -----------
 
 def test_T40_permitted_projection_field_remains_searchable(search_api):
@@ -296,6 +358,17 @@ def test_T40_permitted_projection_field_remains_searchable(search_api):
     identity, event_id = acknowledge(lab)
     assert_capture_evidence(lab, identity)
     assert permitted_total(lab, q=scoped(event_id, "attributes.zabbix_ack_sync:pending")) == 1
+
+
+def test_T40_supported_default_field_still_works(search_api):
+    """Validating `q.df` must not break the legitimate default-field feature."""
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    response = lab.client.get("/alerts/count",
+                              query_string={"q": ABSENT_TERM, "q.df": "text"},
+                              headers={"Authorization": lab.reader})
+    assert response.status_code == 200, response.get_data(as_text=True)
 
 
 def test_T40_permitted_sort_and_grouping_still_work(search_api):

@@ -258,10 +258,22 @@ retirement cannot do. The guard installs at the shared alert query-builder
 boundary — `qb.alerts.from_params`, the single point that sees `q`, `q.df`,
 direct filters, `sort-by` and `group-by` — so the list, history, count and
 aggregate endpoints inherit one control instead of each view being patched. It
-validates *resolved* fields: the query string is parsed and the produced SQL and
-bound parameters are inspected, because a substring blacklist over raw text
-cannot see through the `_.key` alias, sub-expressions, `_exists_` or the default
-field. Restricted selectors and whole-`attributes` operations are refused with a
+validates *resolved* fields and refuses unsupported selector syntax rather than
+normalising it. The query string is parsed and the produced SQL and bound
+parameters are inspected, because a substring blacklist over raw text cannot see
+through the `_.key` alias, sub-expressions or `_exists_`.
+
+Three spellings defeat a narrower guard, and each is covered. `QueryParser.parse`
+substitutes `q.df` into the *unquoted* token inside `"__default_field__"`, so a
+crafted default field such as `text" || attributes::text || "text` becomes a raw
+concatenation naming the column with no quotes at all; `q.df` is therefore
+validated against the builder's supported field names before compilation, and the
+whole-column check is quote-insensitive. `sort_by.split('.')[1]` keeps only the
+second component and discards the rest, so `attributes.<restricted>.ignored`
+would reach the restricted key; selectors with extra components are refused.
+`VALID_PARAMS['attributes']` is both filterable and sortable, so a bare
+`attributes=` or `attributes!=` direct filter is a whole-object operation and is
+refused alongside the keyed ones. Restricted selectors and whole-`attributes` operations are refused with a
 stable `400` that does not depend on whether any alert or intent exists, so the
 refusal is not itself an oracle; ordinary keyed attribute searches and approved
 sorting and grouping are preserved. It applies to every API reader including
