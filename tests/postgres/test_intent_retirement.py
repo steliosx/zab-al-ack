@@ -600,3 +600,42 @@ def test_T41_a_replay_predating_every_observation_of_a_staging_is_a_known_window
         "nothing ever observed the newer generation, so the ledger cannot hold it"
     assert project(lab, action_id) == "projected", \
         "the marker and the ledger agree on A, so A projects; this is the window, stated"
+
+
+def test_T41_the_readiness_manifest_must_be_resealed_after_the_migration(lab):
+    """008 moves the catalog, so a manifest sealed before it no longer matches.
+
+    `capture_health()` compares the live fingerprints against the sealed ones, so
+    a deployment that applies the migration without re-sealing reports
+    `functions_ok` false and its workers refuse to run — which is the intended
+    failure, not a silent upgrade.
+    """
+    from pathlib import Path
+    reseal = Path(__file__).resolve().parents[2] / "sql/install/12_reseal.sql"
+    with connect_role(lab, "zabalack_owner") as owner:
+        original = owner.execute("SELECT functions_md5 FROM zabalack.readiness_manifest").fetchone()[0]
+        owner.execute("UPDATE zabalack.readiness_manifest SET functions_md5='pre-008-seal' WHERE singleton")
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "false", \
+            "a stale seal must report unhealthy rather than pass"
+        owner.execute(reseal.read_text())
+        assert owner.execute("SELECT functions_md5 FROM zabalack.readiness_manifest").fetchone()[0] == original
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
+def test_T41_the_reseal_refuses_a_tree_that_is_not_at_schema_four(lab):
+    """It seals what it was written for, or nothing."""
+    from pathlib import Path
+    reseal = (Path(__file__).resolve().parents[2] / "sql/install/12_reseal.sql").read_text()
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.installation SET schema_version=3 WHERE singleton")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="expected zabalack schema version 4"):
+                owner.execute(reseal)
+    finally:
+        # The refusal aborts its own transaction, so the restore needs a session
+        # that is not already in a failed one.
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("UPDATE zabalack.installation SET schema_version=4 WHERE singleton")
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 4

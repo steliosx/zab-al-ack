@@ -69,11 +69,29 @@ acknowledgement abandoned before its history write — establish the state on an
 stored intent is retired from `public.alerts.attributes` and that `zabalack.captures.intent` is preserved
 byte-for-byte alongside source-identity keys, unrelated operator attributes and the separately protected
 columns. Prove the generation protection under concurrency: retire a newer unverified intent while an older
-projection is in flight, and confirm the older projection does not overwrite the newer state. Run the bounded
+projection is in flight, and confirm the older projection does not overwrite the newer state. Run that case in
+both lock orders, and separately replay a stale attribute dictionary against the row after the sweep has observed
+the newer staging, confirming `zabalack.alert_staging` does not move backwards. Run the bounded
 backfill against live rows and record its scope, its bound and its completion; historical backups, replicas and
 previously produced exports are out of its reach and remain governed by G8. Record the schema version before and
 after, the re-seal of the readiness manifest, and the principal that performed each step. A passing disposable
 lab does not close this item.
+
+Upgrade sequence, with the principal recorded for each step. Apply `sql/migrations/008_intent_retirement.sql`
+through the ordinary migration path and record the schema version moving 3 to 4, confirming the backfill
+populated `zabalack.alert_staging` for every alert carrying an action row or an uncaptured staged intent. Then run
+`sql/install/12_reseal.sql` as the approved alerts owner/installation principal — the same identity that ran
+`10_trigger.sql` — while eligible acknowledgements are fenced; it refuses unless the schema version is 4, the
+version 4 objects are present, and the trigger fingerprint still matches the sealed one, since 008 does not change
+the trigger. Confirm `zabalack.capture_health()` reports `functions_ok` afterwards and that workers pinned to
+schema 3 report unhealthy until upgraded. Confirm the sweep is reachable only through
+`zabalack.worker_call('retire_intents', …)` and that a direct call as `zabalack_worker` is denied.
+
+Record the window this design does not close, and whether the deployment accepts it: a staged generation that a
+stale attribute dictionary overwrites before any capture or sweep has observed it leaves no record, because the
+only record it had was the attribute the replay discarded. Measure the deployment's actual sweep interval, since
+that interval is the bound on the exposure. Closing it requires the synchronous trigger described in A5, which is
+a separate change to the installation procedure and is not part of this item.
 
 ## Additional deployed clauses
 
