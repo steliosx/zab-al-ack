@@ -871,3 +871,54 @@ def test_T41_the_retirement_cadence_is_deployment_state_not_a_worker_clock(lab):
         owner.execute("UPDATE zabalack.installation SET retirement_due_at=clock_timestamp()"
                       "-interval '1 second' WHERE singleton")
     assert "skipped" not in worker_sweep(), "the slot reopens once the interval has elapsed"
+
+
+def test_T41_the_repair_clears_a_ledger_poisoned_before_the_bounds_existed(lab):
+    """Bounding what may enter the ledger does not repair what is already in it.
+
+    008's backfill passes the staged attribute's `capture_expires_at` straight
+    into `note_staging` with no bounds, and that attribute is API-writable, so a
+    database that applied 008 can hold `staged_until = 'infinity'`. Advances are
+    monotonic, so no legitimate finite generation can ever replace such a row and
+    every later projection for that alert is refused permanently. Reproduced
+    before the repair existed: a valid later generation returned false.
+    """
+    alert_id, event_id, payload = stage(lab)
+    forged = str(uuid.uuid4())
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("INSERT INTO zabalack.alert_staging(alert_id,staged_action_id,staged_until,observed_by)"
+                      " VALUES(%s,%s,'infinity','migration') ON CONFLICT(alert_id) DO UPDATE"
+                      " SET staged_action_id=excluded.staged_action_id,staged_until='infinity'",
+                      (alert_id, forged))
+    later = intent_for(alert_id, event_id, issued=datetime.now(timezone.utc))
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT zabalack.note_staging(%s,%s,%s,'later')",
+                             (alert_id, later["action_id"], later["capture_expires_at"])).fetchone()[0] is False, \
+            "precondition: the poisoned row blocks every finite generation"
+        result = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
+    assert result["removed"] >= 1, "the repair must remove the unbounded entry"
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        row = owner.execute("SELECT staged_action_id,isfinite(staged_until) FROM zabalack.alert_staging"
+                            " WHERE alert_id=%s", (alert_id,)).fetchone()
+    if row is not None:
+        assert row[0] != uuid.UUID(forged), "the forged generation must not survive the repair"
+        assert row[1] is True, "no non-finite window may remain"
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT zabalack.note_staging(%s,%s,%s,'later')",
+                             (alert_id, later["action_id"], later["capture_expires_at"])).fetchone()[0] is True, \
+            "a legitimate generation must be able to advance again"
+
+
+def test_T41_the_repair_is_idempotent_and_keeps_valid_entries(lab):
+    """Running it twice changes nothing, and it must not discard sound rows."""
+    alert_id, _, payload = stage(lab)
+    sweep(lab)
+    before = ledger(lab, alert_id)
+    assert before is not None, "precondition: a sound ledger entry exists"
+    with connect_role(lab, "zabalack_owner") as owner:
+        first = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
+        second = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
+    assert first["removed"] == 0 and second["removed"] == 0, "a sound ledger needs no repair"
+    assert ledger(lab, alert_id)[0] == before[0], "a valid entry must survive untouched"

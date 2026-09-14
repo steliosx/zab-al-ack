@@ -229,3 +229,30 @@ def test_T41_native_an_older_projection_is_refused_before_the_newer_staging_is_c
     after = attributes_of(lab, alert_id)
     assert after[INTENT]["action_id"] == newer["action_id"], "B's intent must survive"
     assert after["zabbix_ack_sync"] == "pending", "A must not overwrite B's state"
+
+
+def test_T41_native_the_cadence_claim_does_not_block_a_losing_worker(native):
+    """A loser must return immediately, not queue behind the winner's scan.
+
+    The winner holds the installation row for the whole sweep inside one
+    `worker_call` transaction. A bare `UPDATE` claim made losers wait on that
+    row, and with `statement_timeout` at 3000 ms in `db.py` a slow scan turns
+    that wait into an exception, marking those workers unhealthy and gating
+    their delivery loops. The claim takes a try-advisory lock first.
+
+    Native only: a losing session must run while the winner holds an open
+    transaction, which PGlite's single backend cannot provide.
+    """
+    lab = native
+    stage(lab)
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.installation SET retirement_due_at=NULL WHERE singleton")
+    with connect_role(lab, "zabalack_owner") as holder:
+        holder.execute("BEGIN")
+        assert holder.execute("SELECT zabalack.claim_retirement_slot()").fetchone()[0] is True
+        with connect_role(lab, "zabalack_owner") as loser:
+            # A short timeout turns any blocking wait into a failure rather than
+            # a slow pass, so this asserts non-blocking rather than merely false.
+            loser.execute("SET statement_timeout = 2000")
+            assert loser.execute("SELECT zabalack.claim_retirement_slot()").fetchone()[0] is False
+        holder.execute("COMMIT")

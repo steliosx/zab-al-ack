@@ -14,8 +14,8 @@ DO $$
 DECLARE installed integer;
 BEGIN
  SELECT schema_version INTO STRICT installed FROM zabalack.installation WHERE singleton;
- IF installed<>5 THEN
-  RAISE EXCEPTION 'expected zabalack schema version 5, found %; apply the migrations first',installed;
+ IF installed<>6 THEN
+  RAISE EXCEPTION 'expected zabalack schema version 6, found %; apply the migrations first',installed;
  END IF;
  IF to_regprocedure('zabalack.retire_intents(integer,integer)') IS NULL
   OR to_regprocedure('zabalack.note_staging(text,uuid,timestamptz,text)') IS NULL
