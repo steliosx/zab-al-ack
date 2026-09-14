@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Zab-al-ack documentation — Setup, examples and operations</title>
+  <meta name="description" content="Practical Zab-al-ack 0.1.0a16 documentation: run the isolated lab, validate configuration, integrate with Alerta, inspect delivery and plan rollback.">
+  <link rel="canonical" href="https://zabalack.stel.chatgpt.site/docs.html">
+  <meta property="og:url" content="https://zabalack.stel.chatgpt.site/docs.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Zab-al-ack documentation — Setup, examples and operations">
+  <meta property="og:description" content="A practical guide to the self-hosted Alerta-to-Zabbix acknowledgement alpha.">
+  <link rel="icon" type="image/svg+xml" href="assets/zabalack-mark.svg">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="docs.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to documentation</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="index.html" aria-label="Zab-al-ack home"><img src="assets/zabalack-mark.svg" alt="" width="40" height="40"><span>Zab-al-ack<span class="brand-period">.</span></span></a>
+      <nav class="main-nav" aria-label="Main navigation"><a href="index.html#features">Why Zab-al-ack</a><a href="docs.html" aria-current="page">Documentation</a><a href="blog/index.html">Blog</a><a href="index.html#alpha">The alpha</a></nav>
+      <a class="header-cta" href="index.html">Back to overview</a>
+    </div>
+  </header>
+  <div class="container docs-layout">
+    <aside class="docs-sidebar">
+      <nav aria-label="On this page">
+        <p>IN THIS GUIDE</p>
+        <a href="#rename">a9 rename</a><a href="#quickstart">01 · Try the lab</a>
+        <a href="#visual-walkthrough">Illustrated walkthrough</a>
+        <a href="#configuration">02 · Configuration</a>
+        <a href="#alerta">03 · Alerta integration</a>
+        <a href="#workflow">04 · Acknowledge an alert</a>
+        <a href="#operations">05 · Daily operations</a>
+        <a href="#troubleshooting">06 · Troubleshooting</a>
+        <a href="#testing">07 · Tests and evidence</a>
+        <a href="#deployment">08 · Deployment and rollback</a>
+        <a href="#inventory">09 · Collect deployment inputs</a>
+        <a href="#engineering">10 · Engineering upgrades 1–8</a>
+      </nav>
+      <a class="docs-brief-link" href="zabalack-alpha-brief.md" download>Download the alpha brief ↓</a>
+    </aside>
+    <main id="main" class="docs-content">
+      <div class="docs-intro">
+        <p class="eyebrow">THE OPERATOR’S GUIDE</p>
+        <h1>From first run<br>to a controlled pilot.</h1>
+        <p class="docs-lead">Install the reference package, understand the handoff, and inspect what happens after an acknowledgement.</p>
+        <p class="docs-version"><span class="alpha-label">0.1.0a16</span> Examples checked against the packaged candidate.</p>
+        <div class="docs-note"><strong>Start in an isolated lab.</strong> Public package links are pending. Use the supplied a12 source and matching wheel. Configuration examples keep external writes disabled; deployment gates remain open. Paths under <code>/reviewed/</code> are placeholders for your reviewed lab files.</div>
+      </div>
+
+      <section class="docs-section" id="rename" aria-labelledby="rename-title">
+        <p class="docs-section-number">A9 / PROJECT NAME</p><h2 id="rename-title">Ackline is now Zab-al-ack</h2>
+        <p>The name brings together <strong>Zab</strong>bix, <strong>Al</strong>erta and <strong>ack</strong>nowledgements. Use <code>zabalack</code> for the Python package, import, CLI, database schema and service prefix.</p>
+        <div class="docs-note"><strong>Existing Ackline installations need a reviewed transition.</strong><p>a9 refuses a database containing an <code>ackline</code> schema. Keep the old release and ledger intact. This release supports a fresh installation namespace; it does not migrate an existing Ackline database in place.</p></div>
+        <div class="docs-table" tabindex="0" role="region" aria-label="a9 interface names"><table><thead><tr><th>Interface</th><th>a9 identifier</th></tr></thead><tbody>
+          <tr><td>CLI and Python import</td><td><code>zabalack</code></td></tr>
+          <tr><td>Alerta plugin entry points</td><td><code>zabalack_zabbix_normalise</code>, <code>zabalack_zabbix_ack</code></td></tr>
+          <tr><td>Alerta application factory</td><td><code>zabalack.plugins:create_app()</code></td></tr>
+          <tr><td>Alerta configuration key</td><td><code>ZABALACK_CONFIG_FILE</code></td></tr>
+          <tr><td>Database and service prefix</td><td><code>zabalack</code></td></tr>
+        </tbody></table></div>
+        <p>Under an approved operational change, fence old writers, account for in-flight requests and retain old verification and audit records. Qualify a fresh Alerta database and new configuration with external writes disabled. Never rewrite or re-sign historical captures, copy the old checksum ledger, or run both writers for one cohort. Same-database continuity needs a separately designed upgrade.</p>
+        <p>Old signatures do not validate under the new name, even if their visible prefix is changed. Both old and new proof strings are redacted. Source facts and <code>zabbix_ack_sync*</code> projections stay stable; exact historical neutral comments are recognised only to suppress echoes.</p>
+        <p>The complete source handoff includes <code>docs/RENAME.md</code>, old/new SQL hashes, the cumulative changelog, retained Ackline releases and the non-destructive rollback guide. All production gates remain open.</p>
+      </section>
+
+      <section class="docs-section" id="quickstart" aria-labelledby="quickstart-title">
+        <p class="docs-section-number">01 / FIRST RUN</p><h2 id="quickstart-title">Try the isolated reference lab</h2>
+        <p>Use a disposable Linux development checkout with Python 3.12, Node.js 22 and npm. Run these commands from the <strong>root of the supplied source tree</strong>. Dependencies are downloaded; no configured production service is contacted.</p>
+        <div class="code-example"><p>Shell · source installation</p><pre tabindex="0" aria-label="Source installation commands"><code data-language="sh" id="example-install">python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.lock
+.venv/bin/python -m pip install --require-hashes --only-binary=:all: -r requirements-quality.lock
+.venv/bin/python -m pip install --no-deps --no-build-isolation -e .
+npm ci --prefix lab --legacy-peer-deps --ignore-scripts
+TZ=UTC .venv/bin/python tools/quickstart.py --isolated-lab</code></pre></div>
+        <p>The demo checks inert configuration and synthetic webhook payloads, then runs actual Alerta HTTP and PostgreSQL persistence through the worker path. PostgreSQL runs in PGlite/WASM; <strong>Zabbix responses and writes are mocked</strong>. A successful run ends with “Demonstration complete.”</p>
+        <details class="docs-details"><summary>Installing the wheel instead</summary><p>In a separate Python 3.12 environment with the matching reviewed dependencies already installed, use the supplied wheel. This installs the CLI and plugin entry points. It does not apply SQL migrations or activate write-back.</p><div class="code-example"><p>Shell · reviewed local artifact</p><pre tabindex="0" aria-label="Wheel installation command"><code data-language="sh">.venv/bin/python -m pip install --no-deps \
+  /reviewed/zabalack-0.1.0a16-py3-none-any.whl
+.venv/bin/python -m pip check</code></pre></div><p>Keep the matching source release for migrations, media artifacts, collectors and tests; these are not installed by the wheel.</p></details>
+      </section>
+
+<section class="docs-section" id="visual-walkthrough" aria-labelledby="visual-title">
+<p class="docs-section-number">LAB / FOLLOW THE OUTPUT</p><h2 id="visual-title">See what the workflow records</h2>
+<p>Views 1–3 are supplied browser captures of transcript pages showing selected output from a12 synthetic lab data, with copyable commands alongside; they are not application UI. View 4 is a real Zabbix 7.0.10 frontend screenshot of the deployment lab’s acknowledged event. The source ZIP includes transcript pages, browser-capture hashes and a reproduction recipe. Each view identifies its real and mocked components.</p>
+<h3>1. Check the inert configuration</h3><figure class="lab-figure"><a href="assets/visuals/a12/01-config-browser.png" aria-label="Open full-size transcript screenshot: Configuration valid, external writes disabled, zero cohorts and instances"><img src="assets/visuals/a12/01-config-browser.png" alt="Configuration valid, external writes disabled, zero cohorts and instances" width="1020" height="700" loading="lazy" decoding="async"></a><figcaption>a12 · Browser-rendered transcript of actual CLI output, selected fields. No database or Zabbix connection. <a href="assets/visuals/a12/01-config-browser.png">Open full size</a>.</figcaption></figure><div class="code-example"><p>Shell · no network access</p><pre tabindex="0"><code>zabalack --config config/production.example.json config-check</code></pre></div><p>Observed: valid true, enabled false, external writes false, cohort count 0, instance count 0. Deployment gates remain NOT_VERIFIED. A valid file does not establish readiness.</p><h3>2. Acknowledge one synthetic alert</h3><figure class="lab-figure"><a href="assets/visuals/a12/02-action-browser.png" aria-label="Open full-size transcript screenshot: Synthetic single-alert action returns 200 and one capture; repeat Ack returns 409"><img src="assets/visuals/a12/02-action-browser.png" alt="Synthetic single-alert action returns 200 and one capture; repeat Ack returns 409" width="1020" height="700" loading="lazy" decoding="async"></a><figcaption>a12 · Browser-rendered transcript. Real Alerta 9.1.0 and PostgreSQL 18.3 WASM; test-client request, synthetic JWT and injected probe. Not a product UI screenshot. <a href="assets/visuals/a12/02-action-browser.png">Open full size</a>.</figcaption></figure><div class="code-example"><p>HTTP · authenticated human session in an isolated lab</p><pre tabindex="0"><code>PUT /alert/&lt;full-lab-alert-uuid&gt;/action
+Content-Type: application/json
+
+{"action":"ack","text":"Investigating this synthetic lab alert"}</code></pre></div><p>Observed: HTTP 200, persisted status ack and one capture record. Repeat Ack returns HTTP 409. Authentication headers and raw history are omitted. Local acceptance does not mean the source has acknowledged the event.</p><h3>3. Inspect the delivery result</h3><figure class="lab-figure"><a href="assets/visuals/a12/03-ledger-browser.png" aria-label="Open full-size transcript screenshot: Ledger state ok, one attempt and Alerta projection ok for mock event 910011"><img src="assets/visuals/a12/03-ledger-browser.png" alt="Ledger state ok, one attempt and Alerta projection ok for mock event 910011" width="1020" height="700" loading="lazy" decoding="async"></a><figcaption>a12 · Browser-rendered transcript. Real worker and SQL; mocked Zabbix pre-read and acknowledgement. No external Zabbix request. <a href="assets/visuals/a12/03-ledger-browser.png">Open full size</a>.</figcaption></figure><div class="code-example"><p>Shell · read-only inspection using your reviewed lab configuration</p><pre tabindex="0"><code>zabalack --config /reviewed/lab-worker.json inspect --state ok --limit 1</code></pre></div><p>Selected observed fields: state ok, completion_evidence write_response, attempts 1, and Alerta projection zabbix_ack_sync ok. The mock saw a pre-read and one acknowledgement for event 910011. This demonstrates the reference workflow; it does not validate a real Zabbix, native SQL login permissions, PgBouncer, TLS, service installation or G1–G8.</p>
+<h3>4. See the acknowledgement in the Zabbix frontend</h3><figure class="lab-figure"><a href="assets/visuals/a12/04-zabbix-event-details.png" aria-label="Open full-size screenshot: Zabbix 7.0.10 event details for the deployment lab problem, showing the source fact, the zabalack acknowledgement, the update fact, a human update and the recovery fact"><img src="assets/visuals/a12/04-zabbix-event-details.png" alt="Zabbix 7.0.10 event details page for the synthetic deployment-lab problem: Actions list with the reference source fact, the [zabalack] acknowledgement by zabalack-deployment-worker, the update fact, a synthetic operator update and the recovery fact; the event list shows the problem resolved and acknowledged" width="1600" height="1000" loading="lazy" decoding="async"></a><figcaption>a12 · Real Zabbix 7.0.10 frontend on the disposable deployment-lab instance after <code>tools/run_deployment_e2e_local.py</code>; headless Chromium, default Admin session, lab data only. <a href="assets/visuals/a12/04-zabbix-event-details.png">Open full size</a>.</figcaption></figure><p>Reading the Actions column bottom-up: the source action’s webhook delivered the reference source fact to the lab’s Alerta; the worker acknowledged the event with the neutral <code>[zabalack]</code> comment; the update fact for that comment was delivered and filtered as an echo on the Alerta side; a human update from Admin was delivered and recorded; the recovery fact closed the loop. The original a12 deployment record accompanies this supplied screenshot; the independent review’s later runs are recorded separately. It does not close G1–G8 or describe a production instance. There is no Alerta UI screenshot: the Alerta Web UI is a separate project the lab does not install.</p><details class="docs-details"><summary>Reproduce the output views</summary><p>From the supplied source checkout with its pinned dependencies, run:</p><div class="code-example"><p>Shell · isolated synthetic lab only</p><pre tabindex="0"><code>TZ=UTC .venv/bin/python tools/capture_docs.py --isolated-lab</code></pre></div><p>The script accepts no target or credential arguments. It creates a fresh PostgreSQL WASM database and runs tests/alerta/test_docs_walkthrough.py with Flask’s test client, a synthetic user JWT, injected probe, SET ROLE and a mock source. Selected output, HTML transcripts and SVG illustrations go to build/docs. See docs/visual-guide.md for hashes, privacy boundaries and the browser-capture procedure used for a12.</p></details></section>
+      <section class="docs-section" id="configuration" aria-labelledby="configuration-title">
+        <p class="docs-section-number">02 / CONFIGURATION</p><h2 id="configuration-title">Validate before connecting anything</h2>
+        <p>This minimal configuration uses the package’s defaults for omitted fields. Save it as <code>zabalack-disabled.json</code> in the source root. It contains no credentials, endpoints or active cohort.</p>
+        <div class="code-example"><p>JSON · inert configuration</p><pre tabindex="0" aria-label="Disabled configuration example"><code data-language="json" id="example-disabled">{
+  "enabled": false,
+  "external_writes_enabled": false,
+  "capture_bypass": false,
+  "config_revision": "UNCONFIGURED",
+  "cohorts": [],
+  "endpoint_registry": {},
+  "ingestion_mappings": {},
+  "signing_keys": {},
+  "admin_exceptions": []
+}</code></pre></div>
+        <div class="code-example"><p>Shell · offline check</p><pre tabindex="0" aria-label="Configuration validation command"><code data-language="sh" id="example-config-check">.venv/bin/zabalack --config zabalack-disabled.json config-check</code></pre></div>
+        <p>Expect <code>"valid": true</code>, zero cohort and instance counts, and <code>"deployment_gates": "NOT_VERIFIED"</code>. This checks configuration shape only: it does not open a database, resolve secret files, test permissions or establish capture health.</p>
+        <details class="docs-details"><summary>How an approved cohort is described</summary><p>A cohort binds one customer, logical Zabbix instance and trigger to explicit host and group IDs. This <strong>disabled, synthetic example</strong> demonstrates the shape of one entry; it is not part of the empty configuration above.</p><div class="code-example"><p>JSON · one disabled cohort</p><pre tabindex="0" aria-label="Disabled synthetic cohort example"><code data-language="json" id="example-cohort">{
+  "customer": "synthetic-customer",
+  "zabbix_instance": "lab-zabbix",
+  "zabbix_trigger_id": "10001",
+  "host_ids": ["20001"],
+  "group_ids": ["30001"],
+  "revision": "lab-1",
+  "policy_revision": "1",
+  "enabled": false,
+  "one_to_one": true,
+  "comment_enabled": true,
+  "allow_admin": false
+}</code></pre></div><p>IDs are strings. Approve the complete host set; do not substitute hostnames or infer membership from arriving alerts. An endpoint is selected from the reviewed registry, never from an incoming callback URL.</p></details>
+        <h3>Keep identities separate</h3>
+        <div class="docs-table" tabindex="0" role="region" aria-label="Configuration identities"><table><thead><tr><th>Setting</th><th>Purpose</th></tr></thead><tbody>
+          <tr><td><code>probe_dsn_file</code></td><td>Dedicated database identity for the bounded capture-health check.</td></tr>
+          <tr><td><code>worker_dsn_file</code></td><td>Worker, inspection and reconciliation database identity.</td></tr>
+          <tr><td><code>operator_dsn_file</code></td><td>Separate identity for audited controls such as pause and repair.</td></tr>
+          <tr><td><code>signing_keys</code></td><td>Key IDs mapped to protected absolute file paths.</td></tr>
+          <tr><td><code>endpoint_registry</code></td><td>Logical instances mapped to reviewed HTTPS API URLs, token files, CA files and explicitly approved API versions.</td></tr>
+        </tbody></table></div>
+        <p>Secret files must be regular files with owner/root ownership and no group or world access; symlinks are rejected. The process must be able to read them. Keep secrets out of command arguments and public reports.</p>
+      </section>
+
+      <section class="docs-section" id="alerta" aria-labelledby="alerta-title">
+        <p class="docs-section-number">03 / APPLICATION ADAPTER</p><h2 id="alerta-title">Connect to the existing Alerta app</h2>
+        <p>The alpha’s activation gate supports <strong>Alerta server 9.1.0 with the default ALERTA alarm model</strong>. Other versions or models remain local-only until their compatibility coverage is extended.</p>
+        <ol class="docs-list">
+          <li>Install the matching wheel into each reviewed Alerta environment after verifying its dependencies.</li>
+          <li>Set <code>ZABALACK_CONFIG_FILE</code> in the existing Alerta configuration to the reviewed JSON path.</li>
+          <li>Add <code>zabalack_zabbix_normalise</code> before plugins that export inbound attributes. Keep <code>zabalack_zabbix_ack</code> last in <em>every effective routed status chain</em>. Preserve the other plugins and authentication settings.</li>
+          <li>Use the supplied application adapter after logging setup and before serving requests.</li>
+        </ol>
+        <div class="code-example"><p>Python · existing alertad.conf</p><pre tabindex="0" aria-label="Alerta configuration setting"><code data-language="python">ZABALACK_CONFIG_FILE = "/reviewed/zabalack.json"</code></pre></div>
+        <p>For an ordinary Gunicorn factory deployment, the application target is <code>zabalack.plugins:create_app()</code>. If your deployment already has a custom factory, keep it and wrap the finished app:</p>
+        <div class="code-example"><p>Python · inside your existing factory, after app creation and logging</p><pre tabindex="0" aria-label="Existing application adapter"><code data-language="python">from zabalack.plugins import configure_app
+
+configure_app(app)  # existing Alerta application, before it serves requests</code></pre></div>
+        <p>The adapter protects proof material in precommit logging and error responses. Omitting it causes eligible acknowledgements to fail closed. The wheel alone is insufficient: the matching SQL installation and healthy probe are also required.</p>
+      </section>
+
+      <section class="docs-section" id="workflow" aria-labelledby="workflow-title">
+        <p class="docs-section-number">04 / OPERATOR WORKFLOW</p><h2 id="workflow-title">Acknowledge one eligible alert</h2>
+        <p>In a configured synthetic pilot, sign in to Alerta as an authorised human, open a single eligible problem and use its acknowledgement action. An ingestion API key or an API-key owner label does not establish human authority.</p>
+        <div class="code-example"><p>HTTP · illustrative request from an authenticated human session</p><pre tabindex="0" aria-label="Illustrative single alert action request"><code data-language="http" id="example-action">PUT /alert/00000000-0000-4000-8000-000000000001/action
+Content-Type: application/json
+
+{"action": "ack", "text": "Investigating disk capacity in the synthetic lab."}</code></pre></div>
+        <p>The UUID above is synthetic. Use the actual full alert UUID. Zab-al-ack saves the signed request with the Alerta acknowledgement; the worker verifies it, reads the frozen original Zabbix problem and checks scope before sending. A local acknowledgement is not confirmation of source delivery.</p>
+        <p>Inspect <code>zabbix_ack_sync</code> and <code>zabbix_ack_sync_reason</code> in alert attributes. The ledger is authoritative; these fields are a view of its outcome.</p>
+        <div class="docs-table" tabindex="0" role="region" aria-label="Acknowledgement outcome states"><table><thead><tr><th>Value</th><th>What it means</th></tr></thead><tbody>
+          <tr><td><code>pending</code></td><td>Saved locally; delivery or a hold is still outstanding.</td></tr>
+          <tr><td><code>ok</code></td><td>A successful write response or source acknowledgement was observed. Read the reason before attributing it to this action.</td></tr>
+          <tr><td><code>failed</code></td><td>Inspect validation, policy, credentials or API failure before any retry.</td></tr>
+          <tr><td><code>skipped</code></td><td>Local-only outcome, such as an excluded route, actor or mapping.</td></tr>
+          <tr><td><code>expired</code></td><td>The original four-hour execution window has ended.</td></tr>
+          <tr><td>Missing</td><td>No integration result is established. Do not read absence as success.</td></tr>
+        </tbody></table></div>
+        <p>Repeated Ack-on-Ack retains Alerta’s HTTP 409. Bulk, abbreviated-ID and direct status-update routes do not create write-back intents. An already acknowledged Zabbix event receives no extra acknowledgement or comment.</p>
+      </section>
+
+      <section class="docs-section" id="operations" aria-labelledby="operations-title">
+        <p class="docs-section-number">05 / DAILY OPERATIONS</p><h2 id="operations-title">Inspect, reconcile, then intervene</h2>
+        <p>These examples require a separately prepared lab database and reviewed configuration. The inert config from the quickstart intentionally cannot run database commands.</p>
+        <div class="code-example"><p>Shell · inspection through the worker database identity</p><pre tabindex="0" aria-label="Operational inspection commands"><code data-language="sh" id="example-inspect">.venv/bin/zabalack --config /reviewed/worker.json status
+.venv/bin/zabalack --config /reviewed/worker.json doctor
+.venv/bin/zabalack --config /reviewed/worker.json verifier-health
+.venv/bin/zabalack --config /reviewed/worker.json inspect --state held --limit 50
+.venv/bin/zabalack --config /reviewed/worker.json inspect --state unknown --limit 50
+.venv/bin/zabalack --config /reviewed/worker.json inspect --state failed --limit 50
+.venv/bin/zabalack --config /reviewed/worker.json metrics</code></pre></div>
+        <p><code>metrics</code> emits Prometheus text to stdout for an existing collector; it does not start an HTTP exporter. Example gauges include <code>zabalack_pending_count</code>, <code>zabalack_oldest_pending_seconds</code> and <code>zabalack_capture_healthy</code>.</p>
+        <div class="code-example"><p>Shell · one reconciliation cycle</p><pre tabindex="0" aria-label="Reconciliation command"><code data-language="sh" id="example-reconcile">.venv/bin/zabalack --config /reviewed/worker.json reconcile --read-only --once</code></pre></div>
+        <div class="docs-note"><strong>“Read-only” refers to Zabbix.</strong> Reconciliation can write local ledger findings and repair Alerta projections. Use inspection commands when you only need database observations. Add <code>--nightly</code> for the bounded mapped-event drift sweep.</div>
+        <h3>Pause a selected instance</h3>
+        <p>This is an <strong>audited database change</strong>, for an authorised operator in a configured lab. The logical instance must already exist in the reviewed endpoint registry.</p>
+        <div class="code-example"><p>Shell · operator control, no Zabbix acknowledgement</p><pre tabindex="0" aria-label="Audited instance pause command"><code data-language="sh" id="example-pause">.venv/bin/zabalack --config /reviewed/operator.json pause \
+  --instance lab-zabbix \
+  --owner LAB_OPERATOR \
+  --change-ref LAB_CHANGE_REFERENCE \
+  --reason 'Synthetic maintenance exercise'</code></pre></div>
+        <p>Pausing does not cancel an HTTP request already sent. Account for in-flight attempts and retain their evidence. After fixing the cause, use <code>retry</code> only with the recorded action UUID and the required owner/change references. A retry cannot refresh the action’s expiry or automatically settle an unknown outcome.</p>
+      </section>
+
+      <section class="docs-section" id="troubleshooting" aria-labelledby="troubleshooting-title">
+        <p class="docs-section-number">06 / TROUBLESHOOTING</p><h2 id="troubleshooting-title">Follow the recorded reason</h2>
+        <div class="docs-table" tabindex="0" role="region" aria-label="Troubleshooting guide"><table><thead><tr><th>Observation</th><th>Next step</th></tr></thead><tbody>
+          <tr><td>Eligible Ack is rejected</td><td>Check adapter installation, probe routing, schema version, trigger readiness and config revision. Do not disable capture to hide the symptom.</td></tr>
+          <tr><td>Timeout after sending</td><td>Inspect unknown work and reconcile. A missing reference does not prove the earlier request stopped; avoid blind retries.</td></tr>
+          <tr><td>Host IDs or complete host set changed</td><td>Keep the original approval intact. Review the mapping and approve a new cohort revision; do not substitute by hostname.</td></tr>
+          <tr><td>Token, permission or CA error</td><td>Hold the affected instance, repair protected references or permissions, and explicitly review circuit recovery.</td></tr>
+          <tr><td>Ledger completed but Alerta view lags</td><td>Repair the projection from the ledger. Do not repeat the source write to repair a UI field.</td></tr>
+          <tr><td>Zabbix later becomes unacknowledged</td><td>Record drift. Zab-al-ack does not automatically undo a deliberate source unacknowledgement.</td></tr>
+        </tbody></table></div>
+        <p>Escalate unresolved remote outcomes using the source runbook’s <code>settle-unknown</code> evidence procedure. The operator must independently establish fencing, completed remote processing and no effect; that control records an assertion rather than proving remote cessation.</p>
+      </section>
+
+      <section class="docs-section" id="testing" aria-labelledby="testing-title">
+        <p class="docs-section-number">07 / REPRODUCIBILITY</p><h2 id="testing-title">Run the right evidence layer</h2>
+        <div class="code-example"><p>Shell · disposable source checkout</p><pre tabindex="0" aria-label="Reference test commands"><code data-language="sh" id="example-tests">TZ=UTC .venv/bin/python tools/run_reference_suite.py --wasm
+TZ=UTC .venv/bin/python tools/run_sql_checks.py --isolated-lab
+node zabbix/v1/test_webhook.cjs</code></pre></div>
+        <p>The reference runner writes fresh results beneath <code>evidence/</code> and raw local logs beneath <code>build/evidence-raw/</code>. Keep raw logs private. The runner removes inherited service-fixture settings; native-only and real-Zabbix cases are reported separately as skipped.</p>
+        <div class="code-example"><p>Shell · dedicated Docker Compose lab host, or locally installed PostgreSQL 18 and PgBouncer</p><pre tabindex="0" aria-label="Native lab command"><code data-language="sh">TZ=UTC .venv/bin/python tools/native_ci.py --isolated-lab
+ACK_LAB_PG_BIN=/path/pg18/bin ACK_LAB_PGBOUNCER_BIN=/path/pgbouncer TZ=UTC .venv/bin/python tools/native_local.py --isolated-lab</code></pre></div>
+        <p>Both native runners manage disposable PostgreSQL/PgBouncer fixtures with the same phases and environment; <code>docs/local-services.md</code> lists the inputs of the non-Docker form. Neither is a production test command. Real-Zabbix tests require separately provisioned synthetic events, restricted and witness tokens, and explicit lab-write opt-in; follow <code>lab/real_zabbix.md</code> in the matching source.</p>
+        <div class="docs-note"><strong>a16 source.</strong> 865 passed, 23 skipped and none failed: 836 unit, mocked, property and offline cases plus 29 PostgreSQL WASM passes. The documentation walkthrough is one WASM case and one native case. All 888 collected cases were selected. Eight SQL groups, fifteen synthetic webhook groups, an additional 46-case property run and all 20 curated nightly mutations also passed. Repeat runs overlap the reference suite and must not be added to its unique-case total.</div>
+        <p>The original a8 artifacts rebuilt byte-for-byte and passed 725 reference tests, with 22 skips and no failures. The independent review found an evidence-validation defect; 56 regression cases now check contradictory deployment reports before export, archive verification and final service recording. a9 retains that validator and adds the namespace changes described above; a10 through a16 change no runtime behaviour. Older artifacts and service reports remain in the historical handoff; their hashes do not describe a16.</p>
+        <p><strong>Service evidence, executed for a16.</strong> On this tree the local runners recorded 42 native PostgreSQL 18.3/PgBouncer 1.24.1 cases in five fresh clusters, six real Zabbix 7.0.10 contract cases — the five original ones plus the case that requires the server’s specific suppression-permission denial for the lab token — and the installed-wheel pipeline’s four tests with 13 observations. These runs belong to a16; unchanged service-path code is grounds for an inference about a14 and a15, not a substitute for their own records. The independent review separately recorded Zabbix 7.0.30 and 7.0.10 contract runs and ten supplemental real API cases in its own QEMU lab; those remain its evidence. Its supplemental cases cover the original/recovery distinction, complete multi-host validation, action 2 without a comment, specific excluded-action denials, a witnessed scope denial, expired credentials and a lost response after a real accepted write. Neither lab establishes production capacity. Docker Compose and G1–G8 remain open.</p>
+        <p>Runners bind results to source and harness digests. The corrected gate also checks counts, observations, cleanup and runtime identity; it does not authenticate an unsigned report's author. Do not edit reports to make changed code appear tested. Read the <a href="blog/0-1-0a8.html#independent-review">review follow-up</a>, <a href="#engineering">eight upgrades</a> and <a href="zabalack-alpha-brief.md">alpha brief</a> for scope and limitations.</p>
+      </section>
+
+      <section class="docs-section" id="deployment" aria-labelledby="deployment-title">
+        <p class="docs-section-number">08 / CONTROLLED ROLLOUT</p><h2 id="deployment-title">Separate installation from activation</h2>
+        <p>Plan an inert installation first. The source includes opt-in Ansible playbooks, systemd units, versioned SQL and role/grant scripts. The default inventory selects no hosts and installation does not restart existing services or start workers.</p>
+        <ol class="docs-list">
+          <li>Verify matching artifacts and collect environment, permission and routing evidence.</li>
+          <li>Provision reviewed roles. Run migrations as <code>zabalack_owner</code>; attach and seal capture through the separately authorised <code>alerts</code> owner/installer.</li>
+          <li>Validate schema version <strong>3</strong>, exact caller grants, capture health and application/probe writer alignment.</li>
+          <li>Stage plugins and configuration with external writes disabled. Validate every serving route before enrolling a pilot.</li>
+          <li>Close the environment-specific gates before any approved enablement. Never activate by copying a synthetic fixture.</li>
+        </ol>
+        <p>Detailed commands and sequencing live in <code>docs/deployment.md</code> and <code>sql/install/</code> in the supplied source. Migration ownership does not grant table-owner authority; successful superuser tests do not establish runtime permissions.</p>
+        <h3>Upgrading from a4 or a5</h3>
+        <p>The fresh a9 <code>zabalack</code> baseline includes all seven migrations and requires schema 3. Migration 007 retains the settled-expiry correction: a settled no-effect action can close at its original expiry under the existing uncertainty and lease guards. Historical Ackline SQL is retained separately. Do not use these files as an in-place Ackline upgrade.</p>
+        <h3>Review and import the a9 media artifact</h3>
+        <h3 id="effective-roles">Verify effective source permissions</h3>
+        <p>Amendment A4 corrects the lab role provisioner. In both inspected Zabbix versions, setting a default to zero does not revoke individual rules omitted from the request. The helper now enumerates action/UI permissions and verifies the effective <code>role.get</code> result before issuing users or tokens. In an isolated lab, use the corrected helper and run the positive and negative cases; a role-create request alone is not permission evidence.</p>
+        <p>The real API tests require the specific action-role denials for close, severity change and suppression. The independent read-only witness establishes that the outside-scope event exists. Zabbix shares the acknowledge/unacknowledge capability: the token can inherently unacknowledge, while Zab-al-ack’s client rejects action 16 and allows only 2 or 6. G5 still requires these checks on your approved installed account. See the <a href="blog/zabbix-7-0-30-review.html">review findings</a>.</p>
+        <p>Amendment A3 corrects handling of <code>{EVENT.CAUSE.ID}</code> when Zabbix 7.0.10 renders <code>*UNKNOWN*</code> for a problem without a cause. An engineer evaluating an earlier media artifact must review and re-import the corrected artifact into the isolated lab. This does not resolve the separate transport boundary below.</p>
+        <h3 id="transport">Resolve the reference transport boundary</h3>
+        <p>The current webhook artifact leaves peer and hostname verification disabled in the inspected Zabbix 7.0.10 and 7.0.30 runtime, and redirects are followed. An HTTPS ingestion URL alone therefore does not authenticate this path or contain redirects. Amendment A2 keeps G1/G2 open until an approved transport remedy is inspected and tested against untrusted certificates, wrong hostnames and redirects outside the approved destination. The Zab-al-ack worker’s separate HTTPX client verifies TLS and does not follow redirects.</p>
+        <p>Alerta 9.1.0 also runs schema changes during ordinary application startup. The reference application uses the Alerta table owner as a trusted installation identity, separate from Zab-al-ack’s owner and restricted runtime identities. A non-owner application startup requires its own upstream resolution and validation; passing an owner-backed fixture does not establish it.</p>
+        <h3>Generate a non-destructive rollback plan</h3>
+        <div class="code-example"><p>Shell · plan only, no database or service changes</p><pre tabindex="0" aria-label="Non-destructive rollback planning command"><code data-language="sh" id="example-rollback">.venv/bin/python deploy/rollback.py \
+  --config /reviewed/operator.json \
+  --instance lab-zabbix \
+  --owner LAB_OPERATOR \
+  --change-ref LAB_CHANGE_REFERENCE</code></pre></div>
+        <p>Without <code>--apply</code>, this prints a plan with <code>"mode": "plan_only"</code> and <code>"deletes_evidence": false</code>. Normal rollback pauses delivery, accounts for in-flight work and retains the ledger. Retain migrations through 007 and schema version 3; a binary downgrade alone is not a database rollback. Follow the compatibility checks in the matching rollback runbook.</p>
+      </section>
+
+      <section class="docs-section" id="inventory" aria-labelledby="inventory-title">
+        <p class="docs-section-number">09 / ENGINEER HANDOFF</p><h2 id="inventory-title">Collect only the inputs you need</h2>
+        <p>The source collectors select explicit files or endpoints and create bounded, redacted output. This example sanitises a locally saved synthetic payload; it makes no service request. Use a new output filename because existing outputs are refused.</p>
+        <div class="code-example"><p>Shell · local payload redaction</p><pre tabindex="0" aria-label="Local payload collector command"><code data-language="sh" id="example-collector">.venv/bin/python collectors/collect.py \
+  --output /reviewed/problem-redacted.json \
+  payload --input /reviewed/synthetic-problem.json</code></pre></div>
+        <p>For installed-environment evidence, <code>local</code> parses literal Alerta configuration without importing it, <code>postgres</code> reads catalog information in a read-only transaction, and <code>zabbix</code> uses explicitly selected read APIs. Use a separate inventory identity; do not broaden the delivery token for collection.</p>
+        <p>Review output before sharing. Static configuration and empty API results cannot prove effective routing or permissions. The consolidated register is <code>docs/INPUTS_REQUIRED.md</code>: installed versions and topology, real redacted payloads and update operations, customer/instance/trigger approvals, protected secret references, and named operational owners and records policy. G1–G8 remain deployment-specific.</p>
+        <p class="docs-source-note">This guide follows the supplied 0.1.0a16 CLI, configuration validator, plugin adapter, lab tools and runbooks, with amendments R10–R17, A4 and the adopted a8 evidence-validation correction. Use the reviewed edition’s artifact hashes and read the rename guide before any transition. Examples describe this candidate, not a general compatibility promise.</p>
+      </section>
+      <section class="docs-section" id="engineering" aria-labelledby="engineering-title">
+        <p class="docs-section-number">10 / ENGINEERING UPGRADES</p><h2 id="engineering-title">Eight ways to make changes reviewable</h2>
+        <p>a6 and a7 add checks around the trust boundaries, failure paths and release process. Each control has a bounded purpose. The cumulative changelog and amendments R10/R11 in the source explain the decisions; the retained a7 history includes the consolidated <code>UPGRADES_1-8.md</code>.</p>
+        <div class="docs-table" tabindex="0" role="region" aria-label="Engineering upgrades and evidence"><table><thead><tr><th>Upgrade</th><th>What it improves</th><th>Evidence and current limits</th></tr></thead><tbody>
+          <tr><td>1 · Evidence tied to execution</td><td>Runners execute the tests they record. Source and harness digests, plus one CI run and attempt, prevent stale or foreign evidence from entering a build.</td><td>The independent a8 review added 56 deployment-evidence regressions. Hosted CI remains NOT_RUN.</td></tr>
+          <tr><td>2 · Lint and typed boundaries</td><td>Hash-pinned Ruff checks production Python. Gradual strict mypy covers configuration, signing, policy and RPC boundaries.</td><td>Both gates passed. The entire application is not strictly typed.</td></tr>
+          <tr><td>3 · Generated state and input tests</td><td>Hypothesis explores malformed trust inputs and ledger action sequences. It exposed the settled-expiry defect fixed by migration 007.</td><td>Property and restricted SQL state-machine cases passed in the reference suite. SQL execution here uses PostgreSQL WASM.</td></tr>
+          <tr><td>4 · Process failure tests</td><td>Native scenarios exercise competing workers, dropped responses, a killed worker after remote commit and stale completion fencing.</td><td>Five native scenarios passed on the a12 tree (source-built PostgreSQL 18.3, real lease expiries and backoffs).</td></tr>
+          <tr><td>5 · Mutation checks</td><td>Tests must reject reviewed unsafe code changes. Syntax failures, exceptions, missing cases and timeouts cannot masquerade as successful detection.</td><td>20/20 nightly mutants detected; 111-case unchanged baseline passed. Coverage is curated Python unit/mock scope.</td></tr>
+          <tr><td>6 · Deployment service lab</td><td>Installed app and worker processes use ordinary login, separate SQL logins, real Zabbix media import and problem/update/recovery flows. The supplied Docker form is separate from the local VM form executed here.</td><td>Independent final-harness local VM execution: 4 passed, 13/13 observations, cleanup exit 0. The supplied 7.0.10 lab screenshot above is an earlier capture. The Docker Compose form remains NOT_RUN.</td></tr>
+          <tr><td>7 · Optional security analysis</td><td>Commit-pinned CodeQL for Python and JavaScript/TypeScript uses narrow permissions and explicit repository opt-in.</td><td>Workflow checks passed offline. Hosted analysis NOT_RUN; no clean scan is claimed.</td></tr>
+          <tr><td>8 · Release verification</td><td>Validate archive bytes, wheel metadata, entry points and evidence. Separate tooling checks a future signed attestation against an exact workflow, tag and commit.</td><td>Unsigned release consistency passed. Hosted signing and cryptographic Zab-al-ack attestation verification NOT_RUN.</td></tr>
+        </tbody></table></div>
+        <h3>Run the local quality and mutation checks</h3>
+        <p>After the source and hash-pinned quality dependency installation in the quickstart, run these from the source root. The nightly mutation profile deliberately changes only disposable copies; the original source must remain unchanged.</p>
+        <div class="code-example"><p>Shell · development checkout</p><pre tabindex="0" aria-label="Quality and mutation commands"><code data-language="sh" id="example-quality">.venv/bin/python -m pip check
+.venv/bin/python -m ruff check src
+.venv/bin/python -m mypy --config-file mypy.ini
+TZ=UTC .venv/bin/python tools/run_mutation_checks.py --profile pr
+# Expanded catalogue; run separately when needed.
+TZ=UTC .venv/bin/python tools/run_mutation_checks.py --profile nightly</code></pre></div>
+        <p>The PR profile contains 12 reviewed mutations; nightly contains 20. A survivor fails the gate. The first expanded run exposed missing wrong-event and wrong-trigger regression cases; a7 includes both. A 20/20 result does not measure mutation coverage of the entire codebase.</p>
+        <h3>Verify the supplied release</h3>
+        <p>In the complete ZIP, work from <code>plugin/source/</code> after installing its reviewed dependencies. The sibling <code>plugin/dist/</code> contains the built artifacts and their original checksums.</p>
+        <div class="code-example"><p>Shell · local artifact verification</p><pre tabindex="0" aria-label="Release verification command"><code data-language="sh" id="example-release-check">.venv/bin/python tools/verify_release.py --dist ../dist</code></pre></div>
+        <p>Expected scope: <code>unsigned_release_consistency</code>, with <code>signed_attestation: false</code>. Matching hashes establish consistency with the supplied source, not publisher identity. <code>docs/release-provenance.md</code> explains the separate attestation verifier and the independently trusted release-owner inputs it requires. The signing and publication templates remain inactive.</p>
+        <h3>Inspect the service-lab plan</h3>
+        <div class="code-example"><p>Shell · plan only</p><pre tabindex="0" aria-label="Deployment lab plan command"><code data-language="sh" id="example-e2e-plan">TZ=UTC .venv/bin/python tools/run_deployment_e2e.py --isolated-lab --plan
+TZ=UTC .venv/bin/python tools/run_deployment_e2e_local.py --isolated-lab --runner-python /path/runner/bin/python --wheel dist/pypi/zabalack-0.1.0a16-py3-none-any.whl --services-file services.json --plan</code></pre></div>
+        <p>Actual execution requires a dedicated development host with a local Unix-socket Docker daemon and Compose, or the operator-provided local services described in <code>docs/local-services.md</code>. Read <code>docs/deployment-e2e.md</code> before running without <code>--plan</code>. The lab creates its own synthetic services and has no published ports; it does not validate production permissions, notifications, TLS remediation or G1–G8.</p>
+      </section>
+    </main>
+  </div>
+  <footer class="site-footer container">
+    <div class="footer-brand"><a class="brand" href="index.html" aria-label="Zab-al-ack home"><img src="assets/zabalack-mark.svg" alt="" width="36" height="36"><span>Zab-al-ack<span class="brand-period">.</span></span></a><p>Alerta and Zabbix, in step.</p></div>
+    <div class="footer-info"><nav aria-label="Project references"><a href="index.html">Overview</a><a href="docs.html" aria-current="page">Documentation</a><a href="blog/index.html">Blog</a><a href="index.html#alpha">Alpha status</a></nav><p>An independent integration project. Not an official Alerta or Zabbix product.<br>Static documentation · no connection to your monitoring systems.</p></div>
+  </footer>
+</body>
+</html>

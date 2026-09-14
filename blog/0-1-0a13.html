@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>What a review is for — Zab-al-ack blog</title>
+  <meta name="description" content="Zab-al-ack a13 adopts the independent a12 review after reproducing its finding: a default-deny Zabbix role that still permitted suppression.">
+  <link rel="canonical" href="https://zabalack.stel.chatgpt.site/blog/0-1-0a13.html">
+  <meta property="og:url" content="https://zabalack.stel.chatgpt.site/blog/0-1-0a13.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="What a review is for — Zab-al-ack blog">
+  <meta property="og:description" content="Zab-al-ack a13 adopts the independent a12 review after reproducing its finding: a default-deny Zabbix role that still permitted suppression.">
+  <link rel="icon" type="image/svg+xml" href="../assets/zabalack-mark.svg">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="../blog.css">
+</head>
+<body class="blog">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><div class="container header-inner"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="40" height="40"><span>Zab-al-ack<span class="brand-period">.</span></span></a><nav class="main-nav" aria-label="Main navigation"><a href="../index.html#features">Why Zab-al-ack</a><a href="../docs.html">Documentation</a><a href="../blog/index.html" aria-current="location">Blog</a><a href="../index.html#alpha">The alpha</a></nav><a class="header-cta" href="../index.html">Back to overview</a></div></header>
+  <main id="main" class="container post-container">
+    <article class="post">
+      <p class="post-kicker"><a href="index.html">← All posts</a></p>
+      <h1>What a review is for</h1>
+      <p class="post-meta"><time datetime="2026-09-12">2026-09-12</time> · candidate 0.1.0a13</p>
+      <p>An independent reviewer built Zabbix 7.0.30 from source, put a12 through a disposable virtual machine, and found something our own green test run had been quietly hiding for six candidates: the lab role we described as “only acknowledge and comment” could suppress problems.</p>
+      <h2>Why a passing test can be wrong</h2>
+      <p>The lab created its restricted role with <code>actions.default_access: 0</code> and a list of two actions. That reads like default-deny. It is not. On Zabbix 7.0 the rule compiler keeps the previous, enabled value for any individual rule the request omits, so every other action stayed on. The two denials the old lab did observe — close and severity — came back with “No permissions to referred object”, which is the host-rights boundary. The role was never doing the work we credited it with.</p>
+      <p>We did not take that on trust. Before adopting anything we recreated the original role on our own 7.0.10 server: the read-back showed all eleven actions enabled and a real suppression request was accepted. With the corrected, fully enumerated rules the same three requests came back as “no permissions to suppress problems”, “…to close problems”, “…to change problem severity” — the denial we had been claiming all along.</p>
+      <h2>One boundary the review also names</h2>
+      <p>Zabbix maps acknowledging and unacknowledging to a single role capability. We confirmed it: a token whose role enables <code>acknowledge_problems</code> accepted action 16. Zab-al-ack’s client only ever sends actions 2 and 6, so the integration does not unacknowledge — but the token itself could. That belongs in your token-protection plan, not in a footnote.</p>
+      <h2>What a13 adds</h2>
+      <p>The review corrected the deployment lab’s provisioner, which now enumerates every inspected action and UI rule and verifies the effective role through <code>role.get</code> before any user or token exists. a13 takes that unchanged, with its ten regressions, and extends it to the place the review did not reach: the fixture an operator provisions by hand for the real-Zabbix suite. Ours turned out to carry script execution, API-token management and more, contained in practice only by the API method allowlist. The instructions now require enumeration and read-back, and the suite proves the boundary on the live server by demanding the specific suppression denial — a host-rights rejection is explicitly not accepted as evidence.</p>
+      <p>Everything else was re-run here: 820 reference tests, 42 native PostgreSQL and PgBouncer cases, six real Zabbix 7.0.10 contract cases and the installed-wheel pipeline’s four tests with thirteen observations. The runtime code and SQL did not change.</p>
+      <h2>What it still is not</h2>
+      <p>A passing disposable fixture does not close G5: your deployment still needs an effective-role read-back and positive and negative permission tests on the approved account. A2 — the reference webhook does not verify TLS peers and follows redirects — is unresolved. The Docker Compose forms, hosted CI, signed attestation and the eight gates remain open.</p>
+      <p>Read <a href="zabbix-7-0-30-review.html">the review itself</a>, or the amendment A4 write-up in the source handoff.</p>
+      <p class="post-foot">Zab-al-ack is independent of Alerta and Zabbix. Public package and repository ownership are still being prepared. The website is informational and does not connect to monitoring systems.</p>
+    </article>
+  </main>
+  <footer class="site-footer container"><div class="footer-brand"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="36" height="36"><span>Zab-al-ack<span class="brand-period">.</span></span></a><p>Alerta and Zabbix, in step.</p></div><div class="footer-info"><nav aria-label="Project references"><a href="../index.html">Overview</a><a href="../docs.html">Documentation</a><a href="../blog/index.html">Blog</a><a href="../index.html#alpha">Alpha status</a></nav><p>An independent integration project. Not an official Alerta or Zabbix product.<br>Static pages · no connection to your monitoring systems.</p></div></footer>
+</body>
+</html>

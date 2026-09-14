@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Zab-al-ack — Alerta and Zabbix, in step</title>
+  <meta name="description" content="Acknowledge in Alerta. Carry that acknowledgement back to the original Zabbix problem. Meet Zab-al-ack, an independent, self-hosted integration in alpha development.">
+  <link rel="canonical" href="https://zabalack.stel.chatgpt.site/">
+  <meta property="og:url" content="https://zabalack.stel.chatgpt.site/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Zab-al-ack — One acknowledgement. A clearer picture.">
+  <meta property="og:description" content="Scoped, traceable acknowledgement delivery from Alerta to Zabbix. A self-hosted alpha, with an open-source release in preparation.">
+  <link rel="icon" type="image/svg+xml" href="assets/zabalack-mark.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-scope" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><circle cx="12" cy="12" r="4"/></symbol>
+    <symbol id="i-record" viewBox="0 0 24 24"><path d="M7 3h10a2 2 0 0 1 2 2v16H5V5a2 2 0 0 1 2-2Zm2 5h6m-6 4h6m-6 4h4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M5.6 7a7 7 0 0 1 11.5-1.6L20 9M4 15l2.9 3.6A7 7 0 0 0 18.4 17"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 1 1 8 0v3m-4 5v2"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 16v5h14v-5"/></symbol>
+  </svg>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#" aria-label="Zab-al-ack home"><img src="assets/zabalack-mark.svg" alt="" width="40" height="40"><span>Zab-al-ack<span class="brand-period">.</span></span></a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#features">Why Zab-al-ack</a><a href="#how-it-works">How it works</a><a href="docs.html">Documentation</a><a href="blog/index.html">Blog</a><a href="#alpha">The alpha</a>
+      </nav>
+      <a class="header-cta" href="#alpha">The alpha <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero container" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="eyebrow-line"></span>ALERTA + ZABBIX, CONNECTED</div>
+        <h1 id="hero-title">One acknowledgement.<br><span class="accent">A clearer picture.</span></h1>
+        <p class="hero-description">Your team already acknowledged it in Alerta. Carry that acknowledgement back to the original Zabbix problem—without doing the same job twice.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#how-it-works">See how it works <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+          <a class="text-link" href="docs.html">Explore the technical docs</a>
+        </div>
+        <p class="hero-note"><span class="alpha-label">ALPHA 0.1.0a16</span> Formerly Ackline. Self-hosted. Open-source release in preparation.</p>
+      </div>
+
+      <figure class="workflow-visual" aria-labelledby="workflow-caption">
+        <div class="flow-surface">
+          <div class="flow-topline"><span class="flow-kicker">ONE PROBLEM. ONE CLEAR HANDOFF.</span><span class="flow-direction">A <span>→</span> Z</span></div>
+          <div class="console console-alerta">
+            <div class="console-heading"><span class="console-name"><span class="app-monogram alerta-monogram">a</span> Alerta</span><span class="micro-label">YOUR ALERT CONSOLE</span></div>
+            <div class="problem-title">Disk space is running low</div>
+            <div class="problem-meta"><span>db-01</span><span>Problem #41082</span></div>
+            <div class="operator-action"><span class="operator-avatar">OP</span><span><strong>Operator acknowledged</strong><small>One authorised action in Alerta</small></span><svg class="icon confirmation-icon" aria-hidden="true"><use href="#i-check"/></svg></div>
+          </div>
+          <div class="delivery-line">
+            <span class="delivery-rail" aria-hidden="true"></span>
+            <span class="delivery-symbol"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>
+            <div><strong>Signed. Saved. Verified.</strong><span>Delivered in the background</span></div>
+            <span class="delivery-tag">Zab-al-ack</span>
+          </div>
+          <div class="console console-zabbix">
+            <div class="console-heading"><span class="console-name"><span class="app-monogram zabbix-monogram">Z</span> Zabbix</span><span class="micro-label">THE ORIGINAL PROBLEM</span></div>
+            <div class="source-outcome"><div><strong>Problem #41082</strong><span>Same event. Acknowledgement recorded.</span></div><span class="state-badge"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg> Acknowledged</span></div>
+          </div>
+          <div class="flow-footnote"><svg class="icon" aria-hidden="true"><use href="#i-record"/></svg> A recorded outcome, from action to delivery.</div>
+        </div>
+        <figcaption id="workflow-caption">Illustrative workflow with synthetic data · not a product screenshot</figcaption>
+      </figure>
+    </section>
+
+    <div class="principles-strip">
+      <div class="container principles"><span>Works with your existing console</span><span>Scoped to approved alerts</span><span>Runs on your infrastructure</span></div>
+    </div>
+
+    <section class="features section container" id="features" aria-labelledby="features-title">
+      <div class="section-heading"><div><p class="eyebrow">LESS REPETITION. MORE CLARITY.</p><h2 id="features-title">Keep the work moving.<br>Keep the context intact.</h2></div><p>Built for the operators moving between tools, the MSPs managing multiple customers, and the teams who need to know what happened next.</p></div>
+      <div class="feature-grid">
+        <article class="feature"><span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg></span><h3>One action for your team.</h3><p>Use Alerta’s single-alert acknowledgement. Zab-al-ack takes care of eligible Zabbix acknowledgements in the background, so operators can move on to the investigation.</p></article>
+        <article class="feature"><span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-scope"/></svg></span><h3>Your boundaries, respected.</h3><p>Choose the customers, Zabbix instances, triggers and hosts that participate. Every delivery checks the original problem and its approved scope before writing.</p></article>
+        <article class="feature"><span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="#i-record"/></svg></span><h3>An outcome you can follow.</h3><p>Keep a durable record of the request, delivery and result. Track pending, completed, uncertain or expired work, with a clear path to investigate failures.</p></article>
+      </div>
+    </section>
+
+    <section class="mechanism" id="how-it-works" aria-labelledby="mechanism-title">
+      <div class="container">
+        <div class="mechanism-heading"><p class="eyebrow">A SMALL ACTION. A CAREFUL JOURNEY.</p><h2 id="mechanism-title">From your console<br>to the right source event.</h2><p>Alerta stays the place your team works. Zab-al-ack handles the delivery behind it.</p></div>
+        <ol class="steps">
+          <li><span class="step-number">01</span><h3>Acknowledge in Alerta</h3><p>An authorised person acknowledges one eligible alert, using the familiar Alerta action.</p></li>
+          <li><span class="step-number">02</span><h3>Capture and verify</h3><p>The signed request is saved with the acknowledgement. A worker verifies it and rechecks the original Zabbix problem.</p></li>
+          <li><span class="step-number">03</span><h3>Record the outcome</h3><p>The worker delivers a bounded acknowledgement. The result is recorded and reflected back in Alerta.</p></li>
+        </ol>
+        <div class="careful-note"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><p><strong>When the outcome is uncertain, don’t guess.</strong> Reconciliation checks the source without blindly repeating a write. Already acknowledged? No extra acknowledgement or comment.</p></div>
+      </div>
+    </section>
+
+    <section class="control-section section container" aria-labelledby="control-title">
+      <div class="control-copy"><p class="eyebrow">OPERATE IT ON YOUR TERMS</p><h2 id="control-title">Your infrastructure.<br>Your pace.</h2><p>A focused integration for the monitoring tools you already run. No hosted Zab-al-ack service is required.</p></div>
+      <div class="control-list">
+        <div><span class="small-check" aria-hidden="true">✓</span><div><h3>Start with a small pilot</h3><p>Begin with external writes disabled and no active customer cohort. Validate locally, then enable only an approved group of alerts.</p></div></div>
+        <div><span class="small-check" aria-hidden="true">✓</span><div><h3>Pause with a clear record</h3><p>Use audited controls to pause delivery, inspect work and handle exceptions.</p></div></div>
+        <div><span class="small-check" aria-hidden="true">✓</span><div><h3>Inspect the moving parts</h3><p>Python plugins, PostgreSQL records, a delivery worker and a reconciler. Designed for an Apache-2.0 open-source release.</p></div></div>
+      </div>
+    </section>
+
+    <section class="alpha-section container" id="alpha" aria-labelledby="alpha-title">
+      <div class="alpha-panel">
+        <div class="alpha-main">
+          <span class="alpha-label">0.1.0a16 · PACKAGED ALPHA</span>
+          <h2 id="alpha-title">A focused alpha.<br>An open path forward.</h2>
+          <p>One authorised acknowledgement, one Alerta alert and one original Zabbix problem. a15 verified a14 and executed the three service suites it could not run, fixing an evidence writer that produced owner-only records. a16 reproduces and adopts the independent review of a15: no defect was found in the code, and five claims in the release prose are corrected — what the writer defect actually reached, which records the audit requires, which candidate a service run belongs to, and what the release verifier depends on. The illustrated guide, eight engineering upgrades and strict evidence checks remain. Bulk actions, chatops and multi-event alerts remain outside this release’s scope.</p>
+          <div class="alpha-evidence">
+            <h3>Checks you can inspect and repeat.</h3>
+            <p><strong>865 passed · 0 failed · 23 skipped</strong> on the a16 source: 836 unit, mocked, property and offline tests plus 29 PostgreSQL WASM tests. Separately: <strong>42 native</strong> PostgreSQL 18.3/PgBouncer cases, <strong>6 real Zabbix 7.0.10 contract cases</strong> including the excluded-action denial, and the installed-wheel pipeline’s <strong>4 tests and 13 observations</strong>. The independent review’s own 7.0.30 runs are kept as its evidence, not restated here.</p>
+              <p>New checks reject old or relabelled signatures before target access and stop installation on a database containing Ackline. Old proofs remain private and old ledgers stay intact.</p>
+              <p><a href="docs.html#visual-walkthrough">Follow the illustrated workflow →</a> — three output views and a real Zabbix event-details screenshot from the deployment lab.</p><p><strong>A fresh installation namespace.</strong> This release does not provide an in-place Ackline upgrade. The Docker Compose forms of the service labs, hosted CI and the deployment gates G1–G8 remain open.</p>
+              <p><a href="blog/0-1-0a16.html">A review that only changed the prose →</a> · <a href="blog/0-1-0a15.html">The evidence file nobody else could read</a> · <a href="docs.html#rename">Transition guidance</a></p>
+            </div>
+          <a class="button button-dark" href="zabalack-alpha-brief.md" download>Read the updated alpha brief <svg class="icon" aria-hidden="true"><use href="#i-download"/></svg></a>
+          <p class="availability-note">Public repository and package links are pending.</p>
+        </div>
+        <aside class="alpha-details" aria-label="Alpha reference and readiness"><h3>Reference and lab versions</h3><dl><div><dt>Alerta</dt><dd>9.1.0</dd></div><div><dt>Zabbix</dt><dd>7.0.30 + 7.0.10</dd></div><div><dt>PostgreSQL</dt><dd>18.3</dd></div><div><dt>PgBouncer</dt><dd>1.24.1</dd></div><div><dt>Python</dt><dd>3.12</dd></div><div><dt>Zab-al-ack schema</dt><dd>3 · new zabalack namespace</dd></div></dl><p class="evaluation-note">Development references, not production version recommendations or a compatibility guarantee.</p><p class="evaluation-note"><strong>For isolated evaluation.</strong> All production approval gates remain open. Live permissions, update notifications and deployment behaviour need verification before write-back is enabled. See the <a href="docs.html#transport">reference webhook transport limitation</a> before planning a pilot.</p></aside>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer container">
+    <div class="footer-brand"><a class="brand" href="#" aria-label="Zab-al-ack home"><img src="assets/zabalack-mark.svg" alt="" width="36" height="36"><span>Zab-al-ack<span class="brand-period">.</span></span></a><p>Alerta and Zabbix, in step.</p></div>
+    <div class="footer-info"><nav aria-label="Project references"><a href="docs.html">Documentation</a><a href="blog/index.html">Blog</a><a href="https://alerta.io/" target="_blank" rel="noopener noreferrer">About Alerta ↗</a><a href="https://www.zabbix.com/" target="_blank" rel="noopener noreferrer">About Zabbix ↗</a><a href="#alpha">Alpha status</a></nav><p>An independent integration project. Not an official Alerta or Zabbix product.<br>Informational preview · no connection to your monitoring systems.</p></div>
+  </footer>
+</body>
+</html>

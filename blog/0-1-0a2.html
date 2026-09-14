@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>A reviewer ran it on a real database. It failed. — Zab-al-ack blog</title>
+  <meta name="description" content="The first native run found two hard-coded assumptions and two SQL grants that were wider than the design.">
+  <link rel="canonical" href="https://zabalack.stel.chatgpt.site/blog/0-1-0a2.html">
+  <meta property="og:url" content="https://zabalack.stel.chatgpt.site/blog/0-1-0a2.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="A reviewer ran it on a real database. It failed. — Zab-al-ack blog">
+  <meta property="og:description" content="The first native run found two hard-coded assumptions and two SQL grants that were wider than the design.">
+  <link rel="icon" type="image/svg+xml" href="../assets/zabalack-mark.svg">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="../blog.css">
+</head>
+<body class="blog">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><div class="container header-inner"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="40" height="40"><span>Zab-al-ack<span class="brand-period">.</span></span></a><nav class="main-nav" aria-label="Main navigation"><a href="../index.html#features">Why Zab-al-ack</a><a href="../docs.html">Documentation</a><a href="../blog/index.html" aria-current="location">Blog</a><a href="../index.html#alpha">The alpha</a></nav><a class="header-cta" href="../index.html">Back to overview</a></div></header>
+  <main id="main" class="container post-container">
+    <article class="post">
+      <p class="post-kicker"><a href="index.html">← All posts</a></p>
+      <h1>A reviewer ran it on a real database. It failed.</h1>
+      <p class="post-meta"><time datetime="2026-09-10">2026-09-10</time> · candidate 0.1.0a2</p>
+      <p class="historical-note">Ackline release history. The project is now <a href="0-1-0a9.html">Zab-al-ack</a>; this post retains the names and results recorded for this candidate.</p>
+      <p>The first independent review did what we could not: it built PostgreSQL 18.3 and PgBouncer from source and ran the native phases. Two of the four failed. Two tests had hard-coded the worker's expected database name as <code>postgres</code>; the lab database is called <code>alerta</code>. The worker's health check said no, correctly, and the tests blamed the worker.</p>
+      <p>The fixture now reports the database it is actually connected to, and the tests use that. A second bug hid behind the first: a checkout path longer than about ninety characters made the lab's Unix socket path too long to start a cluster.</p>
+      <p>Two SQL corrections came out of reading the design baseline against the migrations. The worker role had an <code>EXECUTE</code> grant it never used and should not have had. And when a marker failed to parse, the capture stored up to 256 characters of whatever followed it, which could be an operator's free-text note. Now it stores nothing.</p>
+      <p>Evidence hygiene changed too: timestamps in UTC, no host fingerprints in the reports, and the acceptance matrix shows native PASS only where a native check ran. Twenty native cases, zero failures.</p>
+      <p class="post-foot">Details for this candidate are in the cumulative changelog and the release amendments shipped with the source. Nothing on this page is a production or publication claim.</p>
+    </article>
+  </main>
+  <footer class="site-footer container"><div class="footer-brand"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="36" height="36"><span>Zab-al-ack<span class="brand-period">.</span></span></a><p>Alerta and Zabbix, in step.</p></div><div class="footer-info"><nav aria-label="Project references"><a href="../index.html">Overview</a><a href="../docs.html">Documentation</a><a href="../blog/index.html">Blog</a><a href="../index.html#alpha">Alpha status</a></nav><p>An independent integration project. Not an official Alerta or Zabbix product.<br>Static pages · no connection to your monitoring systems.</p></div></footer>
+</body>
+</html>

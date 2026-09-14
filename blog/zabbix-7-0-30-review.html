@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Testing the integration against Zabbix 7.0.30 — Zab-al-ack blog</title>
+  <meta name="description" content="An independent a12 review builds a recent Zabbix 7.0 LTS and checks effective permissions, delivery failures and the installed plugin.">
+  <link rel="canonical" href="https://zabalack.stel.chatgpt.site/blog/zabbix-7-0-30-review.html">
+  <meta property="og:url" content="https://zabalack.stel.chatgpt.site/blog/zabbix-7-0-30-review.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Testing the integration against Zabbix 7.0.30 — Zab-al-ack blog">
+  <meta property="og:description" content="An independent a12 review builds a recent Zabbix 7.0 LTS and checks effective permissions, delivery failures and the installed plugin.">
+  <link rel="icon" type="image/svg+xml" href="../assets/zabalack-mark.svg">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="../blog.css">
+</head>
+<body class="blog">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><div class="container header-inner"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="40" height="40"><span>Zab-al-ack<span class="brand-period">.</span></span></a><nav class="main-nav" aria-label="Main navigation"><a href="../index.html#features">Why Zab-al-ack</a><a href="../docs.html">Documentation</a><a href="../blog/index.html" aria-current="location">Blog</a><a href="../index.html#alpha">The alpha</a></nav><a class="header-cta" href="../index.html">Back to overview</a></div></header>
+  <main id="main" class="container post-container">
+    <article class="post">
+      <p class="post-kicker"><a href="index.html">← All posts</a></p>
+      <h1>Testing the integration against Zabbix 7.0.30</h1>
+      <p class="post-meta"><time datetime="2026-09-12">2026-09-12</time> · independent review of 0.1.0a12</p>
+      <p>An integration earns confidence at the boundaries between its systems. We built Zabbix 7.0.30 from its official source and put the a12 candidate through a disposable lab, alongside the original 7.0.10 reference. The review found a permission-fixture defect that a successful acknowledgement alone had not exposed.</p>
+      <h2>A recent LTS, in a real service lab</h2>
+      <p><a href="https://www.zabbix.com/rn/rn7.0.30">Zabbix 7.0.30</a> is the recent 7.0 LTS patch used in this review. A full Ubuntu virtual machine lets PostgreSQL use ordinary unprivileged operating-system users and real SQL logins. PostgreSQL 18.3, PgBouncer 1.24.1 and both Zabbix servers were built from source; the guest network was restricted and the test services listened on loopback.</p>
+      <p>The corrected reference suite records <strong>818 passed, 22 skipped and no failures</strong>. The native run adds <strong>42 passed</strong> across database, delivery-failure, worker, Alerta and functional batch phases. These layers are reported separately; emulated timing does not establish production capacity.</p>
+      <p>Both Zabbix versions passed all five contract cases and all ten supplemental API cases, with no skips or failures. The installed-wheel 7.0.10 pipeline also passed all four tests and 13 observations, with successful cleanup. These records identify the final corrected harness; earlier attempts are retained separately.</p>
+      <h2>Ask what the token can actually do</h2>
+      <p>The old lab provisioner set the default action permission to disabled. Zabbix nevertheless preserved enabled values for individual rules that the request omitted. A real negative test showed that its synthetic worker could suppress a problem. An inspection of both upstream versions explained why.</p>
+      <p>The corrected helper now lists every inspected action and UI rule explicitly, then reads the effective role back before creating a user or token. Missing, duplicate, unexpected or broader permissions stop provisioning. Eight new regressions check this guard, and the mock now models Zabbix’s omitted-rule behavior. The plugin’s runtime and SQL remain unchanged.</p>
+      <p>There is a second boundary to understand: Zabbix shares one role capability between acknowledging and unacknowledging. Zab-al-ack’s client permits only acknowledgement actions 2 and 6, but the upstream token’s authority is broader. Keep token protection and effective-role checks in your deployment plan.</p>
+      <h2>Keep the failed attempts</h2>
+      <p>The first supplemental run had five failures. Three concerned the intended role-denial boundary; two came from our new tests assuming string result IDs where Zabbix returned integers. The existing client already handles both forms. The review packet keeps that failed run and the regression that fails on unmodified a12, alongside the corrected results. It does not count retries as extra acceptance coverage.</p>
+      <p>The review also added a staged-import regression so the new role helper travels with the Docker build context. A cold setup request took 13 seconds under CPU emulation; only the isolated provisioning client’s bound increased to 30 seconds. Production delivery deadlines and test assertions remain unchanged, and the final run records identify this revised harness.</p>
+      <h2>A view of the original lab</h2>
+      <p>A later pipeline attempt passed 12 of its 13 observations but failed its immediate projection sample after ledger completion. The retained database eventually showed the correct projection; the exact field that failed at the earlier sample was not recorded. A read before the separate projection commit is the inferred cause. The lab now waits within a fixed bound for the original complete event, status and history checks. A regression rejects incomplete or mismatched states. This changes the observer, not the worker or SQL, and the failed attempt remains in the review packet.</p>
+      <figure class="lab-figure"><a href="../assets/visuals/a12/04-zabbix-event-details.png"><img src="../assets/visuals/a12/04-zabbix-event-details.png" alt="Supplied Zabbix 7.0.10 lab event page showing the synthetic problem, the zabalack acknowledgement, updates and recovery" width="1600" height="1000" loading="lazy" decoding="async"></a><figcaption>Supplied a12 screenshot: Zabbix 7.0.10 with synthetic data. This is the earlier capture, not a new 7.0.30 screenshot. The independent review’s evidence is recorded separately. <a href="../assets/visuals/a12/04-zabbix-event-details.png">Open full size</a>.</figcaption></figure>
+      <h2>What remains open</h2>
+      <p>The webhook’s TLS and redirect limitation, recorded as amendment A2, remains unresolved. The current artifact does not enable the peer and hostname verification options inspected in 7.0.30, and redirects are followed. Successful loopback delivery does not authenticate a production ingestion path. The separate worker HTTP client verifies TLS and refuses redirects.</p>
+      <p>Production gates G1–G8, deployed permissions, update-operation inventory, HA and fleet capacity still require your environment’s evidence. Docker Compose execution, hosted workflows, signed attestation and external security review are also separate work. The website stays informational, with no monitoring connections or credential forms.</p>
+      <p>Start with the <a href="../docs.html#testing">test evidence and commands</a>, the <a href="../docs.html#transport">transport limitation</a> and the <a href="../docs.html#visual-walkthrough">illustrated workflow</a>.</p>
+      <p class="post-foot">Reviewed edition of the existing a12 candidate. No new tagged plugin release or public package upload. Zab-al-ack is independent of Alerta and Zabbix.</p>
+    </article>
+  </main>
+  <footer class="site-footer container"><div class="footer-brand"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="36" height="36"><span>Zab-al-ack<span class="brand-period">.</span></span></a><p>Alerta and Zabbix, in step.</p></div><div class="footer-info"><nav aria-label="Project references"><a href="../index.html">Overview</a><a href="../docs.html">Documentation</a><a href="../blog/index.html">Blog</a><a href="../index.html#alpha">Alpha status</a></nav><p>An independent integration project. Not an official Alerta or Zabbix product.<br>Static pages · no connection to your monitoring systems.</p></div></footer>
+</body>
+</html>

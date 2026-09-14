@@ -1,0 +1,24 @@
+/* Blog: text first. Same tokens as the site; labelled lab images, no scripts. */
+.post-container{max-width:44rem;padding-block:56px 80px}
+.post-kicker{font-size:.875rem;line-height:1.6;color:var(--muted)}
+.post-kicker a,.post-list a,.post p a,.post-foot a{color:var(--orange-ink);text-decoration:underline;text-underline-offset:4px}
+.post h1,.post-index h1{font-size:clamp(2rem,4.2vw,2.75rem);line-height:1.15;letter-spacing:-.02em;margin-top:14px}
+.post-meta{font-size:.9375rem;color:var(--muted);margin-top:14px;line-height:1.6}
+.post p{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;font-size:1.1875rem;line-height:1.72;margin-top:26px;color:var(--ink);max-width:40rem}
+.post p code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:.85em;background:#edf1f5;color:#284256;border-radius:3px;padding:2px 4px}
+.post-foot{font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif!important;font-size:.875rem!important;color:var(--muted)!important;border-top:1px solid var(--line);padding-top:22px;margin-top:44px!important}
+.post-lead{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;font-size:1.1875rem;line-height:1.72;margin-top:22px;color:var(--muted);max-width:40rem}
+.post-list{list-style:none;padding:0;margin:44px 0 0}
+.post-list li{display:grid;grid-template-columns:7.5rem minmax(0,1fr);gap:18px;padding:22px 0;border-top:1px solid var(--line)}
+.post-list li:last-child{border-bottom:1px solid var(--line)}
+.post-list time{font-size:.875rem;color:var(--muted);line-height:1.7;padding-top:3px}
+.post-list a{font-size:1.25rem;line-height:1.4;font-weight:650;text-decoration:none}
+.post-list a:hover{text-decoration:underline;text-underline-offset:4px}
+.post-list span{display:block;font-family:Georgia,"Iowan Old Style","Times New Roman",serif;font-size:1.0625rem;line-height:1.65;color:var(--muted);margin-top:6px}
+@media (max-width:600px){.post-list li{grid-template-columns:1fr;gap:6px}.post-container{padding-block:36px 60px}}
+
+.post h2{font-size:1.4rem;line-height:1.35;margin-top:36px;letter-spacing:-.01em}
+.post .post-kicker,.post .post-meta{font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;font-size:.9375rem;line-height:1.6;color:var(--muted)}
+.post p code{overflow-wrap:anywhere}
+
+.historical-note{padding:1rem;border-left:3px solid #a55a0d;background:#faf6ef;font-size:1rem}

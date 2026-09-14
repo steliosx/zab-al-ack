@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>A real Zabbix delivery exposed a webhook bug — Zab-al-ack blog</title>
+  <meta name="description" content="A cause-macro fix, the original service-lab results, and an independent review that strengthened release-evidence validation.">
+  <link rel="canonical" href="https://zabalack.stel.chatgpt.site/blog/0-1-0a8.html">
+  <meta property="og:url" content="https://zabalack.stel.chatgpt.site/blog/0-1-0a8.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="A real Zabbix delivery exposed a webhook bug — Zab-al-ack blog">
+  <meta property="og:description" content="A cause-macro fix, the original service-lab results, and an independent review that strengthened release-evidence validation.">
+  <link rel="icon" type="image/svg+xml" href="../assets/zabalack-mark.svg">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="../blog.css">
+</head>
+<body class="blog">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><div class="container header-inner"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="40" height="40"><span>Zab-al-ack<span class="brand-period">.</span></span></a><nav class="main-nav" aria-label="Main navigation"><a href="../index.html#features">Why Zab-al-ack</a><a href="../docs.html">Documentation</a><a href="../blog/index.html" aria-current="location">Blog</a><a href="../index.html#alpha">The alpha</a></nav><a class="header-cta" href="../index.html">Back to overview</a></div></header>
+  <main id="main" class="container post-container">
+    <article class="post">
+      <p class="post-kicker"><a href="index.html">← All posts</a></p>
+      <h1>A real Zabbix delivery exposed a webhook bug</h1>
+      <p class="post-meta"><time datetime="2026-09-11">2026-09-11</time> · candidate 0.1.0a8</p>
+      <p class="historical-note">Ackline release history. The project is now <a href="0-1-0a9.html">Zab-al-ack</a>; this post retains the names and results recorded for this candidate.</p>
+      <p>The a8 release-preparation report records the first native and deployment-service execution of the work added in a6 and a7: 36 PostgreSQL 18.3/PgBouncer cases, five real Zabbix 7.0.10 cases, and four deployment-service cases with thirteen required observations. Those runs used disposable source-built services. The Docker forms of the labs were not run.</p>
+      <h2>A missing cause was not a numeric ID</h2>
+      <p>The first webhook delivery failed with <code>Invalid numeric identifier: cause</code>. In the Zabbix 7.0.10 lab, <code>{EVENT.CAUSE.ID}</code> expanded to <code>*UNKNOWN*</code> for a problem without a cause event. The reference media type had rejected that value since a1, and the synthetic test had asserted the rejection. Those cause-less problem notifications could not reach Alerta. The a8 fix treats this exact value as an absent cause and keeps other identifier validation intact.</p>
+      <p>The behavior is supported by the <a href="https://github.com/zabbix/zabbix/blob/237358b56b2584b94b1f8358f479ade669693ba2/src/libs/zbxexpression/expression.c">inspected upstream 7.0.10 source</a>. It is recorded as amendment A3. Three lab faults were also corrected: a test left verification leases live, imported scripts used CRLF line endings, and a newly configured action needed time to reach the server's configuration cache.</p>
+      <h2 id="independent-review">What the independent review added</h2>
+      <p>The original a8 wheel, sdist and source archive rebuilt byte-for-byte. The independent reference run passed 725 tests, skipped 22 and failed none. It also found that the export gate and unsigned archive verifier could accept a deployment report labelled PASS even when its counts, observations or cleanup contradicted that label.</p>
+      <p>A proposed tooling correction adds a shared evidence validator and 56 regression cases. The corrected checkout passed 781 reference tests, skipped 22 and failed none; all 20 curated nightly mutations were detected. Runtime Python, SQL and the media artifacts are unchanged by that correction. The review branch remains version a8 and is not a new published release.</p>
+      <p>Native PostgreSQL/PgBouncer, real Zabbix and the deployment-service lab were <strong>not rerun in the independent review</strong>. The original service reports remain separate. In particular, the supplied local deployment report used an editable source installation, and its local bootstrap was not included. A fresh wheel installation smoke test passed, but the complete installed-wheel service path still needs a reproducible run.</p>
+      <p>Next steps are to run the packaged service path on a supported isolated host, complete the <a href="../docs.html#deployment">webhook transport remediation</a>, and exercise the hosted checks. Production gates and publication-owner inputs remain open. See <a href="../docs.html#testing">tests and evidence</a> for the current scope.</p>
+      <p class="post-foot">Details for this candidate are in the cumulative changelog and the release amendments shipped with the source. Nothing on this page is a production or publication claim.</p>
+    </article>
+  </main>
+  <footer class="site-footer container"><div class="footer-brand"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="36" height="36"><span>Zab-al-ack<span class="brand-period">.</span></span></a><p>Alerta and Zabbix, in step.</p></div><div class="footer-info"><nav aria-label="Project references"><a href="../index.html">Overview</a><a href="../docs.html">Documentation</a><a href="../blog/index.html">Blog</a><a href="../index.html#alpha">Alpha status</a></nav><p>An independent integration project. Not an official Alerta or Zabbix product.<br>Static pages · no connection to your monitoring systems.</p></div></footer>
+</body>
+</html>

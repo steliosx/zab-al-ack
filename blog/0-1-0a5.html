@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Binding test evidence to the code it ran — Zab-al-ack blog</title>
+  <meta name="description" content="Run records are now bound to the source and harness they executed. Stale evidence is refused, not relabelled.">
+  <link rel="canonical" href="https://zabalack.stel.chatgpt.site/blog/0-1-0a5.html">
+  <meta property="og:url" content="https://zabalack.stel.chatgpt.site/blog/0-1-0a5.html">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Binding test evidence to the code it ran — Zab-al-ack blog">
+  <meta property="og:description" content="Run records are now bound to the source and harness they executed. Stale evidence is refused, not relabelled.">
+  <link rel="icon" type="image/svg+xml" href="../assets/zabalack-mark.svg">
+  <link rel="stylesheet" href="../styles.css">
+  <link rel="stylesheet" href="../blog.css">
+</head>
+<body class="blog">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><div class="container header-inner"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="40" height="40"><span>Zab-al-ack<span class="brand-period">.</span></span></a><nav class="main-nav" aria-label="Main navigation"><a href="../index.html#features">Why Zab-al-ack</a><a href="../docs.html">Documentation</a><a href="../blog/index.html" aria-current="location">Blog</a><a href="../index.html#alpha">The alpha</a></nav><a class="header-cta" href="../index.html">Back to overview</a></div></header>
+  <main id="main" class="container post-container">
+    <article class="post">
+      <p class="post-kicker"><a href="index.html">← All posts</a></p>
+      <h1>Binding test evidence to the code it ran</h1>
+      <p class="post-meta"><time datetime="2026-09-10">2026-09-10</time> · candidate 0.1.0a5</p>
+      <p class="historical-note">Ackline release history. The project is now <a href="0-1-0a9.html">Zab-al-ack</a>; this post retains the names and results recorded for this candidate.</p>
+      <p>Two reviews in a row asked the same question: how do you know a passing report belongs to this tree? Until a5 the answer was "because we say so". Run records now carry two digests, one over the implementation and one over the tests, runners and labs, computed before the run starts. The acceptance mapper, export audit and build compare those digests with the current tree. This catches stale or mismatched results; an unsigned hash does not prove who ran a test or that its report is truthful.</p>
+      <p>We demonstrated it the boring way: edit one test file, and mapping, audit and build all refuse until the runs are repeated. That is the point. It cost us an extra native run when we later fixed a flake, and it should.</p>
+      <p>The a4 review's two tooling findings are adopted unchanged: the lab fixtures validate the exact loopback URL before touching a network or a token, and the acceptance validator rejects contradictory service evidence. The negative-visibility case now proves the outside event exists, through a separate read-only witness token, before requiring the restricted token to see nothing.</p>
+      <p>The flake, for the record: three consecutive updates with identical marker text within one PGlite millisecond, which the capture trigger correctly ignores. The test was wrong, not the trigger.</p>
+      <p class="post-foot">Details for this candidate are in the cumulative changelog and the release amendments shipped with the source. Nothing on this page is a production or publication claim.</p>
+    </article>
+  </main>
+  <footer class="site-footer container"><div class="footer-brand"><a class="brand" href="../index.html" aria-label="Zab-al-ack home"><img src="../assets/zabalack-mark.svg" alt="" width="36" height="36"><span>Zab-al-ack<span class="brand-period">.</span></span></a><p>Alerta and Zabbix, in step.</p></div><div class="footer-info"><nav aria-label="Project references"><a href="../index.html">Overview</a><a href="../docs.html">Documentation</a><a href="../blog/index.html">Blog</a><a href="../index.html#alpha">Alpha status</a></nav><p>An independent integration project. Not an official Alerta or Zabbix product.<br>Static pages · no connection to your monitoring systems.</p></div></footer>
+</body>
+</html>
