@@ -500,6 +500,14 @@ def test_T41_a_stale_attribute_dictionary_cannot_restore_an_older_generation(lab
 
 
 def test_T41_a_malformed_marker_counts_as_mismatched_never_as_absent(lab):
+    """Present-but-unparseable is a mismatch, not a missing marker.
+
+    This originally asserted `projection_generation_unknown`, which contradicted
+    the rule in its own name: `unknown` is the verdict for a row carrying no
+    generation evidence at all, and a corrupted marker is evidence that
+    something wrote a generation here. Both verdicts refuse, so neither let a
+    projection through, but the reason must say which case it is.
+    """
     alert_id, event_id, payload = stage(lab)
     action_id = new_action(lab, alert_id, event_id, payload)
     with connect_role(lab, "zabalack_owner") as owner:
@@ -507,7 +515,7 @@ def test_T41_a_malformed_marker_counts_as_mismatched_never_as_absent(lab):
     with connect_role(lab, "alerta_app") as conn:
         conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
                      (Jsonb({MARKER: "not-a-uuid"}), alert_id))
-    assert project(lab, action_id) == "projection_generation_unknown"
+    assert project(lab, action_id) == "projection_action_generation_mismatch"
 
 
 def test_T41_neither_authority_present_refuses_rather_than_permits(lab):
@@ -716,3 +724,86 @@ def test_T41_a_forged_intent_leaves_no_generation_marker_behind(lab):
     after = attributes_of(lab, alert_id)
     assert after.get(MARKER) != forged["action_id"], "a forged generation must not become the marker"
     assert INTENT not in after
+
+
+def action_from_real_capture(lab, alert_id, event_id, payload):
+    """Seed an action the way the worker does, from a capture the trigger made.
+
+    `new_action` inserts its own capture row and so never runs `capture_ack()`.
+    This path fires the real acknowledgement first, so the ledger is seeded
+    synchronously by the trigger exactly as it is in a deployment.
+    """
+    fire_ack(lab, alert_id, payload)
+    capture = capture_of(lab, alert_id)
+    assert capture is not None and capture[3] is None, "precondition: a clean capture"
+    assert ledger(lab, alert_id)[0] == uuid.UUID(payload["action_id"]), \
+        "precondition: capture_ack seeded the ledger with this generation"
+    with connect_role(lab, "zabalack_owner") as owner:
+        effect_id = owner.execute(
+            "INSERT INTO zabalack.effects(instance,event_id,generation,primary_action_id,latest_action_time) "
+            "VALUES(%s,%s,(SELECT coalesce(max(generation),0)+1 FROM zabalack.effects WHERE instance=%s "
+            "AND event_id=%s),%s,%s) RETURNING effect_id",
+            (INSTANCE, event_id, INSTANCE, event_id, payload["action_id"],
+             payload["issued_at"])).fetchone()[0]
+        owner.execute("INSERT INTO zabalack.actor_identity(actor_ref,login) VALUES(%s,%s) "
+                      "ON CONFLICT(actor_ref) DO NOTHING",
+                      (payload["actor"]["login"], payload["actor"]["login"]))
+        owner.execute(
+            "INSERT INTO zabalack.actions(action_id,capture_id,capture_order,effect_id,alert_id,customer,"
+            "instance,event_id,trigger_id,actor_ref,cohort_revision,policy_version,issued_at,execute_before,"
+            "state) VALUES(%s,%s,(SELECT capture_order FROM zabalack.captures WHERE capture_id=%s),"
+            "%s,%s,%s,%s,%s,%s,%s,%s,'1',%s,%s,'ok')",
+            (payload["action_id"], capture[0], capture[0], effect_id, alert_id, CUSTOMER, INSTANCE,
+             event_id, TRIGGER, payload["actor"]["login"], payload["cohort_revision"],
+             payload["issued_at"], payload["execution_expires_at"]))
+    return payload["action_id"]
+
+
+def stage_over(lab, alert_id, event_id, *, issued=None):
+    """Commit a newer staging on an existing alert, exactly as `take_action` does."""
+    newer = intent_for(alert_id, event_id, issued=issued or datetime.now(timezone.utc))
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                     (Jsonb({INTENT: newer, MARKER: newer["action_id"],
+                             UNTIL: newer["capture_expires_at"]}), alert_id))
+    return newer
+
+
+def test_T41_an_older_projection_is_refused_before_the_newer_staging_is_captured(lab):
+    """The window the guard exists for, with the ledger still holding the older
+    generation.
+
+    A is captured, so `capture_ack()` has already seeded the ledger with A. B is
+    then staged and its request has not reached its history write, so nothing has
+    captured it and no sweep has seen it: the alert row's marker is the only
+    record of B. If the marker is consulted only when the ledger is absent, A
+    projects here — overwriting B's state and deleting B's intent — which is
+    precisely the disclosure-adjacent overwrite T41's guard is meant to prevent.
+    """
+    alert_id, event_id, first = stage(lab, issued=datetime.now(timezone.utc) - timedelta(hours=6))
+    action_id = action_from_real_capture(lab, alert_id, event_id, first)
+    newer = stage_over(lab, alert_id, event_id)
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT count(*) FROM zabalack.actions WHERE action_id=%s",
+                             (newer["action_id"],)).fetchone()[0] == 0, "precondition: B has no action row"
+        assert owner.execute("SELECT staged_action_id FROM zabalack.alert_staging WHERE alert_id=%s",
+                             (alert_id,)).fetchone()[0] == uuid.UUID(first["action_id"]), \
+            "precondition: nothing has advanced the ledger to B yet"
+    assert attributes_of(lab, alert_id)[MARKER] == newer["action_id"], \
+        "precondition: the alert row is the only record of B"
+
+    assert project(lab, action_id) == "projection_action_generation_mismatch"
+    after = attributes_of(lab, alert_id)
+    assert after[INTENT]["action_id"] == newer["action_id"], "B's intent must survive A's refusal"
+    assert after["zabbix_ack_sync"] == "pending", "A must not overwrite B's state"
+
+
+def test_T41_a_malformed_marker_is_mismatched_even_with_a_ledger_entry(lab):
+    """Present-but-unparseable is not the same as absent, whatever the ledger says."""
+    alert_id, event_id, payload = stage(lab)
+    action_id = action_from_real_capture(lab, alert_id, event_id, payload)
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                     (Jsonb({MARKER: "not-a-uuid"}), alert_id))
+    assert project(lab, action_id) == "projection_action_generation_mismatch"

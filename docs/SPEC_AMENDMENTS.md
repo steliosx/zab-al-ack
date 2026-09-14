@@ -472,6 +472,16 @@ places the guard beyond the reach of the erase, forge and replay paths above, at
 the cost of a second trigger on `public.alerts`, which requires the alerts owner
 principal, its own `capture_health()` assertion, and re-sealing.
 
+**Either authority may refuse; neither alone may permit.** The ledger and the
+alert row's marker are checked independently. Consulting the marker only when
+the ledger is absent reopens the precise window the guard exists for: once a
+capture has seeded the ledger with an action, a newer staging that has not yet
+been captured or swept exists *only* as that marker, so an older projection
+would be permitted, would overwrite the newer acknowledgement's state and would
+delete its intent. A marker that is present but unparseable is treated as
+mismatched, never as absent; `projection_generation_unknown` is reserved for a
+row carrying no generation evidence at all.
+
 **The window this design does not close.** The ledger can only hold a
 generation something observed: `capture_ack()` records one synchronously with the
 capture, and the sweep records one when it visits the row. A staging overwritten

@@ -24,8 +24,8 @@ import pytest
 
 from conftest import connect_role
 from test_intent_retirement import (CUSTOMER, INSTANCE, INTENT, MARKER, TRIGGER, UNTIL,
-                                    attributes_of, cleanup, enrol, intent_for, ledger,
-                                    new_action, stage, sweep)
+                                    action_from_real_capture, attributes_of, cleanup, enrol,
+                                    intent_for, ledger, new_action, stage, stage_over, sweep)
 
 pytestmark = pytest.mark.postgres
 
@@ -197,3 +197,35 @@ def test_T41_native_only_one_sweep_runs_at_a_time(native):
         assert second == {"examined": 0, "noted": 0, "retired": 0, "skipped": "sweep_in_progress"}
         holder.execute("COMMIT")
     assert "skipped" not in sweep(lab), "the lock is released with its transaction"
+
+
+def test_T41_native_an_older_projection_is_refused_before_the_newer_staging_is_captured(native):
+    """The uncaptured-newer-staging window, on native PostgreSQL.
+
+    A is seeded through a real `capture_ack()`, so the ledger already holds A.
+    B is then staged and its request never reaches its history write, so nothing
+    has captured it and no sweep has observed it — the alert row's marker is the
+    only record that B exists. A's delayed projection must refuse and must leave
+    B's intent in place.
+
+    The PGlite module covers the same sequence; this runs it under the deployed
+    roles with a real backend per session, alongside the concurrent orderings.
+    """
+    lab = native
+    alert_id, event_id, first = stage(lab, issued=datetime.now(timezone.utc) - timedelta(hours=6))
+    action_id = action_from_real_capture(lab, alert_id, event_id, first)
+    newer = stage_over(lab, alert_id, event_id)
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT count(*) FROM zabalack.actions WHERE action_id=%s",
+                             (newer["action_id"],)).fetchone()[0] == 0, "precondition: B has no action row"
+        assert owner.execute("SELECT staged_action_id FROM zabalack.alert_staging WHERE alert_id=%s",
+                             (alert_id,)).fetchone()[0] == uuid.UUID(first["action_id"]), \
+            "precondition: the ledger still holds A"
+
+    with connect_role(lab, "zabalack_worker") as worker:
+        reason = worker.execute("SELECT zabalack.project(%s)", (action_id,)).fetchone()[0]["reason"]
+    assert reason == "projection_action_generation_mismatch"
+    after = attributes_of(lab, alert_id)
+    assert after[INTENT]["action_id"] == newer["action_id"], "B's intent must survive"
+    assert after["zabbix_ack_sync"] == "pending", "A must not overwrite B's state"

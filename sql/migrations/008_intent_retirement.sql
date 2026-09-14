@@ -174,7 +174,7 @@ CREATE OR REPLACE FUNCTION zabalack.project(p_action uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack SET timezone='UTC' AS $$
 DECLARE
  a zabalack.actions; attrs jsonb; target_customer text; why text; display_state text; local_at timestamptz;
- alert_present boolean; staging zabalack.alert_staging; marker uuid;
+ alert_present boolean; staging zabalack.alert_staging; marker uuid; marker_present boolean;
 BEGIN
  SELECT * INTO STRICT a FROM zabalack.actions WHERE action_id=p_action FOR UPDATE;
  -- UPDATE(column) does not give SELECT(other columns); this list matches explicit grants.
@@ -182,6 +182,7 @@ BEGIN
  alert_present:=FOUND;
  SELECT * INTO staging FROM zabalack.alert_staging WHERE alert_id=a.alert_id FOR UPDATE;
  marker:=zabalack.staged_marker(attrs);
+ marker_present:=coalesce(attrs ? 'zabbix_ack_sync_staged_action_id',false);
  IF attrs->>'zabbix_ack_sync_local_at' IS NOT NULL THEN
   BEGIN local_at:=(attrs->>'zabbix_ack_sync_local_at')::timestamptz;
   EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN local_at:='infinity'::timestamptz; END;
@@ -194,11 +195,18 @@ BEGIN
  ELSIF EXISTS(SELECT 1 FROM zabalack.actions newer WHERE newer.alert_id=a.alert_id AND newer.capture_order>a.capture_order) THEN
   why := 'projection_action_generation_mismatch';
  ELSIF staging.alert_id IS NOT NULL AND staging.staged_action_id<>a.action_id THEN
-  -- The ledger is authoritative and unreachable from the Alerta API.
+  -- The ledger cannot be reached from the Alerta API, so it can refuse.
   why := 'projection_action_generation_mismatch';
- ELSIF staging.alert_id IS NULL AND marker IS NOT NULL AND marker<>a.action_id THEN
+ ELSIF marker_present AND (marker IS NULL OR marker<>a.action_id) THEN
+  -- Either authority may refuse; neither alone may permit. Gating this on an
+  -- absent ledger reopened the exact window the guard exists for: once a
+  -- capture has seeded the ledger with this action, a newer staging that has
+  -- not yet been captured or swept exists *only* as this marker, and ignoring
+  -- it let the older projection overwrite the newer acknowledgement's state and
+  -- delete its intent. A marker that is present but unparseable is mismatched,
+  -- never absent.
   why := 'projection_action_generation_mismatch';
- ELSIF staging.alert_id IS NULL AND marker IS NULL THEN
+ ELSIF staging.alert_id IS NULL AND NOT marker_present THEN
   -- Neither authority present. Migration backfills the ledger for every alert
   -- carrying an action row, so this is not a pre-existing deployment reaching
   -- an upgraded schema; it is a row whose generation evidence was removed.
