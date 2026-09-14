@@ -87,6 +87,16 @@ the trigger. Confirm `zabalack.capture_health()` reports `functions_ok` afterwar
 schema 3 report unhealthy until upgraded. Confirm the sweep is reachable only through
 `zabalack.worker_call('retire_intents', …)` and that a direct call as `zabalack_worker` is denied.
 
+Measure the sweep's cost on the installed table. `public.alerts` carries no index for the
+`attributes ? 'zabbix_ack_sync_intent'` predicate — `zabalack_owner` does not own the table and cannot create
+one — so the bounded batch limits matching rows, not rows scanned. Exactly one sweep runs at a time across the
+deployment (an advisory lock; the rest return `skipped: sweep_in_progress`) and it is asked at most once per
+`retirement_cycle_seconds`, but on a large table each pass is still a sequential scan. Record the observed
+duration and its effect on the installed database. Where that cost is unacceptable, the alerts owner may add
+`CREATE INDEX CONCURRENTLY … ON public.alerts (id) WHERE attributes ? 'zabbix_ack_sync_intent'` as an approved
+change under the same principal that installs the trigger; it is optional, outside this item, and changes no
+`zabalack` object, so it does not affect the readiness manifest.
+
 Record the window this design does not close, and whether the deployment accepts it: a staged generation that a
 stale attribute dictionary overwrites before any capture or sweep has observed it leaves no record, because the
 only record it had was the attribute the replay discarded. Measure the deployment's actual sweep interval, since

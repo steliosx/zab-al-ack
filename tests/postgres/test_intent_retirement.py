@@ -639,3 +639,80 @@ def test_T41_the_reseal_refuses_a_tree_that_is_not_at_schema_four(lab):
             owner.execute("UPDATE zabalack.installation SET schema_version=4 WHERE singleton")
     with connect_role(lab, "zabalack_owner") as owner:
         assert owner.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 4
+
+
+# --- the staged attribute is API-writable, so nothing from it is trusted -----
+
+def forge(lab, alert_id, payload, **overrides):
+    """Write a forged intent the way a `write:alerts` client can.
+
+    `PUT /alert/<id>/attributes` runs no plugin hook, so `strip_reserved()` never
+    sees it and any JSON reaches the column.
+    """
+    forged = dict(payload, action_id=str(uuid.uuid4()), **overrides)
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                     (Jsonb({INTENT: forged}), alert_id))
+    return forged
+
+
+@pytest.mark.parametrize("overrides,why", [
+    ({"capture_expires_at": "infinity"}, "unbounded window"),
+    ({"capture_expires_at": stamp(datetime.now(timezone.utc) + timedelta(days=3650))}, "far-future window"),
+    ({"issued_at": stamp(datetime.now(timezone.utc) + timedelta(hours=1)),
+      "capture_expires_at": stamp(datetime.now(timezone.utc) + timedelta(hours=1, seconds=60))},
+     "future-dated staging"),
+    ({"capture_expires_at": stamp(datetime.now(timezone.utc) - timedelta(minutes=10) + timedelta(hours=2))},
+     "window wider than the signer's 60 seconds"),
+])
+def test_T41_a_forged_staged_window_cannot_pin_the_ledger(lab, overrides, why):
+    """A forged window must neither become the authority nor exempt itself.
+
+    Before this was bounded, a client could write `capture_expires_at: infinity`
+    and the sweep promoted it: `note_staging` advances only on a greater
+    timestamp, so no legitimate finite generation could ever replace it, and
+    every later projection was refused as a generation mismatch — permanently,
+    from one unauthenticated attribute write. The forged intent also exempted
+    itself from retirement, because its window never expired.
+    """
+    alert_id, event_id, honest = stage(lab)
+    sweep(lab)
+    before = ledger(lab, alert_id)
+    assert before[0] == uuid.UUID(honest["action_id"]), "precondition: the honest generation is recorded"
+
+    forge(lab, alert_id, honest, **overrides)
+    result = sweep(lab)
+    assert result["noted"] == 0, f"a {why} must not advance the ledger"
+    assert ledger(lab, alert_id)[0] == before[0], "the authority is unchanged"
+    assert INTENT not in attributes_of(lab, alert_id), \
+        f"a {why} is unvalidatable plaintext and must still be retired"
+
+    later = intent_for(alert_id, event_id, issued=datetime.now(timezone.utc))
+    with connect_role(lab, "zabalack_owner") as owner:
+        advanced = owner.execute("SELECT zabalack.note_staging(%s,%s,%s,'later')",
+                                 (alert_id, later["action_id"], later["capture_expires_at"])).fetchone()[0]
+    assert advanced is True, "a legitimate later generation must still be able to advance"
+
+
+def test_T41_note_staging_refuses_an_unbounded_window_directly(lab):
+    """Defence in depth: the bound holds at the ledger, not only at its caller."""
+    alert_id, _, payload = stage(lab)
+    with connect_role(lab, "zabalack_owner") as owner:
+        for value in ("infinity", stamp(datetime.now(timezone.utc) + timedelta(days=1))):
+            assert owner.execute("SELECT zabalack.note_staging(%s,%s,%s,'probe')",
+                                 (alert_id, payload["action_id"], value)).fetchone()[0] is False, value
+        assert owner.execute("SELECT count(*) FROM zabalack.alert_staging WHERE alert_id=%s",
+                             (alert_id,)).fetchone()[0] == 0
+
+
+def test_T41_a_forged_intent_leaves_no_generation_marker_behind(lab):
+    """The restored marker must never carry an unvalidated action id."""
+    alert_id, _, honest = stage(lab)
+    sweep(lab)
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes-%s WHERE id=%s", (MARKER, alert_id))
+    forged = forge(lab, alert_id, honest, capture_expires_at="infinity")
+    sweep(lab)
+    after = attributes_of(lab, alert_id)
+    assert after.get(MARKER) != forged["action_id"], "a forged generation must not become the marker"
+    assert INTENT not in after

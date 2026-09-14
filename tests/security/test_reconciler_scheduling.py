@@ -28,7 +28,8 @@ class NoRegistry:
 
 def setup(db):
     return Reconciler(SimpleNamespace(fast_budget=200, host_inventory_seconds=900,
-        nightly_cycle_seconds=86400, recent_terminal_seconds=86400), db, NoRegistry(), worker_id='lab-worker')
+        nightly_cycle_seconds=86400, recent_terminal_seconds=86400,
+        retirement_cycle_seconds=900), db, NoRegistry(), worker_id='lab-worker')
 
 
 async def test_T31_nightly_first_row_contention_does_not_defer_entire_sweep_one_day(monkeypatch):

@@ -31,10 +31,22 @@ CREATE TABLE zabalack.alert_staging(
 REVOKE ALL ON TABLE zabalack.alert_staging FROM PUBLIC;
 
 -- Record a staged generation, advancing only. Returns true when it advanced.
+--
+-- A staged window is bounded by construction: build_intent sets
+-- capture_expires_at to issued_at + 60 seconds, and verify_complete refuses any
+-- capture whose intent claims more. Anything outside that bound did not come
+-- from the signer, so it is refused here rather than allowed to become the
+-- authority. Without this an attribute carrying 'infinity' would pin the ledger
+-- permanently: no legitimate finite generation could ever advance past it, and
+-- every later projection would be refused as a generation mismatch.
 CREATE FUNCTION zabalack.note_staging(p_alert text, p_action uuid, p_until timestamptz, p_by text)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
 DECLARE advanced boolean;
 BEGIN
+ IF p_until IS NULL OR isfinite(p_until) IS NOT TRUE
+    OR p_until>clock_timestamp()+interval '60 seconds' THEN
+  RETURN false;
+ END IF;
  INSERT INTO zabalack.alert_staging(alert_id,staged_action_id,staged_until,observed_by)
   VALUES(p_alert,p_action,p_until,p_by)
  ON CONFLICT(alert_id) DO UPDATE SET staged_action_id=excluded.staged_action_id,
@@ -75,9 +87,19 @@ REVOKE ALL ON FUNCTION zabalack.staged_marker(jsonb) FROM PUBLIC;
 CREATE FUNCTION zabalack.retire_intents(p_limit integer DEFAULT 200, p_grace_seconds integer DEFAULT 300)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack SET timezone='UTC' AS $$
 DECLARE
- candidate record; intent jsonb; action uuid; until_at timestamptz; grace interval;
+ candidate record; intent jsonb; action uuid; until_at timestamptz; issued_at timestamptz; grace interval;
  now_at timestamptz:=clock_timestamp(); examined integer:=0; noted integer:=0; retired integer:=0;
 BEGIN
+ -- public.alerts carries no index for this predicate — zabalack_owner does not
+ -- own the table and cannot create one — so LIMIT bounds matching rows, not rows
+ -- scanned. One uncoordinated sweep per worker per cycle would mean every worker
+ -- scanning the whole table even with nothing to retire. Exactly one sweep runs
+ -- at a time across the deployment; the rest return immediately. See
+ -- docs/deployment_acceptance.md for the optional partial index the alerts owner
+ -- can add to make the scan itself cheap.
+ IF NOT pg_try_advisory_xact_lock(hashtextextended('zabalack.retire_intents',0)) THEN
+  RETURN jsonb_build_object('examined',0,'noted',0,'retired',0,'skipped','sweep_in_progress');
+ END IF;
  grace:=make_interval(secs=>least(86400,greatest(0,coalesce(p_grace_seconds,300))));
  -- No ORDER BY: zabalack_owner cannot create an index on public.alerts, so an
  -- ordered scan would sort the whole table for no benefit. Each pass removes
@@ -88,26 +110,34 @@ BEGIN
  LOOP
   examined:=examined+1;
   intent:=candidate.attributes->'zabbix_ack_sync_intent';
-  action:=NULL; until_at:=NULL;
+  action:=NULL; until_at:=NULL; issued_at:=NULL;
+  -- This attribute is API-writable: PUT /alert/<id>/attributes runs no plugin
+  -- hook, so a write:alerts client can put any JSON here. Nothing from it
+  -- reaches the ledger without passing the signer's own bounds, and a value
+  -- that fails them is treated as unvalidatable plaintext: retired, never
+  -- promoted. Promoting it unchecked would let a forged far-future window both
+  -- pin the ledger and exempt itself from retirement.
   IF jsonb_typeof(intent)='object' THEN
    BEGIN
     action:=(intent->>'action_id')::uuid;
+    issued_at:=(intent->>'issued_at')::timestamptz;
     until_at:=(intent->>'capture_expires_at')::timestamptz;
+    IF issued_at IS NULL OR until_at IS NULL
+       OR isfinite(issued_at) IS NOT TRUE OR isfinite(until_at) IS NOT TRUE
+       -- The same lifetime rule verify_complete enforces on a capture.
+       OR until_at>issued_at+interval '60 seconds' OR until_at<=issued_at
+       OR issued_at>now_at THEN
+     action:=NULL; until_at:=NULL;
+    END IF;
    EXCEPTION WHEN invalid_text_representation OR invalid_datetime_format OR datetime_field_overflow THEN
-    -- A malformed intent can never produce a capture that verifies; it is still
-    -- readable plaintext, so it is retired without advancing the ledger.
     action:=NULL; until_at:=NULL;
    END;
   END IF;
-  IF action IS NULL THEN
-   action:=zabalack.staged_marker(candidate.attributes);
-   BEGIN until_at:=(candidate.attributes->>'zabbix_ack_sync_staged_until')::timestamptz;
-   EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN until_at:=NULL; END;
-  END IF;
-  IF action IS NOT NULL AND until_at IS NOT NULL AND zabalack.note_staging(candidate.id,action,until_at,'sweep') THEN
+  IF action IS NOT NULL AND zabalack.note_staging(candidate.id,action,until_at,'sweep') THEN
    noted:=noted+1;
   END IF;
-  CONTINUE WHEN until_at IS NOT NULL AND until_at+grace>now_at;
+  -- Only a generation that passed those bounds may defer its own retirement.
+  CONTINUE WHEN action IS NOT NULL AND until_at+grace>now_at;
   -- The generation marker is retained for the lifetime of the alert and is
   -- restored here when the row never carried one. staged_until governed this
   -- decision and nothing else, so it goes with the intent.
@@ -115,6 +145,8 @@ BEGIN
    (coalesce(attributes,'{}'::jsonb)-'zabbix_ack_sync_intent'-'zabbix_ack_sync_staged_until')
    || CASE WHEN action IS NOT NULL AND zabalack.staged_marker(attributes) IS NULL
       THEN jsonb_build_object('zabbix_ack_sync_staged_action_id',action::text) ELSE '{}'::jsonb END
+   -- `action` is NULL unless the generation passed the bounds above, so an
+   -- unvalidatable intent never leaves a marker behind.
    WHERE id=candidate.id;
   retired:=retired+1;
  END LOOP;

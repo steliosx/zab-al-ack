@@ -172,3 +172,28 @@ def test_T41_native_a_stale_attribute_dictionary_replayed_during_the_race(native
         reason = worker.execute("SELECT zabalack.project(%s)", (action_id,)).fetchone()[0]["reason"]
     assert reason == "projection_action_generation_mismatch", "and still refused once the race has settled"
     assert attributes_of(lab, alert_id)["zabbix_ack_sync"] == "pending"
+
+
+def test_T41_native_only_one_sweep_runs_at_a_time(native):
+    """The scan is unindexed, so concurrent sweeps must not multiply it.
+
+    `public.alerts` carries no index for the staged-intent predicate and
+    `zabalack_owner` cannot create one, so each pass is a sequential scan. One
+    sweep per worker per cycle would mean every worker scanning the whole table.
+    An advisory transaction lock lets exactly one proceed; the rest return
+    immediately and wait for the next cycle.
+
+    Native only: observing the contention needs a second session while the first
+    holds an open transaction, which PGlite's single backend cannot provide.
+    """
+    lab = native
+    stage(lab)
+    with connect_role(lab, "zabalack_owner") as holder:
+        holder.execute("BEGIN")
+        first = holder.execute("SELECT zabalack.retire_intents(1000,0)").fetchone()[0]
+        assert "skipped" not in first, "the lock holder does the work"
+        with connect_role(lab, "zabalack_owner") as other:
+            second = other.execute("SELECT zabalack.retire_intents(1000,0)").fetchone()[0]
+        assert second == {"examined": 0, "noted": 0, "retired": 0, "skipped": "sweep_in_progress"}
+        holder.execute("COMMIT")
+    assert "skipped" not in sweep(lab), "the lock is released with its transaction"

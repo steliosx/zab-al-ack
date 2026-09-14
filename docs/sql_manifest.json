@@ -53,7 +53,7 @@
     },
     {
       "path": "sql/migrations/008_intent_retirement.sql",
-      "sha256": "e2e666708aba842208a9ada95fa0fa83429eff53f134d1cc4b660ac9219a7089"
+      "sha256": "8dc09a3774d3068cfb1f2875593481bd300765f2087b076e4ca0cdbd13dab6f7"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",
@@ -64,5 +64,5 @@
       "sha256": "5bfbb4ecbb5f14f0fff45e40f9d60027dd7b5ea760849d52e1a2a6b0f0f1b7c8"
     }
   ],
-  "database_schema_version": 3
+  "database_schema_version": 4
 }
