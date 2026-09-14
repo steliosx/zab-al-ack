@@ -281,12 +281,20 @@ table-name reference as the whole row, so `group-by=alerts` selects every column
 of the row — attributes included — and the aggregate returns it under that key.
 Reproduced on PGlite: that request returned HTTP 200 with the intent, the actor's
 full customer list and the committed proof marker serialised into the row value.
-Only explicitly supported alert fields are therefore permitted. And a negation
-marker is honoured by upstream only in trailing position — `filter_query` tests
-`field.endswith('!')` while its column lookup strips every `!` — so
-`attributes!.<key>` compiles as a whole-object comparison on `attributes`;
-stripping the marker globally would make the guard read the same input as a
-permitted keyed selector, which is how interpretation mismatches become bypasses.
+Only explicitly supported alert fields are therefore permitted. And `filter_query` handles `!`
+in two ways, neither of them the naive one: its column lookup strips every `!`,
+while its negation test `field.endswith('!')` is reached only for non-attribute
+columns. `severity!` compiles to real negation, but a trailing `!` on an
+attribute selector does not — `attributes.<key>!` takes the earlier
+`startswith('attributes.')` branch and compiles to containment on the literal
+JSON key `<key>!`, which does not exist and matches nothing. A marker *before*
+the dot is different again: `attributes!.<key>` fails that `startswith` test and
+compiles as a whole-object comparison on `attributes`, so stripping the marker
+globally would make the guard read the same input as a permitted keyed selector.
+Unsupported placements are refused rather than normalised; a trailing marker is
+stripped before the key comparison, which conservatively refuses
+`attributes.<restricted>!` even though upstream would match nothing. Upstream
+behaviour is preserved as it is — this amendment does not change it.
 
 Column tokens are resolved canonically rather than compared as spelled.
 PostgreSQL folds an unquoted identifier and honours a quoted one, so

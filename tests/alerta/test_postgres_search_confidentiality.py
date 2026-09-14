@@ -425,13 +425,13 @@ def test_T40_grouping_outside_the_supported_fields_is_refused(search_api, group_
     pytest.param(f"attributes.{UNRELATED_ATTRIBUTE}!!", id="doubled-marker"),
 ])
 def test_T40_misplaced_negation_marker_is_refused(search_api, field):
-    """Upstream honours `!` only as a trailing marker.
+    """A `!` before the dot changes which upstream branch compiles the selector.
 
-    `filter_query` tests `field.endswith('!')` while its column lookup strips
-    every `!`, so `attributes!.runbook_url` is compiled as a *whole-object*
-    comparison on `attributes` — `startswith('attributes.')` is false. Stripping
-    the marker globally would make the guard read it as a permitted keyed
-    selector, which is a different interpretation from the one that reaches SQL.
+    `attributes!.runbook_url` fails `startswith('attributes.')`, so upstream
+    compiles it as a *whole-object* comparison on `attributes` rather than a
+    keyed one. Stripping the marker globally would make the guard read it as a
+    permitted keyed selector — a different interpretation from the one that
+    reaches SQL, which is how a guard gets bypassed.
     """
     lab = search_api
     identity, event_id = acknowledge(lab)
@@ -450,6 +450,54 @@ def test_T40_permitted_projection_field_remains_searchable(search_api):
     assert permitted_total(lab, q=scoped(event_id, "attributes.zabbix_ack_sync:pending")) == 1
 
 
+def matching_total(lab, event_id, field, value):
+    """Count alerts matching one direct filter, scoped to the fixture alert."""
+    response = lab.client.get("/alerts/count",
+                              query_string={"q": scoped(event_id), field: value},
+                              headers={"Authorization": lab.reader})
+    assert response.status_code == 200, response.get_data(as_text=True)
+    return response.get_json()["total"]
+
+
+def test_T40_permitted_direct_filter_actually_discriminates(search_api):
+    """A permitted attribute filter must match and reject the right alerts.
+
+    HTTP 200 alone shows only that the guard let the request through. These
+    assertions show the filter still does its job after the guard.
+    """
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    assert matching_total(lab, event_id, f"attributes.{UNRELATED_ATTRIBUTE}", UNRELATED_VALUE) == 1
+    assert matching_total(lab, event_id, f"attributes.{UNRELATED_ATTRIBUTE}", "a-different-value") == 0
+    assert matching_total(lab, event_id, "attributes.zabbix_ack_sync", "pending") == 1
+    assert matching_total(lab, event_id, "attributes.zabbix_ack_sync", "ok") == 0
+
+
+def test_T40_trailing_marker_on_an_attribute_filter_is_not_negation(search_api):
+    """Record upstream's actual semantics; this PR preserves them unchanged.
+
+    `filter_query` reaches its `field.endswith('!')` negation test only for
+    non-attribute columns. An attribute selector takes the earlier
+    `startswith('attributes.')` branch, where the key is
+    `field.replace('attributes.', '')`, so `attributes.runbook_url!` compiles to
+    containment on the literal JSON key `runbook_url!` — a key that does not
+    exist — and matches nothing. It is not the negation of the keyed filter, so a
+    200 from it demonstrates nothing about filtering.
+    """
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    # Real negation, on a non-attribute column, does discriminate.
+    assert matching_total(lab, event_id, "severity!", "major") == 0
+    assert matching_total(lab, event_id, "severity!", "minor") == 1
+    # The attribute form matches nothing whatever value is supplied, because the
+    # literal key carries the marker. Both cases are zero, so the trailing form
+    # is not a negation of the keyed filter above.
+    assert matching_total(lab, event_id, f"attributes.{UNRELATED_ATTRIBUTE}!", "a-different-value") == 0
+    assert matching_total(lab, event_id, f"attributes.{UNRELATED_ATTRIBUTE}!", UNRELATED_VALUE) == 0
+
+
 def test_T40_supported_default_field_still_works(search_api):
     """Validating `q.df` must not break the legitimate default-field feature."""
     lab = search_api
@@ -462,25 +510,21 @@ def test_T40_supported_default_field_still_works(search_api):
 
 
 def test_T40_permitted_sort_and_grouping_still_work(search_api):
+    """Permitted sorting and grouping must keep returning the alert, not just 200."""
     lab = search_api
     identity, event_id = acknowledge(lab)
     assert_capture_evidence(lab, identity)
     sorted_response = request(lab, endpoint="/alerts", q=scoped(event_id),
                               **{"sort-by": "attributes.zabbix_ack_sync"})
     assert sorted_response.status_code == 200, sorted_response.get_data(as_text=True)
+    assert [alert["id"] for alert in unwrap(sorted_response, "json")["alerts"]] == [identity]
     for group_by in ("event", "severity", "status", "resource"):
         grouped = request(lab, endpoint="/alerts/topn/count", q=scoped(event_id),
                           **{"group-by": group_by})
         assert grouped.status_code == 200, grouped.get_data(as_text=True)
-    # A trailing `!` is upstream's supported negation placement and must survive.
-    negated = lab.client.get("/alerts/count", query_string={f"attributes.{UNRELATED_ATTRIBUTE}!": "other"},
-                             headers={"Authorization": lab.reader})
-    assert negated.status_code == 200, negated.get_data(as_text=True)
-    grouped = request(lab, endpoint="/alerts/topn/count", q=scoped(event_id), **{"group-by": "event"})
-    assert grouped.status_code == 200, grouped.get_data(as_text=True)
-    # The UNNEST(service) join keeps the fixture alert only because it carries a
-    # service; an empty result here would make the aggregate cases vacuous.
-    assert unwrap(grouped, "json")["total"] == 1
+        # The UNNEST(service) join keeps the fixture alert only because it carries
+        # a service; an empty result would make these aggregate cases vacuous.
+        assert unwrap(grouped, "json")["total"] == 1, group_by
 
 
 # --- collection and history responses ---------------------------------------

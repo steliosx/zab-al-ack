@@ -66,15 +66,27 @@ def _restricted(name: Any) -> bool:
 
 
 def _components(field: str) -> list[str] | None:
-    """Split a selector, or return None if its negation marker is misplaced.
+    """Split a selector, or return None if a `!` appears somewhere unsupported.
 
-    Upstream honours `!` only as a trailing negation marker: `filter_query` tests
-    `field.endswith('!')`, while its column lookup strips every `!`. So
-    `attributes!.runbook_url` is read by upstream as a *whole-object* comparison
-    on `attributes` — `field.startswith('attributes.')` is false — even though
-    stripping the marker globally makes it look like a permitted keyed selector.
-    Interpreting an input differently from upstream is exactly how a guard is
-    bypassed, so an unsupported placement is refused rather than normalised.
+    `filter_query` handles `!` in two different ways, and neither is the naive
+    one. Its column lookup strips *every* `!` before resolving the field, and its
+    negation test is `field.endswith('!')` — but that test is only reached for
+    non-attribute columns. `severity!` really does compile to
+    `"severity"!=%(not_severity)s`, while an attribute selector takes the earlier
+    `field.startswith('attributes.')` branch, where the key is built by
+    `field.replace('attributes.', '')`. So a trailing `!` on an attribute
+    selector is **not negation**: `attributes.runbook_url!` compiles to
+    `attributes @> {"runbook_url!": …}`, containment on a literal JSON key that
+    does not exist, matching nothing.
+
+    `attributes!.runbook_url` is different again — `startswith('attributes.')`
+    is false, so upstream reads it as a *whole-object* comparison on
+    `attributes`, even though stripping the marker globally makes it look like a
+    permitted keyed selector. Interpreting an input differently from upstream is
+    how a guard gets bypassed, so an unsupported placement is refused rather than
+    normalised. A trailing `!` is accepted and stripped before the key is
+    compared, which is conservative: `attributes.<restricted>!` is refused even
+    though upstream would have matched nothing.
     """
     if "!" in field.rstrip("!") or field.endswith("!!"):
         return None
