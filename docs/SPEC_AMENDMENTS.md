@@ -472,6 +472,14 @@ places the guard beyond the reach of the erase, forge and replay paths above, at
 the cost of a second trigger on `public.alerts`, which requires the alerts owner
 principal, its own `capture_health()` assertion, and re-sealing.
 
+**Corrections ship forward, never in place.** `sql/migrate.py` records each
+migration's digest and refuses with `Migration drift` when a recorded file's
+bytes change, so a database that applied the earlier bytes would be stranded on
+the superseded definitions. 008 is therefore immutable once registered, and the
+generation-guard, staged-window and cadence corrections ship as 009, moving the
+schema version 4 to 5 so a database still carrying the superseded guard is
+reported unhealthy rather than silently trusted.
+
 **Either authority may refuse; neither alone may permit.** The ledger and the
 alert row's marker are checked independently. Consulting the marker only when
 the ledger is absent reopens the precise window the guard exists for: once a

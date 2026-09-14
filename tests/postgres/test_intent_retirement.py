@@ -630,23 +630,28 @@ def test_T41_the_readiness_manifest_must_be_resealed_after_the_migration(lab):
         assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
-def test_T41_the_reseal_refuses_a_tree_that_is_not_at_schema_four(lab):
+def test_T41_the_reseal_refuses_a_tree_that_is_not_at_the_expected_schema(lab):
     """It seals what it was written for, or nothing."""
     from pathlib import Path
     reseal = (Path(__file__).resolve().parents[2] / "sql/install/12_reseal.sql").read_text()
     with connect_role(lab, "zabalack_owner") as owner:
-        owner.execute("UPDATE zabalack.installation SET schema_version=3 WHERE singleton")
+        installed = owner.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0]
+        owner.execute("UPDATE zabalack.installation SET schema_version=%s WHERE singleton",
+                      (installed - 1,))
     try:
         with connect_role(lab, "zabalack_owner") as owner:
-            with pytest.raises(Exception, match="expected zabalack schema version 4"):
+            with pytest.raises(Exception, match="expected zabalack schema version"):
                 owner.execute(reseal)
     finally:
         # The refusal aborts its own transaction, so the restore needs a session
-        # that is not already in a failed one.
+        # that is not already in a failed one. Restoring the version this lab
+        # actually had, rather than a literal, keeps the next migration from
+        # leaving the lab one version behind for every later module.
         with connect_role(lab, "zabalack_owner") as owner:
-            owner.execute("UPDATE zabalack.installation SET schema_version=4 WHERE singleton")
+            owner.execute("UPDATE zabalack.installation SET schema_version=%s WHERE singleton",
+                          (installed,))
     with connect_role(lab, "zabalack_owner") as owner:
-        assert owner.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 4
+        assert owner.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == installed
 
 
 # --- the staged attribute is API-writable, so nothing from it is trusted -----
@@ -807,3 +812,62 @@ def test_T41_a_malformed_marker_is_mismatched_even_with_a_ledger_entry(lab):
         conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
                      (Jsonb({MARKER: "not-a-uuid"}), alert_id))
     assert project(lab, action_id) == "projection_action_generation_mismatch"
+
+
+def test_T41_published_migrations_keep_their_registered_digests(lab):
+    """A recorded migration's bytes must never change.
+
+    `sql/migrate.py` refuses with `Migration drift` when a migration already in
+    `zabalack.schema_migrations` no longer hashes to its recorded digest, and a
+    database that applied the earlier bytes would be stranded on the superseded
+    definitions with no way forward. Corrections ship as a new migration, so this
+    asserts the published digests of every migration the manifest registers
+    against the files on disk.
+    """
+    import hashlib
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    manifest = json.loads((root / "docs/sql_manifest.json").read_text())
+    registered = {entry["path"]: entry["sha256"] for entry in manifest["files"]}
+    for path in sorted((root / "sql/migrations").glob("*.sql")):
+        key = path.relative_to(root).as_posix()
+        assert key in registered, f"{key} is not registered in the SQL manifest"
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == registered[key], \
+            f"{key} no longer matches its registered digest; ship a forward migration instead"
+
+
+def test_T41_the_retirement_cadence_is_deployment_state_not_a_worker_clock(lab):
+    """One scan per interval across the deployment, not one per worker.
+
+    The advisory lock inside `retire_intents` is released when its `worker_call`
+    transaction ends, so it excludes an overlapping sweep but not a repeated one.
+    A process-local timer does not help either: every worker starts with its own,
+    so N workers each run the unindexed scan once per interval. The slot is
+    claimed atomically in the installation row instead.
+    """
+    stage(lab)
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.installation SET retirement_due_at=NULL,"
+                      "retirement_interval_seconds=900 WHERE singleton")
+
+    def worker_sweep():
+        with connect_role(lab, "zabalack_worker") as worker:
+            return worker.execute("SELECT zabalack.worker_call('retire_intents',%s)",
+                                  (Jsonb({"limit": 1000, "grace_seconds": 0}),)).fetchone()[0]
+
+    first = worker_sweep()
+    assert "skipped" not in first, "the first caller in an interval does the work"
+    for _ in range(3):
+        # A second worker, or the same one on its next cycle, must not rescan.
+        assert worker_sweep() == {"examined": 0, "noted": 0, "retired": 0, "skipped": "not_due"}
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        due = owner.execute("SELECT retirement_due_at>clock_timestamp() FROM zabalack.installation "
+                            "WHERE singleton").fetchone()[0]
+    assert due is True, "the claim moved the slot forward by the configured interval"
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.installation SET retirement_due_at=clock_timestamp()"
+                      "-interval '1 second' WHERE singleton")
+    assert "skipped" not in worker_sweep(), "the slot reopens once the interval has elapsed"

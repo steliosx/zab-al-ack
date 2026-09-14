@@ -47,9 +47,6 @@ class Settings:
     background_overall_timeout_seconds: float = 20
     fast_cycle_seconds: int = 60
     fast_budget: int = 200
-    # A5 stage two. Long enough that an unindexed scan of public.alerts is not a
-    # per-minute cost, short enough that a staged intent's exposure stays bounded.
-    retirement_cycle_seconds: int = 900
     nightly_cycle_seconds: int = 86400
     recent_terminal_seconds: int = 86400
     host_inventory_seconds: int = 900

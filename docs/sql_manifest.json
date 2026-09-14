@@ -17,7 +17,7 @@
     },
     {
       "path": "sql/install/12_reseal.sql",
-      "sha256": "c410da4a53cffd36dedce65d0c75bd49cc4e101e7e4cf00fb396277e90e481a6"
+      "sha256": "93196404379b2c6dcb82bcb8dac150d8766fdbdc121a2f1035cf4569d7541b78"
     },
     {
       "path": "sql/migrate.py",
@@ -53,7 +53,11 @@
     },
     {
       "path": "sql/migrations/008_intent_retirement.sql",
-      "sha256": "a48198d6f7b9d498a6d6efe6b698acedac1a1de1d38c9cdabd627d22804cfb10"
+      "sha256": "e2e666708aba842208a9ada95fa0fa83429eff53f134d1cc4b660ac9219a7089"
+    },
+    {
+      "path": "sql/migrations/009_generation_guard_corrections.sql",
+      "sha256": "522403e7edc472068fdb8014601df5e9870b6cd831c20d9dc7f2f1b982f98645"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",

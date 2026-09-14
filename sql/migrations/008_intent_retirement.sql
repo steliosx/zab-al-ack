@@ -31,22 +31,10 @@ CREATE TABLE zabalack.alert_staging(
 REVOKE ALL ON TABLE zabalack.alert_staging FROM PUBLIC;
 
 -- Record a staged generation, advancing only. Returns true when it advanced.
---
--- A staged window is bounded by construction: build_intent sets
--- capture_expires_at to issued_at + 60 seconds, and verify_complete refuses any
--- capture whose intent claims more. Anything outside that bound did not come
--- from the signer, so it is refused here rather than allowed to become the
--- authority. Without this an attribute carrying 'infinity' would pin the ledger
--- permanently: no legitimate finite generation could ever advance past it, and
--- every later projection would be refused as a generation mismatch.
 CREATE FUNCTION zabalack.note_staging(p_alert text, p_action uuid, p_until timestamptz, p_by text)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
 DECLARE advanced boolean;
 BEGIN
- IF p_until IS NULL OR isfinite(p_until) IS NOT TRUE
-    OR p_until>clock_timestamp()+interval '60 seconds' THEN
-  RETURN false;
- END IF;
  INSERT INTO zabalack.alert_staging(alert_id,staged_action_id,staged_until,observed_by)
   VALUES(p_alert,p_action,p_until,p_by)
  ON CONFLICT(alert_id) DO UPDATE SET staged_action_id=excluded.staged_action_id,
@@ -87,19 +75,9 @@ REVOKE ALL ON FUNCTION zabalack.staged_marker(jsonb) FROM PUBLIC;
 CREATE FUNCTION zabalack.retire_intents(p_limit integer DEFAULT 200, p_grace_seconds integer DEFAULT 300)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack SET timezone='UTC' AS $$
 DECLARE
- candidate record; intent jsonb; action uuid; until_at timestamptz; issued_at timestamptz; grace interval;
+ candidate record; intent jsonb; action uuid; until_at timestamptz; grace interval;
  now_at timestamptz:=clock_timestamp(); examined integer:=0; noted integer:=0; retired integer:=0;
 BEGIN
- -- public.alerts carries no index for this predicate — zabalack_owner does not
- -- own the table and cannot create one — so LIMIT bounds matching rows, not rows
- -- scanned. One uncoordinated sweep per worker per cycle would mean every worker
- -- scanning the whole table even with nothing to retire. Exactly one sweep runs
- -- at a time across the deployment; the rest return immediately. See
- -- docs/deployment_acceptance.md for the optional partial index the alerts owner
- -- can add to make the scan itself cheap.
- IF NOT pg_try_advisory_xact_lock(hashtextextended('zabalack.retire_intents',0)) THEN
-  RETURN jsonb_build_object('examined',0,'noted',0,'retired',0,'skipped','sweep_in_progress');
- END IF;
  grace:=make_interval(secs=>least(86400,greatest(0,coalesce(p_grace_seconds,300))));
  -- No ORDER BY: zabalack_owner cannot create an index on public.alerts, so an
  -- ordered scan would sort the whole table for no benefit. Each pass removes
@@ -110,34 +88,26 @@ BEGIN
  LOOP
   examined:=examined+1;
   intent:=candidate.attributes->'zabbix_ack_sync_intent';
-  action:=NULL; until_at:=NULL; issued_at:=NULL;
-  -- This attribute is API-writable: PUT /alert/<id>/attributes runs no plugin
-  -- hook, so a write:alerts client can put any JSON here. Nothing from it
-  -- reaches the ledger without passing the signer's own bounds, and a value
-  -- that fails them is treated as unvalidatable plaintext: retired, never
-  -- promoted. Promoting it unchecked would let a forged far-future window both
-  -- pin the ledger and exempt itself from retirement.
+  action:=NULL; until_at:=NULL;
   IF jsonb_typeof(intent)='object' THEN
    BEGIN
     action:=(intent->>'action_id')::uuid;
-    issued_at:=(intent->>'issued_at')::timestamptz;
     until_at:=(intent->>'capture_expires_at')::timestamptz;
-    IF issued_at IS NULL OR until_at IS NULL
-       OR isfinite(issued_at) IS NOT TRUE OR isfinite(until_at) IS NOT TRUE
-       -- The same lifetime rule verify_complete enforces on a capture.
-       OR until_at>issued_at+interval '60 seconds' OR until_at<=issued_at
-       OR issued_at>now_at THEN
-     action:=NULL; until_at:=NULL;
-    END IF;
    EXCEPTION WHEN invalid_text_representation OR invalid_datetime_format OR datetime_field_overflow THEN
+    -- A malformed intent can never produce a capture that verifies; it is still
+    -- readable plaintext, so it is retired without advancing the ledger.
     action:=NULL; until_at:=NULL;
    END;
   END IF;
-  IF action IS NOT NULL AND zabalack.note_staging(candidate.id,action,until_at,'sweep') THEN
+  IF action IS NULL THEN
+   action:=zabalack.staged_marker(candidate.attributes);
+   BEGIN until_at:=(candidate.attributes->>'zabbix_ack_sync_staged_until')::timestamptz;
+   EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN until_at:=NULL; END;
+  END IF;
+  IF action IS NOT NULL AND until_at IS NOT NULL AND zabalack.note_staging(candidate.id,action,until_at,'sweep') THEN
    noted:=noted+1;
   END IF;
-  -- Only a generation that passed those bounds may defer its own retirement.
-  CONTINUE WHEN action IS NOT NULL AND until_at+grace>now_at;
+  CONTINUE WHEN until_at IS NOT NULL AND until_at+grace>now_at;
   -- The generation marker is retained for the lifetime of the alert and is
   -- restored here when the row never carried one. staged_until governed this
   -- decision and nothing else, so it goes with the intent.
@@ -145,8 +115,6 @@ BEGIN
    (coalesce(attributes,'{}'::jsonb)-'zabbix_ack_sync_intent'-'zabbix_ack_sync_staged_until')
    || CASE WHEN action IS NOT NULL AND zabalack.staged_marker(attributes) IS NULL
       THEN jsonb_build_object('zabbix_ack_sync_staged_action_id',action::text) ELSE '{}'::jsonb END
-   -- `action` is NULL unless the generation passed the bounds above, so an
-   -- unvalidatable intent never leaves a marker behind.
    WHERE id=candidate.id;
   retired:=retired+1;
  END LOOP;
@@ -174,7 +142,7 @@ CREATE OR REPLACE FUNCTION zabalack.project(p_action uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack SET timezone='UTC' AS $$
 DECLARE
  a zabalack.actions; attrs jsonb; target_customer text; why text; display_state text; local_at timestamptz;
- alert_present boolean; staging zabalack.alert_staging; marker uuid; marker_present boolean;
+ alert_present boolean; staging zabalack.alert_staging; marker uuid;
 BEGIN
  SELECT * INTO STRICT a FROM zabalack.actions WHERE action_id=p_action FOR UPDATE;
  -- UPDATE(column) does not give SELECT(other columns); this list matches explicit grants.
@@ -182,7 +150,6 @@ BEGIN
  alert_present:=FOUND;
  SELECT * INTO staging FROM zabalack.alert_staging WHERE alert_id=a.alert_id FOR UPDATE;
  marker:=zabalack.staged_marker(attrs);
- marker_present:=coalesce(attrs ? 'zabbix_ack_sync_staged_action_id',false);
  IF attrs->>'zabbix_ack_sync_local_at' IS NOT NULL THEN
   BEGIN local_at:=(attrs->>'zabbix_ack_sync_local_at')::timestamptz;
   EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN local_at:='infinity'::timestamptz; END;
@@ -195,18 +162,11 @@ BEGIN
  ELSIF EXISTS(SELECT 1 FROM zabalack.actions newer WHERE newer.alert_id=a.alert_id AND newer.capture_order>a.capture_order) THEN
   why := 'projection_action_generation_mismatch';
  ELSIF staging.alert_id IS NOT NULL AND staging.staged_action_id<>a.action_id THEN
-  -- The ledger cannot be reached from the Alerta API, so it can refuse.
+  -- The ledger is authoritative and unreachable from the Alerta API.
   why := 'projection_action_generation_mismatch';
- ELSIF marker_present AND (marker IS NULL OR marker<>a.action_id) THEN
-  -- Either authority may refuse; neither alone may permit. Gating this on an
-  -- absent ledger reopened the exact window the guard exists for: once a
-  -- capture has seeded the ledger with this action, a newer staging that has
-  -- not yet been captured or swept exists *only* as this marker, and ignoring
-  -- it let the older projection overwrite the newer acknowledgement's state and
-  -- delete its intent. A marker that is present but unparseable is mismatched,
-  -- never absent.
+ ELSIF staging.alert_id IS NULL AND marker IS NOT NULL AND marker<>a.action_id THEN
   why := 'projection_action_generation_mismatch';
- ELSIF staging.alert_id IS NULL AND NOT marker_present THEN
+ ELSIF staging.alert_id IS NULL AND marker IS NULL THEN
   -- Neither authority present. Migration backfills the ledger for every alert
   -- carrying an action row, so this is not a pre-existing deployment reaching
   -- an upgraded schema; it is a row whose generation evidence was removed.

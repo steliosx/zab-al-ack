@@ -78,14 +78,23 @@ after, the re-seal of the readiness manifest, and the principal that performed e
 lab does not close this item.
 
 Upgrade sequence, with the principal recorded for each step. Apply `sql/migrations/008_intent_retirement.sql`
-through the ordinary migration path and record the schema version moving 3 to 4, confirming the backfill
-populated `zabalack.alert_staging` for every alert carrying an action row or an uncaptured staged intent. Then run
+and `sql/migrations/009_generation_guard_corrections.sql` through the ordinary migration path and record the
+schema version moving 3 to 5, confirming the backfill populated `zabalack.alert_staging` for every alert carrying
+an action row or an uncaptured staged intent. 009 is mandatory, not optional: a database left at 4 carries the
+superseded generation guard, so workers pinned to 5 report unhealthy until it applies. Neither file may be edited
+once applied — `sql/migrate.py` refuses with `Migration drift` and the database cannot move forward — so a further
+correction ships as another migration. Then run
 `sql/install/12_reseal.sql` as the approved alerts owner/installation principal — the same identity that ran
-`10_trigger.sql` — while eligible acknowledgements are fenced; it refuses unless the schema version is 4, the
-version 4 objects are present, and the trigger fingerprint still matches the sealed one, since 008 does not change
-the trigger. Confirm `zabalack.capture_health()` reports `functions_ok` afterwards and that workers pinned to
+`10_trigger.sql` — while eligible acknowledgements are fenced; it refuses unless the schema version is 5, the
+expected objects are present, and the trigger fingerprint still matches the sealed one, since neither migration
+changes the trigger. Confirm `zabalack.capture_health()` reports `functions_ok` afterwards and that workers pinned to
 schema 3 report unhealthy until upgraded. Confirm the sweep is reachable only through
 `zabalack.worker_call('retire_intents', …)` and that a direct call as `zabalack_worker` is denied.
+
+Record the retirement cadence actually observed across the fleet. The slot is claimed in the installation row,
+so exactly one worker per `retirement_interval_seconds` performs the scan however many workers and sites are
+running; the rest return `skipped: not_due`. Confirm that with more than one worker, and confirm the interval is
+set to a value the deployment accepts, since it bounds how long a staged intent persists.
 
 Measure the sweep's cost on the installed table. `public.alerts` carries no index for the
 `attributes ? 'zabbix_ack_sync_intent'` predicate — `zabalack_owner` does not own the table and cannot create

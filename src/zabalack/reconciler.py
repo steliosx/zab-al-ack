@@ -20,7 +20,6 @@ class Reconciler:
         self.worker_id, self.client_factory = worker_id, client_factory
         self._last_hosts = 0.0
         self._last_nightly = 0.0
-        self._last_retirement = 0.0
         self._nightly_cursor: str | None = None
         self._nightly_pending = False
 
@@ -166,17 +165,16 @@ class Reconciler:
         eligibility; nothing here chooses which rows are swept.
         """
         result = await self.db.call("retire_intents", {"limit": self.settings.fast_budget})
+        # `{"skipped": "not_due"}` is the ordinary answer: another worker, or this
+        # one on an earlier cycle, already claimed this interval's slot.
         return result if isinstance(result, dict) else {}
 
     async def scheduled_sweeps(self) -> None:
         now = time.monotonic()
-        # Not every fast cycle. The sweep scans public.alerts without an index,
-        # so running it each minute from every worker would scan the whole table
-        # repeatedly with nothing to retire. SQL still bounds the batch and holds
-        # the advisory lock; this bounds how often it is asked at all.
-        if now - self._last_retirement >= self.settings.retirement_cycle_seconds:
-            await self.retire_intents()
-            self._last_retirement = now
+        # Asked every cycle; SQL decides whether it is due. The cadence is
+        # deployment state rather than this process's clock, so N workers do not
+        # each run their own unindexed scan of public.alerts per interval.
+        await self.retire_intents()
         # SQL's 15-minute due timestamp governs eligibility. Checking the indexed due
         # queue each fast cycle drains large cohorts without a 15-minute per-row delay.
         await self.host_inventory()
