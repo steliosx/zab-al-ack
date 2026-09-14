@@ -10,7 +10,7 @@ from zabalack.health import CaptureHealthProbe, CaptureUnhealthy, ProbeConfig
 
 def healthy():
     return dict(in_recovery=False, database_name="lab", deployment_id="lab-only",
-                zabalack_schema_version=8, config_revision="synthetic-1", capture_disabled=False,
+                zabalack_schema_version=9, config_revision="synthetic-1", capture_disabled=False,
                 trigger_ok=True, functions_ok=True, checked_at="2026-01-01T00:00:00Z")
 
 
@@ -75,7 +75,7 @@ def test_T15_separate_commands_cache_and_failed_refresh_no_stale(setup_probe):
 
 
 @pytest.mark.parametrize("field,value", [("in_recovery", True), ("deployment_id", "unrelated"),
-                                         ("database_name", "other"), ("zabalack_schema_version", 7),
+                                         ("database_name", "other"), ("zabalack_schema_version", 8),
                                          ("capture_disabled", True), ("config_revision", "stale"),
                                          ("trigger_ok", False), ("functions_ok", False)])
 def test_T16_T21_wrong_identity_or_missing_capture_is_unhealthy(setup_probe, field, value):

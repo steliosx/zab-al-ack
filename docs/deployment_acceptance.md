@@ -79,23 +79,24 @@ lab does not close this item.
 
 Upgrade sequence, with the principal recorded for each step. Apply migrations 008 through 012 —
 `008_intent_retirement.sql`, `009_generation_guard_corrections.sql`, `010_staging_ledger_repair.sql`,
-`011_ledger_repair_authentication.sql` and `012_repair_deletes_only.sql` — through the ordinary migration path and
-record the schema version moving 3 to 8.
+`011_ledger_repair_authentication.sql`, `012_repair_deletes_only.sql` and
+`013_seed_ledger_on_verification.sql` — through the ordinary migration path and
+record the schema version moving 3 to 9.
 
 Record the end state, not an intermediate one. 008's backfill populates `zabalack.alert_staging` from both action
 rows and uncaptured staged intents, but 012's repair then deletes every entry no verified action corroborates —
 including entries whose only evidence was an uncaptured staged attribute, because nothing at repair time
 distinguishes a genuine one from a forged one. After the whole sequence the ledger therefore holds an entry only
-for alerts with a verified action; the rest fall to their generation marker, and an alert with neither refuses
+for alerts with a verified action, and verification itself seeds one from then on; the rest fall to their generation marker, and an alert with neither refuses
 projection with `projection_generation_unknown` until the bounded sweep re-admits a genuine staging on its next
 pass. An operator checking for a fully populated ledger at schema 8 will not find one, and should not. The whole sequence is mandatory, not a menu: 008 alone carries the superseded generation
 guard and an unbounded ledger, 009 bounds new entries but repairs none, and 010's repair keeps a forged entry
-whose window merely looks plausible. Workers are pinned to 7 and report unhealthy until every one has applied, and
+whose window merely looks plausible. Workers are pinned to 9 and report unhealthy until every one has applied, and
 `011` re-runs the repair so a database that stopped at 010 is corrected when it catches up. No applied migration
 may be edited — `sql/migrate.py` refuses with `Migration drift` and the database cannot move forward — so a
 further correction always ships as another migration. Then run
 `sql/install/12_reseal.sql` as the approved alerts owner/installation principal — the same identity that ran
-`10_trigger.sql` — while eligible acknowledgements are fenced; it refuses unless the schema version is 7, the
+`10_trigger.sql` — while eligible acknowledgements are fenced; it refuses unless the schema version is 9, the
 expected objects are present, and the trigger fingerprint still matches the sealed one, since none of these
 migrations changes the trigger.
 

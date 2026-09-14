@@ -139,7 +139,7 @@
   },
   "alpha_version": "0.1.0a16",
   "ci_workflows": "SUPPLIED_NOT_RUN_ON_GITHUB",
-  "database_schema_version": 8,
+  "database_schema_version": 9,
   "review_base_commit": "14b8c72f34d93b16c102013a232a995d75f7a6eb",
   "review_status": "Zab-al-ack a16: the independent a15 review reproduced and adopted \u2014 ten writer regressions and precise corrections to the R20 history, the optional-when-absent mutation records, the service-run attribution and the verifier dependency (R21); no runtime or SQL change",
   "native_and_real_zabbix_evidence": "EXECUTED for a16 on local services (not_docker: true): evidence/native-run.json 42 passed, evidence/real-zabbix-run.json 6 passed, evidence/deployment-e2e-run.json 4 passed with 13/13 observations.",

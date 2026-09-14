@@ -13,7 +13,7 @@ the installed wheel) and supplies the non-Docker runners it used (R14). See the
 **Fresh installation namespace:** this is not an in-place Ackline upgrade.
 Installation refuses an existing `ackline` schema; old ledgers and proofs must
 be retained unchanged. New signatures cannot validate old proofs. Migrations
-001–012 form the new `zabalack` baseline, schema version 8; archived Ackline
+001–013 form the new `zabalack` baseline, schema version 9; archived Ackline
 migration history remains immutable. Original a8 artifacts and evidence are
 preserved separately in the complete handoff.
 

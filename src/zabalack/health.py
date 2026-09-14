@@ -25,7 +25,7 @@ class ProbeConfig:
     database_name: str
     deployment_id: str
     config_revision: str
-    schema_version: int = 8
+    schema_version: int = 9
     cache_seconds: float = 5.0
     statement_timeout_ms: int = 500
     acquisition_timeout: float = 0.5

@@ -1059,3 +1059,72 @@ def test_T41_the_repair_installs_no_fallback_generation(lab):
                                        "projection_action_generation_mismatch"}, \
         "with no authority left, the older projection must refuse rather than proceed"
     assert attributes_of(lab, alert_id)["zabbix_ack_sync"] == "pending", "B's state must survive"
+
+
+def test_T41_verification_seeds_the_ledger(lab):
+    """Verification is the only authenticated establishment of a generation.
+
+    A genuine capture still unverified when the repair runs loses its ledger row,
+    and once its intent is retired no sweep can reconstruct it. If verification
+    did not seed the ledger, a whole-object replay dropping the writable marker
+    would leave the eventually-verified action with no authority at all:
+    `project()` returns `projection_generation_unknown` and clears
+    `projection_due_at`, so the legitimate result is withheld permanently rather
+    than retried.
+    """
+    alert_id, event_id, payload = stage(lab)
+    fire_ack(lab, alert_id, payload)
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("SELECT zabalack.repair_staging_ledger()")
+    assert ledger(lab, alert_id) is None, "precondition: the unverified entry was removed"
+    # Retirement has already taken the intent, and the replay drops the marker,
+    # so nothing on the row can reconstruct the generation.
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes-%s-%s WHERE id=%s", (MARKER, INTENT, alert_id))
+    assert ledger(lab, alert_id) is None
+
+    action_id = new_action(lab, alert_id, event_id, payload)
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("SELECT zabalack.note_staging(%s,%s,%s,'verified')",
+                      (alert_id, payload["action_id"], payload["capture_expires_at"]))
+    row = ledger(lab, alert_id)
+    assert row is not None and row[0] == uuid.UUID(payload["action_id"]), \
+        "verification must establish the generation"
+    assert project(lab, action_id) == "projected", \
+        "the legitimate result must not be withheld once verification has seeded the ledger"
+
+
+def test_T41_the_sweep_still_admits_an_unverified_generation(lab):
+    """The runtime re-admission path this branch does NOT close, asserted.
+
+    `retire_intents()` calls `note_staging()` on shape and timestamp checks
+    alone, before any signature verification, so a well-formed forged intent is
+    admitted by the next sweep and the repair's deletion is undone. Closing this
+    means deciding what the ledger is for — whether it records only verified
+    generations, leaving the writable marker to cover the uncaptured-staging
+    window — which is a design decision recorded on the pull request, not a
+    patch. This asserts the behaviour as it actually is, so the gap stays visible
+    rather than being assumed closed.
+
+    Both timestamps derive from one base instant. Taking them from two separate
+    `now()` calls makes the window 60 seconds plus a few microseconds, which the
+    width rule rejects — so the forgery would be refused for the wrong reason and
+    the case would pass while proving nothing.
+    """
+    alert_id, event_id, payload = stage(lab)
+    base = datetime.now(timezone.utc) - timedelta(seconds=5)
+    forged = dict(payload, action_id=str(uuid.uuid4()), issued_at=stamp(base),
+                  capture_expires_at=stamp(base + timedelta(seconds=60)))
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                     (Jsonb({INTENT: forged}), alert_id))
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("SELECT zabalack.repair_staging_ledger()")
+    result = sweep(lab, grace=0)
+    assert result["noted"] == 1, "the forgery must be well formed, or this case proves nothing"
+    row = ledger(lab, alert_id)
+    assert row is not None and row[0] == uuid.UUID(forged["action_id"]), \
+        "documented gap: a well-formed forged generation is still admitted by the sweep"
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT count(*) FROM zabalack.actions WHERE action_id=%s",
+                             (forged["action_id"],)).fetchone()[0] == 0, "and nothing verified it"

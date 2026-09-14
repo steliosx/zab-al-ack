@@ -490,6 +490,19 @@ delete its intent. A marker that is present but unparseable is treated as
 mismatched, never as absent; `projection_generation_unknown` is reserved for a
 row carrying no generation evidence at all.
 
+**The ledger is fed from an unauthenticated source at runtime, and that is not
+resolved.** `retire_intents()` admits a staged generation on shape and timestamp
+checks alone, before any signature verification, because the window the guard
+exists for is precisely a staging that has not yet been captured and so has no
+authenticated record. Bounding what may be admitted limits the damage, and the
+repair removes entries no verified action corroborates, but the next sweep
+re-admits any well-formed forgery, so the repair is a one-shot cleanup against a
+source that keeps re-poisoning. Verification now seeds the ledger, which is the
+authenticated path. Whether the ledger should record *only* verified generations
+— leaving the writable marker, fail-closed, to cover the uncaptured-staging
+window — is a design decision that has not been taken, and the current behaviour
+is asserted by a test rather than described as closed.
+
 **The window this design does not close.** The ledger can only hold a
 generation something observed: `capture_ack()` records one synchronously with the
 capture, and the sweep records one when it visits the row. A staging overwritten
