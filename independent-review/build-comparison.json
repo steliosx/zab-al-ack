@@ -1,0 +1,28 @@
+{
+  "artifacts": [
+    {
+      "artifact": "pypi/zabalack-0.1.0a16-py3-none-any.whl",
+      "supplied_sha256": "151a4cfcee71f0036c6215951aacd52fd86c15ade484270115bd45b4c0ea43d1",
+      "rebuilt_sha256": "151a4cfcee71f0036c6215951aacd52fd86c15ade484270115bd45b4c0ea43d1",
+      "match": true
+    },
+    {
+      "artifact": "pypi/zabalack-0.1.0a16.tar.gz",
+      "supplied_sha256": "0a51772165c572288149220be206bb991248aac7b28b7aec4ee7f788b26e79d6",
+      "rebuilt_sha256": "0a51772165c572288149220be206bb991248aac7b28b7aec4ee7f788b26e79d6",
+      "match": true
+    },
+    {
+      "artifact": "zabalack-0.1.0a16-source.zip",
+      "supplied_sha256": "1408259085144e58c9be73ec0693c75b3c1e49316830559ba2f59a276a5c49e0",
+      "rebuilt_sha256": "1408259085144e58c9be73ec0693c75b3c1e49316830559ba2f59a276a5c49e0",
+      "match": true
+    }
+  ],
+  "provenance_differences": {
+    "python": {
+      "supplied": "3.12.3",
+      "rebuilt": "3.12.14"
+    }
+  }
+}

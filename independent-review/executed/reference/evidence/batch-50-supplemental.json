@@ -1,0 +1,58 @@
+{
+  "test_id": "T30",
+  "reference_result": "PASS",
+  "catalogue_result": "MANUAL_GATE_PENDING",
+  "backend": "postgres18_wasm",
+  "postgres_version": "PostgreSQL 18.3 (PGlite 0.5.8) on wasm32-unknown-emscripten, compiled by emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 3.1.74 (1092ec30a3fb1d46b1782ff1b4db5094d3d06ae5), 32-bit",
+  "alerta": "9.1.0",
+  "python": "3.12.14",
+  "platform": "Linux-x86_64",
+  "evidence_layer": "actual pinned Alerta Flask HTTP + PostgreSQL SQL persistence/worker, mocked source client",
+  "count": 50,
+  "api_concurrency": 1,
+  "delivery_concurrency": 1,
+  "api_action_seconds": {
+    "p50": 0.013759,
+    "p95": 0.028007,
+    "max": 0.04081
+  },
+  "capture_to_worker_completion_seconds": {
+    "p50": 1.868721,
+    "p95": 1.950379,
+    "max": 1.951589
+  },
+  "mock_validation_through_prewrite_SQL_to_mock_write_seconds": {
+    "p50": 0.004588,
+    "p95": 0.019624,
+    "max": 0.019708
+  },
+  "elapsed_seconds": 2.506705,
+  "captured": 50,
+  "peak_outbox_queue": 50,
+  "source_validation_reads": 50,
+  "source_writes": 25,
+  "already_acknowledged": 25,
+  "completion_evidence_counts": {
+    "source_ack_observed": 25,
+    "write_response": 25
+  },
+  "projected_ok": 50,
+  "api_error_count": 0,
+  "timed_out": 0,
+  "delivery_slots_remaining": 0,
+  "unmeasured": [
+    "PHP-FPM/frontend queue and utilisation",
+    "native PostgreSQL multi-backend concurrency/load",
+    "PgBouncer pooling",
+    "real Zabbix latency/permissions/notifications",
+    "cross-site failover",
+    "multi-tenant fairness"
+  ],
+  "limitations": [
+    "single tenant and single instance",
+    "synthetic data and mocked source replies",
+    "human JWT and probe success are injected lab fixtures",
+    "No G1-G8 deployment gate is satisfied",
+    "PGlite single WASM backend: no native authentication/TLS/cancellation/HA claims"
+  ]
+}

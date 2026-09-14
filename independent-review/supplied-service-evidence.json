@@ -1,0 +1,33 @@
+{
+  "native-run.json": {
+    "supplied_counts": {
+      "passed": 42,
+      "failed": 0,
+      "skipped": 0
+    },
+    "json_junit_match": true,
+    "independently_executed_here": false,
+    "binding_validated_by_public_audit": true
+  },
+  "real-zabbix-run.json": {
+    "supplied_counts": {
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0
+    },
+    "json_junit_match": true,
+    "independently_executed_here": false,
+    "binding_validated_by_public_audit": true
+  },
+  "deployment-e2e-run.json": {
+    "supplied_counts": {
+      "failed": 0,
+      "passed": 4,
+      "skipped": 0
+    },
+    "successful_observations": 13,
+    "wheel_sha256_verified": true,
+    "independently_executed_here": false,
+    "schema_and_binding_validated_by_release_verifier": true
+  }
+}

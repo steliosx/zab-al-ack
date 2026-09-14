@@ -1,0 +1,29 @@
+{
+  "input_zip_sha256": "592adc10f69233f2cb4bd177168cdba51230a559f475ef9233ec06b1b167c33b",
+  "checksums": [
+    {
+      "list": "SHA256SUMS",
+      "subjects": 1048,
+      "status": "PASS",
+      "exact_file_coverage": true
+    },
+    {
+      "list": "plugin/RELEASE_SHA256SUMS",
+      "subjects": 321,
+      "status": "PASS",
+      "exact_file_coverage": true
+    },
+    {
+      "list": "plugin/dist/SHA256SUMS",
+      "subjects": 4,
+      "status": "PASS",
+      "exact_file_coverage": false
+    }
+  ],
+  "candidate_commit": "e9dc46d2202f0a60638b5506f75af2da11643357",
+  "candidate_tree": "fa6bc575bcefe6904eb483f46fb314e5e5c8b0b9",
+  "source_files": 309,
+  "bundle_source_bytes_equal": true,
+  "bundle_complete_history": true,
+  "history_commit_count": 16
+}

@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "run_id": "independent-a16-01",
+  "status": "PASS",
+  "started_at_utc": "2026-09-13T23:29:23.690016+00:00",
+  "code_digests": {
+    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+  },
+  "phases": [
+    {
+      "name": "quality",
+      "status": "PASS",
+      "command": [
+        "python",
+        "tools/run_quality.py"
+      ],
+      "started_at_utc": "2026-09-13T23:29:23.691620+00:00",
+      "code_digests": {
+        "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+        "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+      },
+      "exit_code": 0,
+      "interrupted": false,
+      "cleanup": "CHILD_MANAGED",
+      "duration_ms": 2925,
+      "finished_at_utc": "2026-09-13T23:29:26.643612+00:00",
+      "tree_unchanged": true,
+      "evidence": [
+        {
+          "path": "evidence/quality-run.json",
+          "sha256": "f2149f7c3a7f666b0723869ae329cf99e0de52eff8d7ea590ecb3ad6a0553e2f"
+        }
+      ]
+    },
+    {
+      "name": "sql",
+      "status": "PASS",
+      "command": [
+        "python",
+        "tools/run_sql_checks.py",
+        "--isolated-lab"
+      ],
+      "started_at_utc": "2026-09-13T23:29:26.680041+00:00",
+      "code_digests": {
+        "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+        "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+      },
+      "exit_code": 0,
+      "interrupted": false,
+      "cleanup": "CHILD_MANAGED",
+      "duration_ms": 4794,
+      "finished_at_utc": "2026-09-13T23:29:31.502514+00:00",
+      "tree_unchanged": true,
+      "evidence": [
+        {
+          "path": "evidence/runtime_wasm_sql.json",
+          "sha256": "1d1d3e193d586f65d7b2a57337a8be391be7530095c097892e55d0d4a22c81e6"
+        }
+      ]
+    },
+    {
+      "name": "reference",
+      "status": "PASS",
+      "command": [
+        "python",
+        "tools/run_reference_suite.py",
+        "--wasm"
+      ],
+      "started_at_utc": "2026-09-13T23:29:31.542219+00:00",
+      "code_digests": {
+        "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+        "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+      },
+      "exit_code": 0,
+      "interrupted": false,
+      "cleanup": "CHILD_MANAGED",
+      "duration_ms": 70854,
+      "finished_at_utc": "2026-09-13T23:30:42.426170+00:00",
+      "tree_unchanged": true,
+      "evidence": [
+        {
+          "path": "evidence/alerta-persistence-wasm.xml",
+          "sha256": "6133fcc868d77157abd8d9e403b45899ffeed027fcf30897a128046f9df23c34"
+        },
+        {
+          "path": "evidence/batch-200-supplemental.json",
+          "sha256": "47503293ab19925bd1498149c0a5490cdd12015a428c9b6dd4178fb15bee723e"
+        },
+        {
+          "path": "evidence/batch-50-supplemental.json",
+          "sha256": "175798faf0b86a642834bf0d8f5292cb2e061487140196d51824e0cb94f3b3c7"
+        },
+        {
+          "path": "evidence/optional-services.xml",
+          "sha256": "dac5e70607195d2cd20ee3f1a772a700de4f401d96cf47e0a97d85e9b7a68399"
+        },
+        {
+          "path": "evidence/performance-wasm.xml",
+          "sha256": "b30cbcadc42646a30a2c0622b017978465d019782c3ad75d72d097da41ba27c1"
+        },
+        {
+          "path": "evidence/postgres-wasm.xml",
+          "sha256": "9479efdb17ed1f6ce2a41a5e9c2cf2f73c5f11c9e677be6eb1efb154a43356a1"
+        },
+        {
+          "path": "evidence/reference-run.json",
+          "sha256": "0939374b6cc6ca085f98113c029e9a8ca242d698f1ce44266b5fd9c390dcc899"
+        },
+        {
+          "path": "evidence/unit-mocked.xml",
+          "sha256": "4a5ff1b908a8d02cd40e3140a1eca8310369e6b61bde532900e63688c1258ea3"
+        },
+        {
+          "path": "evidence/worker-sql-wasm.xml",
+          "sha256": "8acaf60b26137b9a5864060a4862e964f57eebde5f5e149ea125e311af7e8420"
+        }
+      ]
+    },
+    {
+      "name": "mutation-pr",
+      "status": "PASS",
+      "command": [
+        "python",
+        "tools/run_mutation_checks.py",
+        "--profile",
+        "pr"
+      ],
+      "started_at_utc": "2026-09-13T23:30:42.463859+00:00",
+      "code_digests": {
+        "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+        "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+      },
+      "exit_code": 0,
+      "interrupted": false,
+      "cleanup": "CHILD_MANAGED",
+      "duration_ms": 13546,
+      "finished_at_utc": "2026-09-13T23:30:56.051710+00:00",
+      "tree_unchanged": true,
+      "evidence": [
+        {
+          "path": "evidence/mutation-pr-run.json",
+          "sha256": "7d1afbf67c23378d56fb2d05a8349fc9f5cf6dc94345701a2053b53fa3d2b695"
+        },
+        {
+          "path": "evidence/mutation-run.json",
+          "sha256": "7d1afbf67c23378d56fb2d05a8349fc9f5cf6dc94345701a2053b53fa3d2b695"
+        }
+      ]
+    },
+    {
+      "name": "mutation-nightly",
+      "status": "PASS",
+      "command": [
+        "python",
+        "tools/run_mutation_checks.py",
+        "--profile",
+        "nightly"
+      ],
+      "started_at_utc": "2026-09-13T23:30:56.158479+00:00",
+      "code_digests": {
+        "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+        "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+      },
+      "exit_code": 0,
+      "interrupted": false,
+      "cleanup": "CHILD_MANAGED",
+      "duration_ms": 18697,
+      "finished_at_utc": "2026-09-13T23:31:14.933135+00:00",
+      "tree_unchanged": true,
+      "evidence": [
+        {
+          "path": "evidence/mutation-nightly-run.json",
+          "sha256": "106b4e7ac0a03ac9dc423d51ce299c969735450a67a379efb714b8aa72d502a9"
+        },
+        {
+          "path": "evidence/mutation-run.json",
+          "sha256": "106b4e7ac0a03ac9dc423d51ce299c969735450a67a379efb714b8aa72d502a9"
+        }
+      ]
+    },
+    {
+      "name": "property-nightly",
+      "status": "PASS",
+      "command": [
+        "python",
+        "tools/run_property_nightly.py",
+        "--isolated-lab"
+      ],
+      "started_at_utc": "2026-09-13T23:31:14.970186+00:00",
+      "code_digests": {
+        "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+        "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+      },
+      "exit_code": 0,
+      "interrupted": false,
+      "cleanup": "CHILD_MANAGED",
+      "duration_ms": 151228,
+      "finished_at_utc": "2026-09-13T23:33:46.230933+00:00",
+      "tree_unchanged": true,
+      "evidence": [
+        {
+          "path": "evidence/property-nightly-run.json",
+          "sha256": "444fa3252d1d723a321bb0aa27dab4c1a9cb4727565e29f24c05b42e477aa0d7"
+        },
+        {
+          "path": "evidence/property-nightly.xml",
+          "sha256": "cf4183358f1b0524d789019a800e1339f3d4f20abc29f3cee18f9244255fd996"
+        }
+      ]
+    },
+    {
+      "name": "quickstart",
+      "status": "PASS",
+      "command": [
+        "python",
+        "tools/quickstart.py",
+        "--isolated-lab"
+      ],
+      "started_at_utc": "2026-09-13T23:33:46.268617+00:00",
+      "code_digests": {
+        "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+        "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+      },
+      "exit_code": 0,
+      "interrupted": false,
+      "cleanup": "CHILD_MANAGED",
+      "duration_ms": 11014,
+      "finished_at_utc": "2026-09-13T23:33:57.318360+00:00",
+      "tree_unchanged": true,
+      "evidence": []
+    }
+  ],
+  "scope": "Local phase execution; per-phase evidence defines its coverage; G1-G8 pending",
+  "finished_at_utc": "2026-09-13T23:33:57.406956+00:00",
+  "tree_unchanged": true
+}

@@ -1,0 +1,164 @@
+{
+  "phases": [
+    {
+      "phase": "unit-mocked",
+      "layer": "unit_mocked",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit",
+        "tests/rpc",
+        "tests/security",
+        "tests/release",
+        "tests/property",
+        "tests/native_support",
+        "tests/alerta/test_http_mocked_storage.py",
+        "-q",
+        "--junitxml=build/evidence-raw/unit-mocked.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-13T23:29:31.633752+00:00",
+      "finished_at": "2026-09-13T23:30:03.444873+00:00",
+      "junit": "evidence/unit-mocked.xml"
+    },
+    {
+      "phase": "postgres-wasm",
+      "layer": "postgres_wasm",
+      "command": [
+        "python",
+        "lab/pglite_exec.py",
+        "--isolated-lab",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+        "tests/postgres/test_postgres.py",
+        "tests/postgres/test_late_response.py",
+        "tests/postgres/test_stateful_ledger.py",
+        "tests/postgres/test_settled_expiry.py",
+        "-q",
+        "--junitxml=build/evidence-raw/postgres-wasm.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-13T23:30:03.445156+00:00",
+      "finished_at": "2026-09-13T23:30:16.710787+00:00",
+      "junit": "evidence/postgres-wasm.xml"
+    },
+    {
+      "phase": "worker-sql-wasm",
+      "layer": "postgres_wasm",
+      "command": [
+        "python",
+        "lab/pglite_exec.py",
+        "--isolated-lab",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+        "tests/postgres/test_worker_path.py",
+        "-q",
+        "--junitxml=build/evidence-raw/worker-sql-wasm.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-13T23:30:16.711010+00:00",
+      "finished_at": "2026-09-13T23:30:21.764322+00:00",
+      "junit": "evidence/worker-sql-wasm.xml"
+    },
+    {
+      "phase": "alerta-persistence-wasm",
+      "layer": "postgres_wasm",
+      "command": [
+        "python",
+        "lab/pglite_exec.py",
+        "--isolated-lab",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+        "tests/alerta/test_postgres_http.py",
+        "tests/alerta/test_health_postgres.py",
+        "tests/alerta/test_docs_walkthrough.py",
+        "-q",
+        "--junitxml=build/evidence-raw/alerta-persistence-wasm.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-13T23:30:21.764732+00:00",
+      "finished_at": "2026-09-13T23:30:26.043866+00:00",
+      "junit": "evidence/alerta-persistence-wasm.xml"
+    },
+    {
+      "phase": "performance-wasm",
+      "layer": "postgres_wasm",
+      "command": [
+        "python",
+        "lab/pglite_exec.py",
+        "--isolated-lab",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+        "tests/performance/test_reference_batches.py",
+        "-q",
+        "--junitxml=build/evidence-raw/performance-wasm.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-13T23:30:26.044591+00:00",
+      "finished_at": "2026-09-13T23:30:41.283884+00:00",
+      "junit": "evidence/performance-wasm.xml"
+    },
+    {
+      "phase": "optional-services",
+      "layer": "optional_native_real_zabbix",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/real_zabbix",
+        "tests/deployment_e2e",
+        "tests/postgres/test_native_login.py",
+        "tests/postgres/test_native_delivery_faults.py",
+        "-q",
+        "--junitxml=build/evidence-raw/optional-services.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-13T23:30:41.284102+00:00",
+      "finished_at": "2026-09-13T23:30:42.302398+00:00",
+      "junit": "evidence/optional-services.xml"
+    }
+  ],
+  "counts": {
+    "passed": 865,
+    "skipped": 23,
+    "failed": 0
+  },
+  "by_layer": {
+    "optional_native_real_zabbix": {
+      "passed": 0,
+      "skipped": 19,
+      "failed": 0
+    },
+    "postgres_wasm": {
+      "passed": 29,
+      "skipped": 4,
+      "failed": 0
+    },
+    "unit_mocked": {
+      "passed": 836,
+      "skipped": 0,
+      "failed": 0
+    }
+  },
+  "code_digests": {
+    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+  },
+  "native_postgres": "NOT_RUN",
+  "pgbouncer": "NOT_RUN",
+  "real_zabbix": "NOT_RUN",
+  "deployment_gates": "MANUAL_GATE_PENDING",
+  "hypothesis_profile": "pr",
+  "tree_unchanged": true,
+  "all_executed_phases_succeeded": true,
+  "status": "PASS"
+}

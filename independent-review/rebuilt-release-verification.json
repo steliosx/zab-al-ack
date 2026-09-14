@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "scope": "unsigned_release_consistency",
+  "signed_attestation": false,
+  "version": "0.1.0a16",
+  "code_digests": {
+    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+  },
+  "ci_context": null,
+  "subjects": [
+    {
+      "path": "BUILD_PROVENANCE.json",
+      "sha256": "e14b000490fff333e0bcec7c4bce409f62f53e15c509d335ce9c919fb9afd49d"
+    },
+    {
+      "path": "pypi/zabalack-0.1.0a16-py3-none-any.whl",
+      "sha256": "151a4cfcee71f0036c6215951aacd52fd86c15ade484270115bd45b4c0ea43d1"
+    },
+    {
+      "path": "pypi/zabalack-0.1.0a16.tar.gz",
+      "sha256": "0a51772165c572288149220be206bb991248aac7b28b7aec4ee7f788b26e79d6"
+    },
+    {
+      "path": "zabalack-0.1.0a16-source.zip",
+      "sha256": "1408259085144e58c9be73ec0693c75b3c1e49316830559ba2f59a276a5c49e0"
+    }
+  ]
+}

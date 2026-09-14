@@ -1,0 +1,25 @@
+{
+  "version": "0.1.0a16",
+  "entry_points": [
+    {
+      "group": "alerta.plugins",
+      "name": "zabalack_zabbix_ack",
+      "value": "zabalack.plugins:AckSigningPlugin",
+      "loaded": true
+    },
+    {
+      "group": "alerta.plugins",
+      "name": "zabalack_zabbix_normalise",
+      "value": "zabalack.normalizer:ZabbixNormaliser",
+      "loaded": true
+    },
+    {
+      "group": "console_scripts",
+      "name": "zabalack",
+      "value": "zabalack.cli:main",
+      "loaded": true
+    }
+  ],
+  "editable": false,
+  "pip_check_exit_code": 0
+}

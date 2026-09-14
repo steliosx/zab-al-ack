@@ -1,0 +1,42 @@
+{
+  "reviewed_version": "0.1.0a16",
+  "input_zip_sha256": "592adc10f69233f2cb4bd177168cdba51230a559f475ef9233ec06b1b167c33b",
+  "source_candidate_commit": "e9dc46d2202f0a60638b5506f75af2da11643357",
+  "import_commit": "d68fa91c3305da1ba66f25277d1532069787b120",
+  "import_tree": "fa6bc575bcefe6904eb483f46fb314e5e5c8b0b9",
+  "ci_fix_commit": "d23cad1869d7f69265cd211981ccdc3dce349989",
+  "ci_fix_tree": "b37c67713ad86dd6942f1bf7dbc6cf6a1a824113",
+  "website_commit": "09a947217551aeff0036f437c6162a253cbf709d",
+  "website_tree": "8b0096009e16f86b05f6e7552264e7c4e3be06e2",
+  "website_files_verified": 34,
+  "source_files_verified": 309,
+  "zip_blob": "205baf9b0fb0db14283d29059ec7119ef7251b08",
+  "bundle_blob": "dadfff8cdeae3ef1309dc0377cc5876a824a0470",
+  "hosted_checks": {
+    "run_id": 34797043917,
+    "quality": "success",
+    "reference": "success",
+    "mutation": "success",
+    "native": "failure",
+    "package": "skipped",
+    "security": {
+      "run_id": 34797043956,
+      "conclusion": "success"
+    },
+    "codeql": {
+      "run_id": 34797043954,
+      "conclusion": "skipped"
+    }
+  },
+  "native_phase_counts": {
+    "passed": 0,
+    "failed": 24,
+    "skipped": 0
+  },
+  "native_shutdown_exit_code": 0,
+  "new_release_created": false,
+  "visibility": "private",
+  "handoff_status": "PREPARED_NOT_CREATED_AUTO_REVIEW_REJECTED",
+  "verified_account": "steliosx",
+  "prepared_handoff_secret_scan_findings": 0
+}

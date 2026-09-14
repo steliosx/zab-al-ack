@@ -1,0 +1,5 @@
+{
+  "exit_code": 0,
+  "output": "{\"passed\":15,\"evidence\":\"synthetic Node contract; not Zabbix macro/API/notification evidence\"}\n",
+  "executed_here": true
+}

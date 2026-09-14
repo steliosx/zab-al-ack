@@ -1,0 +1,109 @@
+{
+  "version": "0.1.0a16",
+  "code_digests": {
+    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+  },
+  "agent_guidance": {
+    "schema_version": 1,
+    "skills": [
+      "zabalack-release-review",
+      "zabalack-isolated-lab",
+      "zabalack-migration-review"
+    ],
+    "files": [
+      {
+        "path": ".agents/skills/zabalack-isolated-lab/SKILL.md",
+        "sha256": "c0ac5e27f4d538ba55ff1a5cb579296d51f9f266afb7f448470a70a19c8631ab"
+      },
+      {
+        "path": ".agents/skills/zabalack-migration-review/SKILL.md",
+        "sha256": "b236d31cfd4e9de04ef39efd460c00b7b9a5f987484bd9d86a0f6506c000229a"
+      },
+      {
+        "path": ".agents/skills/zabalack-release-review/SKILL.md",
+        "sha256": "aa93f80f9d53870212bb78d46fde91217366ee4528f6a9bc2ce2af9f64a0025f"
+      },
+      {
+        "path": "AGENTS.md",
+        "sha256": "9aa87d0b9c0c95959556df1e2150384fd36d32d4a3952f8b0111d76174392301"
+      },
+      {
+        "path": "CONTRIBUTING.md",
+        "sha256": "dd6ba83da8bef0ff8154218b1da62dfa2c374bed0e993860a6a9633ae62f8f77"
+      },
+      {
+        "path": "docs/DESIGN.md",
+        "sha256": "7f1c71310b5249a472b589b18aeb92106257da03b3b2a8df60bf23a35734eb16"
+      },
+      {
+        "path": "docs/INPUTS_REQUIRED.md",
+        "sha256": "2c3338b67a2899e0999e01ed58bf80d1214a7f960fe836d8766f3f386601119a"
+      },
+      {
+        "path": "docs/RELEASING.md",
+        "sha256": "06b3a5933695116f95fefa75c7fdc74b4f42a14a740d1a7067bdbdc0997638b8"
+      },
+      {
+        "path": "docs/SPEC_AMENDMENTS.md",
+        "sha256": "d978e6977039c78abf58eacc17507fa5d730996519004d9393bc46d97281c5a8"
+      },
+      {
+        "path": "docs/agent-workflows.md",
+        "sha256": "a98cff00e597ea9d6eeccb73ae909fad310426f0059b3467a0f91a7d2c274416"
+      },
+      {
+        "path": "docs/deployment.md",
+        "sha256": "8d977d3dbc95575e9094f48b02e3f0d18a67d0eb0ffd686087c7d4c884f7b13f"
+      },
+      {
+        "path": "docs/final_review_notes.md",
+        "sha256": "6d19ac11e33c7ab24f575dcaf18bc013980dcc5b5ffc26efbdb6c43bbf55097e"
+      },
+      {
+        "path": "docs/local-services.md",
+        "sha256": "255a80c74af1f4de359472ab6d5103e0ce3fd74a97f5b4b7330a57f624338837"
+      },
+      {
+        "path": "docs/rollback.md",
+        "sha256": "b1b7c4428659c682be078d3fb8a2565caaa850f792aa40dbccf43a291b7d67a2"
+      },
+      {
+        "path": "evals/agent-workflows/cases.json",
+        "sha256": "f8ddeafc0080598dd9915dbb328cca8d8bf7c77f8d0140f58596d51f51fea111"
+      },
+      {
+        "path": "lab/real_zabbix.md",
+        "sha256": "73ecc47796b99783c9e9f9e529c766024ef4a3a8a4072959f641ffef2a00c20c"
+      }
+    ],
+    "sha256": "365bcdd7a91494f0e096ddf61503ecd6ac77a85826ee02b27ce399fbb86021ee"
+  },
+  "source_date_epoch": 1789171200,
+  "python": "3.12.14",
+  "build_backend": "setuptools==83.0.0",
+  "archive_normalisation": "Stable order, timestamps, ownership and gzip header for sdist",
+  "comparisons": [
+    {
+      "artifact": "pypi/zabalack-0.1.0a16-py3-none-any.whl",
+      "sha256": "151a4cfcee71f0036c6215951aacd52fd86c15ade484270115bd45b4c0ea43d1",
+      "two_builds_byte_identical": true,
+      "kind": "wheel"
+    },
+    {
+      "artifact": "pypi/zabalack-0.1.0a16.tar.gz",
+      "sha256": "0a51772165c572288149220be206bb991248aac7b28b7aec4ee7f788b26e79d6",
+      "two_builds_byte_identical": true,
+      "kind": "normalised_sdist"
+    },
+    {
+      "artifact": "zabalack-0.1.0a16-source.zip",
+      "sha256": "1408259085144e58c9be73ec0693c75b3c1e49316830559ba2f59a276a5c49e0",
+      "two_builds_byte_identical": true,
+      "kind": "source_zip"
+    }
+  ],
+  "signed_attestation": false,
+  "published": false,
+  "scope": "Reproducibility within the declared build environment; cross-platform reproduction untested"
+}

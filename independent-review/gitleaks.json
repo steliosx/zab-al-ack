@@ -1,0 +1,137 @@
+{
+  "version": "8.24.3",
+  "results": [
+    {
+      "scope": "source",
+      "exit_code": 0,
+      "findings": 0
+    },
+    {
+      "scope": "history",
+      "exit_code": 0,
+      "findings": 0
+    },
+    {
+      "scope": "expanded-packet",
+      "exit_code": 1,
+      "findings": 14
+    }
+  ],
+  "hosted": false,
+  "expanded_packet_triage": [
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E2/input.json",
+      "line": 55,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/PYTHON_API.md",
+      "verified_sha256": "6709f799b6ce72bb6fd2325116cb7d6a979e32c5a8f148187091a3844f151d4b"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E2/input.json",
+      "line": 86,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/sql_api.md",
+      "verified_sha256": "c04ecce97a566bf69afa958bd4897ccc35feec85320a3ee49eb88f3e2f3041ea"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E3/input.json",
+      "line": 55,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/PYTHON_API.md",
+      "verified_sha256": "6709f799b6ce72bb6fd2325116cb7d6a979e32c5a8f148187091a3844f151d4b"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E3/input.json",
+      "line": 86,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/sql_api.md",
+      "verified_sha256": "c04ecce97a566bf69afa958bd4897ccc35feec85320a3ee49eb88f3e2f3041ea"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E1/input.json",
+      "line": 55,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/PYTHON_API.md",
+      "verified_sha256": "6709f799b6ce72bb6fd2325116cb7d6a979e32c5a8f148187091a3844f151d4b"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E1/input.json",
+      "line": 86,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/sql_api.md",
+      "verified_sha256": "c04ecce97a566bf69afa958bd4897ccc35feec85320a3ee49eb88f3e2f3041ea"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E4/input.json",
+      "line": 56,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/PYTHON_API.md",
+      "verified_sha256": "6709f799b6ce72bb6fd2325116cb7d6a979e32c5a8f148187091a3844f151d4b"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E4/input.json",
+      "line": 87,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/sql_api.md",
+      "verified_sha256": "c04ecce97a566bf69afa958bd4897ccc35feec85320a3ee49eb88f3e2f3041ea"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E5/final-input.json",
+      "line": 60,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/PYTHON_API.md",
+      "verified_sha256": "6709f799b6ce72bb6fd2325116cb7d6a979e32c5a8f148187091a3844f151d4b"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E5/final-input.json",
+      "line": 91,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/sql_api.md",
+      "verified_sha256": "c04ecce97a566bf69afa958bd4897ccc35feec85320a3ee49eb88f3e2f3041ea"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E5/input.json",
+      "line": 61,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/PYTHON_API.md",
+      "verified_sha256": "6709f799b6ce72bb6fd2325116cb7d6a979e32c5a8f148187091a3844f151d4b"
+    },
+    {
+      "path": "reviews/0.1.0a14/agent-evaluations/E5/input.json",
+      "line": 92,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/sql_api.md",
+      "verified_sha256": "c04ecce97a566bf69afa958bd4897ccc35feec85320a3ee49eb88f3e2f3041ea"
+    },
+    {
+      "path": "reviews/0.1.0a14/gitleaks-delivery.json",
+      "line": 70,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/PYTHON_API.md",
+      "verified_sha256": "6709f799b6ce72bb6fd2325116cb7d6a979e32c5a8f148187091a3844f151d4b"
+    },
+    {
+      "path": "reviews/0.1.0a14/gitleaks-delivery.json",
+      "line": 101,
+      "rule": "generic-api-key",
+      "classification": "FALSE_POSITIVE_FILE_SHA256",
+      "matched_document": "docs/sql_api.md",
+      "verified_sha256": "c04ecce97a566bf69afa958bd4897ccc35feec85320a3ee49eb88f3e2f3041ea"
+    }
+  ],
+  "confirmed_secrets": 0,
+  "allowlist_changes": false
+}
