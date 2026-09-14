@@ -54,30 +54,9 @@ def _error_redact(value: Any) -> Any:
     return value
 
 
-def exclude_intent_from_responses() -> None:
-    """Keep restricted staging out of every serialised alert response (A5, T40).
-
-    Reference Alerta builds every alert response body from `Alert.serialize`, and
-    its `jsonp` decorator wraps that body inside the view, before `after_request`
-    runs. Filtering the payload here is therefore ahead of serialisation and
-    covers the single-alert, create and collection responses in both response
-    modes, which a filter keyed on `response.is_json` would not.
-
-    Removal is targeted to the one reserved staging key. The `_contains_evidence`
-    scrubber is deliberately not reused: it also matches the committed history
-    proof, which A1 retains in successful history responses.
-
-    The stored dictionary is never mutated. `serialize` returns a fresh payload
-    whose `attributes` value is the live object, so a filtered copy is
-    substituted into the payload alone: the capture trigger still reads the
-    intent it needs, and the operator's own attributes are untouched.
-
-    This is a partial mitigation. It closes response bodies, not the
-    `attributes.<key>:<term>` search predicate, which stays open until the stored
-    value is removed in stage two. It does not close A5 or T40.
-    """
-    from alerta.models.alert import Alert
-    current = Alert.serialize
+def _filter_serialized_attributes(owner: Any) -> None:
+    """Drop the reserved staging key from one serialising property's payload."""
+    current = getattr(owner, "serialize", None)
     if getattr(getattr(current, "fget", None), "_zabalack_filtered", False):
         return
     original = current.fget
@@ -91,7 +70,45 @@ def exclude_intent_from_responses() -> None:
         return payload
 
     serialize._zabalack_filtered = True  # type: ignore[attr-defined]
-    Alert.serialize = property(serialize)
+    owner.serialize = property(serialize)
+
+
+def exclude_intent_from_responses() -> None:
+    """Keep restricted staging out of every serialised alert response (A5, T40).
+
+    Reference Alerta builds alert response bodies from two independent
+    serialising properties, and both carry the alert's current `attributes`:
+
+    * `Alert.serialize` — the single-alert, create and collection responses.
+    * `RichHistory.serialize` — `/alerts/history`. Its rows come from
+      `SELECT … attributes … FROM alerts, unnest(history[…])`, so each entry
+      carries the alert row's live attributes, not a historical copy.
+
+    Patching only the first leaves the intent readable through the history
+    endpoint. Both are filtered here. The `jsonp` decorator wraps whichever body
+    the view produced, inside the view and before `after_request`, so filtering
+    the payload ahead of serialisation covers both response modes for both.
+
+    Removal is targeted to the one reserved staging key. The `_contains_evidence`
+    scrubber is deliberately not reused: it also matches the committed history
+    proof, which A1 retains in successful history responses. `RichHistory`'s
+    `user` and `text` — the permitted attribution and that committed proof — are
+    left untouched.
+
+    The stored dictionary is never mutated. Each `serialize` returns a fresh
+    payload whose `attributes` value is the live object, so a filtered copy is
+    substituted into the payload alone: the capture trigger still reads the
+    intent it needs, and the operator's own attributes are untouched.
+
+    This is a partial mitigation. It closes response bodies, not the
+    `attributes.<key>:<term>` search predicate, and not the interval in which a
+    staged intent is committed and queryable before signing. It does not close
+    A5 or T40.
+    """
+    from alerta.models.alert import Alert
+    from alerta.models.history import RichHistory
+    for owner in (Alert, RichHistory):
+        _filter_serialized_attributes(owner)
 
 
 def configure_app(app: Any) -> Any:

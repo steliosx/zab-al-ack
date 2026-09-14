@@ -34,12 +34,20 @@ Prerequisites: installed multi-tenant Alerta with `AUTH_REQUIRED` and `CUSTOMER_
 engineer account authorised for at least two customers, and a separate reader account whose scope overlaps the
 engineer's without containing it. Acknowledge one eligible alert belonging to a customer both accounts share.
 As the reader, retrieve that alert and the collection containing it, in both the default and the JSONP response
-modes, and confirm no response carries the intent attribute, the engineer's login or any customer outside the
-reader's own scope. Repeat the retrievals before the worker verifies the capture, after projection completes,
+modes, and confirm no response carries the intent attribute or any customer outside the reader's own scope.
+The engineer's login is not prohibited outright: committed history legitimately carries it under the separate
+history layer of §12, and A1 retains the committed proof. Confirm instead that the login appears only in
+history attribution and never inside `attributes`. Repeat the retrievals before the worker verifies the capture, after projection completes,
 with the worker stopped, and after an acknowledgement that failed before its history write. Then exercise the
 search path: submit `attributes.zabbix_ack_sync_intent:<term>` probes to `/alerts/count` and `/alerts` as the
 reader, using a term present only in the withheld scope and a control term present in no intent, and confirm
-both return zero. A zero from the control alone proves nothing. Record the exact account scopes, the alert
+both return zero. A zero from the control alone proves nothing. Scope each probe to a single alert, and also
+probe a permitted projection field to confirm legitimate attribute search still works — a deployment that
+disabled attribute search wholesale would return zero everywhere without protecting anything. Repeat the
+retrievals through `/alerts/history`, which serialises separately and carries the alert's current attributes.
+Finally, with a second session, observe an acknowledgement paused between its staged-attribute commit and its
+history write and confirm the probe returns zero during that interval, and after a failed acknowledgement and
+one for which no database cohort exists. Record the exact account scopes, the alert
 identity, every endpoint and response mode exercised, and the observed counts. Confirm in the same session that
 capture still succeeds, the operator's unrelated attributes and source-identity keys are unchanged, and the
 committed history proof is intact. Reader protection applied only to response bodies does not pass T40.

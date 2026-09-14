@@ -16,11 +16,14 @@ from evidence_utils import code_digests
 
 ROOT = Path(__file__).resolve().parents[1]
 # T40/T41 are the amendment A5 additions: reader-facing confidentiality and safe
-# retirement of stored intents. T41 needs real PostgreSQL cleanup/concurrency, so
-# it joins NATIVE_REQUIRED; T40 is a response-boundary requirement and does not.
+# retirement of stored intents. Both need native evidence. T41 needs real
+# PostgreSQL cleanup and concurrency. T40 is not response-only: it also covers
+# the authenticated search predicate and the interval in which a staged intent is
+# committed but the acknowledgement has not finished, which needs two concurrent
+# sessions and so cannot be established by the single-backend WASM layer.
 IDS = {f'T{i}' for i in range(1, 42)} - {'T11'} | {'T11a', 'T11b'}
 NATIVE_REQUIRED = {'T1','T2','T4','T5','T6','T7','T8','T10','T14','T15','T16','T19','T20','T21','T22',
-                   'T30','T31','T32','T34','T35','T36','T37','T38','T39','T41'}
+                   'T30','T31','T32','T34','T35','T36','T37','T38','T39','T40','T41'}
 MANUAL = {'T2','T20','T27','T30','T31','T34'}
 
 

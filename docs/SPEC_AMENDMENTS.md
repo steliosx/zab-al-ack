@@ -217,14 +217,33 @@ predicate inspects. A reader entitled to an alert can therefore use it as an
 oracle: submit a candidate string, read the returned count, and learn whether it
 occurs in the intent — without the intent appearing in any response body. The
 default search field is `text`, so this requires the explicit attribute syntax
-rather than a bare term. Reproduced against real PostgreSQL in
-`tests/alerta/test_postgres_search_confidentiality.py`, where a probe for a
-string in no intent returns zero and probes for the undisclosed customer and for
-the acknowledging login both match.
+rather than a bare term. Reproduced in
+`tests/alerta/test_postgres_search_confidentiality.py` on **PostgreSQL 18.3 in
+PGlite (WASM)**, supplemental single-backend evidence: a probe for a string in no
+intent returns zero, while probes for the undisclosed customer and for the
+acknowledging login both match. Native execution of that module is a separate
+layer and is not established by it.
+
+A third surface reaches the same value. `/alerts/history`
+(`@permission(Scope.read_alerts)`, also `@jsonp`) serialises through
+`RichHistory`, a class distinct from `Alert`, whose rows come from
+`SELECT … attributes … FROM alerts, unnest(history[…])` — so every entry carries
+the alert row's *current* attributes rather than a historical copy. A filter
+applied to `Alert.serialize` alone leaves the intent fully readable there.
 
 **A response filter therefore cannot establish this invariant on its own.** It
-closes the body, not the predicate. Only removing the value from the queryable
-column closes both.
+closes bodies, not the predicate.
+
+**Nor does retirement alone establish it.** Alerta commits the staged attributes
+in `process_action()` before `from_action()` signs and writes history, through an
+independent commit. Between those two commits the value is committed and visible
+to every other session, so even a retirement performed atomically inside the
+acknowledgement transaction leaves that interval open; a request that fails or is
+abandoned leaves it open indefinitely. Two designs can close it — restricting
+what reader queries may inspect, or never committing readable plaintext there —
+and a cleanup-only design closes neither. **Completing T41 does not by itself
+establish T40**, which depends on demonstrated confidentiality across the
+interval as well as after it.
 
 **Evidence (this implementation):** `src/zabalack/plugins.py`, `_human_actor()`,
 returns `{"login", "customers": sorted(set(g.customers)), "admin", "auth_type"}`.
@@ -299,8 +318,12 @@ the single reserved key: the A1 evidence scrubber must not be reused, because
 `_contains_evidence()` also matches `[zabalack:`, the committed history proof that
 A1 deliberately retains in successful history responses. Signing, staging and
 capture behaviour are unchanged — the attribute is still written and the trigger
-still reads it. This is reader protection only, and partial: it closes response
-bodies and leaves the search predicate open. Stored copies remain in
+still reads it. Both serialising properties are filtered: `Alert.serialize` and
+`RichHistory.serialize`, the latter because `/alerts/history` carries the alert
+row's current attributes. `RichHistory`'s `user` and `text` are left intact, as
+the permitted attribution and the committed proof A1 retains. This is reader
+protection only, and partial: it closes response bodies and leaves both the
+search predicate and the pre-signing interval open. Stored copies remain in
 `public.alerts.attributes`, backups, replicas and any existing export, and stay
 reachable through `attributes.<key>:<term>` queries until stage two removes them.
 Stage one must never be described as closing A5 or T40.
@@ -333,21 +356,34 @@ directly is unaffected by the response filter. Deployments that have already
 acknowledged alerts carry existing copies until backfill runs.
 
 **Acceptance (T40).** Reader-facing confidentiality across lifecycle states,
-supported response modes and the authenticated search path. An engineer serving
-lab-a and lab-b acknowledges a lab-a alert; a reader serving lab-a and lab-c —
-neither scope containing the other — must learn nothing about lab-b. Asserted
-before worker processing, after worker processing, with the worker unavailable
-and after a failed acknowledgement; each repeated in both the JSON and JSONP
-response modes; across the single-alert and collection responses; and through
-`attributes.<key>:<term>` probes against `/alerts/count` and `/alerts`, with a
-probe for an absent string as the negative control. Every case also asserts the
-read left the capture input, unrelated operator attributes, source identity and
-the committed history proof intact, so a sanitiser that mutated the shared
-attribute dictionary cannot satisfy it.
+response modes, every reader-facing surface, and the pre-signing interval. An
+engineer serving lab-a and lab-b acknowledges a lab-a alert; a reader serving
+lab-a and lab-c — neither scope containing the other — must learn nothing about
+lab-b. Asserted before worker processing, after worker processing, with the
+worker unavailable and after a failed acknowledgement; each in both the JSON and
+JSONP response modes; across the single-alert response, the collection response
+and `/alerts/history`; through `attributes.<key>:<term>` probes against
+`/alerts/count` and `/alerts`; and, on native PostgreSQL, from a second session
+while an acknowledgement is paused between its staged-attribute commit and its
+history write, plus the failed and never-captured paths.
 
-**T40 does not pass on stage one.** The response-mode and collection cases go
-green when the filter ships; the search cases stay red until the stored value is
-gone. T40 reaches PASS only after stage two.
+Controls, because zero assertions are cheap to satisfy wrongly. Each probe is
+scoped to its own alert by conjoining the source event id, so counts cannot
+accumulate. A probe for a term in no intent is the negative control. A probe on
+a permitted projection field is the positive control: a mitigation that disabled
+attribute search wholesale must fail it rather than pass everything else. The
+precondition for a meaningful run is restricted capture evidence in
+`zabalack.captures`, never the continued presence of the alert attribute, which
+a correct stage-two retirement removes. Every case also asserts the read left the
+capture input, unrelated operator attributes, source identity and the committed
+history proof intact, and that `/alerts/history` still carries its permitted
+`user` attribution, so a sanitiser that stripped fields from the response or
+mutated the shared attribute dictionary cannot satisfy it.
+
+**T40 does not pass on stage one, and does not follow from T41.** The response
+and history cases go green when the filter ships. The search cases and the
+interval cases need a design that restricts reader queries or never commits
+readable plaintext; retirement alone leaves the interval open.
 
 **Acceptance, stage two (T41).** Safe retirement of stored intents, executed
 against real PostgreSQL: removal after capture; guarded retirement of abandoned
@@ -368,7 +404,9 @@ The existing dispatcher assertions that the intent is unchanged between staging
 and signing, and that a duplicate callback reuses one identity, are anti-tamper
 coverage for §5.1 and are retained unchanged in both stages.
 
-**Deployment gate:** G4 and G8. Both T40 and T41 reach PASS only after stage two
-executes on the installed environment, because the search path and the stored
-value close together. A5 remains open until then. Stage one is a partial
+**Deployment gate:** G4 and G8. T41 reaches PASS when retirement executes on the
+installed environment. T40 additionally requires the search path and the
+pre-signing interval to be closed, which retirement alone does not achieve, and
+its native concurrency cases must execute natively — the WASM layer cannot
+establish them. A5 remains open until then. Stage one is a partial
 mitigation of the response boundary and must be described as such.

@@ -21,7 +21,8 @@ PHASES = {
     'delivery_faults': ['tests/postgres/test_native_delivery_faults.py'],
     'worker': ['tests/postgres/test_worker_path.py'],
     'alerta': ['tests/alerta/test_postgres_http.py', 'tests/alerta/test_health_postgres.py', 'tests/alerta/test_docs_walkthrough.py',
-               'tests/alerta/test_postgres_search_confidentiality.py'],
+               'tests/alerta/test_postgres_search_confidentiality.py',
+               'tests/alerta/test_native_staging_interval.py'],
     'performance': ['tests/performance/test_reference_batches.py'],
 }
 

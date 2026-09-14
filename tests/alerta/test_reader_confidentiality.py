@@ -7,13 +7,15 @@ ordinary alert responses, so in a `CUSTOMER_VIEWS` deployment a reader entitled
 to one customer's alert can read the operator's memberships in customers that
 reader has no authority over.
 
-Scope split. This module covers single-alert response modes across the capture
-lifecycle, using explicitly mocked storage: no database trigger, no capture
-record and no cleanup worker runs here. The collection response and the
-authenticated search path need the real query builder and are covered against
-real PostgreSQL in `test_postgres_search_confidentiality.py`. Nothing in either
-module establishes T41 (safe retirement of stored intents) or any G1-G8
-deployment evidence.
+Scope split. This module covers the single-alert endpoint across response modes
+and lifecycle states, using explicitly mocked storage: no database trigger, no
+capture record and no cleanup worker runs here. Everything that needs the real
+query builder — the collection response, `/alerts/history` and the authenticated
+search path — lives in `test_postgres_search_confidentiality.py`, because
+`qb.alerts` is unavailable without a configured backend. The pre-signing
+interval needs two concurrent sessions and lives in
+`test_native_staging_interval.py`. Nothing in these modules establishes T41
+(safe retirement of stored intents) or any G1-G8 deployment evidence.
 
 The reader and the engineer hold overlapping but non-identical scopes: the
 engineer serves lab-a and lab-b, the reader lab-a and lab-c. Neither contains
