@@ -142,7 +142,10 @@ BEGIN
        OR issued_at>now_at THEN
      until_at:=NULL;
     END IF;
-   EXCEPTION WHEN invalid_text_representation OR invalid_datetime_format OR datetime_field_overflow THEN
+   EXCEPTION WHEN OTHERS THEN
+    -- Any value the cast rejects — a bad zone displacement as much as a bad
+    -- format — is unvalidatable plaintext. It is retired now; it never aborts
+    -- the sweep for every other row.
     until_at:=NULL;
    END;
   END IF;
@@ -225,11 +228,12 @@ BEGIN
  -- recorded here outrank one recorded at staging, and an action already
  -- recorded is left exactly where it is, so a capture arriving late can never
  -- promote an older acknowledgement above a newer staging.
- IF i IS NOT NULL AND i<>'null'::jsonb THEN
+ IF i IS NOT NULL AND i<>'null'::jsonb AND i->>'alert_id' IS NOT DISTINCT FROM NEW.id
+    AND i->>'action_id' IS NOT NULL THEN
   BEGIN
    INSERT INTO zabalack.alert_generations(alert_id,action_id,recorded_by)
     VALUES(NEW.id,(i->>'action_id')::uuid,'capture') ON CONFLICT(action_id) DO NOTHING;
-  EXCEPTION WHEN invalid_text_representation THEN NULL;
+  EXCEPTION WHEN OTHERS THEN NULL;
   END;
  END IF;
  -- capture_id has no uniqueness relationship to the untrusted action ID.
@@ -262,16 +266,21 @@ BEGIN
  alert_present:=FOUND;
  newest:=zabalack.newest_generation(a.alert_id);
  IF attrs->>'zabbix_ack_sync_local_at' IS NOT NULL THEN
+  -- API-writable: any value the cast rejects refuses, as 002 refused the
+  -- malformed formats it named, rather than raising out of the projection.
   BEGIN local_at:=(attrs->>'zabbix_ack_sync_local_at')::timestamptz;
-  EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN local_at:='infinity'::timestamptz; END;
+  EXCEPTION WHEN OTHERS THEN local_at:='infinity'::timestamptz; END;
  END IF;
  IF NOT alert_present THEN why := 'projection_target_missing';
  ELSIF local_at>a.issued_at THEN why := 'projection_local_generation_mismatch';
  ELSIF target_customer IS DISTINCT FROM a.customer THEN why := 'projection_customer_mismatch';
  ELSIF attrs->>'zabbix_instance' IS DISTINCT FROM a.instance OR attrs->>'zabbix_event_id' IS DISTINCT FROM a.event_id
   OR attrs->>'zabbix_trigger_id' IS DISTINCT FROM a.trigger_id THEN why := 'projection_source_generation_mismatch';
- ELSIF EXISTS(SELECT 1 FROM zabalack.actions newer WHERE newer.alert_id=a.alert_id AND newer.capture_order>a.capture_order) THEN
-  why := 'projection_action_generation_mismatch';
+ -- 002's capture_order comparison is not kept: the fence is the one ordering.
+ -- Every action row follows a capture whose intent validated, and that capture
+ -- (or the backfill) recorded its generation, so the fence sees everything
+ -- capture_order saw; and under two concurrent acknowledgements the two orders
+ -- can disagree — B staged after A but captured first — and refuse both forever.
  ELSIF newest IS NULL THEN
   -- No generation recorded anywhere. Migration records one for every alert
   -- with an action row or a staged intent, so this is a row whose generation
@@ -660,11 +669,13 @@ BEGIN
  FOR row IN SELECT id,attributes->'zabbix_ack_sync_intent' AS intent FROM public.alerts
    WHERE attributes ? 'zabbix_ack_sync_intent' LOOP
   BEGIN
-   IF jsonb_typeof(row.intent)='object' AND row.intent->>'alert_id'=row.id THEN
+   IF jsonb_typeof(row.intent)='object' AND row.intent->>'alert_id'=row.id AND row.intent->>'action_id' IS NOT NULL THEN
     INSERT INTO zabalack.alert_generations(alert_id,action_id,recorded_by) VALUES(row.id,(row.intent->>'action_id')::uuid,'migration')
      ON CONFLICT(action_id) DO NOTHING;
    END IF;
-  EXCEPTION WHEN invalid_text_representation THEN NULL;
+  -- A malformed intent on a live row is not the migration's to judge; it is
+  -- skipped here and retired by the sweep, never allowed to abort the upgrade.
+  EXCEPTION WHEN OTHERS THEN NULL;
   END;
  END LOOP;
 END $$;

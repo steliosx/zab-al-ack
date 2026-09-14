@@ -204,23 +204,39 @@ def test_T41_native_two_stagings_of_one_alert_serialise_on_the_generation_lock(n
 @pytest.mark.parametrize("order", ["projection_holds", "staging_holds"])
 def test_T41_native_a_staging_and_a_projection_serialise_without_deadlock(native, order):
     """Both take the generation lock and then the alert row, so whichever holds
-    first, the other waits and then sees the committed result."""
+    first, the other waits — in a third session, so this test cannot block
+    itself — and then sees the committed result."""
     alert_id, event_id, first = stage(native, issued=datetime.now(timezone.utc))
     fire_ack(native, alert_id, first)
     verify_through_worker_call(native, first)
     second = intent_for(alert_id, event_id)
+    results = []
     if order == "projection_holds":
-        with HeldTransaction(native, "zabalack_worker", "SELECT zabalack.project(%s)", (first["action_id"],)) as held:
+        def contend():
             with connect_role(native, "alerta_app") as conn:
-                seq = conn.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
-                                   (alert_id, second["action_id"], Jsonb(second))).fetchone()[0]
+                results.append(conn.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
+                                            (alert_id, second["action_id"], Jsonb(second))).fetchone()[0])
+        with HeldTransaction(native, "zabalack_worker", "SELECT zabalack.project(%s)", (first["action_id"],)) as held:
+            blocked = threading.Thread(target=contend, daemon=True)
+            blocked.start()
+            blocked.join(timeout=2)
+            assert blocked.is_alive(), "the staging must wait for the projection holding the generation lock"
+        blocked.join(timeout=BARRIER_TIMEOUT)
+        assert not blocked.is_alive() and results, "the staging completed once the projection committed"
         assert held.result[0]["reason"] == "projected", "A was current when its projection took the locks"
-        assert seq is not None and newest(native, alert_id) == second["action_id"]
+        assert newest(native, alert_id) == second["action_id"]
     else:
+        def contend():
+            results.append(project(native, first["action_id"]))
         with HeldTransaction(native, "alerta_app", "SELECT zabalack.stage_generation(%s,%s,%s)",
                              (alert_id, second["action_id"], Jsonb(second))):
-            reason = project(native, first["action_id"])
-        assert reason == "projection_action_generation_mismatch", "A's projection waited for B, then saw it"
+            blocked = threading.Thread(target=contend, daemon=True)
+            blocked.start()
+            blocked.join(timeout=2)
+            assert blocked.is_alive(), "the projection must wait for the staging holding the generation lock"
+        blocked.join(timeout=BARRIER_TIMEOUT)
+        assert not blocked.is_alive() and results, "the projection completed once the staging committed"
+        assert results[0] == "projection_action_generation_mismatch", "A's projection waited for B, then saw it"
         assert newest(native, alert_id) == second["action_id"]
 
 
@@ -314,6 +330,10 @@ def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(n
         second = intent_for(alert_id, event_id)
         stage_pre_fence(lab, alert_id, second)
         untouched, _, _ = stage(lab, staged=False)
+        # A live row whose intent is malformed — no action_id — must not abort the
+        # upgrade; the sweep retires it later and it records no generation.
+        malformed, _, broken = stage(lab, staged=False)
+        stage_pre_fence(lab, malformed, {key: value for key, value in broken.items() if key != "action_id"})
         # The upgrade, through the real entry points.
         migrator.ROOT = real_root
         with psycopg.connect(dsn, autocommit=True) as db:
@@ -326,6 +346,7 @@ def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(n
         assert [(row[0], row[1]) for row in fence(lab, alert_id)] == \
             [(first["action_id"], "migration"), (second["action_id"], "migration")]
         assert fence(lab, untouched) == [], "a row that was never staged acquires its generation at its first staging"
+        assert fence(lab, malformed) == [], "a malformed intent is skipped by the backfill, not fatal to it"
         with connect_role(lab, "zabalack_probe") as probe:
             health = probe.execute("SELECT zabalack.capture_health()").fetchone()[0]
         assert health["functions_ok"] is True and health["trigger_ok"] is True and health["zabalack_schema_version"] == 4

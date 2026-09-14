@@ -810,3 +810,64 @@ def test_T41_published_migrations_keep_their_registered_digests(lab):
             f"{path} no longer matches its registered digest; ship a forward migration instead"
     with connect_role(lab, "zabalack_owner") as owner:
         assert owner.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 4
+
+
+# --- regressions from review -------------------------------------------------
+
+def test_T41_one_ordering_two_concurrent_acknowledgements_do_not_wedge_the_alert(lab):
+    """The fence is the one ordering; 002's capture_order comparison is gone.
+
+    A is staged, then B. B is captured and verified first, A afterwards, as two
+    overlapping requests can leave them. Under two independent orderings B is
+    refused for the newer capture (A) and A for the newer staging (B) — both
+    forever. Under one, the later staging projects and the earlier is refused.
+    """
+    alert_id, event_id, first = stage(lab, issued=datetime.now(timezone.utc))
+    second = stage_over(lab, alert_id, event_id)
+    fire_ack(lab, alert_id, second)
+    verify_through_worker_call(lab, second)
+    stage_pre_fence(lab, alert_id, first)   # A's request lands its (already recorded) intent last
+    fire_ack(lab, alert_id, first)
+    verify_through_worker_call(lab, first)
+    with connect_role(lab, "zabalack_owner") as owner:
+        orders = dict(owner.execute("SELECT action_id::text,capture_order FROM zabalack.actions WHERE alert_id=%s",
+                                    (alert_id,)).fetchall())
+    assert orders[first["action_id"]] > orders[second["action_id"]], "precondition: A captured after B"
+    assert project(lab, second["action_id"]) == "projected"
+    assert project(lab, first["action_id"]) == "projection_action_generation_mismatch"
+    assert attributes_of(lab, alert_id)[ACTION_KEY] == second["action_id"]
+
+
+@pytest.mark.parametrize("value", ["2026-01-01T00:00:00+99:00", "not a time", "2026-13-45T00:00:00Z", "infinity"])
+def test_T41_an_unparseable_api_writable_window_is_retired_not_a_sweep_abort(lab, value):
+    """One forged timestamp must never abort the sweep for every other row."""
+    victim, _, _ = stage(lab)
+    alert_id, _, payload = stage(lab, staged=False)
+    stage_pre_fence(lab, alert_id, dict(payload, capture_expires_at=value))
+    result = sweep(lab, grace=300)
+    assert result["examined"] >= 2 and result["retired"] >= 2
+    assert INTENT not in attributes_of(lab, alert_id) and INTENT not in attributes_of(lab, victim)
+
+
+@pytest.mark.parametrize("value", ["2026-01-01T00:00:00+99:00", "not a time"])
+def test_T41_an_unparseable_local_marker_refuses_rather_than_raising(lab, value):
+    alert_id, event_id, payload = stage(lab, issued=datetime.now(timezone.utc))
+    fire_ack(lab, alert_id, payload)
+    verify_through_worker_call(lab, payload)
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                     (Jsonb({"zabbix_ack_sync_local_at": value}), alert_id))
+    assert project(lab, payload["action_id"]) == "projection_local_generation_mismatch"
+
+
+def test_T41_the_capture_fallback_records_only_an_intent_bound_to_its_own_row(lab):
+    other, other_event, _ = stage(lab, staged=False)
+    alert_id, _, _ = stage(lab, staged=False)
+    # An intent that is internally consistent for the other alert, written on
+    # this row: the signer binds route to alert_id, so it must be built that way.
+    foreign = intent_for(other, other_event)
+    stage_pre_fence(lab, alert_id, foreign)
+    fire_ack(lab, alert_id, foreign)
+    capture = capture_of(lab, alert_id)
+    assert capture is not None and capture[3] == "binding_mismatch", "precondition: the capture failed binding"
+    assert fence(lab, alert_id) == [] and fence(lab, other) == [], "an unbound intent records no generation anywhere"

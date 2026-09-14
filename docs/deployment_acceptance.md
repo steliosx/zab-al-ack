@@ -115,9 +115,10 @@ bounded batch limits matching rows, not rows scanned. Where that cost is unaccep
 `CREATE INDEX CONCURRENTLY … ON public.alerts (id) WHERE attributes ? 'zabbix_ack_sync_intent'` as an approved
 change under the same principal that installs the trigger; it is optional and changes no `zabalack` object.
 
-Rollback: the sweep and the fence can be left in place harmlessly, but reverting `project()` to its 002 form
-restores a guard that reads an attribute the sweep has removed, so a rollback must also stop the sweep. Nothing
-shipped deletes a fence row; a rollback does not either.
+Rollback: see `docs/rollback.md` §008. The SQL is rolled back before the plugin or not at all — a pre-008
+plugin's acknowledgements on an alert that already carries a staging-recorded generation are refused projection
+until one goes through the protected operation again — and reverting `project()` must also stop the sweep.
+Nothing shipped deletes a fence row; a rollback does not either.
 
 A passing disposable lab does not close this item.
 

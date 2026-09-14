@@ -486,8 +486,17 @@ alert row — the order staging takes the last two — and refuses with
 `projection_action_generation_mismatch` unless its action is the newest
 generation, or with `projection_generation_unknown` when none is recorded. The
 guard takes no expiry: `execution_expires_at` bounds delivery, while
-`projection_due_at` carries no equivalent deadline. The `local_at`, customer,
-source-identity and `capture_order` checks from 002 stay in front of it.
+`projection_due_at` carries no equivalent deadline. The `local_at`, customer and
+source-identity checks from 002 stay in front of it. 002's `capture_order`
+comparison is not kept: the fence is the one ordering. Every action row follows
+a capture whose intent validated, and that capture (or the backfill) recorded
+its generation, so the fence sees everything `capture_order` saw — and under
+two concurrent acknowledgements the two orders can disagree, B staged after A
+but captured first, and refuse both actions forever. The fallback records only
+an intent bound to the row it captured on, and every cast of an API-writable
+timestamp in the sweep and in `project()` treats a value the cast rejects as
+unvalidatable — retired now, or refused — rather than raising out of a sweep
+that serves every other row.
 
 **Privilege.** `12_application_grant.sql`, run as `zabalack_owner` with the
 application role named, grants that role `USAGE` on the schema and `EXECUTE` on

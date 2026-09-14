@@ -42,3 +42,30 @@ disabled, and hold workers. Earlier workers require schema 2 and are deliberatel
 incompatible with schema 3. Do not change migration checksums or undo source
 acknowledgements. See `docs/deployment.md` for explicit readiness resealing and
 a separately reviewed compatible forward recovery.
+
+## 008 generation fence (schema 4)
+
+Migration 008 (A5 stage two) replaces the projection guard that read the staged
+intent with the append-only fence `zabalack.alert_generations`, and the signer
+records every staging through `zabalack.stage_generation()`. Three consequences
+for rollback:
+
+1. **Roll the SQL back before the plugin, or neither.** A pre-008 plugin stages
+   without recording a generation. On an alert that already carries a
+   staging-recorded generation, its later acknowledgements are recorded only when
+   they capture, at the observation tier, which never outranks a staged one — so
+   their projection is refused until an acknowledgement goes through the
+   protected operation again. Reverting `project()` to its 002 form restores a
+   guard that reads an attribute the sweep has removed, so a rollback of
+   `project()` must also stop the sweep (`retire_intents`), and it must be done
+   under `zabalack_owner` as a further forward migration, never by editing 008.
+2. **Nothing deletes a fence row, including a rollback.** The table stays; a
+   later re-application of the fence design picks its generations up unchanged.
+3. **The application grant is inert without the function.** `USAGE` on the
+   schema plus `EXECUTE` on one function confers nothing else; it may stay.
+   Re-seal the readiness manifest after any catalog change, as
+   `13_reseal.sql` does, or every worker reports `functions_ok` false.
+
+Workers pinned to schema 4 hold when the version is moved back; earlier workers
+require schema 3 and are deliberately incompatible with 4.
+
