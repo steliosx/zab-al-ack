@@ -77,17 +77,25 @@ previously produced exports are out of its reach and remain governed by G8. Reco
 after, the re-seal of the readiness manifest, and the principal that performed each step. A passing disposable
 lab does not close this item.
 
-Upgrade sequence, with the principal recorded for each step. Apply `sql/migrations/008_intent_retirement.sql`
-and `sql/migrations/009_generation_guard_corrections.sql` through the ordinary migration path and record the
-schema version moving 3 to 5, confirming the backfill populated `zabalack.alert_staging` for every alert carrying
-an action row or an uncaptured staged intent. 009 is mandatory, not optional: a database left at 4 carries the
-superseded generation guard, so workers pinned to 5 report unhealthy until it applies. Neither file may be edited
-once applied — `sql/migrate.py` refuses with `Migration drift` and the database cannot move forward — so a further
-correction ships as another migration. Then run
+Upgrade sequence, with the principal recorded for each step. Apply migrations 008 through 011 —
+`008_intent_retirement.sql`, `009_generation_guard_corrections.sql`, `010_staging_ledger_repair.sql` and
+`011_ledger_repair_authentication.sql` — through the ordinary migration path and record the schema version moving
+3 to 7, confirming the backfill populated `zabalack.alert_staging` for every alert carrying an action row or an
+uncaptured staged intent. The whole sequence is mandatory, not a menu: 008 alone carries the superseded generation
+guard and an unbounded ledger, 009 bounds new entries but repairs none, and 010's repair keeps a forged entry
+whose window merely looks plausible. Workers are pinned to 7 and report unhealthy until every one has applied, and
+`011` re-runs the repair so a database that stopped at 010 is corrected when it catches up. No applied migration
+may be edited — `sql/migrate.py` refuses with `Migration drift` and the database cannot move forward — so a
+further correction always ships as another migration. Then run
 `sql/install/12_reseal.sql` as the approved alerts owner/installation principal — the same identity that ran
-`10_trigger.sql` — while eligible acknowledgements are fenced; it refuses unless the schema version is 5, the
-expected objects are present, and the trigger fingerprint still matches the sealed one, since neither migration
-changes the trigger. Confirm `zabalack.capture_health()` reports `functions_ok` afterwards and that workers pinned to
+`10_trigger.sql` — while eligible acknowledgements are fenced; it refuses unless the schema version is 7, the
+expected objects are present, and the trigger fingerprint still matches the sealed one, since none of these
+migrations changes the trigger.
+
+Record the repair's own result. `zabalack.repair_staging_ledger()` reports `removed` and `restored`, and a nonzero
+`removed` on a production upgrade means the database was holding ledger entries that no action or capture
+corroborates — worth an entry in the evidence record, since it indicates either a pre-bounds forgery or an alert
+whose only staging evidence was the writable attribute. Confirm `zabalack.capture_health()` reports `functions_ok` afterwards and that workers pinned to
 schema 3 report unhealthy until upgraded. Confirm the sweep is reachable only through
 `zabalack.worker_call('retire_intents', …)` and that a direct call as `zabalack_worker` is denied.
 

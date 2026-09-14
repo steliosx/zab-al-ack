@@ -445,7 +445,9 @@ def test_T41_ledger_advances_only(lab):
 
 def test_T41_capture_notes_the_ledger_in_the_same_transaction(lab):
     """The ledger does not depend on a sweep having run."""
-    alert_id, _, payload = stage(lab, issued=datetime.now(timezone.utc))
+    # A few seconds back, so the window capture_ack() hands note_staging is
+    # inside its clock_timestamp() + 60s bound rather than exactly on it.
+    alert_id, _, payload = stage(lab, issued=datetime.now(timezone.utc) - timedelta(seconds=5))
     assert ledger(lab, alert_id) is None
     fire_ack(lab, alert_id, payload)
     row = ledger(lab, alert_id)
@@ -700,7 +702,13 @@ def test_T41_a_forged_staged_window_cannot_pin_the_ledger(lab, overrides, why):
     assert INTENT not in attributes_of(lab, alert_id), \
         f"a {why} is unvalidatable plaintext and must still be retired"
 
-    later = intent_for(alert_id, event_id, issued=datetime.now(timezone.utc))
+    # Issued a few seconds back so its window lands comfortably inside
+    # note_staging's clock_timestamp() + 60s bound. At exactly `now` the value
+    # sits on the bound and any skew between the Python and database clocks
+    # decides the result — which is what made this case fail roughly one run in
+    # twenty. The bound itself is a security check and is not widened for a test.
+    later = intent_for(alert_id, event_id,
+                       issued=datetime.now(timezone.utc) - timedelta(seconds=5))
     with connect_role(lab, "zabalack_owner") as owner:
         advanced = owner.execute("SELECT zabalack.note_staging(%s,%s,%s,'later')",
                                  (alert_id, later["action_id"], later["capture_expires_at"])).fetchone()[0]
@@ -890,7 +898,13 @@ def test_T41_the_repair_clears_a_ledger_poisoned_before_the_bounds_existed(lab):
                       " VALUES(%s,%s,'infinity','migration') ON CONFLICT(alert_id) DO UPDATE"
                       " SET staged_action_id=excluded.staged_action_id,staged_until='infinity'",
                       (alert_id, forged))
-    later = intent_for(alert_id, event_id, issued=datetime.now(timezone.utc))
+    # Issued a few seconds back so its window lands comfortably inside
+    # note_staging's clock_timestamp() + 60s bound. At exactly `now` the value
+    # sits on the bound and any skew between the Python and database clocks
+    # decides the result — which is what made this case fail roughly one run in
+    # twenty. The bound itself is a security check and is not widened for a test.
+    later = intent_for(alert_id, event_id,
+                       issued=datetime.now(timezone.utc) - timedelta(seconds=5))
     with connect_role(lab, "zabalack_owner") as owner:
         assert owner.execute("SELECT zabalack.note_staging(%s,%s,%s,'later')",
                              (alert_id, later["action_id"], later["capture_expires_at"])).fetchone()[0] is False, \
@@ -911,14 +925,79 @@ def test_T41_the_repair_clears_a_ledger_poisoned_before_the_bounds_existed(lab):
             "a legitimate generation must be able to advance again"
 
 
-def test_T41_the_repair_is_idempotent_and_keeps_valid_entries(lab):
-    """Running it twice changes nothing, and it must not discard sound rows."""
-    alert_id, _, payload = stage(lab)
-    sweep(lab)
+def test_T41_the_repair_is_idempotent_and_keeps_authenticated_entries(lab):
+    """Running it twice changes nothing, and an authenticated row must survive.
+
+    "Sound" means corroborated by evidence the signer produced: an action row, or
+    a capture whose intent `capture_ack()` validated. An entry derived only from
+    the API-writable staged attribute is deliberately not preserved here — see
+    the forged-row case below for why.
+    """
+    alert_id, event_id, payload = stage(lab)
+    fire_ack(lab, alert_id, payload)
     before = ledger(lab, alert_id)
-    assert before is not None, "precondition: a sound ledger entry exists"
+    assert before is not None, "precondition: capture_ack recorded an authenticated entry"
     with connect_role(lab, "zabalack_owner") as owner:
         first = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
         second = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
     assert first["removed"] == 0 and second["removed"] == 0, "a sound ledger needs no repair"
     assert ledger(lab, alert_id)[0] == before[0], "a valid entry must survive untouched"
+
+
+def test_T41_the_repair_removes_a_forged_row_whose_window_looks_plausible(lab):
+    """Bounds alone do not identify a forged generation.
+
+    A row written through the API with a finite `capture_expires_at` inside the
+    60-second window passes every range check, so on a database that applied 008
+    it survived the earlier repair even though its `staged_action_id` corresponds
+    to no action and no capture. `project()` then treated that UUID as the
+    authority and refused the legitimate action indefinitely. Reproduced against
+    the earlier repair: `{"removed": 0}` with the row still present.
+
+    The repair therefore keeps only what authenticated evidence corroborates.
+    """
+    alert_id, event_id, payload = stage(lab)
+    forged = str(uuid.uuid4())
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("INSERT INTO zabalack.alert_staging(alert_id,staged_action_id,staged_until,observed_by)"
+                      " VALUES(%s,%s,%s,'migration') ON CONFLICT(alert_id) DO UPDATE"
+                      " SET staged_action_id=excluded.staged_action_id,staged_until=excluded.staged_until",
+                      (alert_id, forged, stamp(datetime.now(timezone.utc) + timedelta(seconds=30))))
+        assert owner.execute("SELECT count(*) FROM zabalack.actions WHERE action_id=%s",
+                             (forged,)).fetchone()[0] == 0, "precondition: no action corroborates it"
+        result = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
+    assert result["removed"] >= 1, "a plausible-looking but uncorroborated generation must not survive"
+    row = ledger(lab, alert_id)
+    assert row is None or str(row[0]) != forged
+
+
+def test_T41_the_repair_does_not_readmit_from_the_writable_attribute(lab):
+    """The repair must not reinstate what it just removed from a forgeable source.
+
+    The staged intent attribute is the same API-writable input the repair exists
+    to undo, so rebuilding from it would restore the forged generation on the
+    next line.
+    """
+    alert_id, event_id, payload = stage(lab)
+    forged_intent = dict(payload, action_id=str(uuid.uuid4()))
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                     (Jsonb({INTENT: forged_intent}), alert_id))
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("SELECT zabalack.repair_staging_ledger()")
+    row = ledger(lab, alert_id)
+    assert row is None or str(row[0]) != forged_intent["action_id"], \
+        "the repair must not read the generation back out of the alert attribute"
+
+
+def test_T41_the_repair_keeps_a_generation_a_capture_authenticated(lab):
+    """A capture whose intent capture_ack() validated is authenticated evidence."""
+    alert_id, event_id, payload = stage(lab)
+    fire_ack(lab, alert_id, payload)
+    assert capture_of(lab, alert_id)[3] is None, "precondition: a clean capture"
+    before = ledger(lab, alert_id)
+    assert before is not None and before[0] == uuid.UUID(payload["action_id"])
+    with connect_role(lab, "zabalack_owner") as owner:
+        result = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
+    assert result["removed"] == 0, "a capture-authenticated generation must survive"
+    assert ledger(lab, alert_id)[0] == before[0]

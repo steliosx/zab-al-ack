@@ -17,7 +17,7 @@
     },
     {
       "path": "sql/install/12_reseal.sql",
-      "sha256": "8b2d5de8633a164f330142b0736381685460d3f8518c5d5ed25116e64304cf9e"
+      "sha256": "1bf57849f7c6d28c6d125f66520aa501c66dc6e08a44c1591222e237d2ef0ca7"
     },
     {
       "path": "sql/migrate.py",
@@ -64,6 +64,10 @@
       "sha256": "8fc6ddbdab0488aaa4f1283e76ccb6da540736b67457e9cb3d1936463b07d6e7"
     },
     {
+      "path": "sql/migrations/011_ledger_repair_authentication.sql",
+      "sha256": "b3d72e5e8b67b9ee8e62fcf0b764d3cf961d6632869f1ea4c5da1762bb3cb491"
+    },
+    {
       "path": "sql/rollback/disable_trigger.sql",
       "sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
     },
@@ -72,5 +76,5 @@
       "sha256": "5bfbb4ecbb5f14f0fff45e40f9d60027dd7b5ea760849d52e1a2a6b0f0f1b7c8"
     }
   ],
-  "database_schema_version": 6
+  "database_schema_version": 7
 }
