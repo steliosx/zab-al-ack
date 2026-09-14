@@ -154,8 +154,22 @@ class Reconciler:
         self._nightly_cursor = next_cursor if self._nightly_pending else None
         return {"read": processed, "cursor": self._nightly_cursor, "pending": self._nightly_pending}
 
+    async def retire_intents(self) -> dict[str, Any]:
+        """Retire staged intents from live alert rows (A5 stage two, T41).
+
+        Deliberately not gated on verification or delivery health: the lifecycle
+        paths that most need retirement are the ones where neither ever
+        succeeds — capture bypass, a verification key unavailable, a stopped or
+        backlogged worker, a cohort absent from `zabalack.cohorts`, and staging
+        that failed before its history write. SQL bounds the batch and decides
+        eligibility; nothing here chooses which rows are swept.
+        """
+        result = await self.db.call("retire_intents", {"limit": self.settings.fast_budget})
+        return result if isinstance(result, dict) else {}
+
     async def scheduled_sweeps(self) -> None:
         now = time.monotonic()
+        await self.retire_intents()
         # SQL's 15-minute due timestamp governs eligibility. Checking the indexed due
         # queue each fast cycle drains large cohorts without a 15-minute per-row delay.
         await self.host_inventory()

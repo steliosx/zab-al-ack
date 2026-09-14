@@ -37,7 +37,11 @@ def strip_reserved(attributes: dict[str, Any]) -> dict[str, Any]:
 
 
 def project_skip(alert: Any, reason: str, settings: Settings) -> Any:
+    # The intent and the timestamp that governed its cleanup go; the generation
+    # marker stays. A skip is not a newer staging, and an older projection must
+    # still be refused by the generation it last saw.
     alert.attributes.pop("zabbix_ack_sync_intent", None)
+    alert.attributes.pop("zabbix_ack_sync_staged_until", None)
     alert.attributes.update({
         "zabbix_ack_sync": "skipped",
         "zabbix_ack_sync_reason": reason,

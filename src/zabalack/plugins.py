@@ -321,8 +321,14 @@ class AckSigningPlugin(PluginBase):
                                         "config_revision": settings.config_revision}
         alert.attributes.pop("zabbix_ack_sync_local_at", None)
         alert.attributes["zabbix_ack_sync_intent"] = deepcopy(intent)
+        # The generation marker is the reader-visible projection of
+        # zabalack.alert_staging and is retained for the lifetime of the alert;
+        # only a newer staging replaces it. staged_until governs intent-cleanup
+        # eligibility and nothing else, and is removed with the intent.
         alert.attributes.update({"zabbix_ack_sync": "pending", "zabbix_ack_sync_reason": "awaiting_capture",
-                                 "zabbix_ack_sync_action_id": intent["action_id"]})
+                                 "zabbix_ack_sync_action_id": intent["action_id"],
+                                 "zabbix_ack_sync_staged_action_id": intent["action_id"],
+                                 "zabbix_ack_sync_staged_until": intent["capture_expires_at"]})
         return alert, action, text
 
     def status_change(self, alert: Any, status: str, text: str, **kwargs: Any) -> Any:
