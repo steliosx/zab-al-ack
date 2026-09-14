@@ -7,16 +7,25 @@ The native reference stack is Alerta 9.1.0, PostgreSQL 18.0 and optional PgBounc
 
 ## Native PostgreSQL
 
-On an authorised development host with Docker Compose:
+On an authorised local Linux development host with Docker Compose and direct
+host routing to its bridge containers:
 
 ```bash
-docker compose -f lab/compose.postgres.yml up -d
-export ACK_TEST_ADMIN_DSN='postgresql://lab_admin:synthetic-postgres-lab-only@127.0.0.1:55432/alerta'
-export ACK_TEST_DESTRUCTIVE_LAB=YES_ISOLATED_LAB
+python tools/native_ci.py --isolated-lab --phase postgres
+# Run all five phases, each against a fresh synthetic database:
+python tools/native_ci.py --isolated-lab
 ```
 
-The Compose server exposes loopback only and uses an internal network. It is a
-real PostgreSQL 18 server with native composite types, transactions and roles.
+The runner reserves loopback ports 55432 and 56432 before Compose startup,
+validates the generated project's exact containers and internal bridge, and
+relays TCP only to their owned PostgreSQL/PgBouncer addresses. Compose declares
+no published ports: recent Docker versions skip publications on internal
+networks. The relays close before the runner stops its containers; volumes and
+failed-attempt evidence are preserved. Port collisions, unreachable bridge
+addresses and incomplete relay cleanup fail the phase. Docker Desktop and
+rootless networking are not assumed to provide this host route; use the local
+service runner in `docs/local-services.md` when the bridge is inaccessible.
+The database is real PostgreSQL 18 with native composite types, transactions and roles.
 PostgreSQL 16 in the separate Zabbix definition is the Zabbix database only;
 it is never a substitute for the Alerta/PostgreSQL 18 integration tests.
 
@@ -52,18 +61,22 @@ evidence layer.
 The lab ports (55432 PostgreSQL, 55433 WASM socket, 56432 PgBouncer, 58080
 Zabbix API, 10051 Zabbix trapper) are inside Linux's default ephemeral port
 range, so a lab client can briefly occupy one of them in `TIME_WAIT`.
-`local_runtime.py` retries the start; on a dedicated lab host, reserving them
-(`sysctl -w net.ipv4.ip_local_reserved_ports=10051,55432,55433,56432,58080`)
-removes the race entirely.
+`local_runtime.py` retries the start. The Compose native runner binds both of
+its loopback relay ports before starting services or opening outbound probes,
+and fails cleanly if another process already owns a port. It changes no global
+port reservation or network settings.
 
 ## SQL fixture and test roles
 
 The `tests/conftest.py` session fixture creates the unmodified vendored upstream
 Alerta `history[]` schema and restricted roles in a fresh disposable database,
 after `ACK_TEST_DESTRUCTIVE_LAB=YES_ISOLATED_LAB` is set. It refuses an existing
-Zab-al-ack schema and does not delete data. Then run:
+Zab-al-ack schema and does not delete data. The Compose runner supplies the
+fixture environment and executes its selected phase automatically. When using
+the separately started local PostgreSQL above, set the isolated-lab sentinel and run:
 
 ```bash
+export ACK_TEST_DESTRUCTIVE_LAB=YES_ISOLATED_LAB
 python -m pytest tests/postgres tests/alerta -ra
 ```
 
@@ -97,17 +110,17 @@ assertion-file hashes and executed results. Never relabel a WASM check as native
 ## Optional native PgBouncer transaction pool
 
 ```bash
-docker compose -f lab/compose.postgres.yml --profile pooling up -d --build
-export ACK_TEST_PGBOUNCER_DSN='postgresql://zabalack_probe@127.0.0.1:56432/alerta'
+python tools/native_ci.py --isolated-lab --phase alerta
 ```
 
 The PgBouncer source release and SHA-256 are fixed in `Dockerfile.pgbouncer`.
 Container build dependencies still come from the base distribution repository;
 record resolved image digests/package versions when reproducing. The lab uses
 trust authentication inside the isolated network so distinct roles can be tested
-without real secrets; this is not a production authentication template. The proxy
-exposes only loopback. Tests of 500-ms timeouts and clean pool reuse require this
-native route and remain blocked in the current coding environment.
+without real secrets; this is not a production authentication template. The
+runner supplies the PgBouncer loopback DSN through the owned relay. Tests of
+500-ms timeouts and clean pool reuse require an executed native route; TCP
+readiness alone does not establish protocol, authentication or test success.
 
 ## Optional real Zabbix 7.0
 

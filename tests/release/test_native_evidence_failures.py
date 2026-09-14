@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -13,6 +14,14 @@ import update_acceptance
 from evidence_utils import code_digests
 
 PASS_XML = '<testsuites><testsuite><testcase classname="synthetic" name="test_T38_check"/></testsuite></testsuites>'
+
+
+@pytest.fixture(autouse=True)
+def relay_context(monkeypatch):
+    relay = MagicMock()
+    relay.__enter__.return_value = relay
+    monkeypatch.setattr(native_ci, 'DockerLabRelays', lambda: relay)
+    return relay
 
 
 def seed_reports(tmp_path):
@@ -88,6 +97,32 @@ def test_native_success_records_only_fresh_selected_reports(tmp_path, monkeypatc
     assert report['phases'][0]['raw_junit_sha256'] == hashlib.sha256(PASS_XML.encode()).hexdigest()
     assert report['phases'][0]['counts'] == {'passed': 1, 'failed': 0, 'skipped': 0}
     assert [path.name for path in evidence.glob('native-*.xml')] == ['native-postgres.xml']
+
+
+@pytest.mark.parametrize('failure', ['activate', 'close'])
+def test_native_relay_failure_fails_phase_and_still_stops_owned_compose(tmp_path, monkeypatch, relay_context, failure):
+    evidence, _ = seed_reports(tmp_path)
+    monkeypatch.setattr(native_ci, 'ROOT', tmp_path)
+    monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: None)
+    monkeypatch.setattr(sys, 'argv', ['native_ci.py', '--isolated-lab', '--phase', 'postgres'])
+    if failure == 'activate':
+        relay_context.activate.side_effect = RuntimeError('synthetic relay unavailable')
+    else:
+        relay_context.__exit__.side_effect = RuntimeError('synthetic relay cleanup failed')
+    commands = []
+    def child(command, **kwargs):
+        commands.append(command)
+        if '-m' in command and 'pytest' in command:
+            Path(next(value.split('=', 1)[1] for value in command if value.startswith('--junitxml='))).write_text(PASS_XML)
+        return subprocess.CompletedProcess(command, 0)
+    monkeypatch.setattr(native_ci.subprocess, 'run', child)
+    assert native_ci.main() == 1
+    report = json.loads((evidence / 'native-run.json').read_text())
+    assert report['status'] == 'FAIL' and report['phases'][0]['reason'] == 'RuntimeError'
+    assert report['phases'][0]['shutdown_exit_code'] == 0
+    assert commands[-1][-3:] == ['stop', '--timeout', '10']
+    if failure == 'activate':
+        assert not any('pytest' in command for command in commands)
 
 
 @pytest.mark.parametrize('problem', ['failed-run', 'running-run', 'empty-pass', 'malformed-phases',

@@ -7,6 +7,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 import zipfile
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -104,6 +105,9 @@ def test_reference_runner_never_reuses_previous_junit(tmp_path, monkeypatch, exi
 
 def test_native_runner_never_reuses_previous_junit(tmp_path, monkeypatch):
     import native_ci
+    relay = MagicMock()
+    relay.__enter__.return_value = relay
+    monkeypatch.setattr(native_ci, 'DockerLabRelays', lambda: relay)
     raw = tmp_path / 'build/evidence-raw'
     public = tmp_path / 'evidence'
     raw.mkdir(parents=True)

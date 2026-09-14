@@ -1,5 +1,6 @@
 # Native real PostgreSQL 18 reference server; explicit lab start only.
-# docker compose -f lab/compose.postgres.yml up -d
+# python tools/native_ci.py --isolated-lab
+# Host access uses owned loopback relays; no Docker port publishing on internal networks.
 name: zabalack-postgres-lab
 services:
   postgres:
@@ -9,7 +10,6 @@ services:
       POSTGRES_USER: lab_admin
       POSTGRES_PASSWORD: synthetic-postgres-lab-only
       POSTGRES_HOST_AUTH_METHOD: trust # isolated lab role tests only; never production
-    ports: ["127.0.0.1:55432:5432"]
     volumes: [ack-lab-pg18:/var/lib/postgresql]
     networks: [isolated]
     healthcheck:
@@ -25,7 +25,6 @@ services:
     build:
       context: ..
       dockerfile: lab/Dockerfile.pgbouncer
-    ports: ["127.0.0.1:56432:6432"]
     networks: [isolated]
     depends_on:
       postgres: {condition: service_healthy}

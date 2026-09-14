@@ -12,6 +12,7 @@ import sys
 import xml.etree.ElementTree as ET
 from uuid import uuid4
 from evidence_utils import redact_junit, cases, code_digests
+from native_docker_relay import DockerLabRelays
 
 ROOT = Path(__file__).resolve().parents[1]
 PHASES = {
@@ -25,6 +26,8 @@ PHASES = {
 
 
 def ensure_local_docker() -> None:
+    if sys.platform != 'linux':
+        raise RuntimeError('Native Compose labs require a local Linux Docker host with bridge routing')
     if not shutil.which('docker'):
         raise RuntimeError('Docker Compose unavailable; native service tests NOT_RUN')
     override = os.environ.get('DOCKER_HOST')
@@ -81,33 +84,35 @@ def main() -> int:
         result = {'phase': phase, 'project': project, 'exit_code': 1, 'status': 'FAIL',
                   'diagnostic_dir': 'build/evidence-raw/native-' + phase + '-' + run_id}
         try:
-            subprocess.run([*compose, 'up', '-d', '--build', '--wait', '--wait-timeout', '60'],
-                           cwd=ROOT, check=True, timeout=600)
-            env = {key: value for key, value in os.environ.items() if not key.startswith('ACK_TEST_')}
-            # The Compose lab database is `alerta`; native tests read the actual
-            # database name from the fixture (tests/conftest.py) rather than
-            # assuming it, so this DSN and lab/local_runtime.py (`postgres`) both work.
-            env.update(ACK_TEST_ADMIN_DSN='postgresql://lab_admin@127.0.0.1:55432/alerta',
-                       ACK_TEST_DESTRUCTIVE_LAB='YES_ISOLATED_LAB',
-                       ACK_TEST_PGBOUNCER_DSN='postgresql://zabalack_probe@127.0.0.1:56432/alerta',
-                       TZ='UTC', HYPOTHESIS_STORAGE_DIRECTORY=str(ROOT / 'build/private/hypothesis'))
-            raw_xml = raw / ('native-' + phase + '.xml')
-            public_xml = evidence / raw_xml.name
-            raw_xml.unlink(missing_ok=True)
-            public_xml.unlink(missing_ok=True)
-            with (raw / ('native-' + phase + '.log')).open('w') as log:
-                code = subprocess.run([sys.executable, '-m', 'pytest', *targets, '-q',
-                    '--junitxml=' + str(raw_xml), '--basetemp=' + str(raw / ('native-' + phase + '-' + run_id))], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=600).returncode
-            result['exit_code'] = code
-            if raw_xml.exists():
-                result['raw_junit_sha256'] = hashlib.sha256(raw_xml.read_bytes()).hexdigest()
-                redact_junit(raw_xml, public_xml, ROOT)
-                rows = cases(public_xml)
-                result['counts'] = {s: sum(row['status'] == s for row in rows) for s in ('passed', 'failed', 'skipped')}
-                result['junit'] = str(public_xml.relative_to(ROOT))
-                if code == 0 and rows and all(row['status'] == 'passed' for row in rows):
-                    result['status'] = 'PASS'
-        except (subprocess.SubprocessError, OSError, ET.ParseError, ValueError) as error:
+            with DockerLabRelays() as relays:
+                subprocess.run([*compose, 'up', '-d', '--build', '--wait', '--wait-timeout', '60'],
+                               cwd=ROOT, check=True, timeout=600)
+                relays.activate(compose, project, ROOT)
+                env = {key: value for key, value in os.environ.items() if not key.startswith('ACK_TEST_')}
+                # The Compose lab database is `alerta`; native tests read the actual
+                # database name from the fixture (tests/conftest.py) rather than
+                # assuming it, so this DSN and lab/local_runtime.py (`postgres`) both work.
+                env.update(ACK_TEST_ADMIN_DSN='postgresql://lab_admin@127.0.0.1:55432/alerta',
+                           ACK_TEST_DESTRUCTIVE_LAB='YES_ISOLATED_LAB',
+                           ACK_TEST_PGBOUNCER_DSN='postgresql://zabalack_probe@127.0.0.1:56432/alerta',
+                           TZ='UTC', HYPOTHESIS_STORAGE_DIRECTORY=str(ROOT / 'build/private/hypothesis'))
+                raw_xml = raw / ('native-' + phase + '.xml')
+                public_xml = evidence / raw_xml.name
+                raw_xml.unlink(missing_ok=True)
+                public_xml.unlink(missing_ok=True)
+                with (raw / ('native-' + phase + '.log')).open('w') as log:
+                    code = subprocess.run([sys.executable, '-m', 'pytest', *targets, '-q',
+                        '--junitxml=' + str(raw_xml), '--basetemp=' + str(raw / ('native-' + phase + '-' + run_id))], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=600).returncode
+                result['exit_code'] = code
+                if raw_xml.exists():
+                    result['raw_junit_sha256'] = hashlib.sha256(raw_xml.read_bytes()).hexdigest()
+                    redact_junit(raw_xml, public_xml, ROOT)
+                    rows = cases(public_xml)
+                    result['counts'] = {s: sum(row['status'] == s for row in rows) for s in ('passed', 'failed', 'skipped')}
+                    result['junit'] = str(public_xml.relative_to(ROOT))
+                    if code == 0 and rows and all(row['status'] == 'passed' for row in rows):
+                        result['status'] = 'PASS'
+        except (subprocess.SubprocessError, OSError, ET.ParseError, ValueError, RuntimeError) as error:
             result['status'] = 'FAIL'
             result['reason'] = type(error).__name__
         finally:
