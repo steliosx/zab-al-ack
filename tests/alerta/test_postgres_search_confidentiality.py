@@ -350,6 +350,54 @@ def test_T40_direct_filter_with_extra_components_is_refused(search_api, field):
                                   headers={"Authorization": lab.reader}))
 
 
+@pytest.mark.parametrize("group_by", [
+    pytest.param("ATTRIBUTES", id="upper-case"),
+    pytest.param("Attributes", id="mixed-case"),
+    pytest.param('"attributes"', id="quoted"),
+    pytest.param('"ATTRIBUTES"', id="quoted-upper"),
+    pytest.param(" attributes ", id="padded"),
+])
+def test_T40_grouping_column_variants_are_refused(search_api, group_by):
+    """PostgreSQL folds an unquoted identifier and honours a quoted one.
+
+    `ATTRIBUTES`, `Attributes` and `"attributes"` all name the same column, so
+    comparing the raw spelling would refuse only one of them. The grouping token
+    is interpolated into SELECT and GROUP BY with no upstream validation, so the
+    guard also refuses anything that is not a plain identifier.
+    """
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    assert_refused(request(lab, endpoint="/alerts/topn/count", **{"group-by": group_by}))
+
+
+@pytest.mark.parametrize("sort_by", [
+    pytest.param(f"ATTRIBUTES.{INTENT_ATTRIBUTE}", id="upper-case-column"),
+    pytest.param(f"Attributes.{INTENT_ATTRIBUTE}", id="mixed-case-column"),
+    pytest.param("attributes.x'||attributes::text||'y", id="quote-in-key"),
+    pytest.param('attributes.x"y', id="double-quote-in-key"),
+    pytest.param("attributes.x y", id="space-in-key"),
+])
+def test_T40_sort_key_variants_are_refused(search_api, sort_by):
+    """`sort_by_columns` interpolates the key raw into `attributes->'{key}'`.
+
+    A quote in the key escapes the literal, so any key that is not a plain name
+    is unsupported syntax regardless of whether it names the restricted key.
+    """
+    lab = search_api
+    acknowledge(lab)
+    assert_refused(request(lab, endpoint="/alerts", **{"sort-by": sort_by}))
+
+
+@pytest.mark.parametrize("field", [f"ATTRIBUTES.{INTENT_ATTRIBUTE}", f"Attributes.{INTENT_ATTRIBUTE}",
+                                   "ATTRIBUTES"])
+def test_T40_direct_filter_column_variants_are_refused(search_api, field):
+    lab = search_api
+    acknowledge(lab)
+    assert_refused(lab.client.get("/alerts/count", query_string={field: UNDISCLOSED_CUSTOMER},
+                                  headers={"Authorization": lab.reader}))
+
+
 # --- positive controls: legitimate attribute querying still works -----------
 
 def test_T40_permitted_projection_field_remains_searchable(search_api):

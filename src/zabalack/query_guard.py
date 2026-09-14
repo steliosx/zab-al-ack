@@ -55,6 +55,11 @@ _KEYED = re.compile(r'"attributes"::jsonb\s*(?:->>|\?)\s*%\((\w+)\)s')
 # Quoted or bare, in any casing: a substituted default field can inject
 # `attributes::text` with no quotes at all.
 _ATTRIBUTE_MENTION = re.compile(r'\battributes\b', re.IGNORECASE)
+# Upstream interpolates a sort key raw into `attributes->'{key}'` and a grouping
+# token raw into SELECT and GROUP BY, so anything that is not a plain name is
+# unsupported syntax and is refused rather than passed through.
+_SAFE_ATTRIBUTE_KEY = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')
+_SAFE_IDENTIFIER = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 
 def _restricted(name: Any) -> bool:
@@ -66,6 +71,19 @@ def _components(field: str) -> list[str]:
     return field.replace("!", "").split(".")
 
 
+def _canonical_column(token: str) -> str:
+    """Resolve a column token the way PostgreSQL resolves an identifier.
+
+    An unquoted identifier folds to lower case, and a double-quoted one names the
+    column literally, so `ATTRIBUTES`, `Attributes` and `"attributes"` all reach
+    the same column. Comparing the raw spelling would miss every variant but one.
+    """
+    bare = token.strip()
+    if len(bare) >= 2 and bare[0] == '"' and bare[-1] == '"':
+        bare = bare[1:-1]
+    return bare.casefold()
+
+
 def _attribute_selector_refusal(components: list[str]) -> str | None:
     """Apply the contract to one resolved `attributes[...]` selector.
 
@@ -75,13 +93,18 @@ def _attribute_selector_refusal(components: list[str]) -> str | None:
     recognise. Unsupported forms are refused rather than normalised, and a bare
     `attributes` is a whole-object operation.
     """
-    if not components or components[0] != ATTRIBUTE_COLUMN:
+    if not components or _canonical_column(components[0]) != ATTRIBUTE_COLUMN:
         return None
     if len(components) == 1:
         return REFUSAL  # whole-object selector
     if len(components) > 2:
         return REFUSAL  # unsupported syntax; upstream would discard the excess
-    return REFUSAL if _restricted(components[1]) else None
+    key = components[1]
+    if not _SAFE_ATTRIBUTE_KEY.match(key):
+        # `sort_by_columns` interpolates the key straight into
+        # `attributes->'{key}'`, so a quote or operator escapes the literal.
+        return REFUSAL
+    return REFUSAL if _restricted(key) else None
 
 
 def selector_refusal(params: Any, parse: Callable[..., tuple[str, dict[str, Any]]] | None = None,
@@ -103,7 +126,11 @@ def selector_refusal(params: Any, parse: Callable[..., tuple[str, dict[str, Any]
         # The aggregate endpoints interpolate the grouping expression into both
         # SELECT and GROUP BY and return it under that key, so any grouping that
         # names the column hands back every attribute.
-        if _components(group_by)[:1] == [ATTRIBUTE_COLUMN]:
+        if not _SAFE_IDENTIFIER.match(group_by.strip()):
+            # The grouping token is interpolated into SELECT and GROUP BY with no
+            # validation upstream, so only a plain identifier is supported.
+            return REFUSAL
+        if _canonical_column(group_by) == ATTRIBUTE_COLUMN:
             return REFUSAL
 
     default_field = params.get("q.df")
@@ -112,7 +139,8 @@ def selector_refusal(params: Any, parse: Callable[..., tuple[str, dict[str, Any]
         # `"__default_field__"`, unquoted, so an arbitrary string becomes a raw
         # expression. Only a supported field name is accepted, and never the
         # attributes column itself.
-        allowed = {name for name in supported_fields if name != ATTRIBUTE_COLUMN}
+        allowed = {name for name in supported_fields
+                   if _canonical_column(name) != ATTRIBUTE_COLUMN}
         if not isinstance(default_field, str) or default_field not in allowed:
             return REFUSAL
 

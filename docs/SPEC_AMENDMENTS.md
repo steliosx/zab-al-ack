@@ -273,7 +273,21 @@ second component and discards the rest, so `attributes.<restricted>.ignored`
 would reach the restricted key; selectors with extra components are refused.
 `VALID_PARAMS['attributes']` is both filterable and sortable, so a bare
 `attributes=` or `attributes!=` direct filter is a whole-object operation and is
-refused alongside the keyed ones. Restricted selectors and whole-`attributes` operations are refused with a
+refused alongside the keyed ones.
+
+Column tokens are resolved canonically rather than compared as spelled.
+PostgreSQL folds an unquoted identifier and honours a quoted one, so
+`ATTRIBUTES`, `Attributes`, `"attributes"` and a padded spelling all reach the
+same column; comparing raw text refuses only one of them. Grouping tokens are
+additionally required to be plain identifiers, because the aggregate query
+interpolates them into `SELECT` and `GROUP BY` with no upstream validation, and
+attribute keys are required to be plain names, because `sort_by_columns`
+interpolates the key straight into `attributes->'<key>'` where a quote escapes
+the literal. Those forms are unsupported syntax and are refused whether or not
+they name the restricted key. Upstream's own `VALID_PARAMS` check already
+rejects a mis-cased `sort-by` or direct filter with its own 400; the guard's
+contribution on those surfaces is the restricted key, the whole-object form and
+the unsafe key syntax. Restricted selectors and whole-`attributes` operations are refused with a
 stable `400` that does not depend on whether any alert or intent exists, so the
 refusal is not itself an oracle; ordinary keyed attribute searches and approved
 sorting and grouping are preserved. It applies to every API reader including
