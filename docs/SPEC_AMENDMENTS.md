@@ -480,15 +480,19 @@ generation-guard, staged-window and cadence corrections ship as 009, moving the
 schema version 4 to 5 so a database still carrying the superseded guard is
 reported unhealthy rather than silently trusted.
 
-**Either authority may refuse; neither alone may permit.** The ledger and the
-alert row's marker are checked independently. Consulting the marker only when
-the ledger is absent reopens the precise window the guard exists for: once a
-capture has seeded the ledger with an action, a newer staging that has not yet
-been captured or swept exists *only* as that marker, so an older projection
-would be permitted, would overwrite the newer acknowledgement's state and would
-delete its intent. A marker that is present but unparseable is treated as
-mismatched, never as absent; `projection_generation_unknown` is reserved for a
-row carrying no generation evidence at all.
+**Either authority may refuse; a matching ledger entry permits on its own.**
+The ledger and the alert row's marker are checked independently, and a marker
+that is present but unparseable is treated as mismatched, never as absent. The
+implemented condition is weaker than "neither alone may permit", though: when
+the ledger entry matches the projecting action and the marker is *absent*,
+projection proceeds. That leaves this sequence open — the ledger records A; B
+commits its intent and marker before any capture or sweep observes it; an
+attribute replace deletes B's marker; `project(A)` finds ledger A and no marker,
+proceeds, and removes B's intent. Requiring the marker would close only that
+case: a replayed A dictionary restores marker A alongside ledger A and is again
+permitted. This is recorded as a defect of the ledger design, not corrected by a
+further condition. `projection_generation_unknown` is reserved for a row carrying
+no generation evidence at all.
 
 **The ledger is fed from an unauthenticated source at runtime, and that is not
 resolved.** `retire_intents()` admits a staged generation on shape and timestamp
@@ -511,11 +515,15 @@ because the only record it ever had was the attribute the replay discarded. The
 guard's rule still holds on its own terms — the marker the row carries is the
 older generation, and that generation's projection matches it — but the newer
 acknowledgement is gone without a trace. Closing this needs the staged generation
-recorded synchronously with the staging commit, which means a second
-`SECURITY DEFINER` trigger on `public.alerts`, the alerts owner principal, its own
-`capture_health()` assertion and re-sealing. Until that ships the exposure is
-bounded by the sweep interval rather than indefinite. It is asserted explicitly in
-`tests/postgres/test_intent_retirement.py` rather than described as closed.
+recorded synchronously with the staging commit — a protected staging operation,
+or a trigger that sees the staging `UPDATE` — and this stage ships neither.
+*The exposure is not bounded by the sweep interval.* The sweep can only record a
+staging it finds on the row; once the only trace of B has been replaced, no later
+pass recovers it, so the loss of that acknowledgement's generation is permanent,
+and a subsequent replay of A's dictionary restores a marker the guard accepts.
+What the sweep interval bounds is how long an unsigned staging stays unobserved,
+not what happens to one overwritten inside that time. It is asserted explicitly
+in `tests/postgres/test_intent_retirement.py` rather than described as closed.
 
 **Migration policy for missing or malformed markers.** A row carrying no marker
 must not silently permit an old projection. At migration time the marker is

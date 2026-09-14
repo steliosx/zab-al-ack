@@ -1061,6 +1061,24 @@ def test_T41_the_repair_installs_no_fallback_generation(lab):
     assert attributes_of(lab, alert_id)["zabbix_ack_sync"] == "pending", "B's state must survive"
 
 
+def verify_through_worker_call(lab, payload):
+    """Verify the capture through `worker_call`, the entry point the worker uses.
+
+    `claim_verification` then `verify_complete`, as `zabalack_worker`, with the
+    capture's own intent — not a hand-built action row. That is the only way to
+    prove the seeding call inside `verify_complete` exists: a test that inserts
+    the action and calls `note_staging()` itself passes with the hook removed.
+    """
+    lease = {"worker_id": "retire-verifier"}
+    with connect_role(lab, "zabalack_worker") as worker:
+        claimed = worker.execute("SELECT zabalack.worker_call('claim_verification',%s)",
+                                 (Jsonb(lease),)).fetchone()[0]
+        assert claimed is not None and claimed["intent"] == payload, "precondition: this capture was claimed"
+        return worker.execute("SELECT zabalack.worker_call('verify_complete',%s)", (Jsonb(
+            lease | {"capture_id": claimed["capture_id"], "lease_generation": claimed["lease_generation"],
+                     "intent": payload, "actor_ref": payload["actor"]["login"]}),)).fetchone()[0]
+
+
 def test_T41_verification_seeds_the_ledger(lab):
     """Verification is the only authenticated establishment of a generation.
 
@@ -1071,8 +1089,13 @@ def test_T41_verification_seeds_the_ledger(lab):
     `project()` returns `projection_generation_unknown` and clears
     `projection_due_at`, so the legitimate result is withheld permanently rather
     than retried.
+
+    Verification runs through `worker_call('verify_complete')`, so removing the
+    seeding call from it makes this fail with `projection_generation_unknown`.
+    The staging is issued now rather than in the past: `verify_complete`
+    rejects a capture outside `[issued_at, capture_expires_at]`.
     """
-    alert_id, event_id, payload = stage(lab)
+    alert_id, _, payload = stage(lab, issued=datetime.now(timezone.utc))
     fire_ack(lab, alert_id, payload)
     with connect_role(lab, "zabalack_owner") as owner:
         owner.execute("SELECT zabalack.repair_staging_ledger()")
@@ -1083,15 +1106,35 @@ def test_T41_verification_seeds_the_ledger(lab):
         conn.execute("UPDATE alerts SET attributes=attributes-%s-%s WHERE id=%s", (MARKER, INTENT, alert_id))
     assert ledger(lab, alert_id) is None
 
-    action_id = new_action(lab, alert_id, event_id, payload)
-    with connect_role(lab, "zabalack_owner") as owner:
-        owner.execute("SELECT zabalack.note_staging(%s,%s,%s,'verified')",
-                      (alert_id, payload["action_id"], payload["capture_expires_at"]))
+    verified = verify_through_worker_call(lab, payload)
+    assert verified["action_id"] == payload["action_id"] and not verified.get("replay"), \
+        "precondition: first verification created the action"
     row = ledger(lab, alert_id)
     assert row is not None and row[0] == uuid.UUID(payload["action_id"]), \
         "verification must establish the generation"
-    assert project(lab, action_id) == "projected", \
+    assert project(lab, payload["action_id"]) == "projected", \
         "the legitimate result must not be withheld once verification has seeded the ledger"
+
+
+def test_T41_a_verified_replay_also_seeds_the_ledger(lab):
+    """The second verification path — an action row already exists — seeds too.
+
+    Both paths in `verify_complete` carry the call; a test of the first alone
+    would let the replay path lose it silently.
+    """
+    alert_id, _, payload = stage(lab, issued=datetime.now(timezone.utc))
+    fire_ack(lab, alert_id, payload)
+    first = verify_through_worker_call(lab, payload)
+    assert first["action_id"] == payload["action_id"]
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("DELETE FROM zabalack.alert_staging WHERE alert_id=%s", (alert_id,))
+    assert ledger(lab, alert_id) is None, "precondition: the generation record was removed after verification"
+    fire_ack(lab, alert_id, payload)
+    replay = verify_through_worker_call(lab, payload)
+    assert replay.get("replay") is True, "precondition: the second capture verified as a replay"
+    row = ledger(lab, alert_id)
+    assert row is not None and row[0] == uuid.UUID(payload["action_id"]), \
+        "a verified replay must re-establish the generation"
 
 
 def test_T41_the_sweep_still_admits_an_unverified_generation(lab):

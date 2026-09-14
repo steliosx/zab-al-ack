@@ -126,9 +126,12 @@ change under the same principal that installs the trigger; it is optional, outsi
 
 Record the window this design does not close, and whether the deployment accepts it: a staged generation that a
 stale attribute dictionary overwrites before any capture or sweep has observed it leaves no record, because the
-only record it had was the attribute the replay discarded. Measure the deployment's actual sweep interval, since
-that interval is the bound on the exposure. Closing it requires the synchronous trigger described in A5, which is
-a separate change to the installation procedure and is not part of this item.
+only record it had was the attribute the replay discarded, and no later sweep recovers it: the loss is permanent
+for that acknowledgement, and the sweep interval bounds only how long an unsigned staging stays unobserved, not
+the exposure. The same outcome follows where the ledger already holds the older generation and the newer
+staging's marker is deleted from the row — projection of the older action proceeds. Closing it requires the
+staged generation recorded synchronously with the staging commit, as A5 describes; that is a separate change and
+is not part of this item.
 
 ## Additional deployed clauses
 
