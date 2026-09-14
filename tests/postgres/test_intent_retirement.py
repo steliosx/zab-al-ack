@@ -66,14 +66,43 @@ def intent_for(alert_id, event_id, *, issued=None, action_id=None):
     }
 
 
-@pytest.fixture
-def lab(pg_lab):
+def enrol(pg_lab):
     with connect_role(pg_lab, "zabalack_owner") as owner:
         owner.execute("""INSERT INTO zabalack.cohorts(customer,instance,trigger_id,revision,policy_version,
                       host_ids,group_ids,enabled) VALUES(%s,%s,%s,'retire-r1','1','["980003"]','["980004"]',true)
                       ON CONFLICT(customer,instance,trigger_id) DO UPDATE SET enabled=true""",
                       (CUSTOMER, INSTANCE, TRIGGER))
-    return pg_lab
+
+
+def cleanup(pg_lab):
+    """Leave the lab as this module found it.
+
+    `tests/postgres/assertions.sql` counts whole tables, so a module that leaves
+    captures behind breaks a later one. Correctness must not depend on which
+    order the modules happen to run in.
+    """
+    with connect_role(pg_lab, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.installation SET capture_disabled=false WHERE singleton")
+        owner.execute("""DELETE FROM zabalack.verification_leases WHERE capture_id IN
+                      (SELECT capture_id FROM zabalack.captures WHERE customer=%s)""", (CUSTOMER,))
+        owner.execute("DELETE FROM zabalack.actions WHERE customer=%s", (CUSTOMER,))
+        owner.execute("DELETE FROM zabalack.effects WHERE instance=%s", (INSTANCE,))
+        owner.execute("""DELETE FROM zabalack.outbox WHERE capture_id IN
+                      (SELECT capture_id FROM zabalack.captures WHERE customer=%s)""", (CUSTOMER,))
+        owner.execute("DELETE FROM zabalack.captures WHERE customer=%s", (CUSTOMER,))
+        owner.execute("""DELETE FROM zabalack.alert_staging WHERE alert_id IN
+                      (SELECT id FROM public.alerts WHERE customer=%s)""", (CUSTOMER,))
+        owner.execute("DELETE FROM zabalack.cohorts WHERE customer=%s", (CUSTOMER,))
+        owner.execute("DELETE FROM zabalack.actor_identity WHERE login='retire-engineer'")
+    with connect_role(pg_lab, "alerta_owner") as owner:
+        owner.execute("DELETE FROM alerts WHERE customer=%s", (CUSTOMER,))
+
+
+@pytest.fixture
+def lab(pg_lab):
+    enrol(pg_lab)
+    yield pg_lab
+    cleanup(pg_lab)
 
 
 def stage(lab, *, issued=None, action_id=None, staged=True):
@@ -490,3 +519,84 @@ def test_T41_neither_authority_present_refuses_rather_than_permits(lab):
         conn.execute("UPDATE alerts SET attributes=attributes-%s-%s WHERE id=%s", (MARKER, INTENT, alert_id))
     assert project(lab, action_id) == "projection_generation_unknown"
     assert attributes_of(lab, alert_id)["zabbix_ack_sync"] == "pending", "nothing was projected"
+
+
+def test_T41_the_worker_reaches_retirement_through_worker_call(lab):
+    """The sweep runs through the same coordination boundary as every other
+    worker operation, so `zabalack_worker` needs no direct grant on it."""
+    alert_id, _, _ = stage(lab)
+    with connect_role(lab, "zabalack_worker") as worker:
+        result = worker.execute("SELECT zabalack.worker_call('retire_intents',%s)",
+                                (Jsonb({"limit": 1000, "grace_seconds": 0}),)).fetchone()[0]
+    assert result["retired"] >= 1
+    assert INTENT not in attributes_of(lab, alert_id)
+    with connect_role(lab, "zabalack_worker") as worker:
+        with pytest.raises(Exception, match="permission denied"):
+            worker.execute("SELECT zabalack.retire_intents(10,0)")
+
+
+def test_T41_an_ingestion_update_cannot_erase_the_marker(lab):
+    """`strip_reserved` removes reserved keys from the inbound payload, and
+    Alerta merges with `attributes || new`, so the stored marker survives."""
+    from zabalack.normalizer import strip_reserved
+    alert_id, event_id, payload = stage(lab)
+    sweep(lab)
+    inbound = {"source_system": "zabbix", "zabbix_instance": INSTANCE, "zabbix_event_id": event_id,
+               "zabbix_trigger_id": TRIGGER, MARKER: str(uuid.uuid4()), INTENT: {"forged": True},
+               "operator_note": "kept"}
+    stripped = strip_reserved(inbound)
+    assert MARKER not in stripped and INTENT not in stripped, "reserved keys never reach storage from ingestion"
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s", (Jsonb(stripped), alert_id))
+    after = attributes_of(lab, alert_id)
+    assert after[MARKER] == payload["action_id"], "ingestion must not replace the generation marker"
+    assert after["operator_note"] == "kept", "ordinary inbound attributes still apply"
+    assert INTENT not in after
+
+
+def test_T41_project_skip_retains_the_marker(lab):
+    """A skip is not a newer staging; it drops the intent and its cleanup clock."""
+    from types import SimpleNamespace
+    from zabalack.config import Settings
+    from zabalack.normalizer import project_skip
+    alert = SimpleNamespace(attributes={INTENT: {"action_id": "a"}, MARKER: "generation-1",
+                                        UNTIL: "2026-01-01T00:00:00.000000Z", "runbook_url": "kept"})
+    project_skip(alert, "skipped_disabled", Settings(config_revision="r1"))
+    assert INTENT not in alert.attributes, "the intent goes"
+    assert UNTIL not in alert.attributes, "so does the timestamp that governed its cleanup"
+    assert alert.attributes[MARKER] == "generation-1", "the generation marker stays"
+    assert alert.attributes["runbook_url"] == "kept"
+    assert alert.attributes["zabbix_ack_sync"] == "skipped"
+
+
+def test_T41_a_replay_predating_every_observation_of_a_staging_is_a_known_window(lab):
+    """The boundary of this design, asserted rather than assumed.
+
+    The ledger can only hold a generation something observed. `capture_ack()`
+    records one synchronously with the capture, and the sweep records one when it
+    visits the row — but a staging that is overwritten by a stale dictionary
+    *before* either happens leaves no trace anywhere, because the only record it
+    ever had was the attribute the replay just discarded.
+
+    The rule still holds on its own terms: the marker the row carries is A, and
+    A's projection matches it. Closing this window needs the staged generation
+    recorded synchronously with the staging commit, which is a second trigger on
+    `public.alerts` and a change to the installation procedure. Until then the
+    exposure is bounded by the sweep interval, not indefinite, and it is recorded
+    in A5 rather than described as closed.
+    """
+    alert_id, event_id, first = stage(lab)
+    action_id = new_action(lab, alert_id, event_id, first)
+    sweep(lab)
+    stale = attributes_of(lab, alert_id)
+    second = intent_for(alert_id, event_id, issued=datetime.now(timezone.utc) - timedelta(minutes=5))
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                     (Jsonb({INTENT: second, MARKER: second["action_id"],
+                             UNTIL: second["capture_expires_at"]}), alert_id))
+        # Replayed before any sweep or capture has seen the newer staging.
+        conn.execute("UPDATE alerts SET attributes=%s WHERE id=%s", (Jsonb(stale), alert_id))
+    assert ledger(lab, alert_id)[0] == uuid.UUID(first["action_id"]), \
+        "nothing ever observed the newer generation, so the ledger cannot hold it"
+    assert project(lab, action_id) == "projected", \
+        "the marker and the ledger agree on A, so A projects; this is the window, stated"

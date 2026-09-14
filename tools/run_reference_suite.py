@@ -29,7 +29,7 @@ def main() -> int:
             phases.append((name, 'postgres_wasm', [sys.executable, 'lab/pglite_exec.py',
                 '--isolated-lab', '--', sys.executable, '-m', 'pytest', *targets, '-q']))
     phases.append(('optional-services', 'optional_native_real_zabbix', [sys.executable,
-        '-m', 'pytest', 'tests/real_zabbix', 'tests/deployment_e2e', 'tests/postgres/test_native_login.py', 'tests/postgres/test_native_delivery_faults.py', 'tests/alerta/test_native_staging_interval.py', '-q']))
+        '-m', 'pytest', 'tests/real_zabbix', 'tests/deployment_e2e', 'tests/postgres/test_native_login.py', 'tests/postgres/test_native_delivery_faults.py', 'tests/alerta/test_native_staging_interval.py', 'tests/postgres/test_native_generation_race.py', '-q']))
     evidence = ROOT / 'evidence'
     raw_dir = ROOT / 'build/evidence-raw'
     evidence.mkdir(exist_ok=True)

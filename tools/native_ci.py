@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PHASES = {
     'postgres': ['tests/postgres/test_postgres.py', 'tests/postgres/test_native_login.py',
                  'tests/postgres/test_late_response.py', 'tests/postgres/test_stateful_ledger.py', 'tests/postgres/test_settled_expiry.py',
-                 'tests/postgres/test_intent_retirement.py'],
+                 'tests/postgres/test_intent_retirement.py', 'tests/postgres/test_native_generation_race.py'],
     'delivery_faults': ['tests/postgres/test_native_delivery_faults.py'],
     'worker': ['tests/postgres/test_worker_path.py'],
     'alerta': ['tests/alerta/test_postgres_http.py', 'tests/alerta/test_health_postgres.py', 'tests/alerta/test_docs_walkthrough.py',

@@ -472,6 +472,20 @@ places the guard beyond the reach of the erase, forge and replay paths above, at
 the cost of a second trigger on `public.alerts`, which requires the alerts owner
 principal, its own `capture_health()` assertion, and re-sealing.
 
+**The window this design does not close.** The ledger can only hold a
+generation something observed: `capture_ack()` records one synchronously with the
+capture, and the sweep records one when it visits the row. A staging overwritten
+by a stale attribute dictionary *before* either happens leaves no trace anywhere,
+because the only record it ever had was the attribute the replay discarded. The
+guard's rule still holds on its own terms — the marker the row carries is the
+older generation, and that generation's projection matches it — but the newer
+acknowledgement is gone without a trace. Closing this needs the staged generation
+recorded synchronously with the staging commit, which means a second
+`SECURITY DEFINER` trigger on `public.alerts`, the alerts owner principal, its own
+`capture_health()` assertion and re-sealing. Until that ships the exposure is
+bounded by the sweep interval rather than indefinite. It is asserted explicitly in
+`tests/postgres/test_intent_retirement.py` rather than described as closed.
+
 **Migration policy for missing or malformed markers.** A row carrying no marker
 must not silently permit an old projection. At migration time the marker is
 backfilled from the two authoritative sources: `zabalack.actions` for alerts that
