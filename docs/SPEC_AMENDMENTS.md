@@ -402,21 +402,83 @@ Stage one must never be described as closing A5 or T40.
 removal of the stored attribute after capture, and guarded retirement of staging
 that never produced a capture. Apply this across every lifecycle path above, not
 only projection, preserving
-`zabalack.captures.intent` byte-for-byte as restricted signed evidence. The
-generation guard comparing `attrs#>>'{zabbix_ack_sync_intent,action_id}'` must be
-replaced by protection that survives intent removal: a cleanup path that removes
-a newer unverified intent would otherwise leave an older projection with neither
-that check nor the `capture_order` check, which cannot see an unverified capture
-because no `actions` row exists before `verify_complete`. `zabbix_ack_sync_action_id`
-is not a drop-in carrier — it is written both at staging, holding the newest
-intent's identity, and by `project()`, holding its own possibly older action —
-so write ordering must be settled and the race tested before either cleanup path
-ships. Bounded backfill covers existing and abandoned attributes **on live
-`public.alerts` rows only**. It does not reach historical backups, replicas or
-previously produced exports, which continue under G8's access and retention
-policy; backfill must not be described as erasing those copies. Schema version
-moves 3→4 with the two runtime literals that pin it, and the readiness manifest
-is re-sealed.
+`zabalack.captures.intent` byte-for-byte as restricted signed evidence. Bounded
+backfill covers existing and abandoned attributes **on live `public.alerts` rows
+only**. It does not reach historical backups, replicas or previously produced
+exports, which continue under G8's access and retention policy; backfill must not
+be described as erasing those copies. Schema version moves 3→4 with the two
+runtime literals that pin it, and the readiness manifest is re-sealed.
+
+*Cleanup eligibility is not the 60-second capture window as first proposed.*
+`capture_ack()` performs no lifetime check of its own: it inserts a capture row
+whenever the trigger predicate is satisfied, however late. The lifetime test
+lives in `verify_complete` (`003_worker.sql:88`, and the fenced form at
+`006_late_response_fencing.sql:102`), which rejects a capture whose `captured_at`
+falls outside `[issued_at, capture_expires_at]`. Two consequences follow. A
+staged intent can still produce a capture after its window closes, so “the value
+can no longer produce a capture” is not a correct justification for sweeping it.
+And a capture recorded *inside* the window stays valid while it waits for
+verification — which may be indefinite under `verifier_hold` — so the sweep must
+leave `zabalack.captures.intent` intact and must not prevent that capture being
+verified, authorised and delivered afterwards. The sweep therefore operates on
+`public.alerts.attributes` alone and must be demonstrably independent of whether
+verification or delivery ever succeeds.
+
+**Generation guard.** The guard comparing
+`attrs#>>'{zabbix_ack_sync_intent,action_id}'` must be replaced by protection that
+survives intent removal: a cleanup path that removes a newer unverified intent
+would otherwise leave an older projection with neither that check nor the
+`capture_order` check, which cannot see an unverified capture because no `actions`
+row exists before `verify_complete`. The replacement is a dedicated generation
+marker holding the newest staged `action_id`, and it is governed by these rules:
+
+* It is retained for the lifetime of the alert — after intent cleanup and after a
+  successful projection alike. Only a newer legitimate staging operation replaces
+  it.
+* **No expiry governs it.** `execution_expires_at` bounds delivery, not
+  projection: `projection_due_at` carries no equivalent deadline, so a projection
+  queued before a prolonged outage can resume arbitrarily later and must still be
+  refused if its action differs from the marker.
+* `zabbix_ack_sync_staged_until` may govern *intent-cleanup eligibility* only. It
+  must never expire the generation guard, and once the intent is removed it may
+  be removed too if nothing else requires it.
+* A projection whose action differs from the marker fails. A missing or malformed
+  marker is not silently permissive — see the migration policy below.
+* Cleanup and projection both re-read the marker inside their own transaction,
+  under the same row locking `project()` already takes, so neither acts on a value
+  read before a concurrent staging.
+
+**The marker cannot be held in `public.alerts.attributes` alone.**
+`PUT /alert/<id>/attributes` runs no plugin hook, and `db.update_attributes`
+(`postgres/base.py:339-349`) merges the caller's dictionary into the one its own
+request loaded, drops every key whose value is `None`, and writes the result back
+with `SET attributes=%(attrs)s` — a whole-object replace, not a `||` merge.
+Executed on PostgreSQL 18.3 in PGlite (WASM): a `write:alerts` holder scoped to the
+alert's customer sent `{"zabbix_ack_sync_action_id": null}` and received HTTP 200
+with the key deleted, and sent `{"zabbix_ack_sync_forged": "client-supplied"}` and
+had it stored verbatim, because `strip_reserved()` never sees that path. The same
+whole-object replace is how a stale attribute dictionary reinstates an older
+generation: any client holding an `Alert` loaded before a newer staging rewrites
+the row wholesale on its next attribute update.
+
+The authoritative record of the latest staged generation must therefore live in
+the `zabalack` schema, which `alerta_app` cannot write, with the attribute kept
+only as its reader-visible projection. The staging commit is itself an `UPDATE` on
+`public.alerts` — `process_action()` commits staged attributes through an
+independent `_updateone()` before `from_action()` runs — so a `SECURITY DEFINER`
+trigger can record it, while the existing `zabalack_capture` predicate cannot see
+it (it requires `NEW.status='ack'` and a marker in the head history entry). That
+places the guard beyond the reach of the erase, forge and replay paths above, at
+the cost of a second trigger on `public.alerts`, which requires the alerts owner
+principal, its own `capture_health()` assertion, and re-sealing.
+
+**Migration policy for missing or malformed markers.** A row carrying no marker
+must not silently permit an old projection. At migration time the marker is
+backfilled from the two authoritative sources: `zabalack.actions` for alerts that
+have any action row (the greatest `capture_order`), and the staged intent's own
+`action_id` for alerts holding an uncaptured intent. A row with neither was never
+staged, and acquires a marker at its first staging. A malformed marker is treated
+as mismatched, never as absent.
 
 **Safety consequence:** stage one reduces reader exposure and does not close the
 finding. Until stage two completes, an operator acknowledging an alert continues
@@ -476,6 +538,31 @@ newer unverified intent while an older projection is in flight. Where those
 races overlap existing requirements, cross-reference T7 (replayed proof, stale
 attribute dictionary reintroduced) and T38 (projection under the deployed owner
 and caller roles).
+
+*Lifecycle coverage is the exposure table above, case by case, not a summary of
+it.* Each of its eight rows is a separate acceptance case, and the sweep must be
+shown to retire the staged attribute in each without depending on verification or
+delivery having succeeded: staging that failed at `status_change`; a cohort
+enabled in configuration but absent from `zabalack.cohorts`; capture-side evidence
+failure; `capture_bypass`; worker-side `reject_capture`; `verifier_hold` with the
+verification key unavailable; a worker stopped or backlogged with the capture
+still unclaimed; and `verify_complete`. `project_skip` and the `project()` refusal
+branches are *additional* coverage on top of those, not replacements for them.
+
+*Preservation is asserted, not assumed.* Separate cases must show that cleanup,
+`project_skip`, an ingestion update through `pre_receive`, and a replayed stale
+attribute dictionary can none of them erase the generation marker or restore an
+older one, and that a projection facing a missing or malformed marker refuses
+rather than proceeding.
+
+*The decisive native race.* Stage A, then stage B on the same alert; retire B's
+intent without ever creating a B action row; resume A's projection four hours
+later, past `execution_expires_at` and any window a lifetime-based guard would
+have expired; and assert that A cannot overwrite B's state. The same case is run
+with the reverse lock order, and with a stale attribute dictionary replayed
+against the row, to show the outcome does not depend on which transaction acquires
+the row first. Native only: it needs two concurrent sessions and a committed row
+observed from the other.
 
 T38's preservation requirement is read as preserving source-identity keys,
 unrelated attributes and the protected columns. It does not require preserving
