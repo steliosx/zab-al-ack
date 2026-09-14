@@ -17,7 +17,7 @@
     },
     {
       "path": "sql/install/12_reseal.sql",
-      "sha256": "1bf57849f7c6d28c6d125f66520aa501c66dc6e08a44c1591222e237d2ef0ca7"
+      "sha256": "6aceb0f0eabc3d739cf29a4ca4795d0b2d68cfb924513511900323ac07bf0319"
     },
     {
       "path": "sql/migrate.py",
@@ -68,6 +68,10 @@
       "sha256": "b3d72e5e8b67b9ee8e62fcf0b764d3cf961d6632869f1ea4c5da1762bb3cb491"
     },
     {
+      "path": "sql/migrations/012_repair_deletes_only.sql",
+      "sha256": "d1ef3936ff6858eedc80bc0fd1aed7d8e559df46ef3e936dd7fd018afe026db4"
+    },
+    {
       "path": "sql/rollback/disable_trigger.sql",
       "sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
     },
@@ -76,5 +80,5 @@
       "sha256": "5bfbb4ecbb5f14f0fff45e40f9d60027dd7b5ea760849d52e1a2a6b0f0f1b7c8"
     }
   ],
-  "database_schema_version": 7
+  "database_schema_version": 8
 }

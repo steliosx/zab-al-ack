@@ -934,9 +934,9 @@ def test_T41_the_repair_is_idempotent_and_keeps_authenticated_entries(lab):
     the forged-row case below for why.
     """
     alert_id, event_id, payload = stage(lab)
-    fire_ack(lab, alert_id, payload)
+    action_from_real_capture(lab, alert_id, event_id, payload)
     before = ledger(lab, alert_id)
-    assert before is not None, "precondition: capture_ack recorded an authenticated entry"
+    assert before is not None, "precondition: a verified entry exists"
     with connect_role(lab, "zabalack_owner") as owner:
         first = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
         second = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
@@ -990,14 +990,72 @@ def test_T41_the_repair_does_not_readmit_from_the_writable_attribute(lab):
         "the repair must not read the generation back out of the alert attribute"
 
 
-def test_T41_the_repair_keeps_a_generation_a_capture_authenticated(lab):
-    """A capture whose intent capture_ack() validated is authenticated evidence."""
+def test_T41_a_verified_generation_survives_the_repair(lab):
+    """Only a verified generation corroborates itself.
+
+    An action row exists only after `verify_complete`, which is where the
+    signature is checked, so that is the corroboration the repair accepts.
+    """
     alert_id, event_id, payload = stage(lab)
-    fire_ack(lab, alert_id, payload)
-    assert capture_of(lab, alert_id)[3] is None, "precondition: a clean capture"
+    action_from_real_capture(lab, alert_id, event_id, payload)
     before = ledger(lab, alert_id)
     assert before is not None and before[0] == uuid.UUID(payload["action_id"])
     with connect_role(lab, "zabalack_owner") as owner:
         result = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
-    assert result["removed"] == 0, "a capture-authenticated generation must survive"
+    assert result["removed"] == 0, "a verified generation must survive"
     assert ledger(lab, alert_id)[0] == before[0]
+
+
+def test_T41_an_unverified_capture_does_not_corroborate_a_generation(lab):
+    """`capture_ack()` never checks the MAC, so a capture is not authentication.
+
+    It regex-matches the marker's structure and binds it to the committed history
+    entry; the repository states the boundary outright — "SQL does not verify
+    cryptography; Python tests prove the mandatory verify-before-promote trust
+    boundary." A forged intent captured with a fabricated proof therefore
+    produces a capture row that would corroborate its own forged generation, and
+    the poisoned ledger entry would survive the repair and keep refusing
+    legitimate projections.
+    """
+    alert_id, event_id, payload = stage(lab)
+    fire_ack(lab, alert_id, payload)
+    assert capture_of(lab, alert_id) is not None, "precondition: a capture row exists"
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT count(*) FROM zabalack.actions WHERE alert_id=%s",
+                             (alert_id,)).fetchone()[0] == 0, "precondition: never verified"
+        assert owner.execute("SELECT verified_action_id FROM zabalack.captures WHERE alert_id=%s",
+                             (alert_id,)).fetchone()[0] is None
+        result = owner.execute("SELECT zabalack.repair_staging_ledger()").fetchone()[0]
+    assert result["removed"] >= 1, "an unverified capture must not corroborate its own generation"
+    assert ledger(lab, alert_id) is None
+
+
+def test_T41_the_repair_installs_no_fallback_generation(lab):
+    """Deleting must not downgrade an alert to an older action.
+
+    Where the ledger held an uncaptured newer generation B, removing B and
+    restoring older A left both authorities agreeing on A once a whole-object
+    replay dropped B's marker, so `project(A)` overwrote B's pending state —
+    worse than leaving the entry alone. The repair deletes and never restores:
+    the alert falls to its marker, and a missing marker refuses.
+    """
+    alert_id, event_id, first = stage(lab, issued=datetime.now(timezone.utc) - timedelta(hours=6))
+    action_id = action_from_real_capture(lab, alert_id, event_id, first)
+    newer = stage_over(lab, alert_id, event_id)
+    sweep(lab)
+    assert ledger(lab, alert_id)[0] == uuid.UUID(newer["action_id"]), "precondition: the ledger observed B"
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("SELECT zabalack.repair_staging_ledger()")
+        restored = owner.execute("SELECT staged_action_id FROM zabalack.alert_staging WHERE alert_id=%s",
+                                 (alert_id,)).fetchone()
+    assert restored is None or restored[0] != uuid.UUID(first["action_id"]), \
+        "the older action must not be installed as the authority"
+
+    # The replay that drops B's marker, which is what made the fallback unsafe.
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes-%s-%s WHERE id=%s", (MARKER, INTENT, alert_id))
+    assert project(lab, action_id) in {"projection_generation_unknown",
+                                       "projection_action_generation_mismatch"}, \
+        "with no authority left, the older projection must refuse rather than proceed"
+    assert attributes_of(lab, alert_id)["zabbix_ack_sync"] == "pending", "B's state must survive"

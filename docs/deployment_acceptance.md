@@ -77,11 +77,18 @@ previously produced exports are out of its reach and remain governed by G8. Reco
 after, the re-seal of the readiness manifest, and the principal that performed each step. A passing disposable
 lab does not close this item.
 
-Upgrade sequence, with the principal recorded for each step. Apply migrations 008 through 011 —
-`008_intent_retirement.sql`, `009_generation_guard_corrections.sql`, `010_staging_ledger_repair.sql` and
-`011_ledger_repair_authentication.sql` — through the ordinary migration path and record the schema version moving
-3 to 7, confirming the backfill populated `zabalack.alert_staging` for every alert carrying an action row or an
-uncaptured staged intent. The whole sequence is mandatory, not a menu: 008 alone carries the superseded generation
+Upgrade sequence, with the principal recorded for each step. Apply migrations 008 through 012 —
+`008_intent_retirement.sql`, `009_generation_guard_corrections.sql`, `010_staging_ledger_repair.sql`,
+`011_ledger_repair_authentication.sql` and `012_repair_deletes_only.sql` — through the ordinary migration path and
+record the schema version moving 3 to 8.
+
+Record the end state, not an intermediate one. 008's backfill populates `zabalack.alert_staging` from both action
+rows and uncaptured staged intents, but 012's repair then deletes every entry no verified action corroborates —
+including entries whose only evidence was an uncaptured staged attribute, because nothing at repair time
+distinguishes a genuine one from a forged one. After the whole sequence the ledger therefore holds an entry only
+for alerts with a verified action; the rest fall to their generation marker, and an alert with neither refuses
+projection with `projection_generation_unknown` until the bounded sweep re-admits a genuine staging on its next
+pass. An operator checking for a fully populated ledger at schema 8 will not find one, and should not. The whole sequence is mandatory, not a menu: 008 alone carries the superseded generation
 guard and an unbounded ledger, 009 bounds new entries but repairs none, and 010's repair keeps a forged entry
 whose window merely looks plausible. Workers are pinned to 7 and report unhealthy until every one has applied, and
 `011` re-runs the repair so a database that stopped at 010 is corrected when it catches up. No applied migration
@@ -92,10 +99,11 @@ further correction always ships as another migration. Then run
 expected objects are present, and the trigger fingerprint still matches the sealed one, since none of these
 migrations changes the trigger.
 
-Record the repair's own result. `zabalack.repair_staging_ledger()` reports `removed` and `restored`, and a nonzero
-`removed` on a production upgrade means the database was holding ledger entries that no action or capture
-corroborates — worth an entry in the evidence record, since it indicates either a pre-bounds forgery or an alert
-whose only staging evidence was the writable attribute. Confirm `zabalack.capture_health()` reports `functions_ok` afterwards and that workers pinned to
+Record the repair's own result. `zabalack.repair_staging_ledger()` reports `removed`. It restores nothing: a
+fallback entry derived from the newest action could displace an observed newer staging, so the repair only ever
+deletes. A nonzero `removed` on a production upgrade means the database held ledger entries that no verified
+action corroborates — worth an entry in the evidence record, since it indicates either a pre-bounds forgery or an
+alert whose only staging evidence was the writable attribute. Confirm `zabalack.capture_health()` reports `functions_ok` afterwards and that workers pinned to
 schema 3 report unhealthy until upgraded. Confirm the sweep is reachable only through
 `zabalack.worker_call('retire_intents', …)` and that a direct call as `zabalack_worker` is denied.
 
