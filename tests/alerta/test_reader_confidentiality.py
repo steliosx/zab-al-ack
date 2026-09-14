@@ -199,10 +199,26 @@ def read_alert(lab, mode):
 
 
 def assert_reader_learns_nothing(response):
+    """The reserved key and the undisclosed membership stay out of the body.
+
+    The acknowledging login is deliberately not asserted against the whole body.
+    `Alert.serialize` includes committed history, whose entries carry `user`, and
+    that attribution is Alerta's own audit behaviour under the separate history
+    layer of §12 — A1 keeps it in successful history responses. A5 governs the
+    staged intent, so the login is asserted against `attributes` instead, where
+    the intent is its only carrier.
+    """
     body = response.get_data(as_text=True)
     assert INTENT_ATTRIBUTE not in body, "reader response carries the staged intent"
     assert UNDISCLOSED not in body, f"reader response discloses membership in {UNDISCLOSED}"
-    assert ENGINEER_LOGIN not in body, "reader response discloses the acknowledging identity"
+
+
+def assert_attributes_carry_no_identity(response):
+    attributes = response.get_json()["alert"]["attributes"]
+    assert attributes.get(INTENT_ATTRIBUTE) is None
+    rendered = repr(sorted(attributes.items()))
+    assert ENGINEER_LOGIN not in rendered, "alert attributes disclose the acknowledging identity"
+    assert UNDISCLOSED not in rendered, f"alert attributes disclose membership in {UNDISCLOSED}"
 
 
 def assert_internals_preserved(lab, state):
@@ -224,7 +240,7 @@ def test_T40_reader_does_not_receive_intent(reader_lab, state, mode):
     LIFECYCLE[state](reader_lab)
     response = read_alert(reader_lab, mode)
     if mode == "json":
-        assert response.get_json()["alert"]["attributes"].get(INTENT_ATTRIBUTE) is None
+        assert_attributes_carry_no_identity(response)
     assert_reader_learns_nothing(response)
     assert_internals_preserved(reader_lab, state)
 

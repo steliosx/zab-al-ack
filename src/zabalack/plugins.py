@@ -14,7 +14,7 @@ from alerta.exceptions import AlertaException
 from alerta.plugins import PluginBase
 
 from .config import Settings, read_protected_file
-from .crypto import build_intent, load_key_files, sign_intent
+from .crypto import INTENT_ATTRIBUTE, build_intent, load_key_files, sign_intent
 from .health import CaptureUnhealthy, ProbeConfig, get_probe
 from .normalizer import project_skip, settings_for
 from .policy import PolicyError, authorize_actor, make_snapshot, select_cohort, validate_source
@@ -54,6 +54,46 @@ def _error_redact(value: Any) -> Any:
     return value
 
 
+def exclude_intent_from_responses() -> None:
+    """Keep restricted staging out of every serialised alert response (A5, T40).
+
+    Reference Alerta builds every alert response body from `Alert.serialize`, and
+    its `jsonp` decorator wraps that body inside the view, before `after_request`
+    runs. Filtering the payload here is therefore ahead of serialisation and
+    covers the single-alert, create and collection responses in both response
+    modes, which a filter keyed on `response.is_json` would not.
+
+    Removal is targeted to the one reserved staging key. The `_contains_evidence`
+    scrubber is deliberately not reused: it also matches the committed history
+    proof, which A1 retains in successful history responses.
+
+    The stored dictionary is never mutated. `serialize` returns a fresh payload
+    whose `attributes` value is the live object, so a filtered copy is
+    substituted into the payload alone: the capture trigger still reads the
+    intent it needs, and the operator's own attributes are untouched.
+
+    This is a partial mitigation. It closes response bodies, not the
+    `attributes.<key>:<term>` search predicate, which stays open until the stored
+    value is removed in stage two. It does not close A5 or T40.
+    """
+    from alerta.models.alert import Alert
+    current = Alert.serialize
+    if getattr(getattr(current, "fget", None), "_zabalack_filtered", False):
+        return
+    original = current.fget
+
+    def serialize(self: Any) -> Any:
+        payload = original(self)
+        attributes = payload.get("attributes") if isinstance(payload, dict) else None
+        if isinstance(attributes, dict) and INTENT_ATTRIBUTE in attributes:
+            payload["attributes"] = {key: value for key, value in attributes.items()
+                                     if key != INTENT_ATTRIBUTE}
+        return payload
+
+    serialize._zabalack_filtered = True  # type: ignore[attr-defined]
+    Alert.serialize = property(serialize)
+
+
 def configure_app(app: Any) -> Any:
     """Install before serving, after the upstream factory configures logging.
 
@@ -79,6 +119,7 @@ def configure_app(app: Any) -> Any:
                 response.set_data(app.json.dumps(_error_redact(body)))
         return response
 
+    exclude_intent_from_responses()
     app.extensions["zabalack_privacy_ready"] = True
     return app
 
