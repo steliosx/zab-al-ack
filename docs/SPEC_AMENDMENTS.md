@@ -234,10 +234,13 @@ repeats it. The baseline established the persistence as an evidentiary caveat
 and did not evaluate the confidentiality of the persisted content. This
 amendment does not dispute either statement; it adds the omitted consequence.
 
-**Invariant:** a reader authorised for a strict subset of an actor's customer
-scope must not be able to learn the remainder of that scope from any Alerta layer
-that reader can read. Actor authorisation scope is restricted-capture data and
-must not be readable in the projection layer.
+**Invariant:** a reader must not be able to learn, from any Alerta layer that
+reader can read, an actor's customer memberships outside the reader's own
+authorised scope. The reader's scope is not assumed to be a subset of the
+actor's: for an actor serving customers A and B read by a reader authorised for
+A and C, the disclosure of concern is B. Actor authorisation scope is
+restricted-capture data. The intent payload is excluded from reader-facing
+projections in its entirety, not filtered field by field.
 
 **Exposure is not confined to the success path.** `claim_verification` selects
 only `state IN ('captured_unverified','verifier_hold')`, and `project()` is
@@ -251,13 +254,21 @@ reachable only with a verified `action_id`:
 | `capture_bypass` (outbox `skipped`) | capture + outbox | never claimed |
 | Worker-side `reject_capture` | capture + outbox | no action row |
 | `verifier_hold`, key unavailable | capture + outbox | re-claimable, unbounded |
-| Worker stopped or backlogged | capture + outbox | eventually |
+| Worker stopped or backlogged | capture + outbox | only if processing resumes and verification succeeds |
 | `verify_complete` | full | yes |
 
-The first two leave a committed attribute with no record anywhere in `zabalack`:
-the capture trigger's predicate requires `NEW.status='ack'` and a marker in the
-head history entry, and the `process_action()` commit changes neither. Cleanup
-placed only in `project()` therefore cannot reach the majority of these paths.
+The first two rows leave a committed attribute with no capture record, for
+different reasons, and must be treated as distinct cases. In the first the
+request stops before the final history write: status never becomes `ack`, no
+marker is written, and the trigger predicate — which requires `NEW.status='ack'`
+and a marker in the head history entry — is never satisfied, so `capture_ack()`
+is not invoked at all. In the second the acknowledgement commits normally and
+the trigger does fire, but `capture_ack()` returns at its eligibility check
+because no enabled row exists in `zabalack.cohorts` for the
+customer/instance/trigger tuple, inserting neither a capture nor an outbox row.
+Cleanup placed only in `project()` therefore cannot reach the majority of these
+paths, and staging that never produced a capture needs its own retirement path
+rather than a variant of the post-capture one.
 
 **Correction, stage one (no schema change).** Exclude the intent key from
 reader-facing serialisation at the point of serialisation, covering the JSONP
@@ -269,8 +280,10 @@ capture behaviour are unchanged — the attribute is still written and the trigg
 still reads it. This is reader protection only. Stored copies remain in
 `public.alerts.attributes`, backups, replicas and any existing export.
 
-**Correction, stage two (forward migration).** Remove the stored attribute after
-capture across every lifecycle path above, not only projection, preserving
+**Correction, stage two (forward migration).** Cover both retirement shapes:
+removal of the stored attribute after capture, and guarded retirement of staging
+that never produced a capture. Apply this across every lifecycle path above, not
+only projection, preserving
 `zabalack.captures.intent` byte-for-byte as restricted signed evidence. The
 generation guard comparing `attrs#>>'{zabbix_ack_sync_intent,action_id}'` must be
 replaced by protection that survives intent removal: a cleanup path that removes
@@ -280,7 +293,10 @@ because no `actions` row exists before `verify_complete`. `zabbix_ack_sync_actio
 is not a drop-in carrier — it is written both at staging, holding the newest
 intent's identity, and by `project()`, holding its own possibly older action —
 so write ordering must be settled and the race tested before either cleanup path
-ships. Bounded backfill covers existing and abandoned attributes. Schema version
+ships. Bounded backfill covers existing and abandoned attributes **on live
+`public.alerts` rows only**. It does not reach historical backups, replicas or
+previously produced exports, which continue under G8's access and retention
+policy; backfill must not be described as erasing those copies. Schema version
 moves 3→4 with the two runtime literals that pin it, and the readiness manifest
 is re-sealed.
 
@@ -291,18 +307,35 @@ backups and replication, and any consumer reading `public.alerts.attributes`
 directly is unaffected by the response filter. Deployments that have already
 acknowledged alerts carry existing copies until backfill runs.
 
-**Tests:** required before either stage is accepted — a multi-customer engineer
-acknowledging an alert read back by a single-customer reader, asserted before
-worker processing, after worker processing, with the worker unavailable, and
-after a failed acknowledgement; the same read through the JSONP response mode;
-and the cleanup race between an older projection and a newer unverified intent.
+**Acceptance, stage one (T40).** Reader-facing confidentiality across lifecycle
+states and supported response modes. A multi-customer engineer acknowledges an
+alert; a reader authorised for only one of those customers reads it back and
+must not receive the intent — asserted before worker processing, after worker
+processing, with the worker unavailable, and after a failed acknowledgement —
+and the same read is repeated through the JSONP response mode. These are
+response-boundary assertions; they do not require PostgreSQL cleanup and do not
+depend on stage two.
+
+**Acceptance, stage two (T41).** Safe retirement of stored intents, executed
+against real PostgreSQL: removal after capture; guarded retirement of abandoned
+and uncaptured staging; preservation of `zabalack.captures.intent`,
+source-identity keys, unrelated custom attributes and the separately protected
+columns; bounded backfill; and the concurrency case in which cleanup removes a
+newer unverified intent while an older projection is in flight. Where those
+races overlap existing requirements, cross-reference T7 (replayed proof, stale
+attribute dictionary reintroduced) and T38 (projection under the deployed owner
+and caller roles).
+
+T38's preservation requirement is read as preserving source-identity keys,
+unrelated attributes and the protected columns. It does not require preserving
+the intent after a valid cleanup, which occurs inside the `zabbix_ack_sync*`
+namespace the projection function already owns.
+
 The existing dispatcher assertions that the intent is unchanged between staging
 and signing, and that a duplicate callback reuses one identity, are anti-tamper
-coverage for §5.1 and are retained unchanged; reader-response and
-post-cleanup-storage assertions are added separately, in tests that execute the
-trigger and the cleanup path rather than mocked storage.
+coverage for §5.1 and are retained unchanged in both stages.
 
-**Deployment gate:** G4 and G8. This is amendment evidence, not a new
-T-catalogue case. The finding remains open until stage two is complete and its
-tests pass on the installed environment; stage one may ship first and must be
-described as reader protection, not as closure.
+**Deployment gate:** G4 and G8. T40 may reach PASS once stage one ships; T41
+remains NOT_RUN until stage two executes on the installed environment, and A5
+remains open while it does. Stage one must be described as reader protection,
+never as closure.

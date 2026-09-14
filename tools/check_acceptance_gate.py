@@ -10,7 +10,9 @@ import csv
 import json
 from pathlib import Path
 
-REQUIRED = {f'T{i}' for i in range(1,40)} - {'T11'} | {'T11a','T11b'}
+# T40/T41 are the amendment A5 additions and are required for deployment
+# acceptance like every other catalogue item; A5 stays open until T41 passes.
+REQUIRED = {f'T{i}' for i in range(1,42)} - {'T11'} | {'T11a','T11b'}
 
 def main() -> int:
     parser=argparse.ArgumentParser(description=__doc__)
