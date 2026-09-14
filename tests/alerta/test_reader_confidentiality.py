@@ -7,11 +7,22 @@ ordinary alert responses, so in a `CUSTOMER_VIEWS` deployment a reader entitled
 to one customer's alert can read the operator's memberships in customers that
 reader has no authority over.
 
-These cases assert the response boundary only. They use explicitly mocked
-storage: no database trigger, no capture record and no cleanup worker runs here,
-so nothing in this module establishes T41 (safe retirement of stored intents) or
-any G1-G8 deployment evidence. Lifecycle states are simulated at the attribute
-level, which is what a reader-facing assertion needs.
+Scope split. This module covers single-alert response modes across the capture
+lifecycle, using explicitly mocked storage: no database trigger, no capture
+record and no cleanup worker runs here. The collection response and the
+authenticated search path need the real query builder and are covered against
+real PostgreSQL in `test_postgres_search_confidentiality.py`. Nothing in either
+module establishes T41 (safe retirement of stored intents) or any G1-G8
+deployment evidence.
+
+The reader and the engineer hold overlapping but non-identical scopes: the
+engineer serves lab-a and lab-b, the reader lab-a and lab-c. Neither contains
+the other, which is the general form of the invariant — the concern is lab-b.
+
+Every case also asserts that the read left the internals intact. A sanitiser
+that mutated the shared attribute dictionary would satisfy the confidentiality
+assertions while destroying the capture input, the operator's own attributes and
+the committed proof, so those are checked explicitly rather than assumed.
 """
 from collections import OrderedDict
 from copy import deepcopy
@@ -36,10 +47,15 @@ from zabalack.plugins import AckSigningPlugin, configure_app
 
 ALERT_ID = "81000000-0000-4000-8000-000000000002"
 INTENT_ATTRIBUTE = "zabbix_ack_sync_intent"
-# The acknowledging engineer serves three customers; the alert belongs to one.
-ENGINEER_CUSTOMERS = ["lab-a", "lab-b", "lab-c"]
-# Customers the reader has no authority over and must never learn from a read.
-UNDISCLOSED = ["lab-b", "lab-c"]
+ENGINEER_LOGIN = "multi-customer-engineer"
+ENGINEER_CUSTOMERS = ["lab-a", "lab-b"]
+READER_CUSTOMERS = ["lab-a", "lab-c"]
+UNDISCLOSED = "lab-b"
+# An operator-owned attribute unrelated to this integration. A read must not
+# disturb it, and neither must any future sanitiser.
+UNRELATED_ATTRIBUTE = "runbook_url"
+UNRELATED_VALUE = "https://runbook.invalid/search-lab"
+
 SOURCE = dict(source_system="zabbix", source_contract_version="1", zabbix_instance="lab-zbx",
               zabbix_event_id="42", zabbix_trigger_id="12", zabbix_cause_event_id=None,
               zabbix_recovery_event_id=None)
@@ -50,10 +66,11 @@ COHORT = dict(customer="lab-a", zabbix_instance="lab-zbx", zabbix_trigger_id="12
 
 def _token(app, username, customers, scope):
     now = datetime.now(timezone.utc)
-    return jwt.encode(dict(iss="synthetic", typ="Bearer", sub="synthetic-" + username, aud="synthetic-api",
-                           exp=now + timedelta(minutes=5), nbf=now - timedelta(seconds=1), iat=now,
-                           preferred_username=username, customers=customers, scope=scope),
-                      app.config["SECRET_KEY"], algorithm="HS256")
+    return "Bearer " + jwt.encode(
+        dict(iss="synthetic", typ="Bearer", sub="synthetic-" + username, aud="synthetic-api",
+             exp=now + timedelta(minutes=5), nbf=now - timedelta(seconds=1), iat=now,
+             preferred_username=username, customers=customers, scope=scope),
+        app.config["SECRET_KEY"], algorithm="HS256")
 
 
 @pytest.fixture
@@ -79,9 +96,11 @@ def reader_lab(monkeypatch):
     monkeypatch.setattr(plugins, "plugins", OrderedDict(signer=signer))
     monkeypatch.setattr(plugins, "rules", None)
     monkeypatch.setattr(plugins, "config", app.config)
+    attributes = deepcopy(SOURCE)
+    attributes[UNRELATED_ATTRIBUTE] = UNRELATED_VALUE
     with app.app_context():
         alert = Alert("synthetic-resource", "stable-family", id=ALERT_ID, customer="lab-a", severity="major",
-                      status="open", attributes=deepcopy(SOURCE),
+                      status="open", attributes=attributes,
                       history=[History(ALERT_ID, "stable-family", status="open")])
     memory = {"alert": alert, "history_writes": 0, "fail_save": False}
 
@@ -92,8 +111,8 @@ def reader_lab(monkeypatch):
 
     def update_attributes(self, attributes):
         # Reference Alerta commits this in process_action() before signing is
-        # attempted; the staged dictionary therefore reaches storage even when
-        # the acknowledgement itself later fails.
+        # attempted, so the staged dictionary reaches storage even when the
+        # acknowledgement itself later fails.
         self.attributes = deepcopy(attributes)
         return deepcopy(attributes)
 
@@ -115,77 +134,117 @@ def reader_lab(monkeypatch):
     monkeypatch.setattr(db, "update_timer", lambda timer: timer)
     monkeypatch.setattr(Timer, "from_db", classmethod(lambda cls, timer: timer))
 
-    engineer = {"Authorization": "Bearer " + _token(app, "multi-customer-engineer", ENGINEER_CUSTOMERS, "write:alerts")}
-    reader = {"Authorization": "Bearer " + _token(app, "single-customer-reader", ["lab-a"], "read:alerts")}
-    yield SimpleNamespace(client=app.test_client(), memory=memory, engineer=engineer, reader=reader)
+    yield SimpleNamespace(
+        client=app.test_client(), memory=memory,
+        engineer={"Authorization": _token(app, ENGINEER_LOGIN, ENGINEER_CUSTOMERS, "write:alerts")},
+        reader={"Authorization": _token(app, "single-customer-reader", READER_CUSTOMERS, "read:alerts")})
 
 
-def acknowledge(lab):
-    return lab.client.put(f"/alert/{ALERT_ID}/action", json={"action": "ack", "text": "synthetic note"},
-                          headers=lab.engineer)
+# --- lifecycle states -------------------------------------------------------
+
+def acknowledge(lab, expect=200):
+    response = lab.client.put(f"/alert/{ALERT_ID}/action", json={"action": "ack", "text": "synthetic note"},
+                              headers=lab.engineer)
+    assert response.status_code == expect, response.get_json()
+    return response
+
+
+def before_processing(lab):
+    acknowledge(lab)
+    assert lab.memory["alert"].attributes["zabbix_ack_sync"] == "pending"
+
+
+def after_processing(lab):
+    acknowledge(lab)
+    action_id = lab.memory["alert"].attributes["zabbix_ack_sync_action_id"]
+    # project() merges the reserved namespace with `||`; it removes nothing.
+    lab.memory["alert"].attributes.update({
+        "zabbix_ack_sync": "ok", "zabbix_ack_sync_reason": "acknowledged",
+        "zabbix_ack_sync_action_id": action_id, "zabbix_ack_sync_generation": 1})
+
+
+def worker_unavailable(lab):
+    acknowledge(lab)
+    # No verification and no projection: the state a stopped or backlogged
+    # worker leaves behind, for as long as it stays stopped.
+    assert lab.memory["alert"].attributes["zabbix_ack_sync_reason"] == "awaiting_capture"
+
+
+def failed_acknowledgement(lab):
+    lab.memory["fail_save"] = True
+    acknowledge(lab, expect=500)
+    # The acknowledgement did not commit, but process_action() already committed
+    # the staged attributes, so the intent outlives the failed request.
+    assert lab.memory["alert"].status == "open"
+    assert lab.memory["history_writes"] == 0
+
+
+LIFECYCLE = {"before_processing": before_processing, "after_processing": after_processing,
+             "worker_unavailable": worker_unavailable, "failed_acknowledgement": failed_acknowledgement}
+
+
+# --- assertions -------------------------------------------------------------
+
+def read_alert(lab, mode):
+    suffix = "?callback=synthetic_cb" if mode == "jsonp" else ""
+    response = lab.client.get(f"/alert/{ALERT_ID}{suffix}", headers=lab.reader)
+    assert response.status_code == 200
+    if mode == "jsonp":
+        # `jsonp` wraps the body as application/javascript inside the view
+        # decorator, before after_request runs, so an is_json-keyed filter
+        # never engages for this response mode.
+        assert response.mimetype == "application/javascript"
+        assert response.get_data(as_text=True).startswith("synthetic_cb(")
+    return response
 
 
 def assert_reader_learns_nothing(response):
-    """The reserved intent key and every undisclosed customer stay out of the body."""
     body = response.get_data(as_text=True)
     assert INTENT_ATTRIBUTE not in body, "reader response carries the staged intent"
-    for customer in UNDISCLOSED:
-        assert customer not in body, f"reader response discloses membership in {customer}"
+    assert UNDISCLOSED not in body, f"reader response discloses membership in {UNDISCLOSED}"
+    assert ENGINEER_LOGIN not in body, "reader response discloses the acknowledging identity"
 
 
-def test_T40_reader_does_not_receive_intent_before_worker_processing(reader_lab):
-    assert acknowledge(reader_lab).status_code == 200
-    assert reader_lab.memory["alert"].attributes["zabbix_ack_sync"] == "pending"
-    response = reader_lab.client.get(f"/alert/{ALERT_ID}", headers=reader_lab.reader)
-    assert response.status_code == 200
-    assert response.get_json()["alert"]["attributes"].get(INTENT_ATTRIBUTE) is None
+def assert_internals_preserved(lab, state):
+    """A read must not damage capture input, operator attributes or the proof."""
+    attributes = lab.memory["alert"].attributes
+    intent = attributes.get(INTENT_ATTRIBUTE)
+    assert intent is not None, "the read removed the stored intent the trigger needs"
+    assert intent["actor"]["login"] == ENGINEER_LOGIN
+    assert intent["actor"]["customers"] == sorted(ENGINEER_CUSTOMERS)
+    assert attributes[UNRELATED_ATTRIBUTE] == UNRELATED_VALUE, "the read disturbed an unrelated attribute"
+    assert attributes["zabbix_instance"] == SOURCE["zabbix_instance"], "the read disturbed source identity"
+    if state != "failed_acknowledgement":
+        assert "[zabalack:" in lab.memory["alert"].history[0].text, "the read disturbed the committed proof"
+
+
+@pytest.mark.parametrize("state", sorted(LIFECYCLE))
+@pytest.mark.parametrize("mode", ["json", "jsonp"])
+def test_T40_reader_does_not_receive_intent(reader_lab, state, mode):
+    LIFECYCLE[state](reader_lab)
+    response = read_alert(reader_lab, mode)
+    if mode == "json":
+        assert response.get_json()["alert"]["attributes"].get(INTENT_ATTRIBUTE) is None
     assert_reader_learns_nothing(response)
+    assert_internals_preserved(reader_lab, state)
 
 
-def test_T40_reader_does_not_receive_intent_after_worker_processing(reader_lab):
-    assert acknowledge(reader_lab).status_code == 200
-    action_id = reader_lab.memory["alert"].attributes["zabbix_ack_sync_action_id"]
-    # Projection merges the reserved namespace with `||`; it removes nothing.
-    reader_lab.memory["alert"].attributes.update({
-        "zabbix_ack_sync": "ok", "zabbix_ack_sync_reason": "acknowledged",
-        "zabbix_ack_sync_action_id": action_id, "zabbix_ack_sync_generation": 1})
-    response = reader_lab.client.get(f"/alert/{ALERT_ID}", headers=reader_lab.reader)
+@pytest.mark.parametrize("mode", ["json", "jsonp"])
+def test_T40_acknowledging_engineer_read_also_excludes_the_intent(reader_lab, mode):
+    """The intent is restricted staging data, not a projection for any reader."""
+    before_processing(reader_lab)
+    suffix = "?callback=synthetic_cb" if mode == "jsonp" else ""
+    response = reader_lab.client.get(f"/alert/{ALERT_ID}{suffix}", headers=reader_lab.engineer)
     assert response.status_code == 200
-    assert response.get_json()["alert"]["attributes"]["zabbix_ack_sync"] == "ok"
-    assert response.get_json()["alert"]["attributes"].get(INTENT_ATTRIBUTE) is None
-    assert_reader_learns_nothing(response)
+    assert INTENT_ATTRIBUTE not in response.get_data(as_text=True)
+    assert_internals_preserved(reader_lab, "before_processing")
 
 
-def test_T40_reader_does_not_receive_intent_when_worker_unavailable(reader_lab):
-    assert acknowledge(reader_lab).status_code == 200
-    # No verification, no projection: the alert stays at the staged pending state
-    # indefinitely, which is the state a stopped or backlogged worker leaves.
-    assert reader_lab.memory["alert"].attributes["zabbix_ack_sync_reason"] == "awaiting_capture"
-    response = reader_lab.client.get(f"/alert/{ALERT_ID}", headers=reader_lab.reader)
-    assert response.status_code == 200
-    assert response.get_json()["alert"]["attributes"].get(INTENT_ATTRIBUTE) is None
-    assert_reader_learns_nothing(response)
-
-
-def test_T40_reader_does_not_receive_intent_after_failed_acknowledgement(reader_lab):
-    reader_lab.memory["fail_save"] = True
-    assert acknowledge(reader_lab).status_code == 500
-    # The acknowledgement did not commit, but process_action() already committed
-    # the staged attributes, so the intent outlives the failed request.
-    assert reader_lab.memory["alert"].status == "open"
-    assert reader_lab.memory["history_writes"] == 0
-    response = reader_lab.client.get(f"/alert/{ALERT_ID}", headers=reader_lab.reader)
-    assert response.status_code == 200
-    assert response.get_json()["alert"]["attributes"].get(INTENT_ATTRIBUTE) is None
-    assert_reader_learns_nothing(response)
-
-
-def test_T40_jsonp_response_mode_does_not_disclose_intent(reader_lab):
-    assert acknowledge(reader_lab).status_code == 200
-    # `jsonp` wraps the body as application/javascript inside the view decorator,
-    # before after_request runs, so an is_json-keyed filter never engages.
-    response = reader_lab.client.get(f"/alert/{ALERT_ID}?callback=synthetic_cb", headers=reader_lab.reader)
-    assert response.status_code == 200
-    assert response.mimetype == "application/javascript"
-    assert response.get_data(as_text=True).startswith("synthetic_cb(")
-    assert_reader_learns_nothing(response)
+def test_T40_repeated_reads_do_not_degrade_capture_input(reader_lab):
+    """Serving many readers must not consume or mutate the stored intent."""
+    before_processing(reader_lab)
+    first = deepcopy(reader_lab.memory["alert"].attributes[INTENT_ATTRIBUTE])
+    for _ in range(3):
+        assert_reader_learns_nothing(read_alert(reader_lab, "json"))
+        assert_reader_learns_nothing(read_alert(reader_lab, "jsonp"))
+    assert reader_lab.memory["alert"].attributes[INTENT_ATTRIBUTE] == first

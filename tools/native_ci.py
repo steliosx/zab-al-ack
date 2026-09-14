@@ -20,7 +20,8 @@ PHASES = {
                  'tests/postgres/test_late_response.py', 'tests/postgres/test_stateful_ledger.py', 'tests/postgres/test_settled_expiry.py'],
     'delivery_faults': ['tests/postgres/test_native_delivery_faults.py'],
     'worker': ['tests/postgres/test_worker_path.py'],
-    'alerta': ['tests/alerta/test_postgres_http.py', 'tests/alerta/test_health_postgres.py', 'tests/alerta/test_docs_walkthrough.py'],
+    'alerta': ['tests/alerta/test_postgres_http.py', 'tests/alerta/test_health_postgres.py', 'tests/alerta/test_docs_walkthrough.py',
+               'tests/alerta/test_postgres_search_confidentiality.py'],
     'performance': ['tests/performance/test_reference_batches.py'],
 }
 

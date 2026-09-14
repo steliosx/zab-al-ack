@@ -204,6 +204,28 @@ Alerta returns `attributes` in ordinary alert responses. `alerta/utils/response.
 alone — and that wrapping happens in the view decorator, before `after_request`.
 A response filter keyed on `response.is_json` does not engage for those requests.
 
+Responses are not the only reader-facing surface.
+`alerta/database/backends/postgres/queryparser.py` compiles an attribute term
+`attributes.<key>:<term>` into `"attributes"::jsonb ->>%(key)s ILIKE %(term)s`
+with the term wrapped in `%…%`. `->>` on a JSON object returns that object's
+whole serialised text, so the comparison matches a substring occurring anywhere
+inside the intent, including an element of `actor.customers`. The authenticated
+`/alerts/count` and `/alerts` endpoints (`alerta/views/alerts.py`, both
+`@permission(Scope.read_alerts)`) scope *which alerts* are searched to the
+reader's own customers but place no constraint on the attribute contents the
+predicate inspects. A reader entitled to an alert can therefore use it as an
+oracle: submit a candidate string, read the returned count, and learn whether it
+occurs in the intent — without the intent appearing in any response body. The
+default search field is `text`, so this requires the explicit attribute syntax
+rather than a bare term. Reproduced against real PostgreSQL in
+`tests/alerta/test_postgres_search_confidentiality.py`, where a probe for a
+string in no intent returns zero and probes for the undisclosed customer and for
+the acknowledging login both match.
+
+**A response filter therefore cannot establish this invariant on its own.** It
+closes the body, not the predicate. Only removing the value from the queryable
+column closes both.
+
 **Evidence (this implementation):** `src/zabalack/plugins.py`, `_human_actor()`,
 returns `{"login", "customers": sorted(set(g.customers)), "admin", "auth_type"}`.
 `customers` is the operator's complete authorised customer scope, bounded at 100
@@ -277,8 +299,11 @@ the single reserved key: the A1 evidence scrubber must not be reused, because
 `_contains_evidence()` also matches `[zabalack:`, the committed history proof that
 A1 deliberately retains in successful history responses. Signing, staging and
 capture behaviour are unchanged — the attribute is still written and the trigger
-still reads it. This is reader protection only. Stored copies remain in
-`public.alerts.attributes`, backups, replicas and any existing export.
+still reads it. This is reader protection only, and partial: it closes response
+bodies and leaves the search predicate open. Stored copies remain in
+`public.alerts.attributes`, backups, replicas and any existing export, and stay
+reachable through `attributes.<key>:<term>` queries until stage two removes them.
+Stage one must never be described as closing A5 or T40.
 
 **Correction, stage two (forward migration).** Cover both retirement shapes:
 removal of the stored attribute after capture, and guarded retirement of staging
@@ -307,14 +332,22 @@ backups and replication, and any consumer reading `public.alerts.attributes`
 directly is unaffected by the response filter. Deployments that have already
 acknowledged alerts carry existing copies until backfill runs.
 
-**Acceptance, stage one (T40).** Reader-facing confidentiality across lifecycle
-states and supported response modes. A multi-customer engineer acknowledges an
-alert; a reader authorised for only one of those customers reads it back and
-must not receive the intent — asserted before worker processing, after worker
-processing, with the worker unavailable, and after a failed acknowledgement —
-and the same read is repeated through the JSONP response mode. These are
-response-boundary assertions; they do not require PostgreSQL cleanup and do not
-depend on stage two.
+**Acceptance (T40).** Reader-facing confidentiality across lifecycle states,
+supported response modes and the authenticated search path. An engineer serving
+lab-a and lab-b acknowledges a lab-a alert; a reader serving lab-a and lab-c —
+neither scope containing the other — must learn nothing about lab-b. Asserted
+before worker processing, after worker processing, with the worker unavailable
+and after a failed acknowledgement; each repeated in both the JSON and JSONP
+response modes; across the single-alert and collection responses; and through
+`attributes.<key>:<term>` probes against `/alerts/count` and `/alerts`, with a
+probe for an absent string as the negative control. Every case also asserts the
+read left the capture input, unrelated operator attributes, source identity and
+the committed history proof intact, so a sanitiser that mutated the shared
+attribute dictionary cannot satisfy it.
+
+**T40 does not pass on stage one.** The response-mode and collection cases go
+green when the filter ships; the search cases stay red until the stored value is
+gone. T40 reaches PASS only after stage two.
 
 **Acceptance, stage two (T41).** Safe retirement of stored intents, executed
 against real PostgreSQL: removal after capture; guarded retirement of abandoned
@@ -335,7 +368,7 @@ The existing dispatcher assertions that the intent is unchanged between staging
 and signing, and that a duplicate callback reuses one identity, are anti-tamper
 coverage for §5.1 and are retained unchanged in both stages.
 
-**Deployment gate:** G4 and G8. T40 may reach PASS once stage one ships; T41
-remains NOT_RUN until stage two executes on the installed environment, and A5
-remains open while it does. Stage one must be described as reader protection,
-never as closure.
+**Deployment gate:** G4 and G8. Both T40 and T41 reach PASS only after stage two
+executes on the installed environment, because the search path and the stored
+value close together. A5 remains open until then. Stage one is a partial
+mitigation of the response boundary and must be described as such.

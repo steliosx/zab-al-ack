@@ -1,6 +1,6 @@
 # Environment acceptance procedures
 
-These procedures are executable checklists for the deployment-specific portions of T1–T39. They are **MANUAL_GATE_PENDING** until an authorised engineer records commands, identities, timestamps and observations against the installed environment. Local reference tests complement them; no local or mocked result closes G1–G8. This implementation request authorises an isolated lab only. Obtain separate authorisation before any production mutation, restart, source acknowledgement or notification test.
+These procedures are executable checklists for the deployment-specific portions of T1–T41. They are **MANUAL_GATE_PENDING** until an authorised engineer records commands, identities, timestamps and observations against the installed environment. Local reference tests complement them; no local or mocked result closes G1–G8. This implementation request authorises an isolated lab only. Obtain separate authorisation before any production mutation, restart, source acknowledgement or notification test.
 
 For every run, create an evidence record containing test ID, environment, logical deployment/instance IDs, reference/deployed versions, non-secret role and operator references, approved change ID, exact command or UI sequence, start/end time, exit status, expected/observed outcomes, redacted attachments and final status. Allowed statuses are `PASS`, `FAIL`, `NOT_RUN`, `BLOCKED_ENVIRONMENT`, `MANUAL_GATE_PENDING`. A partially exercised catalogue item must identify the untested clause.
 
@@ -27,6 +27,37 @@ Prerequisites: authorised disposable two-worker/two-site or equivalent fault-inj
 ## T34
 
 Prerequisites: real PgBouncer transaction pool with separate probe identity, explicit routing inventory and real PostgreSQL. Use the plugin's caller-side sequence of separate `BEGIN READ ONLY`, `SET LOCAL statement_timeout='500ms'`, `SELECT zabalack.capture_health()` and `COMMIT` commands. In the isolated lab, make the selected health query wait on a lock/sleep beyond its server deadline. Measure the server cancellation boundary separately from total connection/acquisition/transport time. Assert the caller rolls back/discards after error, invalidates its successful cache, rejects an eligible acknowledgement with `AlertaException`, and does not use a stale success. Reuse the same client after the obstruction ends; assert no aborted transaction or leaked read-only/timeout setting. Confirm process-count/pool budgets and that forced database user configuration does not collapse the probe into the application role. Direct PostgreSQL execution alone cannot pass the PgBouncer transport clause.
+
+## T40
+
+Prerequisites: installed multi-tenant Alerta with `AUTH_REQUIRED` and `CUSTOMER_VIEWS` enabled, an approved
+engineer account authorised for at least two customers, and a separate reader account whose scope overlaps the
+engineer's without containing it. Acknowledge one eligible alert belonging to a customer both accounts share.
+As the reader, retrieve that alert and the collection containing it, in both the default and the JSONP response
+modes, and confirm no response carries the intent attribute, the engineer's login or any customer outside the
+reader's own scope. Repeat the retrievals before the worker verifies the capture, after projection completes,
+with the worker stopped, and after an acknowledgement that failed before its history write. Then exercise the
+search path: submit `attributes.zabbix_ack_sync_intent:<term>` probes to `/alerts/count` and `/alerts` as the
+reader, using a term present only in the withheld scope and a control term present in no intent, and confirm
+both return zero. A zero from the control alone proves nothing. Record the exact account scopes, the alert
+identity, every endpoint and response mode exercised, and the observed counts. Confirm in the same session that
+capture still succeeds, the operator's unrelated attributes and source-identity keys are unchanged, and the
+committed history proof is intact. Reader protection applied only to response bodies does not pass T40.
+
+## T41
+
+Prerequisites: the approved installed database under the exact deployment principals, and authorisation to
+observe stored rows. For each lifecycle path recorded in amendment A5 — verified capture, capture-side evidence
+failure, capture bypass, worker-side rejection, verifier hold, stopped worker, a missing database cohort, and an
+acknowledgement abandoned before its history write — establish the state on an eligible alert, then confirm the
+stored intent is retired from `public.alerts.attributes` and that `zabalack.captures.intent` is preserved
+byte-for-byte alongside source-identity keys, unrelated operator attributes and the separately protected
+columns. Prove the generation protection under concurrency: retire a newer unverified intent while an older
+projection is in flight, and confirm the older projection does not overwrite the newer state. Run the bounded
+backfill against live rows and record its scope, its bound and its completion; historical backups, replicas and
+previously produced exports are out of its reach and remain governed by G8. Record the schema version before and
+after, the re-seal of the readiness manifest, and the principal that performed each step. A passing disposable
+lab does not close this item.
 
 ## Additional deployed clauses
 
