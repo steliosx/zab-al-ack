@@ -1,0 +1,7 @@
+{
+  "inventory_scope": "Exact installed reference build/test packages and pinned Node lab dependencies",
+  "component_count": 61,
+  "metadata_review_required": [],
+  "licence_obligations_review": "PENDING_PUBLISHER_REVIEW",
+  "vulnerability_clearance": "NOT_ESTABLISHED_BY_SBOM"
+}

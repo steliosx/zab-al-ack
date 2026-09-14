@@ -1,0 +1,84 @@
+{
+  "status": "PASS",
+  "results": [
+    {
+      "test": "upstream_schema_and_migrations",
+      "status": "PASS",
+      "scope": "Actual Alerta composite history[] and migrations as non-superuser SET ROLE principals, separate trigger owner"
+    },
+    {
+      "test": "tests/postgres/assertions.sql",
+      "sha256": "2ac9cd194edee23ed30b632b1fe0c24f46125d58ead631bede2fa46684e0bd5a",
+      "status": "PASS",
+      "scope": "SQL assertions only; HMAC verifier/HTTP source effects separately tested"
+    },
+    {
+      "test": "tests/postgres/assertions_extended.sql",
+      "sha256": "b378b5a72e00388736445c5323aeedfa15870aba2a239625380c1e437b495556",
+      "status": "PASS",
+      "scope": "SQL assertions only; HMAC verifier/HTTP source effects separately tested"
+    },
+    {
+      "test": "tests/postgres/assertions_boundaries.sql",
+      "sha256": "0b08d187d7c182dd1f665b5408410360923ddb1166eb90affbe1c4e512eef076",
+      "status": "PASS",
+      "scope": "SQL assertions only; HMAC verifier/HTTP source effects separately tested"
+    },
+    {
+      "test": "tests/postgres/assertions_settlement.sql",
+      "sha256": "358e0025a29d0662272165e743674438f7c118e2ed692906e779ce6ccc0b2fc8",
+      "status": "PASS",
+      "scope": "SQL assertions only; HMAC verifier/HTTP source effects separately tested"
+    },
+    {
+      "test": "tests/postgres/assertions_generation.sql",
+      "sha256": "9a5ef0001e105a017a165c4f029a9167258565ada44559ef6237c40f38b98992",
+      "status": "PASS",
+      "scope": "SQL assertions only; HMAC verifier/HTTP source effects separately tested"
+    },
+    {
+      "test": "tests/postgres/assertions_expiry.sql",
+      "sha256": "c782aaefecc1a8a42659eb5c722989a0d4a6e69cdf9e3372a4168f8d0773ce3a",
+      "status": "PASS",
+      "scope": "SQL assertions only; HMAC verifier/HTTP source effects separately tested"
+    },
+    {
+      "test": "tests/postgres/assertions_late_response.sql",
+      "sha256": "7f97ad74776ef809d525c3a78e452d9f74c8f91880cf95302cc3202c9fd56f9b",
+      "status": "PASS",
+      "scope": "SQL assertions only; HMAC verifier/HTTP source effects separately tested"
+    }
+  ],
+  "code_digests": {
+    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+  },
+  "started_at_utc": "2026-09-13T23:11:15.762732+00:00",
+  "deployment_gates": "MANUAL_GATE_PENDING",
+  "evidence_layer": "PostgreSQL18 WASM single-backend SQL execution",
+  "native_postgresql_status": "BLOCKED_ENVIRONMENT",
+  "limitations": [
+    "Not native multi-backend concurrency",
+    "No PostgreSQL role login authentication",
+    "No PgBouncer",
+    "No TLS/cancellation deadline proof",
+    "No site-A/site-B failover",
+    "No Zabbix server",
+    "No production gates satisfied"
+  ],
+  "version": "PostgreSQL 18.3 (PGlite 0.5.8) on wasm32-unknown-emscripten, compiled by emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 3.1.74 (1092ec30a3fb1d46b1782ff1b4db5094d3d06ae5), 32-bit",
+  "migrations": [
+    "001_core.sql",
+    "002_capture.sql",
+    "003_worker.sql",
+    "004_controls.sql",
+    "005_readiness.sql",
+    "006_late_response_fencing.sql",
+    "007_settled_expiry.sql"
+  ],
+  "server_version_num": "180003",
+  "completed_at_utc": "2026-09-13T23:11:19.267Z",
+  "exit_code": 0,
+  "tree_unchanged": true,
+  "finished_at_utc": "2026-09-13T23:11:19.399167+00:00"
+}

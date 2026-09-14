@@ -1,0 +1,33 @@
+{
+  "status": "PASS",
+  "checks": [
+    {
+      "name": "ruff",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "mypy",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "pip-check",
+      "exit_code": 0,
+      "status": "PASS"
+    }
+  ],
+  "code_digests": {
+    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+  },
+  "started_at_utc": "2026-09-13T23:10:46.533654+00:00",
+  "scope": "Static checks and installed dependency consistency; no service or deployment evidence",
+  "tools": {
+    "ruff": "0.16.7",
+    "mypy": "2.3.1",
+    "hypothesis": "6.168.0"
+  },
+  "tree_unchanged": true,
+  "finished_at_utc": "2026-09-13T23:10:47.535206+00:00"
+}

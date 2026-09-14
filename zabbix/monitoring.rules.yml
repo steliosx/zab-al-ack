@@ -1,0 +1,22 @@
+# Reference Prometheus expressions for the existing monitoring system.
+# No scrape target, notification receiver, or scheduled job is enabled here.
+# Adapt exported metric names to the actual worker metrics before installation.
+groups:
+  - name: zabalack_reference
+    rules:
+      - alert: AlertaZabbixAckPending
+        expr: max by (instance) (zabalack_oldest_pending_seconds) > 120
+        for: 1m
+        labels: {severity: warning, failure_class: pending_age}
+        annotations: {summary: "Zabbix acknowledgement delivery pending"}
+      - alert: AlertaZabbixAckPendingCritical
+        expr: max by (instance) (zabalack_oldest_pending_seconds) > 300
+        labels: {severity: critical, failure_class: pending_age}
+        annotations: {summary: "Zabbix acknowledgement queue requires an owner"}
+      - alert: AlertaZabbixAckCredentialOrPermission
+        expr: max by (instance, failure_class) (zabalack_instance_failure{failure_class=~"credential|permission|capture_health|verifier_key"}) > 0
+        labels: {severity: critical}
+        annotations: {summary: "Acknowledgement integration blocked for this instance"}
+# Notification grouping: instance + failure_class. Do not group by action,
+# capture, alert, event, actor or token; keep a single incident per failure.
+# Backup owner at 10 minutes; duty-manager escalation remains G7 configuration.

@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # Covers the pyproject.toml runtime pins only. requirements.lock,
+  # requirements-runtime.lock and requirements-scanner.lock are not names
+  # Dependabot's pip support reads; refresh them by hand (CONTRIBUTING.md) and
+  # rely on `pip check` in ci.yml to catch pyproject/lock drift.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: npm
+    directory: /lab
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3

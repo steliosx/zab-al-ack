@@ -1,0 +1,7 @@
+all:
+  children:
+    zabalack_reviewed_targets:
+      hosts: {}
+    zabalack_reviewed_database:
+      hosts: {}
+# Copy into a private reviewed inventory. No production address is supplied.

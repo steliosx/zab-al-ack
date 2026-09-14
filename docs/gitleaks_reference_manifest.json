@@ -1,0 +1,31 @@
+{
+  "repository": "gitleaks/gitleaks",
+  "tag": "v8.24.3",
+  "commit": "107a41827bb6698dbbff756b2300537774a1d84c",
+  "module": "github.com/zricethezav/gitleaks/v8",
+  "cli_sources_inspected": [
+    "cmd/root.go",
+    "cmd/git.go",
+    "cmd/directory.go",
+    "go.mod",
+    "report/json.go",
+    "cmd/version.go",
+    ".goreleaser.yml"
+  ],
+  "flags": [
+    "dir PATH",
+    "git PATH",
+    "--redact",
+    "--no-banner",
+    "--report-format json",
+    "--report-path FILE",
+    "--log-opts=--all"
+  ],
+  "execution": "NOT_RUN. Attempted for a16: the pinned commit clones from github.com and a Go 1.24.7 toolchain is present, but the build needs modules from proxy.golang.org, golang.org/x, gopkg.in and dario.cat, which are outside this environment's egress allowlist. Substituting mirrors would mean the binary is no longer the pinned upstream build, so it was not done. The independent a15 review ran its own Gitleaks 8.24.3 and reports zero findings; that is the review's evidence, not this candidate's.",
+  "source_url": "https://github.com/gitleaks/gitleaks/tree/107a41827bb6698dbbff756b2300537774a1d84c",
+  "empty_json_report": "A nil findings slice encodes as JSON null; absence of a report is not a pass",
+  "build_version_symbol": "github.com/zricethezav/gitleaks/v8/cmd.Version",
+  "build_version_flag": "-X=github.com/zricethezav/gitleaks/v8/cmd.Version=8.24.3",
+  "version_source_url": "https://github.com/gitleaks/gitleaks/blob/107a41827bb6698dbbff756b2300537774a1d84c/cmd/version.go",
+  "release_build_source_url": "https://github.com/gitleaks/gitleaks/blob/107a41827bb6698dbbff756b2300537774a1d84c/.goreleaser.yml"
+}

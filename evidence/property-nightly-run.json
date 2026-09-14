@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "profile": "nightly",
+  "seed": 20260912,
+  "code_digests": {
+    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+  },
+  "started_at_utc": "2026-09-13T23:12:27.110415+00:00",
+  "scope": "Additional overlapping generated tests; PostgreSQL WASM, not native concurrency or permissions",
+  "exit_code": 0,
+  "junit": "evidence/property-nightly.xml",
+  "counts": {
+    "passed": 46,
+    "skipped": 0,
+    "failed": 0
+  },
+  "tree_unchanged": true,
+  "finished_at_utc": "2026-09-13T23:15:01.103291+00:00"
+}

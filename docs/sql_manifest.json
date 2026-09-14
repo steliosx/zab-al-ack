@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "package": "zabalack",
+  "package_version": "0.1.0a16",
+  "files": [
+    {
+      "path": "sql/install/00_roles.sql",
+      "sha256": "0ad010ce151ec74457ad6e3e206c3cf2c21188bb974ced2506ae957344d62856"
+    },
+    {
+      "path": "sql/install/10_trigger.sql",
+      "sha256": "36b759636c34e336d6c5564aa4f5a8fe3329b3a958b9a5c27e58a10f8a29563b"
+    },
+    {
+      "path": "sql/install/11_enable_trigger.sql",
+      "sha256": "c6210d8810999e22e16b1972d1c0857b28249b6341145f0bab924f098588e32b"
+    },
+    {
+      "path": "sql/migrate.py",
+      "sha256": "d2585da0b62a34b6237700ebc261aa3b27117bfccead150e81097ee90c4a42ce"
+    },
+    {
+      "path": "sql/migrations/001_core.sql",
+      "sha256": "6bb752d0ee1adcf7dc2a595bd1e95be008da1ef2068810ab2a8ee2af3b44b286"
+    },
+    {
+      "path": "sql/migrations/002_capture.sql",
+      "sha256": "2a1640ceb0d8ba30e25a22f9321b6a0b1d963c1c57725997211be1692d4ae437"
+    },
+    {
+      "path": "sql/migrations/003_worker.sql",
+      "sha256": "b30b50fc24810fcc9f4bfdfe4537eec9875963f5a99f6c5a02ff7019bdb8a8f2"
+    },
+    {
+      "path": "sql/migrations/004_controls.sql",
+      "sha256": "58e06b8685406d6f647f43d504a7acd5c21b2d4a41d98c606d61f978cf24f1a0"
+    },
+    {
+      "path": "sql/migrations/005_readiness.sql",
+      "sha256": "2e07b4c1a9822fd419a7a0231f48ccde7245da8d3836a5add2612553fb5764f9"
+    },
+    {
+      "path": "sql/migrations/006_late_response_fencing.sql",
+      "sha256": "b7dcb6f7df5a4a3eb7dccd69792820cec606737c0b7f2ddaaf38ea4f68b14b65"
+    },
+    {
+      "path": "sql/migrations/007_settled_expiry.sql",
+      "sha256": "bacfd9f7d0612f2b52869b8054aad2a39ddd836110bb47a93a0d59c1efab84a0"
+    },
+    {
+      "path": "sql/rollback/disable_trigger.sql",
+      "sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
+    },
+    {
+      "path": "sql/rollback/hold.sql",
+      "sha256": "5bfbb4ecbb5f14f0fff45e40f9d60027dd7b5ea760849d52e1a2a6b0f0f1b7c8"
+    }
+  ],
+  "database_schema_version": 3
+}

@@ -1,0 +1,20 @@
+{
+  "enabled": false,
+  "external_writes_enabled": false,
+  "capture_bypass": false,
+  "config_revision": "UNCONFIGURED",
+  "policy_revision": "1",
+  "deployment_id": "REQUIRED_FOR_DEPLOYMENT",
+  "database_name": "REQUIRED_FOR_DEPLOYMENT",
+  "probe_dsn_file": "",
+  "worker_dsn_file": "",
+  "operator_dsn_file": "",
+  "signing_kid": "",
+  "signing_keys": {},
+  "cohorts": [],
+  "ingestion_mappings": {},
+  "endpoint_registry": {},
+  "admin_exceptions": [],
+  "approved_versions": ["7.0.0"],
+  "lab_mode": false
+}

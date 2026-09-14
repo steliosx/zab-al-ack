@@ -1,0 +1,28 @@
+[Unit]
+Description=Read-only-source Alerta acknowledgement reconciliation
+After=network-online.target
+ConditionPathExists=/etc/zabalack/reconcile.json
+
+[Service]
+Type=oneshot
+User=zabalack
+Group=zabalack
+WorkingDirectory=/var/lib/zabalack
+ExecStart=/opt/zabalack/venv/bin/zabalack --config /etc/zabalack/reconcile.json reconcile --read-only
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+ReadOnlyPaths=/etc/zabalack
+ReadWritePaths=/var/lib/zabalack
+# Read-only refers to Zabbix effects. The worker DB role records findings and
+# repairs projections. For a fully read-only DB view use status/doctor instead.
+# No timer or boot enablement is installed by the example playbooks.

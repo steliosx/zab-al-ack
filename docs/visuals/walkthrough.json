@@ -1,0 +1,66 @@
+{
+  "version": "0.1.0a12",
+  "recorded_at_utc": "2026-09-12T12:25:23.381880+00:00",
+  "code_digests": {
+    "source": "e5b4a30d32dc49803e290ccc04ec1269cc7e815345988f9682c95036c318ca70",
+    "harness": "9387ec8958d6d0064ead3c362ea559c26f955aca308b541f880ad91e8f3c8824"
+  },
+  "status": "PASS",
+  "scope": "Documentation transcript; not service acceptance",
+  "observed": {
+    "alert_id": "ba0eb500-eb92-4c7e-b154-81ca3f8f479d",
+    "request": {
+      "action": "ack",
+      "text": "Investigating this synthetic lab alert"
+    },
+    "http_status": 200,
+    "alert_status": "ack",
+    "capture_count": 1,
+    "repeat_http_status": 409,
+    "ledger": {
+      "state": "ok",
+      "completion_evidence": "write_response",
+      "attempts": 1
+    },
+    "projection": "ok",
+    "mock_pre_read_event_ids": [
+      "910011"
+    ],
+    "mock_acknowledged_event_ids": [
+      "910011"
+    ]
+  },
+  "pages": [
+    {
+      "figure": "01-config.svg",
+      "figure_sha256": "f5d09c6ae8f91e5eee7cfe7b7e6f01a247b4f73d146f6f1ba96c2067c77ecf34",
+      "file": "01-config.html",
+      "sha256": "b94ef6b8ada949085642931b4396c664462fba2e2a4dc8a49d3b32fad77e9a88",
+      "command": "$ zabalack --config config/production.example.json config-check",
+      "selected_output": "{\n  \"valid\": true,\n  \"configuration\": {\n    \"enabled\": false,\n    \"external_writes_enabled\": false,\n    \"cohort_count\": 0,\n    \"instance_count\": 0\n  },\n  \"deployment_gates\": \"NOT_VERIFIED\"\n}",
+      "scope": "Actual CLI output; selected redacted fields. No database or Zabbix connection. Valid configuration does not establish deployment readiness."
+    },
+    {
+      "figure": "02-action.svg",
+      "figure_sha256": "5069493b83cfa6e3440acda5cdd82f94940df9050ab3e080f6850e72bda2b2f8",
+      "file": "02-action.html",
+      "sha256": "8f76c7a096637586cf719076828d605178de35d385a22306e6a57336de91f99d",
+      "command": "PUT /alert/ba0eb500-eb92-4c7e-b154-81ca3f8f479d/action\n{\n  \"action\": \"ack\",\n  \"text\": \"Investigating this synthetic lab alert\"\n}",
+      "selected_output": "HTTP 200\nPersisted alert status: ack\nCapture records for this alert: 1\n\nRepeat Ack: HTTP 409",
+      "scope": "Real Alerta 9.1.0 + PostgreSQL 18.3 WASM; Flask test client, synthetic JWT, injected probe, SET ROLE and mock Zabbix. G1\u2013G8 remain open."
+    },
+    {
+      "figure": "03-ledger.svg",
+      "figure_sha256": "dc3c2992bbc3f156b3442f1637f0cc58ce3a2378ff1a913cbf2334dd4ce43060",
+      "file": "03-ledger.html",
+      "sha256": "7ef8151d3cd538eb02c8b87787a32ad2d475162f4c5927a676a000b35ad9e70d",
+      "command": "SELECT zabalack.worker_call('inspect',\n  '{\"state\":\"ok\",\"limit\":1}'::jsonb);",
+      "selected_output": "{\n  \"state\": \"ok\",\n  \"completion_evidence\": \"write_response\",\n  \"attempts\": 1\n}\n\nAlerta projection: zabbix_ack_sync = ok\nMock pre-read event: 910011\nMock acknowledgement event: 910011",
+      "scope": "Real Alerta 9.1.0 + PostgreSQL 18.3 WASM; Flask test client, synthetic JWT, injected probe, SET ROLE and mock Zabbix. G1\u2013G8 remain open."
+    }
+  ],
+  "external_zabbix_requests": 0,
+  "production_gates": "NOT_VERIFIED",
+  "visual_kind": "Static SVG output illustrations, not browser or application screenshots",
+  "browser_capture": "NOT_RUN: this recorder creates SVG figures and HTML transcripts; browser capture is a separate step"
+}

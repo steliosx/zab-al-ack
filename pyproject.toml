@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools==83.0.0", "wheel==0.46.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zabalack"
+version = "0.1.0a16"
+description = "Durable scoped acknowledgement capture and delivery for Alerta 9.1 and Zabbix 7.0"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "Zab-al-ack contributors"}]
+keywords = ["alerta", "zabbix", "acknowledgement", "postgresql", "monitoring"]
+classifiers = [
+ "Development Status :: 3 - Alpha",
+ "Intended Audience :: System Administrators",
+ "Operating System :: POSIX :: Linux",
+ "Programming Language :: Python :: 3.12",
+ "Topic :: System :: Monitoring",
+]
+dependencies = ["psycopg[binary]==3.2.10", "httpx==0.28.1"]
+
+[project.optional-dependencies]
+alerta = ["alerta-server==9.1.0", "psycopg2-binary==2.9.10"]
+test = ["pytest==9.0.3", "pytest-asyncio==1.3.0", "build==1.3.0"]
+
+[project.scripts]
+zabalack = "zabalack.cli:main"
+
+[project.entry-points."alerta.plugins"]
+zabalack_zabbix_normalise = "zabalack.normalizer:ZabbixNormaliser"
+zabalack_zabbix_ack = "zabalack.plugins:AckSigningPlugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Repository-root helpers such as lab/real_zabbix_safety.py import under every
+# invocation form (`pytest`, `python -m pytest`, other working directories).
+pythonpath = [".", "tools"]
+addopts = "-ra"
+asyncio_mode = "auto"
+markers = [
+ "postgres: requires disposable PostgreSQL 18", "alerta: real pinned Alerta API",
+ "pgbouncer: requires real transaction pool", "real_zabbix: requires disposable Zabbix7",
+ "performance: controlled lab batch", "deployment: installed environment gate"
+]

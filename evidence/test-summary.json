@@ -1,0 +1,28 @@
+{
+  "counts": {
+    "passed": 865,
+    "skipped": 23,
+    "failed": 0
+  },
+  "by_layer": {
+    "optional_native_real_zabbix": {
+      "passed": 0,
+      "skipped": 19,
+      "failed": 0
+    },
+    "postgres_wasm": {
+      "passed": 29,
+      "skipped": 4,
+      "failed": 0
+    },
+    "unit_mocked": {
+      "passed": 836,
+      "skipped": 0,
+      "failed": 0
+    }
+  },
+  "native_postgres": "NOT_RUN",
+  "pgbouncer": "NOT_RUN",
+  "real_zabbix": "NOT_RUN",
+  "deployment_gates": "MANUAL_GATE_PENDING"
+}

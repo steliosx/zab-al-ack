@@ -1,0 +1,40 @@
+# SQL API — schema 1, pinned Alerta v9.1.0
+
+Production remains inert until separately approved configuration. Scripts never run on import/startup.
+
+`sql/migrate.py` is explicitly run as `zabalack_owner` after DBA-reviewed `sql/install/00_roles.sql`. It checks migration SHA-256 and rejects drift; reruns skip identical versions. Apply the pinned upstream Alerta schema separately under its owner before installing MSP objects. `sql/install/10_trigger.sql` is a different step as the Alerta table-owner authority. Runtime roles hold no table DML privileges on `zabalack`.
+
+The facade is `SELECT zabalack.worker_call(%s,%s::jsonb)`. Calls are separate committed transactions before HTTP. Results are JSON values, never sets. No target URL/token is stored in SQL.
+
+| Operation | Payload and result |
+|---|---|
+| claim_verification | worker_id; one capture or null. Includes intent, marker, source, captured_at, full alert_id, customer, history_type/history_user/history_update_time, resulting_status, capture_id, lease_generation. |
+| reject_capture / hold_capture | capture_id, worker_id, lease_generation, reason, optional state=expired. Invalid evidence never gets action identity or delivery resources. |
+| verify_complete | same lease fields plus exact intent and actor_ref; trusted verifier must validate HMAC first. Database rechecks snapshot, time and current cohort, assigns immutable action and effect generation; returns redacted action and cohort. |
+| claim_delivery | worker_id, optional action_id; one redacted action with lease_generation or null. Excludes uncertain actions; 2 database slots per instance by default. |
+| before_write | action_id, worker_id, lease_generation; {allowed,reason}. Rechecks pause, global write-disable, cohort/drift, expiry, lease fence and uncertainty. |
+| start_attempt | same; {allowed,attempt_id}. Durable before sending, checks again; one immutable attempt. |
+| complete | same plus attempt_id optional, state, reason, completion_evidence, uncertain, retry_delay seconds. Releases slot, writes immutable outcome, projects later. Late fenced responses append evidence but cannot overwrite state. |
+| claim_background | instance,worker_id; {allowed,lease_generation,expires_at}. One shared background request and at least 1 second between starts. |
+| finish_background | instance,worker_id,lease_generation; releases only matching generation. |
+| record_reconciliation | instance,worker_id,background_generation,action_id,state,reason,completion_evidence,uncertain,retry_delay; background-fenced, read-only external outcome. Active delivery is not overwritten. |
+| reconcile_due | limit≤200; indexed bounded due redacted actions. Abandoned writes become uncertain; ordinary expired work expires without source writes. |
+| projection_due / project | limit≤200 → [{action_id}], or action_id → authoritative guarded projection result. |
+| status / inspect / doctor / verifier_health | redacted counts/actions/health; inspect accepts state/action_id/limit≤200. No actor-person mapping or proof export. |
+| host_inventory_due | optional instance; due controlled cohorts. |
+| record_host_inventory | instance,customer,trigger_id,worker_id,drift,missing_ids,group_mismatch_ids,reason; flags drift, never approves new IDs. |
+| nightly_due | limit≤200 → {actions,next_cursor}; due cursor is maintained by per-action drift_due_at, mapped extant source events plus a recent 7-day terminal window. |
+| record_drift | action_id,worker_id,drift; schedules next daily read; never resends an old successful effect. |
+| worker_stopped | worker_id; appends audit, pending never-sent claims released, unresolved writes marked unknown. |
+
+`zabalack.operator_call(op,payload)` is only granted to zabalack_operator and requires actor_ref + change_ref. Operations: pause/resume (instance), configure_installation (deployment_id/config_revision), configure_cohort (canonical cohort), capture_bypass (enabled/config_revision, requires all instances paused), set_external_writes (enabled and explicit confirmation ENABLE_EXTERNAL_WRITES plus gates_reviewed for enabling), reset_circuit (instance), retry (same action_id; no expired/success replay), repair_projection (action_id). A gate-review boolean records an operator decision; it is not automatic proof of G1–G8. Physical trigger disable is separately owner-authorized.
+
+Effect identity is `(logical instance, original event ID, generation)`. Verified simultaneous explicit human actions share an unresolved effect. A distinct action issued after prior completion receives the next generation; repeats of an existing signed action do not. Per-event serialization and a mandatory fresh pre-read further prevent duplicate comments. SQL never treats a capture-provided action ID as trusted uniqueness before worker verification.
+
+Capture parser detects reserved indication in the first 65,536 characters. Signer limits operator notes to 60,000 bytes, so its marker is always inside this bound. Markers beyond that bound are outside the candidate contract and remain local-only. Marked enrolled candidates are limited to a 256-byte marker excerpt and 16-KiB strict intent. Free text is not captured. A marker-free bypass has no trigger evidence; physical trigger disable has no diagnostics.
+
+`zabalack_owner` may directly update arbitrary JSON keys in the granted attributes column. The narrow projection function, not column grants, protects source JSON from worker input. Owner cannot update status, severity, history or customer. Reference schema/table/roles are explicit; different deployed ownership/schema is a G1 compatibility input, not auto-discovered migration authority.
+
+Unknown outcomes intentionally do not become retryable merely because a lease expired or a reference was absent. `operator_call('settle_unknown', ...)` supports only disposition `no-effect-confirmed`, explicit confirmation `REMOTE_ATTEMPT_FENCED_AND_SETTLED`, evidence_ref, actor_ref and change_ref. It rejects active leases and non-uncertain actions. It records the engineer's reviewed evidence that the previous sender was fenced, remote processing finished and the exact event/history was reviewed; PostgreSQL does not independently prove those facts. An unexpired action becomes failed with uncertainty cleared, requiring a separate explicit retry. An expired action and its effect become expired, permitting a later new human action to create a new effect generation. Settlement itself never sends a source write.
+
+Readiness fingerprinting covers function bodies, function ownership/ACL, Zab-al-ack relation/schema ownership/ACL, columns, constraints, indexes and runtime role flags/memberships. The separately authorized trigger installer seals the expected definitions. Unexpected drift makes capture-health unhealthy. This catalog check supplements executable post-migration branch tests; it cannot establish that every branch, application database route or production permission works.

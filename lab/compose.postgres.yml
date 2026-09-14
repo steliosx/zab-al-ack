@@ -1,0 +1,34 @@
+# Native real PostgreSQL 18 reference server; explicit lab start only.
+# docker compose -f lab/compose.postgres.yml up -d
+name: zabalack-postgres-lab
+services:
+  postgres:
+    image: postgres:18.0-bookworm
+    environment:
+      POSTGRES_DB: alerta
+      POSTGRES_USER: lab_admin
+      POSTGRES_PASSWORD: synthetic-postgres-lab-only
+      POSTGRES_HOST_AUTH_METHOD: trust # isolated lab role tests only; never production
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: [ack-lab-pg18:/var/lib/postgresql]
+    networks: [isolated]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U lab_admin -d alerta"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    command: [postgres, -c, log_statement=none]
+  pgbouncer:
+    profiles: [pooling]
+    build:
+      context: ..
+      dockerfile: lab/Dockerfile.pgbouncer
+    ports: ["127.0.0.1:56432:6432"]
+    networks: [isolated]
+    depends_on:
+      postgres: {condition: service_healthy}
+networks:
+  isolated:
+    internal: true
+volumes:
+  ack-lab-pg18:

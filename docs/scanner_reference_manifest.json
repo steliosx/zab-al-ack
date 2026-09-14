@@ -1,0 +1,21 @@
+{
+  "name": "pip-audit",
+  "version": "2.9.0",
+  "project_urls": {
+    "Homepage": "https://pypi.org/project/pip-audit/",
+    "Issues": "https://github.com/pypa/pip-audit/issues",
+    "Source": "https://github.com/pypa/pip-audit"
+  },
+  "files": [
+    {
+      "filename": "pip_audit-2.9.0-py3-none-any.whl",
+      "sha256": "348b16e60895749a0839875d7cc27ebd692e1584ebe5d5cb145941c8e25a80bd",
+      "url": "https://files.pythonhosted.org/packages/43/9e/f4dfd9d3dadb6d6dc9406f1111062f871e2e248ed7b584cca6020baf2ac1/pip_audit-2.9.0-py3-none-any.whl"
+    },
+    {
+      "filename": "pip_audit-2.9.0.tar.gz",
+      "sha256": "0b998410b58339d7a231e5aa004326a294e4c7c6295289cdc9d5e1ef07b1f44d",
+      "url": "https://files.pythonhosted.org/packages/cc/7f/28fad19a9806f796f13192ab6974c07c4a04d9cbb8e30dd895c3c11ce7ee/pip_audit-2.9.0.tar.gz"
+    }
+  ]
+}

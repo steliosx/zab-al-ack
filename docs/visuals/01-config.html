@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><meta charset="utf-8">
+<title>01 / Check the configuration — lab transcript</title><style>
+*{box-sizing:border-box}body{margin:0;padding:20px;background:#eef2f6;color:#162d3e;font:16px Arial,sans-serif}
+.frame{width:1000px;padding:32px;background:#fff;border:1px solid #cbd7df;border-radius:14px}
+header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e1e7ec;padding-bottom:20px}
+.brand{font-size:24px;font-weight:bold}.brand span{color:#e77917}.tag{font-size:13px;background:#fff4df;color:#734007;padding:8px 12px;border-radius:20px}
+h1{font-size:28px;letter-spacing:-.5px;margin:24px 0 8px}p{color:#486073;line-height:1.5;margin:0 0 20px}
+.terminal{background:#172c3c;border-radius:8px;overflow:hidden;color:#eef5fa}.bar{background:#263e4f;color:#c7d5df;font-size:13px;padding:10px 20px}
+pre{font:17px/1.5 'Liberation Mono',Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:18px 22px}
+.command{color:#ffbc70;border-bottom:1px solid #354c5c;padding-bottom:16px}.result{padding-top:16px}
+footer{font-size:13px;line-height:1.55;margin-top:20px;color:#486073;border-left:3px solid #e77917;padding-left:12px}
+</style><main class="frame"><header><div class="brand">Zab-al-ack<span>.</span></div>
+<div class="tag">0.1.0a12 · SYNTHETIC LAB</div></header><h1>01 / Check the configuration</h1><p>Start with the inert production example.</p><section class="terminal"><div class="bar">Captured transcript · selected output</div><pre class="command">$ zabalack --config config/production.example.json config-check</pre><pre class="result">{
+  &quot;valid&quot;: true,
+  &quot;configuration&quot;: {
+    &quot;enabled&quot;: false,
+    &quot;external_writes_enabled&quot;: false,
+    &quot;cohort_count&quot;: 0,
+    &quot;instance_count&quot;: 0
+  },
+  &quot;deployment_gates&quot;: &quot;NOT_VERIFIED&quot;
+}</pre></section><footer>Actual CLI output; selected redacted fields. No database or Zabbix connection. Valid configuration does not establish deployment readiness.</footer></main></html>

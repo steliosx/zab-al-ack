@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Zab-al-ack acknowledgement configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "external_writes_enabled": {
+      "type": "boolean"
+    },
+    "capture_bypass": {
+      "type": "boolean"
+    },
+    "bypass_change_ref": {
+      "type": "string"
+    },
+    "config_revision": {
+      "type": "string"
+    },
+    "policy_revision": {
+      "type": "string"
+    },
+    "deployment_id": {
+      "type": "string"
+    },
+    "database_name": {
+      "type": "string"
+    },
+    "probe_dsn_file": {
+      "type": "string"
+    },
+    "worker_dsn_file": {
+      "type": "string"
+    },
+    "operator_dsn_file": {
+      "type": "string"
+    },
+    "signing_kid": {
+      "type": "string"
+    },
+    "signing_keys": {
+      "type": "object"
+    },
+    "cohorts": {
+      "type": "array"
+    },
+    "ingestion_mappings": {
+      "type": "object"
+    },
+    "endpoint_registry": {
+      "type": "object"
+    },
+    "admin_exceptions": {
+      "type": "array"
+    },
+    "approved_versions": {
+      "type": "array"
+    },
+    "capture_lifetime_seconds": {
+      "type": "integer"
+    },
+    "execution_lifetime_seconds": {
+      "type": "integer"
+    },
+    "idle_poll_seconds": {
+      "type": "number"
+    },
+    "delivery_slots": {
+      "type": "integer"
+    },
+    "verifier_slots": {
+      "type": "integer"
+    },
+    "verification_lease_seconds": {
+      "type": "integer"
+    },
+    "delivery_lease_seconds": {
+      "type": "integer"
+    },
+    "connect_timeout_seconds": {
+      "type": "integer"
+    },
+    "read_timeout_seconds": {
+      "type": "integer"
+    },
+    "overall_timeout_seconds": {
+      "type": "integer"
+    },
+    "background_connect_timeout_seconds": {
+      "type": "integer"
+    },
+    "background_read_timeout_seconds": {
+      "type": "integer"
+    },
+    "background_overall_timeout_seconds": {
+      "type": "integer"
+    },
+    "fast_cycle_seconds": {
+      "type": "integer"
+    },
+    "fast_budget": {
+      "type": "integer"
+    },
+    "nightly_cycle_seconds": {
+      "type": "integer"
+    },
+    "recent_terminal_seconds": {
+      "type": "integer"
+    },
+    "host_inventory_seconds": {
+      "type": "integer"
+    },
+    "health_cache_seconds": {
+      "type": "integer"
+    },
+    "health_acquire_timeout_seconds": {
+      "type": "integer"
+    },
+    "health_overall_timeout_seconds": {
+      "type": "integer"
+    },
+    "response_limit_bytes": {
+      "type": "integer"
+    },
+    "lab_mode": {
+      "type": "boolean"
+    }
+  }
+}

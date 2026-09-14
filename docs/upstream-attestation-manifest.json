@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "inspected_at": "2026-09-11T00:00:00Z",
+  "inspection": "Official Git tags resolved with git ls-remote and shallow cloned at the exact commits; listed files read locally. No hosted attestation or GitHub CLI cryptographic verification executed.",
+  "components": [
+    {
+      "name": "actions/attest",
+      "repository": "https://github.com/actions/attest",
+      "version": "4.2.2",
+      "commit": "1e69f48acb82d1966a394da916b4c1698aa569d6",
+      "files": {
+        "action.yml": "9e4a1b808433f9ec87120b534e11fc35469a039bdbdc62b019441444c9ad0449",
+        "README.md": "c513a2a22ce3fa07b67216d36db2c1552be51f7391fe81266f6f1a4cee8da5d6",
+        "src/main.ts": "f7e0793174f84f5908891c6e60ea399af6276613a3de428e1b73e56537c8f25e",
+        "src/attest.ts": "a7887ac9589f922fe99010c3110891ed1ce46490ddf8f9b0d7565681eca8a197",
+        "src/subject.ts": "14103f1e219f26a2e920a1b62d94d8159e709aeefc1f6344f9dfab883fc3ebfd",
+        "src/provenance.ts": "14a74a43c75b3c99aaf55e27f0fefa18ef6ec626f0117a1d7d33bc04840bd58f"
+      }
+    },
+    {
+      "name": "cli/cli",
+      "repository": "https://github.com/cli/cli",
+      "version": "2.83.2",
+      "commit": "560ea94fc7d63ab1f56ca47713599be5e8966fd3",
+      "files": {
+        "Makefile": "ef492c5e69d7cc2a0ab17fbbd3fe97203a2f3a095abb5980be0fd655343e1275",
+        "pkg/cmd/attestation/verify/verify.go": "76389735b2f6494d37cfbc249e38557c8927cbd6420a01d7ba4fc50857a1eb9a",
+        "pkg/cmd/attestation/verify/policy.go": "5ed9f6ba0bd092b5549c7834625951351873d2f2192b7f718c07c558d027d09a",
+        "pkg/cmd/attestation/verification/extensions.go": "d23fa036838f596f26b389850406d45e6cb84396d2ce463bec5699f2887713da",
+        "pkg/cmd/attestation/verification/sigstore.go": "d71450956c0f8f6254bce5aa092491f24896137f073fbccc37f12139df22e6fa"
+      }
+    }
+  ],
+  "hosted_attestation_issuance": "NOT_RUN",
+  "zabalack_cryptographic_verification": "NOT_RUN_NO_ISSUED_ZABALACK_ATTESTATION",
+  "local_consistency_is_signed": false
+}

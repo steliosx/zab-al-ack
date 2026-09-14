@@ -1,0 +1,23 @@
+include README.md AGENTS.md ALPHA_REPORT.md LICENSE NOTICE THIRD_PARTY.md
+include CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md GOVERNANCE.md CHANGELOG.md
+include requirements*.lock requirements-quality.in Makefile ruff.toml mypy.ini
+recursive-include config *.json
+recursive-include sql *.sql *.py *.json *.md
+recursive-include lab *.py *.sh *.sql *.json *.md *.yml *.mjs Dockerfile* *.Dockerfile *.ini *.txt LICENSE-*
+recursive-include deploy *.py *.yml *.service *.timer
+recursive-include zabbix *.js *.cjs *.json *.yml *.py *.md
+recursive-include collectors *.py *.json *.md
+recursive-include tests *.py *.sql *.md
+recursive-include docs *.md *.json *.csv *.svg *.png *.html
+recursive-include tools *.py
+recursive-include .agents/skills *.md
+recursive-include evals *.json *.md
+recursive-include evidence *.md *.json *.xml
+recursive-include .github *.md *.yml
+recursive-include release *.yml.example *.json
+prune build
+prune dist
+prune lab/node_modules
+prune .git
+prune .hypothesis
+global-exclude *.py[cod] __pycache__ .DS_Store

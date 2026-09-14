@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Signed intent v1 (Python validator additionally enforces byte/time/canonical bounds)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "action",
+    "action_id",
+    "actor",
+    "alert_id",
+    "capture_expires_at",
+    "cohort_revision",
+    "customer",
+    "execution_expires_at",
+    "issued_at",
+    "policy_revision",
+    "route",
+    "source",
+    "version"
+  ],
+  "properties": {
+    "policy_revision": {
+      "type": "string"
+    },
+    "customer": {
+      "type": "string"
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zabbix_instance",
+        "zabbix_event_id",
+        "zabbix_trigger_id"
+      ],
+      "properties": {
+        "zabbix_instance": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "zabbix_event_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
+        },
+        "zabbix_trigger_id": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$"
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "login",
+        "customers",
+        "admin",
+        "auth_type"
+      ],
+      "properties": {
+        "login": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "customers": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "admin": {
+          "type": "boolean"
+        },
+        "auth_type": {
+          "const": "user"
+        }
+      }
+    },
+    "capture_expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "action_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "execution_expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "route": {
+      "type": "string"
+    },
+    "cohort_revision": {
+      "type": "string"
+    },
+    "action": {
+      "const": "ack"
+    },
+    "version": {
+      "const": 1
+    },
+    "alert_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}

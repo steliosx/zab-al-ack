@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "gate",
+    "owner_reference",
+    "change_reference",
+    "evidence_files",
+    "findings",
+    "approved"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "gate": {
+      "enum": [
+        "G1",
+        "G2",
+        "G3",
+        "G4"
+      ]
+    },
+    "owner_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "change_reference": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "sha256"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "approved": {
+      "type": "boolean"
+    }
+  }
+}

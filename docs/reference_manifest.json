@@ -1,0 +1,381 @@
+{
+  "schema_version": 1,
+  "retrieved_at_utc": "2026-09-09T20:25:11.858382+00:00",
+  "evidence_origin": "Public primary source fetched via GitHub MCP and release archives; no production inventory supplied",
+  "baseline": "revision1.2 frozen2026-09-08",
+  "sources": [
+    {
+      "component": "alerta",
+      "repository": "alerta/alerta",
+      "reference": "v9.1.0",
+      "commit": "f4312727783dad64198b62ed778bbca98a5144a3",
+      "retrieved_at_utc": "2026-09-09T20:25:11.858382+00:00",
+      "files": [
+        {
+          "path": "alerta/plugins/__init__.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/plugins/__init__.py",
+          "sha256": "8b817a9011ed4a03ef16739baf0ff8d94147a14b79bccfd40b6fd811ff6463fd",
+          "git_blob_sha1": "8877c519e3a2b86c0c78486f79f2c26b0a7c67f0",
+          "bytes": 2797
+        },
+        {
+          "path": "alerta/utils/api.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/utils/api.py",
+          "sha256": "5853831e34406205a1a5cc1e2080a368ff4afe4aa52277a06eedbd5d2fa362b2",
+          "git_blob_sha1": "106e0353bd398c245e1e98653773cc612d040e34",
+          "bytes": 8124
+        },
+        {
+          "path": "alerta/utils/hooks.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/utils/hooks.py",
+          "sha256": "7090b15b60b8ca6999b02c5cfecefd381e0a403723f143740cf7051696e9b369",
+          "git_blob_sha1": "3546a9d9bdcacc207098ad4993a5669ca8f1db62",
+          "bytes": 1515
+        },
+        {
+          "path": "alerta/utils/plugin.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/utils/plugin.py",
+          "sha256": "0eda486b1fd71e25aa2d75514a401c9cb1695de3c31261894817a65f8b2cb585",
+          "git_blob_sha1": "ae94e0c1f3c51a58b157466a9adf0af8ebcee091",
+          "bytes": 2862
+        },
+        {
+          "path": "alerta/auth/decorators.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/auth/decorators.py",
+          "sha256": "ea10a43f3f9fd03770507ef342ee0d3c9c1bf115302d95ac3913785a3ce9fed6",
+          "git_blob_sha1": "fc3cc441fabdb2e726069f9fd21ccddb1531f054",
+          "bytes": 7492
+        },
+        {
+          "path": "alerta/auth/utils.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/auth/utils.py",
+          "sha256": "6647fdfcb9a88eb0e2a87b9909607e9fe64a28119367b3b17ac94d86ed054fe8",
+          "git_blob_sha1": "c2cadd033b1d9898108e78995f89bf91bacca1c2",
+          "bytes": 4705
+        },
+        {
+          "path": "alerta/models/alert.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/models/alert.py",
+          "sha256": "50fd404dbc435ee40fea8dd95fa5e874b8a904c2fa31507c87bccfec7e665f3b",
+          "git_blob_sha1": "e2bc8413f1412b01b8cd98d0699f6aa78388b791",
+          "bytes": 26062
+        },
+        {
+          "path": "alerta/models/alarms/alerta.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/models/alarms/alerta.py",
+          "sha256": "49ac7dfcc353d925158fc7263388cd313dc385c8995a56a322ee7cc0e00d810c",
+          "git_blob_sha1": "527382ed659cc0f0aedb0e88b3c1be7196e19203",
+          "bytes": 10983
+        },
+        {
+          "path": "alerta/models/enums.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/models/enums.py",
+          "sha256": "fbb61023240de8684f8fc9b18f988311f49f705e8bbefb3366eafc90df7d234f",
+          "git_blob_sha1": "24481081b6996c0ef332035683c0a56854a687e0",
+          "bytes": 4337
+        },
+        {
+          "path": "alerta/views/alerts.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/views/alerts.py",
+          "sha256": "56ba8984adb368207609d363a753fd1149a7e1552c5652f17af91e9571a16f5e",
+          "git_blob_sha1": "4ad732deeafad92deead89574ca2535ee3680963",
+          "bytes": 23773
+        },
+        {
+          "path": "alerta/database/backends/postgres/base.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/database/backends/postgres/base.py",
+          "sha256": "a9d24ba7d6446356847c7d0a01dacc8de21f0d835893ebc5f29704c407392a84",
+          "git_blob_sha1": "9c7b5174f56618017f1ab528120505a602c50d5a",
+          "bytes": 62411
+        },
+        {
+          "path": "alerta/sql/schema.sql",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/sql/schema.sql",
+          "sha256": "ee1372e2d3f3a0ed9cd85f4f18003f6a23115a849a6b58182b0e6ab58a63c702",
+          "git_blob_sha1": "5b0a3e9a8628ff62ee60824f6527efbfd2f72c45",
+          "bytes": 5030
+        },
+        {
+          "path": "alerta/app.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/app.py",
+          "sha256": "0e36de05ef1ace2d72382650809d70bcdf3729f85b2cac56802196ae5ec08766",
+          "git_blob_sha1": "4948bdcbcab6a004e2513a5f9d0b01aedf156f85",
+          "bytes": 3246
+        },
+        {
+          "path": "alerta/settings.py",
+          "url": "https://raw.githubusercontent.com/alerta/alerta/f4312727783dad64198b62ed778bbca98a5144a3/alerta/settings.py",
+          "sha256": "6ab6bb2a2172fdcc9864ff0cf0d6dbc7deecdad9ec07c048953f7d298b2b1b18",
+          "git_blob_sha1": "c44245238ac6d7fbb58ddd41c957506189cc5558",
+          "bytes": 11993
+        }
+      ],
+      "supported_claims": [
+        "Plugin signatures pre_receive(alert), take_action(alert,action,text,**kwargs), status_change(alert,status,text,**kwargs); exception dispatch inspected in utils/api.py.",
+        "Single /action persists action plugin attributes separately before from_action final history save; PostgreSQL helper commits each UPDATE. Atomic capture guarantee covers final UPDATE only.",
+        "Default alarm model rejects ack on ack; views returns HTTP409 for InvalidAction.",
+        "history is a ten-field composite array, newest first; set_alert replaces attributes; dedup top-level JSONB merges.",
+        "Authenticated API key owner label has g.user_id=None; human JWT customer scopes and assignment admin override verified in auth sources."
+      ]
+    },
+    {
+      "component": "webui",
+      "repository": "alerta/alerta-webui",
+      "reference": "e6eb99e",
+      "commit": "e6eb99e90901a32e63ee96588ac4dd8804d6831a",
+      "retrieved_at_utc": "2026-09-09T20:25:11.858382+00:00",
+      "files": [
+        {
+          "path": "src/components/AlertActions.vue",
+          "url": "https://raw.githubusercontent.com/alerta/alerta-webui/e6eb99e90901a32e63ee96588ac4dd8804d6831a/src/components/AlertActions.vue",
+          "sha256": "c592d7a9dae58fd8770feefda5eee9213c638e7c65e5695e648faca23de7387c",
+          "git_blob_sha1": "c016dae1a5e769c442850a463c52653ed55ea50e",
+          "bytes": 6596
+        },
+        {
+          "path": "src/services/api/alert.service.ts",
+          "url": "https://raw.githubusercontent.com/alerta/alerta-webui/e6eb99e90901a32e63ee96588ac4dd8804d6831a/src/services/api/alert.service.ts",
+          "sha256": "d25a037cd46195d4b4d4acb98674ab29545ad356048d6e6b316c714f19275101",
+          "git_blob_sha1": "88213d06a5e4d4253e201705309b9a11a4e5054f",
+          "bytes": 2766
+        },
+        {
+          "path": "src/components/AlertList.vue",
+          "url": "https://raw.githubusercontent.com/alerta/alerta-webui/e6eb99e90901a32e63ee96588ac4dd8804d6831a/src/components/AlertList.vue",
+          "sha256": "71064bb34221e2b1867cf69862014cd85c0cd7998b7483c55152d10b9553b854",
+          "git_blob_sha1": "bc46558823bc330037faaae7d5f852cd007c2b6d",
+          "bytes": 23759
+        }
+      ],
+      "supported_claims": [
+        "alert.service.ts takeAction puts /alert/${alertId}/action.",
+        "Existing alert list/details can display configured attributes; no WebUI fork required."
+      ]
+    },
+    {
+      "component": "zabbix",
+      "repository": "zabbix/zabbix",
+      "reference": "7.0.0",
+      "commit": "49955f1fb5c9168a8a24b053f7ade6b3d903143c",
+      "retrieved_at_utc": "2026-09-09T20:25:11.858382+00:00",
+      "files": [
+        {
+          "path": "ui/include/classes/api/services/CEvent.php",
+          "url": "https://raw.githubusercontent.com/zabbix/zabbix/49955f1fb5c9168a8a24b053f7ade6b3d903143c/ui/include/classes/api/services/CEvent.php",
+          "sha256": "47fe9f344dd058dd44dff8d2146aa04bc28070c3a37c37725a0b31985899ae64",
+          "git_blob_sha1": "7294085b4a78e5684125843cc833a81a64a59802",
+          "bytes": 64612
+        },
+        {
+          "path": "ui/include/classes/api/services/CHost.php",
+          "url": "https://raw.githubusercontent.com/zabbix/zabbix/49955f1fb5c9168a8a24b053f7ade6b3d903143c/ui/include/classes/api/services/CHost.php",
+          "sha256": "d5d6e306014504cced1b31ba12ea6d22af744f37702cfc93d2ade653f55954aa",
+          "git_blob_sha1": "85ac8facd2da9fb496582e0397cfb793f86f510b",
+          "bytes": 108975
+        },
+        {
+          "path": "ui/include/classes/api/services/CAction.php",
+          "url": "https://raw.githubusercontent.com/zabbix/zabbix/49955f1fb5c9168a8a24b053f7ade6b3d903143c/ui/include/classes/api/services/CAction.php",
+          "sha256": "36a36bd60efca23ffdf91abf68def8d3e3530d932449364ce07a02cdf0c91d7f",
+          "git_blob_sha1": "86fcf9b02855de54e545cf96c5e9c3bf5078bdbe",
+          "bytes": 135653
+        },
+        {
+          "path": "ui/include/classes/core/CJsonRpc.php",
+          "url": "https://raw.githubusercontent.com/zabbix/zabbix/49955f1fb5c9168a8a24b053f7ade6b3d903143c/ui/include/classes/core/CJsonRpc.php",
+          "sha256": "1ed68160978cf7060ef4a3ce080b703ab2fce57b1e15e2a3d26225a1080f04a1",
+          "git_blob_sha1": "9ae978fc7f57e6deceb3278b148e060a2ded240f",
+          "bytes": 6745
+        },
+        {
+          "path": "ui/include/defines.inc.php",
+          "url": "https://raw.githubusercontent.com/zabbix/zabbix/49955f1fb5c9168a8a24b053f7ade6b3d903143c/ui/include/defines.inc.php",
+          "sha256": "4a70c5185242dd6bd18875675f7b8b672e7e057110afc0c60e98c90ad7574792",
+          "git_blob_sha1": "831c2058407843a6d9f80d59ba35707acbef4ed8",
+          "bytes": 89957
+        },
+        {
+          "path": "src/libs/zbxexpression/expression.c",
+          "url": "https://raw.githubusercontent.com/zabbix/zabbix/49955f1fb5c9168a8a24b053f7ade6b3d903143c/src/libs/zbxexpression/expression.c",
+          "sha256": "7bd3a4b08192ef93badd3330472b8a2652161fa9354bd9369ab7f8bdbd3543bc",
+          "git_blob_sha1": "fcd7e3bd5a34992176ca1f399cd4fdd3881c2e6e",
+          "bytes": 117017
+        },
+        {
+          "path": "templates/media/event_driven_ansible/media_event_driven_ansible.yaml",
+          "url": "https://raw.githubusercontent.com/zabbix/zabbix/49955f1fb5c9168a8a24b053f7ade6b3d903143c/templates/media/event_driven_ansible/media_event_driven_ansible.yaml",
+          "sha256": "732eb91d9c6987422aa0fa9bba471c7c91c6553155c9bfc859e5976e6976849a",
+          "git_blob_sha1": "03e9d25572b0d2e4def38a44309ed2934d9ae14a",
+          "bytes": 7842
+        },
+        {
+          "path": "ui/include/classes/api/services/CMediatype.php",
+          "url": "https://raw.githubusercontent.com/zabbix/zabbix/49955f1fb5c9168a8a24b053f7ade6b3d903143c/ui/include/classes/api/services/CMediatype.php",
+          "sha256": "5a4a7de4e36f459eeea92a5cea548cbb6ee84a59656bbdb18c764e403c0d3a99",
+          "git_blob_sha1": "1f131b5e5de50245d07b2f086e85f7573943c44d",
+          "bytes": 41351
+        }
+      ],
+      "supported_claims": [
+        "CEvent.php groupids joins any matching trigger host; addRelatedHosts enumerates complete related IDs with nopermissions=true on internal Host.get. Client must compare full approved host set.",
+        "CEvent acknowledge ack bit2 only changes unack events; message bit4 adds a message even if already ack. Exactly one event per implementation request.",
+        "CJsonRpc processResult echoes request id with result only on success; errors are JSON-RPC bodies, HTTP200 alone is insufficient.",
+        "CEvent get supports exact eventids/source/object/value, selectHosts and selectAcknowledges.",
+        "CHost get supports selectHostGroups for approved host inventory.",
+        "expression.c expands original event, separate recovery, cause and update message macro contexts. get_event_cause_value returns FAIL for an event without a cause event and the substitution loop then emits STR_UNKNOWN_VARIABLE (*UNKNOWN*) for {EVENT.CAUSE.ID} (7.0.10 include/zbx_expression_constants.h); a recovery macro stays unexpanded on a problem event. Observed on the isolated deployment-path lab (SPEC_AMENDMENTS.md A3); actual live operation expansion remains G2/G3.",
+        "No bundled Alerta media type found in this source tag; event_driven_ansible is the inspected export-format example.",
+        "CMediatype.php get parameters are selected as output field; no selectParameters flag."
+      ]
+    },
+    {
+      "component": "postgresql",
+      "repository": "postgres/postgres",
+      "reference": "REL_18_0",
+      "commit": "3d6a828938a5fa0444275d3d2f67b64ec3199eb7",
+      "retrieved_at_utc": "2026-09-09T20:25:11.858382+00:00",
+      "files": [
+        {
+          "path": "doc/src/sgml/ref/create_trigger.sgml",
+          "url": "https://raw.githubusercontent.com/postgres/postgres/3d6a828938a5fa0444275d3d2f67b64ec3199eb7/doc/src/sgml/ref/create_trigger.sgml",
+          "sha256": "695e02a7e7a31c1725afb450eca6857efde708f879b5d143f08d4923733da0cb",
+          "git_blob_sha1": "71869c996e3dcba012fa92a5ed4e878d502760c7",
+          "bytes": 31269
+        },
+        {
+          "path": "doc/src/sgml/ref/create_function.sgml",
+          "url": "https://raw.githubusercontent.com/postgres/postgres/3d6a828938a5fa0444275d3d2f67b64ec3199eb7/doc/src/sgml/ref/create_function.sgml",
+          "sha256": "7d6900e975a4fc3dd92251ba8dca80d2d778397048b16d29ec05da513f392530",
+          "git_blob_sha1": "0d240484cd3f0940255a4a7f9b8c9cedbeb52edc",
+          "bytes": 37705
+        },
+        {
+          "path": "doc/src/sgml/ddl.sgml",
+          "url": "https://raw.githubusercontent.com/postgres/postgres/3d6a828938a5fa0444275d3d2f67b64ec3199eb7/doc/src/sgml/ddl.sgml",
+          "sha256": "34b30c89e23f2456db1d31a8b3f81322155cdd172a71d15d78968ab8da7762b8",
+          "git_blob_sha1": "65bc070d2e5faae0de84f496f649973dce63eb95",
+          "bytes": 212612
+        },
+        {
+          "path": "doc/src/sgml/ref/set.sgml",
+          "url": "https://raw.githubusercontent.com/postgres/postgres/3d6a828938a5fa0444275d3d2f67b64ec3199eb7/doc/src/sgml/ref/set.sgml",
+          "sha256": "d63b590640a2270e11b4f10e096b1f980bb05d104a512bd987d8994bba1517be",
+          "git_blob_sha1": "2218f54682ec32038ae1a072ce656a9ff51ccaee",
+          "bytes": 10863
+        },
+        {
+          "path": "doc/src/sgml/config.sgml",
+          "url": "https://raw.githubusercontent.com/postgres/postgres/3d6a828938a5fa0444275d3d2f67b64ec3199eb7/doc/src/sgml/config.sgml",
+          "sha256": "7956cc35220219839c44c5fb0859b9ab7508079281a137673d1318dc51e67191",
+          "git_blob_sha1": "5aea6cc2fe8fc078ff540f82d68af6e233c3f7c0",
+          "bytes": 573963
+        },
+        {
+          "path": "doc/src/sgml/trigger.sgml",
+          "url": "https://raw.githubusercontent.com/postgres/postgres/3d6a828938a5fa0444275d3d2f67b64ec3199eb7/doc/src/sgml/trigger.sgml",
+          "sha256": "aad4c0d887ebbb692cd9e38adb446fb87b08bd2bdf02c65d35231ef2cf3344e5",
+          "git_blob_sha1": "bb1b5faf34e317be926ac294e32b73e873c8b86c",
+          "bytes": 41725
+        }
+      ],
+      "supported_claims": [
+        "Trigger executes within triggering statement transaction, rollback includes both.",
+        "WHEN cannot contain subqueries; trigger creation requires TRIGGER and function EXECUTE; disable requires table ownership.",
+        "SECURITY DEFINER uses owner identity; default PUBLIC EXECUTE must be revoked; column UPDATE grants do not restrict JSON keys.",
+        "SET LOCAL transaction scope and caller-start statement timeout semantics inspected."
+      ]
+    },
+    {
+      "component": "pgbouncer",
+      "repository": "pgbouncer/pgbouncer",
+      "reference": "pgbouncer_1_24_1",
+      "commit": "2305be8887b902c46bec7acdbf644e039061195c",
+      "retrieved_at_utc": "2026-09-09T20:25:11.858382+00:00",
+      "files": [
+        {
+          "path": "doc/config.md",
+          "url": "https://raw.githubusercontent.com/pgbouncer/pgbouncer/2305be8887b902c46bec7acdbf644e039061195c/doc/config.md",
+          "sha256": "7b8ee0a1095e10855f04049fe8c352738bdd0dc18af4e16e55696332ea685a9d",
+          "git_blob_sha1": "70c720fd4cc42a262f4ea0921ad6bb9c9dbe411f",
+          "bytes": 57911
+        },
+        {
+          "path": "doc/usage.md",
+          "url": "https://raw.githubusercontent.com/pgbouncer/pgbouncer/2305be8887b902c46bec7acdbf644e039061195c/doc/usage.md",
+          "sha256": "d41b85a5fe8c522a8a85f4fb0533c7f755d31237bb7435c8a8dbcde33781963c",
+          "git_blob_sha1": "c43c8211ee9457f6d6e141093e8e2d469cd986aa",
+          "bytes": 27385
+        }
+      ],
+      "supported_claims": [
+        "Transaction pool releases server after transaction completion; per-user/database pools and min_pool_size configuration documented.",
+        "Caller must clean failed transaction before pool reuse; no LISTEN in transaction-pooling features (current website separately labelled)."
+      ]
+    },
+    {
+      "component": "pglite-supplemental",
+      "repository": "electric-sql/pglite",
+      "reference": "@electric-sql/pglite@0.5.8",
+      "commit": "ae182ff8bd5ba4acb887d6c925d607a1498aa0b5",
+      "retrieved_at_utc": "2026-09-09T20:32:05.448920+00:00",
+      "files": [
+        {
+          "path": "packages/pglite-socket/README.md",
+          "url": "https://raw.githubusercontent.com/electric-sql/pglite/ae182ff8bd5ba4acb887d6c925d607a1498aa0b5/packages/pglite-socket/README.md",
+          "sha256": "36af0945bd5d57f73408c9c4e99a9612fa1f33360e87369a8cb4a19a44b8bfda",
+          "git_blob_sha1": "e70d28d185bd190ae683b079b7f2dc88a89b26b1",
+          "bytes": 10141
+        },
+        {
+          "path": "packages/pglite-socket/package.json",
+          "url": "https://raw.githubusercontent.com/electric-sql/pglite/ae182ff8bd5ba4acb887d6c925d607a1498aa0b5/packages/pglite-socket/package.json",
+          "sha256": "b923e394608229a6c31ce248ab69beaa4a2ca4240a67e28191e0863cf477bd64",
+          "git_blob_sha1": "e8793adb0666a294e14a6a07fe84dee3dceeebd4",
+          "bytes": 2597
+        },
+        {
+          "path": "packages/pglite-socket/src/index.ts",
+          "url": "https://raw.githubusercontent.com/electric-sql/pglite/ae182ff8bd5ba4acb887d6c925d607a1498aa0b5/packages/pglite-socket/src/index.ts",
+          "sha256": "de23b27f5b021cd8caadd0b0993c9f51160a6dc9f5069ac26d9fa7f1fad2a34f",
+          "git_blob_sha1": "19ab6db05c8be3a04eae1ab9813cefd2fd9e124a",
+          "bytes": 23779
+        }
+      ],
+      "supported_claims": [
+        "PGlite0.5.8 is a WebAssembly PostgreSQL engine; observed SELECT version reports PostgreSQL18.3.",
+        "Official pglite-socket0.2.11 translates PostgreSQL wire on loopback; one backend multiplexes requests, no SSL, CancelRequest is ignored.",
+        "This is supplemental sequential SQL/persistence evidence; not native multi-backend authentication, concurrency, cancellation, PgBouncer or HA."
+      ]
+    }
+  ],
+  "unversioned_pages": [
+    {
+      "url": "https://www.pgbouncer.org/features.html",
+      "retrieved_at_utc": "2026-09-09T20:25:11.858382+00:00",
+      "version_label": "current website, not pinned1.24.1",
+      "claims": [
+        "LISTEN unsupported in transaction pool"
+      ]
+    }
+  ],
+  "source_archives": [
+    {
+      "filename": "postgresql-18.0.tar.bz2",
+      "url": "https://ftp.postgresql.org/pub/source/v18.0/postgresql-18.0.tar.bz2",
+      "sha256": "0d5b903b1e5fe361bca7aa9507519933773eb34266b1357c4e7780fdee6d6078",
+      "bytes": 22412570
+    },
+    {
+      "filename": "alerta-v9.1.0.tar.gz",
+      "url": "https://codeload.github.com/alerta/alerta/tar.gz/refs/tags/v9.1.0",
+      "sha256": "9407b04a8a6360220c98d7038e3db055d7f89d16bdab4c3da45d7fb5dc015be2",
+      "bytes": 2194978
+    },
+    {
+      "filename": "pgbouncer-1.24.1.tar.gz",
+      "url": "https://www.pgbouncer.org/downloads/files/1.24.1/pgbouncer-1.24.1.tar.gz",
+      "sha256": "da72a3aba13072876d055a3e58dd4aba4a5de4ed6148e73033185245598fd3e0",
+      "bytes": 717796
+    }
+  ],
+  "deployed_versions": "NOT_VERIFIED"
+}

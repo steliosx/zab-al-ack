@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "public_name": "Zab-al-ack",
+  "technical_name": "zabalack",
+  "version": "0.1.0a9",
+  "from_version": "0.1.0a8-reviewed",
+  "from_commit": "aaadf4919f837b4a003a8fc57c469f70ca98d08c",
+  "database_transition": "NEW_NAMESPACE_FRESH_DATABASE_ONLY",
+  "same_database_in_place_upgrade": "NOT_IMPLEMENTED",
+  "old_schema_guard": "ackline",
+  "old_proofs": "REJECTED_INCLUDING_PREFIX_RELABEL",
+  "legacy_privacy_filter": true,
+  "source_contract_version": 1,
+  "projection_attributes": "unchanged zabbix_ack_sync*",
+  "schema_version_in_new_namespace": 3,
+  "sql_files": [
+    {
+      "path": "sql/install/00_roles.sql",
+      "ackline_a8_sha256": "09b17ef7af99f89fe1ae504a5549eed819809289d8e7efffbdf131fbe3cab071",
+      "zabalack_a9_sha256": "0ad010ce151ec74457ad6e3e206c3cf2c21188bb974ced2506ae957344d62856"
+    },
+    {
+      "path": "sql/install/10_trigger.sql",
+      "ackline_a8_sha256": "8b1da4eba755cc7bdf28ecbf5066a48a77502b43932fa01fb1ce01ce3f691abf",
+      "zabalack_a9_sha256": "36b759636c34e336d6c5564aa4f5a8fe3329b3a958b9a5c27e58a10f8a29563b"
+    },
+    {
+      "path": "sql/install/11_enable_trigger.sql",
+      "ackline_a8_sha256": "7bcaf3fe1bf1d54160ce43c47cdba2a7ef73616ee709f854752770cfc31f27dd",
+      "zabalack_a9_sha256": "c6210d8810999e22e16b1972d1c0857b28249b6341145f0bab924f098588e32b"
+    },
+    {
+      "path": "sql/migrate.py",
+      "ackline_a8_sha256": "b78329b186d2295bcea8831fca282391021163cd1162167f0dbe9b9f0bab62e5",
+      "zabalack_a9_sha256": "d2585da0b62a34b6237700ebc261aa3b27117bfccead150e81097ee90c4a42ce"
+    },
+    {
+      "path": "sql/migrations/001_core.sql",
+      "ackline_a8_sha256": "9cf440aa3e9daa0bddfd532c2749834e3a7558241a8759be024572b7d4c813bb",
+      "zabalack_a9_sha256": "6bb752d0ee1adcf7dc2a595bd1e95be008da1ef2068810ab2a8ee2af3b44b286"
+    },
+    {
+      "path": "sql/migrations/002_capture.sql",
+      "ackline_a8_sha256": "045b8a5a9c2e34f4caf7c4f582a2310eb0278ed354a28dcfa82d70ad24241024",
+      "zabalack_a9_sha256": "2a1640ceb0d8ba30e25a22f9321b6a0b1d963c1c57725997211be1692d4ae437"
+    },
+    {
+      "path": "sql/migrations/003_worker.sql",
+      "ackline_a8_sha256": "aa91c42dffbba7239ba9bc666c2ef7be40caa9a8fbcb3b22b458399ba4406e48",
+      "zabalack_a9_sha256": "b30b50fc24810fcc9f4bfdfe4537eec9875963f5a99f6c5a02ff7019bdb8a8f2"
+    },
+    {
+      "path": "sql/migrations/004_controls.sql",
+      "ackline_a8_sha256": "a7e03926df8f7ee542142992a2c05da0b55c4c71fe1642ea8ea84d5320858096",
+      "zabalack_a9_sha256": "58e06b8685406d6f647f43d504a7acd5c21b2d4a41d98c606d61f978cf24f1a0"
+    },
+    {
+      "path": "sql/migrations/005_readiness.sql",
+      "ackline_a8_sha256": "49fa6f4bfb88836a1a614d21f3dfc3a47f66d30b2c0f813da7f550491b9694cd",
+      "zabalack_a9_sha256": "2e07b4c1a9822fd419a7a0231f48ccde7245da8d3836a5add2612553fb5764f9"
+    },
+    {
+      "path": "sql/migrations/006_late_response_fencing.sql",
+      "ackline_a8_sha256": "3dfa5cb1ec46e42d798f4a68e0f17b578d014bd42460d4c9190590d1d96d0044",
+      "zabalack_a9_sha256": "b7dcb6f7df5a4a3eb7dccd69792820cec606737c0b7f2ddaaf38ea4f68b14b65"
+    },
+    {
+      "path": "sql/migrations/007_settled_expiry.sql",
+      "ackline_a8_sha256": "abf3ca251fd479789291c57e3461387961934e62c956ae32c28af4e1a4877316",
+      "zabalack_a9_sha256": "bacfd9f7d0612f2b52869b8054aad2a39ddd836110bb47a93a0d59c1efab84a0"
+    },
+    {
+      "path": "sql/rollback/disable_trigger.sql",
+      "ackline_a8_sha256": "c2055afae56f2ecec84f7f195bcb99fd15c9349c6a8330e5cfce33d2727c6463",
+      "zabalack_a9_sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
+    },
+    {
+      "path": "sql/rollback/hold.sql",
+      "ackline_a8_sha256": "baf08cbbe11b5db1d4efc5a65e1c9945d24b2eeccf672036fb39574921c8a96d",
+      "zabalack_a9_sha256": "5bfbb4ecbb5f14f0fff45e40f9d60027dd7b5ea760849d52e1a2a6b0f0f1b7c8"
+    }
+  ],
+  "dependency_locks": {
+    "requirements.lock": {
+      "sha256": "e5b9c98a6d9247a1aec4e2421c083cc8b4b62b1cd153e54d6f4268ea1d6c2137",
+      "byte_identical_to_ackline_a8": true
+    },
+    "requirements-runtime.lock": {
+      "sha256": "0982a7f220b45196a863e71748afa3707000170ba421a88f2c5ca4682092e8e3",
+      "byte_identical_to_ackline_a8": true
+    },
+    "requirements-quality.lock": {
+      "sha256": "215519dc86d235094d06ea8d9727c22770f46f07538b49a6a9400a96d47e12a2",
+      "byte_identical_to_ackline_a8": true
+    },
+    "requirements-scanner.lock": {
+      "sha256": "f83ffadc53568eb3c7c472db5e16f967ee4821f6c8b50646eb27c2b99f044257",
+      "byte_identical_to_ackline_a8": true
+    }
+  },
+  "node_resolved_dependencies_unchanged": true,
+  "historical_handoff": {
+    "filename": "ackline-0.1.0a8-reviewed-site-complete.zip",
+    "sha256": "4aaefcf173d015fb8c0e2173c3f56f206d35c4e1c522f2066da4c8a0a1e48cad"
+  },
+  "production_gates": "G1-G8_PENDING",
+  "publication_namespace_ownership": "NOT_CONFIRMED"
+}

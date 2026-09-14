@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "collector",
+    "collected_at",
+    "evidence_type",
+    "deployment_gate_passed",
+    "data"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "collector": {
+      "enum": [
+        "local",
+        "postgres",
+        "zabbix",
+        "payload"
+      ]
+    },
+    "collected_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidence_type": {
+      "const": "operator_inventory"
+    },
+    "deployment_gate_passed": {
+      "const": false
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

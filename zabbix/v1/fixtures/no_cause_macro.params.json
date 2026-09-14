@@ -1,0 +1,18 @@
+{
+  "external_writes_enabled": "false",
+  "alerta_api_url": "",
+  "alerta_api_key": "",
+  "alerta_customer": "synthetic-customer-a",
+  "zabbix_instance": "synthetic-zabbix-1",
+  "alerta_resource": "synthetic-host-a",
+  "alerta_event": "SyntheticTriggerFamily",
+  "alerta_environment": "Development",
+  "alerta_severity": "warning",
+  "event_id": "10001",
+  "trigger_id": "20001",
+  "event_value": "1",
+  "event_recovery_id": "{EVENT.RECOVERY.ID}",
+  "event_cause_id": "{EVENT.CAUSE.ID}",
+  "event_update_status": "0",
+  "event_update_message": "{EVENT.UPDATE.MESSAGE}"
+}

@@ -1,0 +1,48 @@
+# Optional real Zabbix reference rig. NOT executed merely by test collection.
+# docker compose -f lab/compose.zabbix.yml --profile real-zabbix up -d
+# All accounts/passwords below are synthetic lab values. No media/actions configured.
+name: zabalack-real-zabbix-lab
+services:
+  zabbix-db:
+    image: postgres:16.4-alpine
+    profiles: [real-zabbix]
+    environment:
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: synthetic-zabbix-lab-only
+    volumes: [zabbix-lab-db:/var/lib/postgresql/data]
+    networks: [isolated]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U zabbix -d zabbix"]
+      interval: 3s
+      timeout: 2s
+      retries: 30
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:alpine-7.0.0
+    profiles: [real-zabbix]
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: synthetic-zabbix-lab-only
+    networks: [isolated]
+    depends_on:
+      zabbix-db: {condition: service_healthy}
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-7.0.0
+    profiles: [real-zabbix]
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: synthetic-zabbix-lab-only
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: UTC
+    ports: ["127.0.0.1:58080:8080"]
+    networks: [isolated]
+    depends_on: [zabbix-server]
+networks:
+  isolated:
+    internal: true
+volumes:
+  zabbix-lab-db:

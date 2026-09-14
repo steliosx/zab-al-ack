@@ -1,0 +1,120 @@
+"""Validate the meaning of a public deployment-lab result, without services.
+
+This is consistency validation, not authentication of a record's author. The
+service runner owns execution. R12 local-process records retain their distinct
+scope and cannot establish Docker execution or installed-wheel service coverage.
+"""
+from __future__ import annotations
+
+from datetime import datetime
+import json
+from pathlib import Path
+import re
+
+from evidence_utils import binding_error
+
+CHECK_NAMES = {
+    'authenticated_capture', 'cross_customer_denied', 'exactly_one_effect',
+    'human_update_recorded', 'ingest_key_local_only', 'media_macro_ingestion',
+    'neutral_update_filtered', 'probe_denied_table_read', 'projection',
+    'recovery_macro_ingestion', 'repeat_409', 'separate_native_logins',
+    'worker_denied_table_update',
+}
+REFERENCE_VERSIONS = {'alerta': '9.1.0', 'zabbix': '7.0.10', 'postgres_major': '18'}
+IMAGE_COMPONENTS = {'postgres', 'zabbix-db', 'zabbix-server', 'zabbix-web'}
+EXPECTED_COUNTS = {'passed': 4, 'failed': 0, 'skipped': 0}
+EMPTY_COUNTS = {'passed': 0, 'failed': 0, 'skipped': 0}
+MAX_RECORD_BYTES = 65536
+
+
+def require(condition: bool, reason: str) -> None:
+    if not condition:
+        raise ValueError('Deployment E2E ' + reason)
+
+
+def _object(pairs: list[tuple[str, object]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        require(key not in result, 'record contains duplicate fields')
+        result[key] = value
+    return result
+
+
+def _constant(value: str) -> None:
+    raise ValueError('Deployment E2E record contains a non-JSON number')
+
+
+def read_record(data: bytes) -> dict:
+    require(len(data) <= MAX_RECORD_BYTES, 'record exceeds size bound')
+    try:
+        value = json.loads(data, object_pairs_hook=_object, parse_constant=_constant)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError('Deployment E2E record is malformed') from error
+    require(isinstance(value, dict), 'record must be an object')
+    return value
+
+
+def exact_counts(value: object, expected: dict) -> bool:
+    return (isinstance(value, dict) and value == expected
+            and all(type(item) is int for item in value.values()))
+
+
+def validate_report(record: object, root: Path) -> None:
+    require(isinstance(record, dict), 'record must be an object')
+    if record.get('status') == 'NOT_RUN':
+        # Unavailability supplies no execution evidence and needs no source
+        # binding. It must not retain success from an earlier invocation.
+        require(exact_counts(record.get('counts', EMPTY_COUNTS), EMPTY_COUNTS),
+                'NOT_RUN record contains test results')
+        require(not any(record.get(key) for key in ('checks', 'image_ids', 'components', 'junit')),
+                'NOT_RUN record contains execution evidence')
+        require(record.get('tree_unchanged') is not True,
+                'NOT_RUN record claims an executed unchanged tree')
+        return
+
+    require(record.get('status') == 'PASS', 'run did not pass')
+    require(binding_error(record, root, 'Deployment E2E') is None,
+            'record is stale or not bound to this tree')
+    require(record.get('layer') == 'native_deployment_e2e'
+            and record.get('deployment_gates') == 'MANUAL_GATE_PENDING',
+            'record has an invalid evidence scope')
+    require(record.get('tree_unchanged') is True, 'run did not verify an unchanged tree')
+    require(exact_counts(record.get('counts'), EXPECTED_COUNTS),
+            'run did not pass all four service cases')
+    checks = record.get('checks')
+    require(isinstance(checks, dict) and set(checks) == CHECK_NAMES
+            and all(value is True for value in checks.values()),
+            'required service observations are incomplete')
+    require(record.get('versions') == REFERENCE_VERSIONS, 'reference versions differ')
+    require(all(type(record.get(key)) is int and record[key] == 0
+                for key in ('runner_shutdown_exit_code', 'shutdown_exit_code')),
+            'cleanup did not explicitly succeed')
+    require(not any(record.get(key) for key in ('reason', 'shutdown_reason', 'runner_shutdown_reason')),
+            'passing record retains a failure reason')
+    try:
+        start = datetime.fromisoformat(record['started_at'])
+        finish = datetime.fromisoformat(record['finished_at'])
+        valid_time = start.utcoffset() is not None and finish.utcoffset() is not None and finish >= start
+    except (KeyError, TypeError, ValueError):
+        valid_time = False
+    require(valid_time, 'run timestamps are missing or inconsistent')
+
+    local = record.get('not_docker', False)
+    require(type(local) is bool, 'runtime flag must be boolean')
+    if local:
+        require(record.get('image_ids') is None, 'local-process record claims Docker images')
+        components = record.get('components')
+        require(isinstance(components, dict) and set(components) == IMAGE_COMPONENTS | {'runner'}
+                and all(isinstance(value, str) and 0 < len(value.strip()) <= 4096
+                        for value in components.values()),
+                'local component identities are missing')
+        runner = record.get('runner')
+        require(isinstance(runner, str) and 0 < len(runner.strip()) <= 4096,
+                'local execution description is missing')
+    else:
+        images = record.get('image_ids')
+        require(isinstance(images, dict) and set(images) == IMAGE_COMPONENTS
+                and all(isinstance(value, str) and re.fullmatch(r'sha256:[0-9a-f]{64}', value)
+                        for value in images.values()),
+                'Docker image identities are missing or invalid')
+        require(not record.get('components'), 'Docker record contains local-process identities')

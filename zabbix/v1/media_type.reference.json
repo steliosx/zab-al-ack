@@ -1,0 +1,103 @@
+{
+  "zabbix_export": {
+    "media_types": [
+      {
+        "description": "Reference only. No live export supplied; not a validated drop-in. Preserve existing event/resource/correlation mappings. G1-G8 remain open. No endpoint, key, customer or logical instance is configured. Review every matching update action before enabling.",
+        "message_templates": [
+          {
+            "event_source": "TRIGGERS",
+            "message": "Reference source fact",
+            "operation_mode": "PROBLEM",
+            "subject": "Reference source fact"
+          },
+          {
+            "event_source": "TRIGGERS",
+            "message": "Reference recovery fact",
+            "operation_mode": "RECOVERY",
+            "subject": "Reference recovery fact"
+          },
+          {
+            "event_source": "TRIGGERS",
+            "message": "Reference update fact",
+            "operation_mode": "UPDATE",
+            "subject": "Reference update fact"
+          }
+        ],
+        "name": "Zab-al-ack source contract v1 REFERENCE DISABLED",
+        "parameters": [
+          {
+            "name": "alerta_api_key",
+            "value": ""
+          },
+          {
+            "name": "alerta_api_url",
+            "value": ""
+          },
+          {
+            "name": "alerta_customer",
+            "value": ""
+          },
+          {
+            "name": "alerta_environment",
+            "value": ""
+          },
+          {
+            "name": "alerta_event",
+            "value": "{TRIGGER.ID}"
+          },
+          {
+            "name": "alerta_resource",
+            "value": "{HOST.HOST}"
+          },
+          {
+            "name": "alerta_severity",
+            "value": "warning"
+          },
+          {
+            "name": "event_cause_id",
+            "value": "{EVENT.CAUSE.ID}"
+          },
+          {
+            "name": "event_id",
+            "value": "{EVENT.ID}"
+          },
+          {
+            "name": "event_recovery_id",
+            "value": "{EVENT.RECOVERY.ID}"
+          },
+          {
+            "name": "event_update_message",
+            "value": "{EVENT.UPDATE.MESSAGE}"
+          },
+          {
+            "name": "event_update_status",
+            "value": "{EVENT.UPDATE.STATUS}"
+          },
+          {
+            "name": "event_value",
+            "value": "{EVENT.VALUE}"
+          },
+          {
+            "name": "external_writes_enabled",
+            "value": "false"
+          },
+          {
+            "name": "trigger_id",
+            "value": "{TRIGGER.ID}"
+          },
+          {
+            "name": "zabbix_instance",
+            "value": ""
+          }
+        ],
+        "process_tags": "NO",
+        "script": "/* Zab-al-ack source contract v1; Zabbix 7.0 reference webhook, inert until reviewed.\n * Preserve the operator-supplied stable Alerta resource/event identities.\n * No Alerta acknowledgement route, source acknowledgement, notification,\n * credential lookup, logging, or HTTP object is used before echo filtering.\n */\nfunction required(value, name) {\n    if (typeof value !== 'string' || !value.length || value.length > 512 || /\\{[A-Z$][^}]*\\}/.test(value)) {\n        throw 'Invalid required field: ' + name;\n    }\n    return value;\n}\nfunction numericId(value, name, optional) {\n    if (optional && (value === null || value === '' || value === '0')) { return null; }\n    if (typeof value !== 'string' || !/^[1-9][0-9]{0,19}$/.test(value)) {\n        throw 'Invalid numeric identifier: ' + name;\n    }\n    return value;\n}\nfunction isEcho(p) {\n    return p.event_update_status === '1' && typeof p.event_update_message === 'string' &&\n        /^\\[(?:zabalack|ackline)\\] Acknowledged by the monitoring operations team\\.\\nRequested at \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)\\. Reference: [A-Za-z0-9_-]{16,128}\\.$/.test(p.event_update_message);\n}\nfunction buildPayload(p) {\n    if (isEcho(p)) { return {suppressed: true, reason: 'recognised_writeback_echo'}; }\n    if (p.event_update_status !== '0' && p.event_update_status !== '1') { throw 'Invalid event_update_status'; }\n    if (p.event_value !== '0' && p.event_value !== '1') { throw 'Invalid event_value'; }\n    var problemId = numericId(p.event_id, 'original problem event', false);\n    var recoveryId = p.event_value === '0' ? numericId(p.event_recovery_id, 'recovery event', false) : null;\n    if (recoveryId === problemId) { throw 'Recovery must not replace original problem identity'; }\n    var payload = {\n        resource: required(p.alerta_resource, 'stable resource'),\n        event: required(p.alerta_event, 'stable event/family key'),\n        environment: required(p.alerta_environment, 'environment'),\n        customer: required(p.alerta_customer, 'top-level customer'),\n        severity: p.event_value === '0' ? 'normal' : required(p.alerta_severity, 'mapped severity'),\n        service: ['Zabbix'],\n        origin: 'Zabbix/source-contract-v1',\n        attributes: {\n            source_system: 'zabbix',\n            zabbix_instance: required(p.zabbix_instance, 'logical instance'),\n            zabbix_event_id: problemId,\n            zabbix_trigger_id: numericId(p.trigger_id, 'trigger', false),\n            // A problem without a cause event: 7.0.x get_event_cause_value fails\n            // and expression.c substitutes STR_UNKNOWN_VARIABLE ('*UNKNOWN*') for\n            // the macro (observed on a real 7.0.10 delivery). An unexpanded macro\n            // is treated the same way. Emit null, never a literal ID; any other\n            // non-numeric text is still rejected.\n            zabbix_cause_event_id: numericId((p.event_cause_id === '{EVENT.CAUSE.ID}' || p.event_cause_id === '*UNKNOWN*') ? null : p.event_cause_id, 'cause', true),\n            zabbix_recovery_event_id: recoveryId,\n            source_contract_version: '1'\n        }\n    };\n    // Source updates remain facts; never import their acknowledgement as an Alerta /action.\n    return {suppressed: false, payload: payload};\n}\nfunction execute(p) {\n    var result = buildPayload(p);\n    if (result.suppressed) { return JSON.stringify({status: 'suppressed_echo'}); }\n    if (p.external_writes_enabled !== 'true') { return JSON.stringify({status: 'disabled_reference_artifact'}); }\n    var endpoint = required(p.alerta_api_url, 'configured Alerta URL');\n    if (!/^https:\\/\\/[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:\\/[A-Za-z0-9_.~-]+)*\\/alert$/.test(endpoint)) {\n        throw 'An explicit HTTPS Alerta /alert URL without userinfo, query or fragment is required';\n    }\n    var apiKey = required(p.alerta_api_key, 'customer-bound ingestion key');\n    var request = new HttpRequest();\n    request.addHeader('Content-Type: application/json');\n    request.addHeader('Authorization: Key ' + apiKey);\n    var response = request.post(endpoint, JSON.stringify(result.payload));\n    if (request.getStatus() < 200 || request.getStatus() >= 300) { throw 'Alerta ingestion HTTP failure'; }\n    if (typeof response !== 'string' || response.length > 1048576) { throw 'Alerta response limit'; }\n    var body;\n    try { body = JSON.parse(response); } catch (e) { throw 'Alerta invalid JSON response'; }\n    if (body.status !== 'ok') { throw 'Alerta ingestion rejected'; }\n    return JSON.stringify({status: 'accepted'});\n}\nif (typeof module !== 'undefined' && module.exports) {\n    module.exports = {buildPayload: buildPayload, isEcho: isEcho, execute: execute};\n} else {\n    return execute(JSON.parse(value));\n}\n",
+        "show_event_menu": "NO",
+        "status": "DISABLED",
+        "timeout": "10s",
+        "type": "WEBHOOK"
+      }
+    ],
+    "version": "7.0"
+  }
+}

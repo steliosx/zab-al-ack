@@ -1,0 +1,8 @@
+Zab-al-ack
+Copyright 2026 Zab-al-ack contributors
+
+This product includes the unmodified PostgreSQL schema from Alerta server
+v9.1.0, maintained by the Alerta project (https://github.com/alerta/alerta).
+That material is distributed under the Apache License, Version 2.0; the full
+licence is retained at lab/upstream/LICENSE-Alerta. See THIRD_PARTY.md for
+source provenance. No affiliation or endorsement is implied.

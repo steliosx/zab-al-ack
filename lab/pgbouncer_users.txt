@@ -1,0 +1,6 @@
+"lab_admin" "synthetic-lab-only"
+"alerta_app" "synthetic-lab-only"
+"zabalack_worker" "synthetic-lab-only"
+"zabalack_probe" "synthetic-lab-only"
+"zabalack_operator" "synthetic-lab-only"
+"zabalack_installer" "synthetic-lab-only"

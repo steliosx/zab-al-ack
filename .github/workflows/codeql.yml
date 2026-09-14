@@ -1,0 +1,59 @@
+name: CodeQL security analysis
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+env:
+  TZ: UTC
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    # Enable after selecting the repository and its Code Scanning policy.
+    # An absent variable keeps this job visibly skipped; it is not a clean scan.
+    if: ${{ vars.ZABALACK_CODEQL_ENABLED == 'true' }}
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Initialize the pinned analysis engine
+        id: codeql
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          # Resolves the defaults.json in this exact action commit, not latest.
+          tools: linked
+          queries: security-extended
+          debug: false
+      - name: Require the inspected CodeQL CLI version
+        env:
+          CODEQL_VERSION: ${{ steps.codeql.outputs.codeql-version }}
+        run: test "$CODEQL_VERSION" = '2.27.0'
+      - name: Analyze and wait for Code Scanning ingestion
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        with:
+          category: /language:${{ matrix.language }}
+          upload: always
+          upload-database: false
+          wait-for-processing: true

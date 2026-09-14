@@ -1,0 +1,5 @@
+# Direct quality tools; regenerate and inspect the full wheel lock as documented
+# in docs/quality-checks.md. Runtime/test dependencies remain in requirements.lock.
+ruff==0.16.7
+mypy==2.3.1
+hypothesis==6.168.0

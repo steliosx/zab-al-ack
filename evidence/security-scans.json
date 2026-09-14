@@ -1,0 +1,16 @@
+{
+  "pip_audit": {
+    "status": "PASS",
+    "exit_code": 0,
+    "package_count": 58,
+    "advisory_count": 0,
+    "skipped_packages": [],
+    "scope": "Known Python advisories for exact lock; no source-code audit"
+  },
+  "gitleaks": {
+    "status": "NOT_RUN",
+    "reason": "Gitleaks unavailable; targeted export checks are separate"
+  },
+  "independent_external_security_review": "PENDING",
+  "deployment_gates": "MANUAL_GATE_PENDING"
+}

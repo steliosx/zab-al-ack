@@ -1,0 +1,9 @@
+gate,status,owner_reference,evidence_reference,date,result,exception
+G1,planned,,,,NOT_VERIFIED,No live deployment evidence supplied; lab tests do not satisfy this gate
+G2,planned,,,,NOT_VERIFIED,No live deployment evidence supplied; lab tests do not satisfy this gate
+G3,planned,,,,NOT_VERIFIED,No live deployment evidence supplied; lab tests do not satisfy this gate
+G4,planned,,,,NOT_VERIFIED,No live deployment evidence supplied; lab tests do not satisfy this gate
+G5,planned,,,,NOT_VERIFIED,No live deployment evidence supplied; lab tests do not satisfy this gate
+G6,planned,,,,NOT_VERIFIED,No live deployment evidence supplied; lab tests do not satisfy this gate
+G7,planned,,,,NOT_VERIFIED,No live deployment evidence supplied; lab tests do not satisfy this gate
+G8,planned,,,,NOT_VERIFIED,No live deployment evidence supplied; lab tests do not satisfy this gate

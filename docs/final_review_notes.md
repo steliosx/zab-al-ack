@@ -1,0 +1,9 @@
+# Final-review interpretations applied to preserved revision 1.2
+
+The public site-neutral design is in `DESIGN.md`. These three interpretations are authoritative release-one clarifications, not a new architecture.
+
+1. In the first underlying-privileges paragraph of baseline §8, read the sentence without the obsolete phrase **“or source-identity columns.”** The later boundary table and T38 govern. Source identity lives in JSONB `attributes`; `UPDATE(attributes)` is a column permission and cannot constrain individual JSON keys. The trusted function owner can change arbitrary keys in that column. The projection implementation's approved-key merge and tests protect its callable interface; the worker has no direct table modification grant. Separately protected `status`, `severity`, `history`, and `customer` columns remain outside the owner's update grant.
+2. A marker-dependent trigger does not run for an acknowledgement with no marker. While plugin bypass is active, evidence is the plugin projection, committed history and operator change audit. A **marked** candidate reaching an enabled trigger while the database capture-disable flag is active can produce a bypass diagnostic. A physically disabled trigger produces no diagnostic. Staged projection attributes alone never prove an acknowledgement was saved.
+3. Flag bypass depends on its configuration/function/diagnostic path working. If that path is itself broken, separately authorised physical trigger disable is break-glass fallback. The worker and probe cannot set bypass, attach/replace a trigger, or enable/disable it. A `TRIGGER` grant can permit installation but does not grant the table ownership required for `ALTER TABLE ... DISABLE TRIGGER`.
+
+See `rollback.md` for the ordered operational procedure and `acceptance_matrix.csv` for T38/T39 evidence status. These interpretations do not close G1–G8.

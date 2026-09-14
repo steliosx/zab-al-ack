@@ -1,0 +1,39 @@
+# Quality-only wheels inspected on 2026-09-11; CPython 3.12, Linux x86_64.
+# Each SHA256 was checked against the matching official PyPI release JSON.
+# See requirements-quality.in and docs/quality-checks.md for scope/update steps.
+
+# https://pypi.org/pypi/ast_serialize/0.11.1/json
+# ast_serialize-0.11.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+ast-serialize==0.11.1 --hash=sha256:3eebd3dd25a81839ac7d25b5f3fb3527f6141b35eca29f63d2613fe6254307fd
+
+# https://pypi.org/pypi/hypothesis/6.168.0/json
+# hypothesis-6.168.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+hypothesis==6.168.0 --hash=sha256:5920d267f7d8cfd376672f2bde5905cdf284d47519582e41ce7c142d48ee46c4
+
+# https://pypi.org/pypi/librt/0.15.0/json
+# librt-0.15.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+librt==0.15.0 --hash=sha256:89cc46cfd15022e35084355478c9ac809d90b1152222706ac9a7655ec21df6fa
+
+# https://pypi.org/pypi/mypy/2.3.1/json
+# mypy-2.3.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+mypy==2.3.1 --hash=sha256:858fc57d3d91fa728e33e7ad71def60fc6272694607b306cd3292db53ae39080
+
+# https://pypi.org/pypi/mypy_extensions/1.1.0/json
+# mypy_extensions-1.1.0-py3-none-any.whl
+mypy-extensions==1.1.0 --hash=sha256:1be4cccdb0f2482337c4743e60421de3a356cd97508abadd57d47403e94f5505
+
+# https://pypi.org/pypi/pathspec/1.1.1/json
+# pathspec-1.1.1-py3-none-any.whl
+pathspec==1.1.1 --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189
+
+# https://pypi.org/pypi/ruff/0.16.7/json
+# ruff-0.16.7-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+ruff==0.16.7 --hash=sha256:9ce7f8f22df67c93ed96c717f9128eadb797144ac2bad475cf536f31d6100c55
+
+# https://pypi.org/pypi/sortedcontainers/2.4.0/json
+# sortedcontainers-2.4.0-py2.py3-none-any.whl
+sortedcontainers==2.4.0 --hash=sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0
+
+# https://pypi.org/pypi/typing_extensions/4.16.0/json
+# typing_extensions-4.16.0-py3-none-any.whl
+typing-extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8

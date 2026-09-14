@@ -1,0 +1,28 @@
+---
+- name: Apply only Zab-al-ack-owned database objects using a reviewed connection
+  hosts: "{{ zabalack_database_group | default('__zabalack_no_hosts_selected__') }}"
+  gather_facts: false
+  serial: 1
+  vars:
+    zabalack_migrations_opt_in: false
+  pre_tasks:
+    - ansible.builtin.assert:
+        that:
+          - zabalack_migrations_opt_in | bool
+          - zabalack_database_group is defined
+          - zabalack_change_ref | default('') | length > 0
+          - zabalack_paths_fenced | default(false) | bool
+          - zabalack_migration_script is defined
+          - zabalack_migration_python is defined
+          - zabalack_migration_service is defined
+        fail_msg: "Explicit fenced migration selection and reviewed zabalack_owner command required."
+  tasks:
+    - name: Run checksummed migration CLI under its own restricted principal
+      ansible.builtin.command:
+        argv: ["{{ zabalack_migration_python }}", "{{ zabalack_migration_script }}", --dsn-env, ZABALACK_MIGRATION_DSN, --set-role, zabalack_owner]
+      environment:
+        ZABALACK_MIGRATION_DSN: "service={{ zabalack_migration_service }}"
+      no_log: true
+# zabalack_migration_script selects the reviewed sql/migrate.py in this artifact.
+# The CLI enforces zabalack_owner. Do not put the trigger installer DSN here.
+# No role creation, alerts ownership change, trigger administration or restart.

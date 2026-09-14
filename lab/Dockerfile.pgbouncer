@@ -1,0 +1,21 @@
+# Isolated lab build only; upstream source checksum fixed, no production deploy.
+FROM debian:12.7-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential ca-certificates curl libevent-dev libssl-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+RUN curl --fail --location --proto '=https' \
+    https://www.pgbouncer.org/downloads/files/1.24.1/pgbouncer-1.24.1.tar.gz -o pgbouncer.tar.gz \
+    && echo 'da72a3aba13072876d055a3e58dd4aba4a5de4ed6148e73033185245598fd3e0  pgbouncer.tar.gz' | sha256sum -c - \
+    && tar --no-same-owner -xzf pgbouncer.tar.gz \
+    && cd pgbouncer-1.24.1 \
+    && ./configure --prefix=/opt/pgbouncer --with-openssl \
+    && make -j2 && make install
+FROM debian:12.7-slim
+RUN apt-get update && apt-get install -y --no-install-recommends libevent-2.1-7 libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /opt/pgbouncer /opt/pgbouncer
+COPY lab/pgbouncer.ini /etc/pgbouncer/pgbouncer.ini
+COPY lab/pgbouncer_users.txt /etc/pgbouncer/users.txt
+USER 65534:65534
+ENTRYPOINT ["/opt/pgbouncer/bin/pgbouncer", "/etc/pgbouncer/pgbouncer.ini"]

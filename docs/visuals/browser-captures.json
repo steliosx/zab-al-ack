@@ -1,0 +1,35 @@
+{
+  "tool": "Playwright headless Chromium 141.0.7390.37",
+  "captured_at_utc": "2026-09-12T12:31:54.107Z",
+  "captures": [
+    {
+      "file": "01-config-browser.png",
+      "sha256": "8c889780c124d53067f415183d67093cc32f2365453fb13aa3a88e78bcb9a1b5",
+      "source": "build/docs/01-config.html",
+      "source_sha256": "b94ef6b8ada949085642931b4396c664462fba2e2a4dc8a49d3b32fad77e9a88",
+      "kind": "browser render of the transcript page (file://), full page, 1000px wide"
+    },
+    {
+      "file": "02-action-browser.png",
+      "sha256": "a5ba38c2ddfdd55bca188d3f22afaccf2ca59d93abdb34d08ade1400641ba50e",
+      "source": "build/docs/02-action.html",
+      "source_sha256": "8f76c7a096637586cf719076828d605178de35d385a22306e6a57336de91f99d",
+      "kind": "browser render of the transcript page (file://), full page, 1000px wide"
+    },
+    {
+      "file": "03-ledger-browser.png",
+      "sha256": "e6ee7d756ab56a9bd165b3a4fd6917860b6d2870f5de2be784242a25610b8143",
+      "source": "build/docs/03-ledger.html",
+      "source_sha256": "7ef8151d3cd538eb02c8b87787a32ad2d475162f4c5927a676a000b35ad9e70d",
+      "kind": "browser render of the transcript page (file://), full page, 1000px wide"
+    },
+    {
+      "file": "04-zabbix-event-details.png",
+      "sha256": "332a6f271b9861c040c25b38c13c9b294246cc382fa70a39f93216aa6f68f13f",
+      "source": "Zabbix 7.0.10 frontend, tr_events.php (Event details) on the disposable deployment-lab instance, default Admin session",
+      "event_id": "7",
+      "trigger_id": "24448",
+      "kind": "real product UI screenshot of lab data, full page, 1600px wide"
+    }
+  ]
+}

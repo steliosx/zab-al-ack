@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-09-13T13:26:58.655264+00:00",
+  "build_environment": {
+    "python": "3.12.14",
+    "platform": "Linux-x86_64",
+    "architecture": "x86_64"
+  },
+  "python_packages": [
+    {
+      "name": "alerta-server",
+      "observed_version": "9.1.0"
+    },
+    {
+      "name": "Flask",
+      "observed_version": "3.1.3"
+    },
+    {
+      "name": "psycopg",
+      "observed_version": "3.2.10"
+    },
+    {
+      "name": "psycopg2-binary",
+      "observed_version": "2.9.10"
+    },
+    {
+      "name": "httpx",
+      "observed_version": "0.28.1"
+    },
+    {
+      "name": "pytest",
+      "observed_version": "9.0.3"
+    },
+    {
+      "name": "pytest-asyncio",
+      "observed_version": "1.3.0"
+    },
+    {
+      "name": "setuptools",
+      "observed_version": "83.0.0"
+    },
+    {
+      "name": "wheel",
+      "observed_version": "0.46.2"
+    }
+  ],
+  "reference_interfaces": {
+    "alerta_server": {
+      "version": "9.1.0",
+      "commit": "f4312727783dad64198b62ed778bbca98a5144a3",
+      "mode": "actual installed Python package; PostgreSQL driver backend",
+      "deployed": "NOT_VERIFIED"
+    },
+    "alerta_webui": {
+      "revision": "e6eb99e90901a32e63ee96588ac4dd8804d6831a",
+      "mode": "source inspected only; no frontend changes",
+      "deployed": "NOT_VERIFIED"
+    },
+    "alarm_model": {
+      "module": "alerta.models.alarms.alerta",
+      "mode": "upstream default",
+      "repeat_ack": "InvalidAction -> HTTP409",
+      "deployed": "NOT_VERIFIED"
+    },
+    "postgresql_native": {
+      "reference": "18.0",
+      "commit": "3d6a828938a5fa0444275d3d2f67b64ec3199eb7",
+      "status": "EXECUTED_LOCAL_SOURCE_BUILT_A16",
+      "evidence": "evidence/native-run.json",
+      "compose_form": "NOT_RUN_A14: Docker Compose unavailable; local native services also not run.",
+      "observed": "PostgreSQL 18.3 built from source; five fresh-cluster phases through tools/native_local.py: 42 passed, 0 failed, 0 skipped, cleanup exit 0 per phase. Executed on a16; unchanged service-path code supports an inference about a14 and a15, whose own records stand on their own runs."
+    },
+    "postgresql_wasm": {
+      "pglite": "0.5.8",
+      "engine": "18.3",
+      "server_version_num": 180003,
+      "socket_adapter": "0.2.11",
+      "mode": "single-backend WASM supplemental sequential SQL/actual Alerta persistence",
+      "native_equivalence_claimed": false
+    },
+    "pgbouncer": {
+      "reference": "1.24.1",
+      "commit": "2305be8887b902c46bec7acdbf644e039061195c",
+      "status": "EXECUTED_LOCAL_SOURCE_BUILT_A16",
+      "evidence": "evidence/native-run.json",
+      "observed": "PgBouncer 1.24.1 built from source and exercised by the same five native phases on a16."
+    },
+    "zabbix": {
+      "reference": "7.0.0",
+      "commit": "49955f1fb5c9168a8a24b053f7ade6b3d903143c",
+      "status": "REFERENCE_PINS_RETAINED; current synthetic contract executed; no new real-source inspection or service run",
+      "real_server": "EXECUTED for a16 on a disposable source-built 7.0.10 instance: 6 contract cases through tools/record_real_zabbix.py --run, including the A4 excluded-action denial.",
+      "not_established": "production-like instance behaviour (its own actions, media and permissions), HA; A2 transport remediation",
+      "deployed": "NOT_VERIFIED",
+      "deployment_e2e_target": {
+        "version": "7.0.10",
+        "commit": "237358b56b2584b94b1f8358f479ade669693ba2",
+        "status": "EXECUTED_LOCAL_A16: installed a16 wheel, 4 passed and 13/13 observations; Docker Compose NOT_RUN."
+      },
+      "webhook_transport": {
+        "amendment": "A2",
+        "tls_peer_verification": false,
+        "tls_hostname_verification": false,
+        "follows_redirects": true,
+        "remediation_gate": "G1/G2_PENDING",
+        "evidence": "docs/SPEC_AMENDMENTS.md"
+      },
+      "cause_macro": {
+        "amendment": "A3",
+        "absent_cause_rendering": "*UNKNOWN*",
+        "source": "src/libs/zbxexpression/expression.c STR_UNKNOWN_VARIABLE",
+        "webhook_handling": "null"
+      },
+      "role_permissions": {
+        "amendment": "A4",
+        "explicit_rules_and_effective_readback": true,
+        "shared_acknowledge_unacknowledge_capability": true,
+        "production_permissions": "NOT_VERIFIED",
+        "operator_fixture_enumerated": true,
+        "real_token_excluded_action_denial": "NOT_RUN_A14: test supplied; historical a13 result retained separately"
+      }
+    }
+  },
+  "production_gates": {
+    "G1": "MANUAL_GATE_PENDING",
+    "G2": "MANUAL_GATE_PENDING",
+    "G3": "MANUAL_GATE_PENDING",
+    "G4": "MANUAL_GATE_PENDING",
+    "G5": "MANUAL_GATE_PENDING",
+    "G6": "MANUAL_GATE_PENDING",
+    "G7": "MANUAL_GATE_PENDING",
+    "G8": "MANUAL_GATE_PENDING"
+  },
+  "security_defaults": {
+    "external_writes_enabled": false,
+    "production_cohorts": [],
+    "production_endpoints": [],
+    "production_access": "NOT_AUTHORIZED_NOT_ATTEMPTED"
+  },
+  "alpha_version": "0.1.0a16",
+  "ci_workflows": "SUPPLIED_NOT_RUN_ON_GITHUB",
+  "database_schema_version": 3,
+  "review_base_commit": "14b8c72f34d93b16c102013a232a995d75f7a6eb",
+  "review_status": "Zab-al-ack a16: the independent a15 review reproduced and adopted \u2014 ten writer regressions and precise corrections to the R20 history, the optional-when-absent mutation records, the service-run attribution and the verifier dependency (R21); no runtime or SQL change",
+  "native_and_real_zabbix_evidence": "EXECUTED for a16 on local services (not_docker: true): evidence/native-run.json 42 passed, evidence/real-zabbix-run.json 6 passed, evidence/deployment-e2e-run.json 4 passed with 13/13 observations.",
+  "quality_tools": {
+    "ruff": "0.16.7",
+    "mypy": "2.3.1",
+    "hypothesis": "6.168.0",
+    "pin_scope": "CPython 3.12 Linux x86_64; hash verified wheels",
+    "lock": "requirements-quality.lock"
+  },
+  "lab_dependencies": {
+    "provisioning": "Fresh npm ci --prefix lab --ignore-scripts --legacy-peer-deps executed in a14 workspace; pinned dependencies unchanged.",
+    "lock_sha256": "20d9a81c23c8b68b70a154fd9a578eeb80a57eb078a2488bf958ed55beafffdc"
+  },
+  "new_quality_controls": {
+    "mutation": "See evidence/mutation-run.json",
+    "deployment_e2e": "EXECUTED_LOCAL_A15: see evidence/deployment-e2e-run.json (installed-wheel runner); Docker Compose NOT_RUN",
+    "codeql": "SUPPLIED_NOT_RUN_HOSTED",
+    "signed_attestation": "INACTIVE_TEMPLATE_NOT_ISSUED",
+    "export_file_modes": "public_audit.export_mode_findings rejects exported files that are not group/other readable (R20)"
+  },
+  "rename_parent_commit": "aaadf4919f837b4a003a8fc57c469f70ca98d08c",
+  "database_namespace": "zabalack",
+  "legacy_ackline_database_upgrade": "NOT_IMPLEMENTED: installer rejects existing ackline schema",
+  "rename_manifest": "docs/rename_manifest.json",
+  "documentation_visuals": {
+    "kind": "SVG output illustrations and three browser-rendered transcript PNGs; one supplied real Zabbix 7.0.10 frontend screenshot of synthetic lab data",
+    "capture": "docs/visuals/walkthrough.json",
+    "browser_screenshots": "SUPPLIED_A12/A13: preserved from the verified a13 archive; no new capture or screenshot review claimed in a14",
+    "browser_capture_manifest": "docs/visuals/browser-captures.json",
+    "binary_locations": "Complete handoff visual-previews/ and website/assets/visuals/a12/; binary images are intentionally outside the text-only source export",
+    "alerta_ui_screenshot": "NOT_RUN: separate Alerta Web UI is not installed",
+    "newer_zabbix_screenshot": "NOT_RUN: supplied frontend screenshot remains labelled 7.0.10"
+  },
+  "historical_independent_a12_review_adopted_in_a13": {
+    "document": "docs/INDEPENDENT_REVIEW.md",
+    "source_unchanged": true,
+    "original_harness": "9387ec8958d6d0064ead3c362ea559c26f955aca308b541f880ad91e8f3c8824",
+    "corrected_harness": "2727c4cbb2b0b6187bf70921ec03f5f16237aaf36ba5616241ed33aba85ea76c",
+    "original_input_sha256": "c94a059e9de82fd3cea69e929dbcd143aa5743cb98abf3c2000d5df244e12f46",
+    "vm": "Ubuntu 24.04, QEMU 8.2.2 TCG, restricted guest network, loopback services",
+    "production_capacity_evidence": false,
+    "intermediate_harness": "74e536e42b3d192f70283160fd623d47a6b01450dcb49bb9c5a5cf7ffad945be",
+    "intermediate_harnesses": [
+      "74e536e42b3d192f70283160fd623d47a6b01450dcb49bb9c5a5cf7ffad945be",
+      "022ba0f9f881f87888daa407f065153d288a2275d9884388514e6466c997c542"
+    ],
+    "final_service_records_verified": true,
+    "reference_counts": {
+      "passed": 818,
+      "skipped": 22,
+      "failed": 0
+    },
+    "real_zabbix_versions": {
+      "7.0.30": {
+        "contract": {
+          "passed": 5,
+          "failed": 0,
+          "skipped": 0
+        },
+        "supplemental": {
+          "passed": 10,
+          "failed": 0,
+          "skipped": 0
+        },
+        "full_notification_pipeline": false
+      },
+      "7.0.10": {
+        "contract": {
+          "passed": 5,
+          "failed": 0,
+          "skipped": 0
+        },
+        "supplemental": {
+          "passed": 10,
+          "failed": 0,
+          "skipped": 0
+        },
+        "full_notification_pipeline": true
+      }
+    },
+    "adopted_in": "0.1.0a13",
+    "verified_independently": "A4 reproduced on a separately built Zabbix 7.0.10: original rules left all eleven actions enabled and suppression was accepted; corrected rules produced the specific permission denials; acknowledge_problems also accepted action 16."
+  },
+  "agent_workflows": {
+    "skills": 3,
+    "guidance_file_count": 16,
+    "qualitative_cases": 5,
+    "evaluation_record": "Complete handoff review/agent-evaluations/",
+    "benchmark_claimed": false
+  }
+}

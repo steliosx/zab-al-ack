@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/github/codeql-action",
+  "tag": "v4.38.0",
+  "commit": "b96794f015dfd88f77b49b1c93e0fa7110f94c63",
+  "retrieved_utc": "2026-09-11T00:00:00Z",
+  "retrieval_method": "Official upstream Git tag resolved and checked out; action and implementation source inspected. Date recorded at UTC day precision.",
+  "runtime": "node24",
+  "cli_version": "2.27.0",
+  "bundle_tag": "codeql-bundle-v2.27.0",
+  "tools_input": "linked",
+  "query_suite": "security-extended",
+  "files": {
+    "README.md": "fd29310185b141f3d743c25458e0b36253b2ac12dd595aee5025841ae9a55523",
+    "init/action.yml": "93bb5117fc0c22922e865515a8a863aa2182cf872b124735904d4051afb83854",
+    "analyze/action.yml": "46967f21b52b5f78ba49192d432bca6c6b8a1027b3d2eb8b29d33c3f3012ec78",
+    "src/defaults.json": "4cc5155a5a78596a7051be8f4273c7d311f763160dfc4c63245ae89473cf20cd",
+    "src/setup-codeql.ts": "76369ea682764f21053be6f50f4a4b48e121fa7868fbcfd36c3ca3b5df1314d6",
+    "src/init-action.ts": "f446f23618005ff7ba3e8887b0702f86041c2baeb5d1cde50663b0dc500e1e0e",
+    "src/analyze-action.ts": "a3c18338f178df7698671bbbf3d74b0f1420f95b2c588f95a44c70791de1c982"
+  },
+  "inspected_contracts": [
+    "init accepts one matrix language, build-mode none, tools linked, queries and debug inputs",
+    "init returns codeql-version; workflow rejects any version other than 2.27.0",
+    "setup-codeql.ts prioritizes defaults.json when tools linked is supplied",
+    "init setup-python-dependencies input is deprecated and ignored; action does not install Python dependencies",
+    "analyze upload accepts always, failure-only or never; database upload is a separate input",
+    "analyze requires built-in GitHub token and security-events write for SARIF upload",
+    "analyze supports upload-database false and wait-for-processing true"
+  ],
+  "hosted_execution": "NOT_RUN",
+  "bundle_independent_hash_verification": "NOT_RUN",
+  "limitations": [
+    "Manifest records inspected upstream interfaces, not a completed security scan",
+    "CLI release assets are obtained by the pinned upstream action; this manifest does not pin their archive digest",
+    "No CodeQL CLI or query execution was performed locally",
+    "Repository enablement, Code Scanning availability and rulesets remain owner configuration inputs"
+  ]
+}

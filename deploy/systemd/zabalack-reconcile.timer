@@ -1,0 +1,11 @@
+[Unit]
+Description=Optional explicit source-read-only reconciliation schedule
+
+[Timer]
+OnActiveSec=60s
+OnUnitInactiveSec=60s
+AccuracySec=1s
+Unit=zabalack-reconcile.service
+Persistent=false
+# No Install section: operator must explicitly start this timer after reviewing
+# DB recording/projection permission. The sample playbook never installs it.

@@ -1,0 +1,50 @@
+{
+  "checks": {
+    "authenticated_capture": true,
+    "cross_customer_denied": true,
+    "exactly_one_effect": true,
+    "human_update_recorded": true,
+    "ingest_key_local_only": true,
+    "media_macro_ingestion": true,
+    "neutral_update_filtered": true,
+    "probe_denied_table_read": true,
+    "projection": true,
+    "recovery_macro_ingestion": true,
+    "repeat_409": true,
+    "separate_native_logins": true,
+    "worker_denied_table_update": true
+  },
+  "code_digests": {
+    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93",
+    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b"
+  },
+  "components": {
+    "postgres": "PostgreSQL 18.3 built from the upstream source tarball; fresh cluster on port 5432; host connections scram-sha-256 (password logins for lab_admin, alerta_app, zabalack_worker, zabalack_probe, zabalack_operator, migrator)",
+    "runner": "this host: a Python 3.12 environment with requirements.lock and the built zabalack 0.1.0a16 wheel installed non-editably (sha256 151a4cfcee71f0036c6215951aacd52fd86c15ade484270115bd45b4c0ea43d1); installed package bytes verified against the wheel; provides the Alerta entry points, zabalack CLI and Flask CLI HTTPS server",
+    "zabbix-db": "PostgreSQL 16.15 (Ubuntu package), dedicated database",
+    "zabbix-server": "zabbix_server 7.0.10 built from the Ubuntu archive upstream tarball (--enable-server --with-postgresql --with-libpcre2 --with-libcurl --with-libxml2), fresh database from the tarball schema/images/data before the run, run as an unprivileged user with a clean environment",
+    "zabbix-web": "ui/ from the same tarball served by the PHP 8.3 built-in server on 127.0.0.1:8080"
+  },
+  "counts": {
+    "failed": 0,
+    "passed": 4,
+    "skipped": 0
+  },
+  "deployment_gates": "MANUAL_GATE_PENDING",
+  "finished_at": "2026-09-13T23:04:19Z",
+  "image_ids": null,
+  "layer": "native_deployment_e2e",
+  "not_docker": true,
+  "project": "zabalack-e2e-71e29a0d504c",
+  "runner": "lab/deployment_e2e_runtime.py executed unmodified through pytest tests/deployment_e2e on one host without Docker (tools/run_deployment_e2e_local.py): the Compose services were replaced by operator-provided local services with the same hostnames (postgres, zabbix-web, runner) and the same private directory; the runner environment installed the built wheel non-editably; see docs/RELEASE_AMENDMENTS.md R14",
+  "runner_shutdown_exit_code": 0,
+  "shutdown_exit_code": 0,
+  "started_at": "2026-09-13T23:03:33Z",
+  "status": "PASS",
+  "tree_unchanged": true,
+  "versions": {
+    "alerta": "9.1.0",
+    "postgres_major": "18",
+    "zabbix": "7.0.10"
+  }
+}

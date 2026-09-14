@@ -1,0 +1,30 @@
+{
+  "isolated_lab": false,
+  "fresh_instance_no_notifications": false,
+  "url": "http://127.0.0.1:58080/api_jsonrpc.php",
+  "token_file": "REQUIRED_SYNTHETIC_LAB_TOKEN_FILE",
+  "source": {
+    "zabbix_instance": "isolated-real-zabbix",
+    "zabbix_event_id": "REQUIRED_LAB_PROBLEM_EVENT_ID",
+    "zabbix_trigger_id": "REQUIRED_LAB_TRIGGER_ID"
+  },
+  "cohort": {
+    "host_ids": [
+      "REQUIRED_LAB_HOST_ID"
+    ],
+    "group_ids": [
+      "REQUIRED_LAB_GROUP_ID"
+    ]
+  },
+  "outside_scope_source": {
+    "zabbix_event_id": "OPTIONAL_OUTSIDE_SCOPE_PROBLEM_EVENT_ID",
+    "group_ids": [
+      "OPTIONAL_OUTSIDE_SCOPE_GROUP_ID"
+    ],
+    "witness_token_file": "OPTIONAL_READ_ONLY_WITNESS_TOKEN_FILE_WITH_READ_ON_BOTH_GROUPS"
+  },
+  "end_to_end": {
+    "zabbix_trigger_id": "REQUIRED_SECOND_LAB_TRIGGER_ID",
+    "zabbix_event_id": "REQUIRED_SECOND_LAB_PROBLEM_EVENT_ID"
+  }
+}
