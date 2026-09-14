@@ -3,6 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import zipfile
 
 import pytest
@@ -14,6 +16,38 @@ from public_audit import evidence_binding_findings
 from tests.release.mutation_fixtures import passing_mutation_record
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize('script', ['collect_ci_evidence.py', 'security_scan.py'])
+def test_ci_helpers_start_without_site_packages(script):
+    result = subprocess.run(
+        [sys.executable, '-E', '-S', str(ROOT / 'tools' / script), '--help'],
+        cwd=ROOT, capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert 'usage:' in result.stdout
+
+
+def test_ci_preparation_runs_without_site_packages(tmp_path):
+    evidence = tmp_path / 'evidence'
+    evidence.mkdir()
+    (evidence / 'reference-run.json').write_text('{"historical": true}')
+    program = (
+        'from pathlib import Path; import sys; '
+        'from collect_ci_evidence import prepare; '
+        'prepare(Path(sys.argv[1]), "quality", '
+        '{"repository": "example/test", "run_id": "1", '
+        '"run_attempt": "1", "sha": "0" * 40})'
+    )
+    result = subprocess.run(
+        [sys.executable, '-E', '-S', '-c', program, str(tmp_path)],
+        cwd=ROOT / 'tools', capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not (evidence / 'reference-run.json').exists()
+    record = json.loads((tmp_path / 'build/ci-preparation/quality.json').read_text())
+    assert record['kind'] == 'quality'
+    assert record['code_digests'] == code_digests(tmp_path)
 
 
 @pytest.fixture

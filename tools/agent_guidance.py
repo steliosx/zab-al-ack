@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 import re
 
-import yaml
-
 SKILLS = ('zabalack-release-review', 'zabalack-isolated-lab', 'zabalack-migration-review')
 CONTEXT = ('AGENTS.md', 'CONTRIBUTING.md', 'docs/agent-workflows.md',
            'docs/RELEASING.md', 'docs/local-services.md', 'lab/real_zabbix.md',
@@ -17,6 +15,10 @@ CONTEXT = ('AGENTS.md', 'CONTRIBUTING.md', 'docs/agent-workflows.md',
 
 
 def inspect(root: Path) -> dict:
+    # CI preparation and secret scanning import the public-file helpers before
+    # project dependencies are installed. Only guidance validation needs YAML.
+    import yaml
+
     root = root.absolute()
     paths = [*CONTEXT, *(f'.agents/skills/{name}/SKILL.md' for name in SKILLS)]
     selected = set(paths)
