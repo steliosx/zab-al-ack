@@ -69,6 +69,11 @@ which read it.
 
 Upgrade sequence, with the principal recorded for each step. Apply `008_generation_fence.sql` through the
 ordinary migration path as `zabalack_owner` and record the schema version moving 3 to 4. Then run
+`sql/install/09_installer_roles.sql` as `zabalack_owner` with `installer_roles` set to the comma-separated list
+of installation principals that are members of `zabalack_owner`; record which roles those are, or record that
+the list is empty because the migrations run as a superuser and no role holds `zabalack_owner`. Confirm
+`zabalack.installation.installer_roles` afterwards, and that it is not `NULL`: until it is recorded,
+`capture_health()` reports `functions_ok` false and `13_reseal.sql` refuses to seal. Then run
 `sql/install/12_application_grant.sql` as `zabalack_owner` with `alert_app_role` set to the role the Alerta
 application connects as; record which role that is (the alerts owner under the upstream default, a separate
 login role where the deployment splits them). Then re-seal the readiness manifest with
@@ -87,7 +92,9 @@ and no other function from this grant. Where the application connects as the ale
 that role also holds 005's grants — `capture_ack()` for the trigger and `seal_installation()` for the installer —
 which are expected and are the reason §2 of the deployment guide prefers a separate login role; record which
 topology applies. The script revokes the entry point from any former grantee and records the role in
-`zabalack.installation.application_role`; confirm that `zabalack.stage_generation()` has that one non-owner grantee
+`zabalack.installation.application_role`, and revokes that former grantee's `USAGE` on the schema with it (the
+alerts owner and the runtime roles keep theirs, which the map names in their own right); confirm that
+`zabalack.stage_generation()` has that one non-owner grantee
 and no other and that the role holds `USAGE` on the schema, that no non-superuser role is a member of it, and that it
 is not, and cannot assume, any `zabalack_*` role (`pg_auth_members` in both directions — a membership is not an ACL, so
 neither the grantee list nor the sealed digests move with it; a member of the application role stages through the entry
@@ -103,16 +110,24 @@ the non-owner grantee of every `zabalack` function is the one the installation m
 `operator_call` to `zabalack_operator`, `capture_health` to `zabalack_probe` and `zabalack_operator`, `capture_ack` and
 `seal_installation` to the alerts owner, `stage_generation` to the recorded application role, every other function to no one), no
 relation admits a grantee at all, the fence's identity sequence included; the schema and everything in it is owned by
-`zabalack_owner`, since a `SECURITY DEFINER` function runs as its owner; none of the four `zabalack_*` roles is a member of
-another, a runtime login that can assume the owner reaching every owner-only function; and each keeps the attributes
+`zabalack_owner`, since a `SECURITY DEFINER` function runs as its owner; schema `zabalack` admits only `USAGE`, and only to the
+three runtime roles, the alerts owner and the recorded application role — so record its ACL and confirm no `CREATE` to any
+role but the owner, nothing to `PUBLIC`, and that each runtime role still holds that `USAGE`, without which its fully
+qualified call fails at schema access while every function grant still reads right; and each keeps the attributes
 `00_roles.sql` declares (no `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, `REPLICATION` or `INHERIT`; `LOGIN` for
 the three runtime roles only) (its `UPDATE` is `setval()`, and a sequence moved backwards
-inverts the fence's ordering), and neither `zabalack_worker` nor `zabalack_operator` has a non-superuser member — whoever reaches
+inverts the fence's ordering), and no role outside the recorded installer topology is a member of any of the four — record
+`pg_auth_members` for all four and confirm every non-superuser member is `zabalack_owner`'s and is named in
+`installer_roles`; a `NOINHERIT` member resolves no privilege through any ACL while `SET ROLE` hands it the role whole, and
+the fingerprint hashes a membership only where the member is itself one of the four, so an outside one moves no digest at
+all — whoever reaches
 `worker_call()` records captures as verified without the signature check, and whoever reaches `operator_call()` holds the controls —
 even under a matching
 seal, `13_reseal.sql` refuses to seal a tree that breaks any of them, and a false value there is a real
 misconfiguration, not a probe fault. A change of application role is a re-run of the grant script for the new role
-followed by a re-seal, recorded as a change.
+followed by a re-seal, recorded as a change; a change of installation principal is a re-run of
+`09_installer_roles.sql` naming the whole new list — it replaces the record rather than adding to it, so a retired
+principal stops being exempt the moment it is left out — followed by a re-seal, recorded the same way.
 
 Record the backfill's result. 008 records one generation for every capture that produced an action or still awaits
 verification (`captured_unverified`, `verifier_hold` in the outbox), in capture order — a capture awaiting

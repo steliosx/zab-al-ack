@@ -175,6 +175,8 @@ def provision_database(passwords):
     # schema owner. psql would substitute the variable; the runtime splices it.
     with psycopg.connect(dsns["migrator"], autocommit=True) as migrator:
         migrator.execute("SET ROLE zabalack_owner")
+        migrator.execute((ROOT / "sql/install/09_installer_roles.sql").read_text()
+                         .replace(":'installer_roles'", "'migrator'"))
         migrator.execute((ROOT / "sql/install/12_application_grant.sql").read_text()
                          .replace(':"alert_app_role"', '"alerta_app"'))
     return admin_dsn, dsns

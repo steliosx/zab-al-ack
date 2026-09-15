@@ -41,6 +41,7 @@ def pg_lab():
         spec=importlib.util.spec_from_file_location('ack_sql_migration',ROOT/'sql/migrate.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
         module.migrate(admin)
+        admin.execute((ROOT/'sql/install/09_installer_roles.sql').read_text().replace(":'installer_roles'","''"))
         admin.execute((ROOT/'sql/install/12_application_grant.sql').read_text().replace(':"alert_app_role"','"alerta_app"'))
         admin.execute('RESET ROLE')
         admin.execute('SET ROLE alerta_owner')

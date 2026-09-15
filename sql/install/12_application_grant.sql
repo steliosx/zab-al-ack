@@ -25,6 +25,14 @@ END $$;
 -- The function admits one non-owner grantee. Every existing one loses it
 -- first, so changing the application role never leaves a former role's
 -- credentials able to stage; running it again for the same role is a no-op.
+--
+-- The schema USAGE this script granted goes with it. Left behind it is a
+-- residue rather than a way in — every function here is revoked from PUBLIC —
+-- but the schema's grant map is asserted exactly, naming the runtime roles, the
+-- alerts owner and the *recorded* application role, so a former role's USAGE
+-- would read unhealthy and refuse the next seal. Those the map names in their
+-- own right keep it: the alerts owner holds it from 00_roles.sql for the
+-- trigger's path, and the runtime roles for theirs.
 DO $$
 DECLARE former name;
 BEGIN
@@ -33,6 +41,11 @@ BEGIN
    WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner AND e.grantee<>0
  LOOP
   EXECUTE format('REVOKE EXECUTE ON FUNCTION zabalack.stage_generation(text,uuid,jsonb) FROM %I',former);
+  IF former<>ALL(ARRAY['zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator'])
+   AND former<>(SELECT r.rolname FROM pg_class c JOIN pg_roles r ON r.oid=c.relowner
+                WHERE c.oid='public.alerts'::regclass) THEN
+   EXECUTE format('REVOKE USAGE ON SCHEMA zabalack FROM %I',former);
+  END IF;
  END LOOP;
 END $$;
 GRANT USAGE ON SCHEMA zabalack TO :"alert_app_role";

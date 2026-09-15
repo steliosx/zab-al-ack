@@ -554,14 +554,32 @@ application role, every other function to no one — no relation here admits a
 grantee at all — the fence's identity sequence included, where `UPDATE` is
 `setval()` and a sequence moved backwards inverts the ordering the fence rests
 on — the schema and every function and relation in it remain owned by
-`zabalack_owner`, a `SECURITY DEFINER` function running as its owner; none of
-the four `zabalack_*` roles is a member of another, a runtime login that can
-assume the owner reaching every owner-only function, while the installer
-exception covers only members from outside those four; each of the four keeps
-the attributes `00_roles.sql` declares, an attribute being neither an ACL nor an
-ownership and `SUPERUSER` or `BYPASSRLS` walking past every rule here; and neither `zabalack_worker` nor `zabalack_operator` has a
-non-superuser member (`zabalack_owner` excepted, whose members are the
-documented installer topology). Whoever reaches `worker_call()` claims
+`zabalack_owner`, a `SECURITY DEFINER` function running as its owner; schema
+`zabalack` itself admits only the grants the installation makes — `USAGE` and no
+other privilege, to the three runtime roles, the alerts owner and the recorded
+application role, and to nobody else, `CREATE` going to the owner alone and
+`PUBLIC` getting nothing — and each of the three runtime roles still holds that
+`USAGE`, without which its fully qualified call fails at schema access while
+every function grant below still reads exactly right, so verification and
+delivery stop behind a probe reporting healthy; no role outside the recorded
+installer topology is a member of any of the four `zabalack_*` roles, whichever
+it is and whoever the member, a `NOINHERIT` member resolving no privilege
+through any ACL while `SET ROLE` hands it the role whole, and
+`catalog_fingerprints()` hashing a membership only where the *member* is itself
+one of the four, so an outside one moves no digest at all; each of the four
+keeps the attributes `00_roles.sql` declares, an attribute being neither an ACL
+nor an ownership and `SUPERUSER` or `BYPASSRLS` walking past every rule here.
+The installer topology is named rather than assumed: `sql/install/09_installer_roles.sql`
+records in `zabalack.installation.installer_roles` the principals that may hold
+`zabalack_owner`, and only `zabalack_owner` — a recorded installer granted
+`zabalack_worker` is refused like any other role. Recording does not make an
+installer less powerful, one that can act as the owner being able to rewrite the
+list; it makes the set of principals that can an explicit, reviewable part of
+the installation instead of an exemption for every role outside those four. The
+column starts `NULL` and the script is the act that sets it, empty where the
+migrations run as a superuser and no role holds `zabalack_owner` at all; an
+installation that never recorded its installers is not healthy and is not
+sealed. Whoever reaches `worker_call()` claims
 verification leases and calls `verify_complete`, so the acknowledgement is
 recorded as verified with no signature check on the way; whoever reaches
 `operator_call()` holds the controls. Every one of these ACLs is hashed, so a

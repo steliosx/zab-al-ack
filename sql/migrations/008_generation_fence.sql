@@ -89,7 +89,16 @@ ALTER TABLE zabalack.installation
  -- The one role granted zabalack.stage_generation(), recorded by
  -- sql/install/12_application_grant.sql; capture_health() reports functions_ok
  -- false while the function has any other non-owner grantee.
- ADD COLUMN IF NOT EXISTS application_role text;
+ ADD COLUMN IF NOT EXISTS application_role text,
+ -- The roles that may hold zabalack_owner, recorded by
+ -- sql/install/09_installer_roles.sql. Migrations run as zabalack_owner, so a
+ -- deployment has installation principals that can assume it; before this
+ -- column they were an unbounded exemption, and any role granted zabalack_owner
+ -- read as one of them. Naming them does not make an installer less powerful —
+ -- it can already act as the owner — it makes the set of principals that can an
+ -- explicit part of the installation. capture_health() reports functions_ok
+ -- false while this is unset, or while a role outside it holds zabalack_owner.
+ ADD COLUMN IF NOT EXISTS installer_roles text[];
 
 CREATE FUNCTION zabalack.claim_retirement_slot() RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
@@ -835,6 +844,29 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,
     acldefault((CASE WHEN c.relkind='S' THEN 's' ELSE 'r' END)::"char",c.relowner))) e
    WHERE c.relnamespace='zabalack'::regnamespace AND e.grantee<>c.relowner)
+  -- The schema's own ACL is the gate in front of every rule above, and it is
+  -- the one they all assume rather than assert. Revoke USAGE on zabalack from
+  -- zabalack_worker and every function ACL below still reads exactly right
+  -- while worker_call() fails at schema access, so verification and delivery
+  -- stop behind a probe that reports healthy; grant CREATE here to a role and
+  -- it puts its own objects in the schema the manifest describes. nspacl is
+  -- hashed, so either reads unhealthy through the digests — until the re-seal
+  -- every upgrade performs agrees with it, which is why the map is asserted
+  -- here too. It is exact: USAGE and no other privilege, to the three runtime
+  -- roles, the alerts owner (whose trigger calls capture_ack()) and the
+  -- recorded application role, and to no one else; CREATE to the owner alone;
+  -- nothing at all to PUBLIC.
+  AND NOT EXISTS(SELECT 1 FROM pg_namespace n
+   CROSS JOIN LATERAL aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) e
+   WHERE n.nspname='zabalack' AND e.grantee<>n.nspowner
+    AND (e.grantee=0 OR e.privilege_type<>'USAGE'
+         OR (e.grantee NOT IN ('zabalack_worker'::regrole,'zabalack_probe'::regrole,
+                               'zabalack_operator'::regrole)
+             AND e.grantee<>(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
+             AND pg_get_userbyid(e.grantee)<>i.application_role)))
+  AND has_schema_privilege('zabalack_worker','zabalack','USAGE')
+  AND has_schema_privilege('zabalack_probe','zabalack','USAGE')
+  AND has_schema_privilege('zabalack_operator','zabalack','USAGE')
   -- Ownership is the other half of the map, and for a SECURITY DEFINER function
   -- it is the privilege itself: the body runs as the owner. Reassign one and
   -- the grantee rules above skip the new owner, which they exclude by
@@ -848,24 +880,39 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
    AND p.proowner<>'zabalack_owner'::regrole)
   AND NOT EXISTS(SELECT 1 FROM pg_class c WHERE c.relnamespace='zabalack'::regnamespace
    AND c.relowner<>'zabalack_owner'::regrole)
-  -- ...and no role may assume the two roles those grants answer to. A NOINHERIT
-  -- member resolves no privilege through the ACL above, and SET ROLE is open to
-  -- it; the membership is not hashed either unless the member is itself one of
-  -- the four zabalack roles. zabalack_owner is excluded: its members are the
-  -- documented installer topology, and they already own this schema.
+  -- ...and no role outside the installation's recorded topology may assume any
+  -- of these four. This is the membership rule entire, rather than the corner
+  -- of it each earlier round named: the member may be any role, and the role
+  -- assumed may be any of the four. A NOINHERIT member resolves no privilege
+  -- through any ACL above, so every has_*_privilege() assertion here reads
+  -- clean while SET ROLE hands it the role whole — an outside login granted
+  -- zabalack_owner calls worker_call() and records a capture as verified with
+  -- no signature check, and one granted zabalack_operator enables external
+  -- writes. The membership is hashed only where the *member* is itself one of
+  -- the four, so an outside one moves no digest at all: nothing but this sees
+  -- it, sealed or not.
+  --
+  -- The installer topology is the single exception, and it is now named rather
+  -- than assumed. Migrations run as zabalack_owner, so a deployment does have
+  -- principals that can assume it; sql/install/09_installer_roles.sql records
+  -- which, and they may hold zabalack_owner and none of the other three.
+  -- Recording does not make an installer less powerful — it can already act as
+  -- the owner, and could widen this list as easily — it makes the set of
+  -- principals that can an explicit, reviewable part of the installation
+  -- instead of an exemption for every role outside the four. An unrecorded
+  -- installation is not healthy: the column starts NULL and the script is the
+  -- act that sets it, empty where migrations run as a superuser and no role
+  -- holds zabalack_owner at all. Superusers are never counted; they assume any
+  -- role whatever this says.
+  AND i.installer_roles IS NOT NULL
   AND NOT EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
-   WHERE m.roleid IN ('zabalack_worker'::regrole,'zabalack_operator'::regrole) AND NOT mm.rolsuper)
-  -- ...and none of these four roles may assume another of them. The exception
-  -- above is for zabalack_owner's *installer* members, which are outside this
-  -- set; a runtime login granted the owner role reaches every owner-only
-  -- function with SET ROLE, which is the whole boundary. The membership is
-  -- hashed here, being one of the four as member, so this is what refuses it
-  -- once a re-seal has agreed with it.
-  AND NOT EXISTS(SELECT 1 FROM pg_auth_members m
-   WHERE m.member IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
+   WHERE m.roleid IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
                       'zabalack_probe'::regrole,'zabalack_operator'::regrole)
-    AND m.roleid IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
-                     'zabalack_probe'::regrole,'zabalack_operator'::regrole))
+    AND NOT mm.rolsuper
+    AND NOT (m.roleid='zabalack_owner'::regrole
+             AND mm.rolname<>ALL(ARRAY['zabalack_owner','zabalack_worker',
+                                       'zabalack_probe','zabalack_operator'])
+             AND mm.rolname=ANY(i.installer_roles)))
   -- And the four keep the attributes 00_roles.sql declares. A role attribute is
   -- not an ACL and not an ownership: SUPERUSER or BYPASSRLS on a runtime login
   -- walks past every rule above. The digests hash five of these; LOGIN on the

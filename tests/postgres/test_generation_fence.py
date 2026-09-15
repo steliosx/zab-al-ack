@@ -1288,7 +1288,8 @@ def test_T41_the_roles_keep_their_declared_shape(lab, give, take, what):
     grants and owners passes while `SUPERUSER` or `BYPASSRLS` on a runtime login
     walks past all of them; and `zabalack_owner` granted to a runtime role hands
     that login every owner-only function through `SET ROLE` — the installer
-    exception covers members outside these four, not the four themselves.
+    exception is for recorded principals outside these four, not the four
+    themselves.
     `catalog_fingerprints()` hashes five attributes and these memberships, so the
     digests catch most of it until a re-seal agrees; `LOGIN` on the owner it does
     not hash at all, and only this assertion sees it.
@@ -1318,6 +1319,239 @@ def test_T41_the_roles_keep_their_declared_shape(lab, give, take, what):
         with connect_role(lab, "zabalack_owner") as owner:
             owner.execute(reseal)
     assert health() == "true"
+
+
+@pytest.mark.parametrize("give,take,what", [
+    ("REVOKE USAGE ON SCHEMA zabalack FROM zabalack_worker",
+     "GRANT USAGE ON SCHEMA zabalack TO zabalack_worker",
+     "the worker's USAGE revoked, which stops worker_call() at schema access"),
+    ("REVOKE USAGE ON SCHEMA zabalack FROM zabalack_probe",
+     "GRANT USAGE ON SCHEMA zabalack TO zabalack_probe",
+     "the probe's USAGE revoked, which stops capture_health() at schema access"),
+    ("REVOKE USAGE ON SCHEMA zabalack FROM zabalack_operator",
+     "GRANT USAGE ON SCHEMA zabalack TO zabalack_operator",
+     "the operator's USAGE revoked, which stops every control at schema access"),
+    ("GRANT USAGE ON SCHEMA zabalack TO alerta_app_next",
+     "REVOKE USAGE ON SCHEMA zabalack FROM alerta_app_next",
+     "a role the installation never granted holding USAGE on the schema"),
+    ("GRANT CREATE ON SCHEMA zabalack TO alerta_app_next",
+     "REVOKE CREATE ON SCHEMA zabalack FROM alerta_app_next",
+     "CREATE on the schema, which puts foreign objects where the manifest looks"),
+    ("GRANT USAGE ON SCHEMA zabalack TO PUBLIC",
+     "REVOKE USAGE ON SCHEMA zabalack FROM PUBLIC",
+     "USAGE granted to PUBLIC"),
+])
+def test_T41_the_schema_keeps_its_own_grant_map(lab, give, take, what):
+    """The schema ACL is the gate in front of every other rule, and until now the
+    only thing asserted about it was its owner.
+
+    Revoke `USAGE` on `zabalack` from `zabalack_worker` and every function grant
+    below still reads exactly right while `zabalack.worker_call()` fails at
+    schema access: verification and delivery stop behind a probe reporting
+    healthy. `nspacl` is hashed, so the digests catch it — and the re-seal every
+    upgrade performs then agrees with it, which is why the map is asserted here
+    as well. It is exact: `USAGE` and no other privilege, to the three runtime
+    roles, the alerts owner and the recorded application role, and to nobody
+    else.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute(give)
+        # Seal over it at once, as every upgrade's re-seal would.
+        owner.execute("SELECT zabalack.seal_installation()")
+    try:
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(take)
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+@pytest.mark.parametrize("give,take,what", [
+    ("GRANT zabalack_owner TO alerta_app_next",
+     "REVOKE zabalack_owner FROM alerta_app_next",
+     "an outside login granted the owner role, reaching worker_call() with SET ROLE"),
+    ("GRANT zabalack_worker TO zabalack_installer",
+     "REVOKE zabalack_worker FROM zabalack_installer",
+     "an outside login granted the worker role and its verification path"),
+    ("GRANT zabalack_probe TO zabalack_installer",
+     "REVOKE zabalack_probe FROM zabalack_installer",
+     "an outside login granted the probe role"),
+    ("GRANT zabalack_operator TO zabalack_installer",
+     "REVOKE zabalack_operator FROM zabalack_installer",
+     "an outside login granted the operator role and its controls"),
+])
+def test_T41_only_a_recorded_installer_may_hold_a_zabalack_role(lab, give, take, what):
+    """The membership rule entire: any member, any of the four roles.
+
+    Each earlier round closed one corner of this — members of the worker and the
+    operator, then the four among themselves — and each left the same shape
+    open, because the member had to be one of a named set. Here it is any role
+    at all. A `NOINHERIT` member resolves no privilege through any ACL, so every
+    `has_*_privilege()` assertion reads clean while `SET ROLE` hands it the role
+    whole: `alerta_app_next`, an ordinary login, granted `zabalack_owner` calls
+    `zabalack.worker_call()` and records a capture as verified with no signature
+    check. `catalog_fingerprints()` hashes a membership only where the *member*
+    is itself one of the four, so an outside one moves no digest: nothing but
+    this assertion sees it, sealed or not.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    # Lab-only: role memberships are the superuser's to grant.
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute(give)
+        admin.execute("SELECT zabalack.seal_installation()")
+    try:
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute(take)
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+def test_T41_a_recorded_installer_holds_the_owner_role_and_nothing_else(lab):
+    """The exemption the record makes, and its limit.
+
+    Migrations run as `zabalack_owner`, so a deployment has principals that can
+    assume it; `sql/install/09_installer_roles.sql` names them. A named one may
+    hold `zabalack_owner` — and only that. Recorded or not, a runtime role is
+    never its to hold: the record exempts a principal from the owner rule, not
+    from the boundary the other three draw.
+    """
+    installer = (ROOT / "sql/install/09_installer_roles.sql").read_text()
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute("GRANT zabalack_owner TO zabalack_installer")
+    try:
+        assert health() == "false", "an unrecorded owner member is unhealthy"
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(installer.replace(":'installer_roles'", "'zabalack_installer'"))
+            assert owner.execute("SELECT installer_roles FROM zabalack.installation WHERE singleton"
+                                 ).fetchone()[0] == ["zabalack_installer"]
+            owner.execute(reseal)
+        assert health() == "true", "the recorded installer may hold the owner role"
+        # ...and only it. The record is no licence over the runtime roles.
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("GRANT zabalack_worker TO zabalack_installer")
+            admin.execute("SELECT zabalack.seal_installation()")
+        try:
+            assert health() == "false", "a recorded installer holding the worker role is still refused"
+            with connect_role(lab, "zabalack_owner") as owner:
+                with pytest.raises(Exception, match="before sealing"):
+                    owner.execute(reseal)
+        finally:
+            with connect_role(lab, "zabalack_owner") as admin:
+                admin.execute("RESET ROLE")
+                admin.execute("REVOKE zabalack_worker FROM zabalack_installer")
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("REVOKE zabalack_owner FROM zabalack_installer")
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(installer.replace(":'installer_roles'", "''"))
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+def test_T41_an_installation_that_never_recorded_its_installers_is_not_sealed(lab):
+    """The column starts NULL, and NULL is not an empty allowlist.
+
+    An upgrade that skips the record would otherwise carry the old exemption
+    forward silently. `capture_health()` refuses it and `13_reseal.sql` names the
+    script.
+    """
+    installer = (ROOT / "sql/install/09_installer_roles.sql").read_text()
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.installation SET installer_roles=NULL WHERE singleton")
+        owner.execute("SELECT zabalack.seal_installation()")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "false"
+            with pytest.raises(Exception, match="09_installer_roles.sql"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(installer.replace(":'installer_roles'", "''"))
+            owner.execute(reseal)
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
+@pytest.mark.parametrize("named,setup,teardown,refusal", [
+    ("no_such_installer", None, None, "do not exist"),
+    ("zabalack_worker", None, None, "zabalack role was named as an installer"),
+    ("alerta_app_next", None, None, "not members of zabalack_owner"),
+    ("", "GRANT zabalack_owner TO zabalack_installer",
+     "REVOKE zabalack_owner FROM zabalack_installer",
+     "outside the recorded installer topology"),
+])
+def test_T41_the_installer_record_refuses_a_topology_it_was_not_shown(lab, named, setup, teardown, refusal):
+    """The record has to equal the catalog, in both directions.
+
+    A name that is not a role, or is one of the four, or holds nothing, records
+    an exemption for something the catalog does not show; and a role that does
+    hold `zabalack_owner` and was left out is exactly the exposure this closes.
+    `zabalack_owner` holds no `ADMIN OPTION` over those memberships and cannot
+    revoke one, as `12_application_grant.sql` cannot revoke a membership of the
+    application role: the script refuses, names them, and leaves the recorded
+    list as it found it.
+    """
+    installer = (ROOT / "sql/install/09_installer_roles.sql").read_text()
+    with connect_role(lab, "zabalack_owner") as owner:
+        before = owner.execute("SELECT installer_roles FROM zabalack.installation WHERE singleton").fetchone()[0]
+    if setup:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute(setup)
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match=refusal):
+                owner.execute(installer.replace(":'installer_roles'", "'%s'" % named))
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT installer_roles FROM zabalack.installation WHERE singleton"
+                                 ).fetchone()[0] == before, "a refused record changes nothing"
+    finally:
+        if teardown:
+            with connect_role(lab, "zabalack_owner") as admin:
+                admin.execute("RESET ROLE")
+                admin.execute(teardown)
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
+def test_T41_the_installer_record_runs_only_as_the_schema_owner(lab):
+    installer = (ROOT / "sql/install/09_installer_roles.sql").read_text().replace(":'installer_roles'", "''")
+    with connect_role(lab, "zabalack_worker") as worker:
+        with pytest.raises(Exception, match="run as zabalack_owner|permission denied"):
+            worker.execute(installer)
 
 
 def test_T41_the_reseal_refuses_a_tree_that_is_not_at_the_expected_schema(lab):
@@ -1373,6 +1607,13 @@ def test_T41_changing_the_application_role_revokes_the_former_one(lab):
         with connect_role(lab, "alerta_app") as app:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 app.execute("SELECT zabalack.stage_generation(%s,%s,%s)", (str(uuid.uuid4()), str(uuid.uuid4()), Jsonb({})))
+        # The schema USAGE the script granted goes with the entry point. The
+        # schema's grant map names the *recorded* application role, so a former
+        # role's USAGE left behind reads unhealthy and refuses the next seal.
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT has_schema_privilege('alerta_app','zabalack','USAGE')").fetchone()[0] is False
+            owner.execute(reseal)
+            assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
     finally:
         with connect_role(lab, "zabalack_owner") as owner:
             owner.execute(grant.replace(':"alert_app_role"', '"alerta_app"'))

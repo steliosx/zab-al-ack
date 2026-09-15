@@ -139,6 +139,28 @@ BEGIN
     WHERE c.relnamespace='zabalack'::regnamespace AND e.grantee<>c.relowner) THEN
   RAISE EXCEPTION 'a zabalack relation or sequence admits a grantee other than its owner; revoke it before sealing';
  END IF;
+ -- The schema's own ACL is the gate in front of every rule above. Without
+ -- USAGE on zabalack, zabalack_worker's fully qualified worker_call() fails at
+ -- schema access while every function grant below still reads right, and a seal
+ -- over that leaves verification and delivery stopped behind a passing probe;
+ -- CREATE here to anyone but the owner puts foreign objects in the schema the
+ -- manifest describes. USAGE and nothing else, to the three runtime roles, the
+ -- alerts owner and the recorded application role, and to no one else.
+ IF EXISTS(SELECT 1 FROM zabalack.installation i CROSS JOIN pg_namespace n
+    CROSS JOIN LATERAL aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) e
+    WHERE i.singleton AND n.nspname='zabalack' AND e.grantee<>n.nspowner
+     AND (e.grantee=0 OR e.privilege_type<>'USAGE'
+          OR (e.grantee NOT IN ('zabalack_worker'::regrole,'zabalack_probe'::regrole,
+                                'zabalack_operator'::regrole)
+              AND e.grantee<>(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
+              AND pg_get_userbyid(e.grantee)<>i.application_role))) THEN
+  RAISE EXCEPTION 'schema zabalack admits a grant the installation does not make; USAGE alone, to the runtime roles, the alerts owner and the recorded application role — revoke the rest before sealing';
+ END IF;
+ IF NOT (has_schema_privilege('zabalack_worker','zabalack','USAGE')
+     AND has_schema_privilege('zabalack_probe','zabalack','USAGE')
+     AND has_schema_privilege('zabalack_operator','zabalack','USAGE')) THEN
+  RAISE EXCEPTION 'a zabalack runtime role has lost USAGE on schema zabalack; its calls fail at schema access behind a passing probe — restore the grant before sealing';
+ END IF;
  -- Ownership is the other half of the map: a SECURITY DEFINER function runs as
  -- its owner, so reassigning one hands it that role's rights, and the grantee
  -- rules above exclude the owner by definition. Sealing would record the
@@ -151,19 +173,26 @@ BEGIN
     AND c.relowner<>'zabalack_owner'::regrole) THEN
   RAISE EXCEPTION 'the zabalack schema, or an object in it, is not owned by zabalack_owner; a SECURITY DEFINER function runs as its owner — restore ownership before sealing';
  END IF;
- IF EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
-    WHERE m.roleid IN ('zabalack_worker'::regrole,'zabalack_operator'::regrole) AND NOT mm.rolsuper) THEN
-  RAISE EXCEPTION 'zabalack_worker or zabalack_operator has members, each able to assume it and reach the verification path or the controls; revoke those memberships before sealing';
+ -- No role outside the recorded installer topology may assume any of the four,
+ -- whichever it is and whoever the member: a NOINHERIT member resolves no
+ -- privilege through any ACL above while SET ROLE hands it the role whole, and
+ -- the fingerprint hashes the membership only where the member is itself one of
+ -- the four. sql/install/09_installer_roles.sql records the principals that may
+ -- hold zabalack_owner; an unrecorded installation seals nothing.
+ IF NOT EXISTS(SELECT 1 FROM zabalack.installation i WHERE i.singleton AND i.installer_roles IS NOT NULL) THEN
+  RAISE EXCEPTION 'the installer roles are not recorded; run sql/install/09_installer_roles.sql, naming the principals that hold zabalack_owner, before sealing';
  END IF;
- -- None of the four may assume another of them: the exception above is for
- -- zabalack_owner's installer members, which are outside this set, and a
- -- runtime login granted the owner role reaches every owner-only function.
- IF EXISTS(SELECT 1 FROM pg_auth_members m
-    WHERE m.member IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
-                       'zabalack_probe'::regrole,'zabalack_operator'::regrole)
+ IF EXISTS(SELECT 1 FROM zabalack.installation i CROSS JOIN pg_auth_members m
+    JOIN pg_roles mm ON mm.oid=m.member
+    WHERE i.singleton
      AND m.roleid IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
-                      'zabalack_probe'::regrole,'zabalack_operator'::regrole)) THEN
-  RAISE EXCEPTION 'a zabalack role is a member of another; a runtime login that can assume zabalack_owner reaches every owner-only function — revoke that membership before sealing';
+                      'zabalack_probe'::regrole,'zabalack_operator'::regrole)
+     AND NOT mm.rolsuper
+     AND NOT (m.roleid='zabalack_owner'::regrole
+              AND mm.rolname<>ALL(ARRAY['zabalack_owner','zabalack_worker',
+                                        'zabalack_probe','zabalack_operator'])
+              AND mm.rolname=ANY(i.installer_roles))) THEN
+  RAISE EXCEPTION 'a role outside the recorded installer topology holds a zabalack role and can act as it; revoke that membership, or record the installer, before sealing';
  END IF;
  -- And the four keep the attributes 00_roles.sql declares. SUPERUSER or
  -- BYPASSRLS on a runtime login walks past every rule above, and a seal would
