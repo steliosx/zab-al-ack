@@ -768,7 +768,7 @@ def test_T41_the_retirement_cadence_is_deployment_state_not_a_worker_clock(lab):
     first = worker_sweep()
     assert "skipped" not in first, "the first caller in an interval does the work"
     for _ in range(3):
-        assert worker_sweep() == {"examined": 0, "retired": 0, "skipped": "not_due"}
+        assert worker_sweep() == {"examined": 0, "retired": 0, "deferred": 0, "skipped": "not_due"}
     with connect_role(lab, "zabalack_owner") as owner:
         due = owner.execute("SELECT retirement_due_at>clock_timestamp() FROM zabalack.installation "
                             "WHERE singleton").fetchone()[0]
@@ -809,7 +809,7 @@ def test_T41_a_full_batch_keeps_the_slot_due_until_the_backlog_drains(lab):
         assert len(passes) <= 4, passes
     assert "skipped" not in passes[-1] and passes[-1]["examined"] < limit
     assert all(INTENT not in attributes_of(lab, alert_id) for alert_id in alerts), "the backlog drained"
-    assert worker_sweep() == {"examined": 0, "retired": 0, "skipped": "not_due"}, \
+    assert worker_sweep() == {"examined": 0, "retired": 0, "deferred": 0, "skipped": "not_due"}, \
         "a batch below the limit closes the slot for the interval"
 
 

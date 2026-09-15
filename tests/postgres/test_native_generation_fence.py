@@ -173,7 +173,7 @@ def test_T41_native_an_older_projection_never_overwrites_a_newer_staging(native,
         # the row rather than waiting on it, and retires it on its next pass.
         with HeldTransaction(native, "zabalack_worker", "SELECT zabalack.project(%s)", (action_id,)) as held:
             assert INTENT in attributes_of(native, alert_id), "precondition: B's intent is on the row"
-            sweep(native, grace=0)
+            assert sweep(native, grace=0)["deferred"] >= 1, "the held row is counted as deferred, not omitted"
             assert INTENT in attributes_of(native, alert_id), "SKIP LOCKED leaves the held row to the next pass"
         assert held.result[0]["reason"] == "projection_action_generation_mismatch"
         assert sweep(native, grace=0)["retired"] >= 1
@@ -285,8 +285,36 @@ def test_T41_native_only_one_sweep_runs_at_a_time(native):
     stage(native)
     with HeldTransaction(native, "zabalack_owner",
                          "SELECT pg_advisory_xact_lock(hashtextextended('zabalack.retire_intents',0))"):
-        assert sweep(native, grace=0) == {"examined": 0, "retired": 0, "skipped": "sweep_in_progress"}
+        assert sweep(native, grace=0) == {"examined": 0, "retired": 0, "deferred": 0, "skipped": "sweep_in_progress"}
     assert sweep(native, grace=0)["retired"] >= 1
+
+
+def test_T41_native_a_deferred_row_keeps_the_slot_due(native):
+    """A row another session holds is skipped by the sweep, not omitted: the
+    pass reports it deferred and the slot stays due, so the next cycle retires
+    it instead of the next interval. Without that, an under-limit pass closed
+    the slot for the whole interval over the row it never reached."""
+    alert_id, _, _ = stage(native)
+    with connect_role(native, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.installation SET retirement_due_at=NULL,retirement_interval_seconds=900 "
+                      "WHERE singleton")
+
+    def worker_sweep():
+        with connect_role(native, "zabalack_worker") as worker:
+            return worker.execute("SELECT zabalack.worker_call('retire_intents',%s)",
+                                  (Jsonb({"limit": 1000, "grace_seconds": 0}),)).fetchone()[0]
+
+    with HeldTransaction(native, "alerta_app", ROW_LOCK, (alert_id,)):
+        held = worker_sweep()
+        assert "skipped" not in held and held["deferred"] >= 1 and held.get("continues") is True, held
+        assert INTENT in attributes_of(native, alert_id), "the held row was left to the next pass"
+        with connect_role(native, "zabalack_owner") as owner:
+            assert owner.execute("SELECT retirement_due_at<=clock_timestamp() FROM zabalack.installation "
+                                 "WHERE singleton").fetchone()[0] is True, "a deferred row leaves the slot due"
+    released = worker_sweep()
+    assert "skipped" not in released and released["retired"] >= 1 and released["deferred"] == 0, released
+    assert INTENT not in attributes_of(native, alert_id)
+    assert worker_sweep() == {"examined": 0, "retired": 0, "deferred": 0, "skipped": "not_due"}
 
 
 def test_T41_native_the_cadence_claim_does_not_block_a_losing_worker(native):

@@ -109,24 +109,30 @@ REVOKE ALL ON FUNCTION zabalack.claim_retirement_slot() FROM PUBLIC;
 CREATE FUNCTION zabalack.retire_intents(p_limit integer DEFAULT 200, p_grace_seconds integer DEFAULT 300)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack SET timezone='UTC' AS $$
 DECLARE
- candidate record; intent jsonb; until_at timestamptz; issued_at timestamptz; grace interval;
+ candidate record; intent jsonb; until_at timestamptz; issued_at timestamptz; grace interval; candidates text[];
  now_at timestamptz:=clock_timestamp(); examined integer:=0; retired integer:=0;
 BEGIN
  -- public.alerts carries no index for this predicate — zabalack_owner does not
  -- own the table and cannot create one — so LIMIT bounds matching rows, not rows
  -- scanned. Exactly one sweep runs at a time across the deployment.
  IF NOT pg_try_advisory_xact_lock(hashtextextended('zabalack.retire_intents',0)) THEN
-  RETURN jsonb_build_object('examined',0,'retired',0,'skipped','sweep_in_progress');
+  RETURN jsonb_build_object('examined',0,'retired',0,'deferred',0,'skipped','sweep_in_progress');
  END IF;
  grace:=make_interval(secs=>least(86400,greatest(0,coalesce(p_grace_seconds,300))));
  -- No ORDER BY: an ordered scan would sort the whole table for no benefit. Each
  -- pass removes what it processes, so the candidate set shrinks and repeated
- -- passes converge. SKIP LOCKED leaves rows another session holds to the next pass.
- FOR candidate IN SELECT id,attributes FROM public.alerts WHERE attributes ? 'zabbix_ack_sync_intent'
-   LIMIT least(1000,greatest(1,coalesce(p_limit,200))) FOR UPDATE SKIP LOCKED
+ -- passes converge. The candidates are chosen first, without locking, so a row
+ -- another session holds — an acknowledgement staging it, a projection — can be
+ -- counted as deferred to the next pass rather than silently omitted; the
+ -- caller keeps the slot due while any is. SKIP LOCKED then takes the rest.
+ SELECT coalesce(array_agg(id),'{}') INTO candidates FROM (SELECT id FROM public.alerts
+  WHERE attributes ? 'zabbix_ack_sync_intent' LIMIT least(1000,greatest(1,coalesce(p_limit,200)))) chosen;
+ FOR candidate IN SELECT id,attributes FROM public.alerts WHERE id=ANY(candidates) FOR UPDATE SKIP LOCKED
  LOOP
   examined:=examined+1;
   intent:=candidate.attributes->'zabbix_ack_sync_intent';
+  -- Retired between the choice and the lock (a projection): nothing to do.
+  CONTINUE WHEN intent IS NULL;
   until_at:=NULL; issued_at:=NULL;
   -- This attribute is API-writable. Its timestamps decide only whether the
   -- intent is retired now or on a later pass, and a value that fails the
@@ -161,7 +167,8 @@ BEGIN
   INSERT INTO zabalack.audit(operation,actor_ref,details) VALUES('retire_intents',session_user,
    jsonb_build_object('examined',examined,'retired',retired));
  END IF;
- RETURN jsonb_build_object('examined',examined,'retired',retired);
+ RETURN jsonb_build_object('examined',examined,'retired',retired,
+  'deferred',greatest(0,coalesce(array_length(candidates,1),0)-examined));
 END $$;
 REVOKE ALL ON FUNCTION zabalack.retire_intents(integer,integer) FROM PUBLIC;
 
@@ -612,14 +619,18 @@ BEGIN
  ELSIF op='retire_intents' THEN
   -- Asked every reconciler cycle. The installation row decides whether it is
   -- due, so one worker per interval scans public.alerts however many are running.
-  IF NOT zabalack.claim_retirement_slot() THEN RETURN jsonb_build_object('examined',0,'retired',0,'skipped','not_due'); END IF;
+  IF NOT zabalack.claim_retirement_slot() THEN RETURN jsonb_build_object('examined',0,'retired',0,'deferred',0,'skipped','not_due'); END IF;
   result := zabalack.retire_intents(coalesce((p->>'limit')::int,200),coalesce((p->>'grace_seconds')::int,300));
-  -- A batch that reached its limit may have left more behind. The slot then
-  -- stays due, so the next cycle — this worker's or another's — continues
+  -- A batch that reached its limit may have left more behind, and a batch
+  -- that had to leave a locked row to the next pass certainly did. The slot
+  -- then stays due, so the next cycle — this worker's or another's — continues
   -- draining at the fast cadence rather than waiting out the interval: a
   -- backlog is bounded by the worker rate, never by the interval times the
-  -- batch size. A batch below the limit closes the slot for the interval.
-  IF (result->>'examined')::int>=least(1000,greatest(1,coalesce((p->>'limit')::int,200))) THEN
+  -- batch size, and a row held during one pass waits one cycle, not one
+  -- interval. Only a batch below the limit that deferred nothing closes the
+  -- slot for the interval.
+  IF (result->>'examined')::int>=least(1000,greatest(1,coalesce((p->>'limit')::int,200)))
+     OR coalesce((result->>'deferred')::int,0)>0 THEN
    UPDATE zabalack.installation SET retirement_due_at=now_at WHERE singleton;
    result := result||jsonb_build_object('continues',true);
   END IF;

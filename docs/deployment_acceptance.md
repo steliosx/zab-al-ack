@@ -122,8 +122,8 @@ that is the designed answer, and the remedy is to acknowledge again.
 
 Record the retirement cadence actually observed across the fleet: the slot is claimed in the installation row,
 so exactly one worker per `retirement_interval_seconds` performs the scan however many workers run; the rest
-return `skipped: not_due`, and a batch that reached its limit leaves the slot due so the next cycle continues
-draining. Confirm the interval is set to a value the deployment accepts, since it bounds how long a staged intent
+return `skipped: not_due`, and a batch that reached its limit, or that had to leave a row another session held to
+the next pass (`deferred`), leaves the slot due so the next cycle continues draining. Confirm the interval is set to a value the deployment accepts, since it bounds how long a staged intent
 persists; it is changed only by `zabalack_owner`, with
 `UPDATE zabalack.installation SET retirement_interval_seconds=<seconds> WHERE singleton` (the claim clamps it to
 1–86400), recorded as a change under that principal — no `operator_call` operation or CLI command sets it.
