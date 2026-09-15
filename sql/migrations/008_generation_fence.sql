@@ -22,6 +22,27 @@
 -- capture_ack() runs inside the signed UPDATE, already holding the row, and
 -- takes no generation lock; its insert is ON CONFLICT DO NOTHING.
 
+-- This migration is written for a schema-3 installation and nothing else.
+-- zabalack.schema_migrations is keyed by *filename*, so the runner's drift check
+-- only speaks for a file it has seen before: an installation that applied the
+-- superseded 008_intent_retirement .. 013_seed_ledger_on_verification set has
+-- none of those names in this tree, and this file's name is new to it. Without
+-- this precondition the runner would apply it cleanly on top of that tree —
+-- over the ledger objects this design replaces — and then set schema_version
+-- back from 9 to 4. The fingerprint guard below does not catch it either: on
+-- such an installation nothing has drifted from its seal.
+--
+-- An installation that applied an earlier form of *this* file is already
+-- refused, by the runner, on the digest: same name, different sha256.
+DO $$
+DECLARE installed integer;
+BEGIN
+ SELECT schema_version INTO STRICT installed FROM zabalack.installation WHERE singleton;
+ IF installed<>3 THEN
+  RAISE EXCEPTION 'this migration upgrades schema 3 to 4, and found schema %; an installation carrying the superseded 008_intent_retirement..013_seed_ledger_on_verification set reports 9 and needs a forward migration written for it, not this one — do not apply this file to it',installed;
+ END IF;
+END $$;
+
 -- Before anything here changes the catalog: if this installation is sealed,
 -- the tree must still be the one it was sealed over. Every property this
 -- migration goes on to assert is asserted against the *current* catalog, and

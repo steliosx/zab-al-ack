@@ -67,8 +67,12 @@ observe stored rows. This item covers A5 stage two as shipped in migration 008: 
 from `public.alerts.attributes`, and the generation fence `zabalack.alert_generations` that replaces the guard
 which read it.
 
-Upgrade sequence, with the principal recorded for each step. Apply `008_generation_fence.sql` through the
-ordinary migration path as `zabalack_owner` and record the schema version moving 3 to 4. Then run
+Upgrade sequence, with the principal recorded for each step. Before applying anything, record the installation's
+current `zabalack.schema_version` and the contents of `zabalack.schema_migrations`. 008 upgrades schema 3 and refuses
+any other version: an installation carrying the superseded `008_intent_retirement.sql` .. `013_seed_ledger_on_verification.sql`
+set reports 9 and needs a forward migration written for it, which this file is not. Apply
+`008_generation_fence.sql` through the ordinary migration path as `zabalack_owner` and record the schema version
+moving 3 to 4. Then run
 `sql/install/09_installer_roles.sql` as `zabalack_owner` with `installer_roles` set to the comma-separated list
 of installation principals that are members of `zabalack_owner`; record which roles those are, or record that
 the list is empty because the migrations run as a superuser and no role holds `zabalack_owner`. Confirm

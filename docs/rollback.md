@@ -61,7 +61,19 @@ for rollback:
    under `zabalack_owner` as a further forward migration, never by editing 008.
 2. **Nothing deletes a fence row, including a rollback.** The table stays; a
    later re-application of the fence design picks its generations up unchanged.
-3. **The application grant is inert without the function.** `USAGE` on the
+3. **008 applies only to a schema-3 installation, and refuses anything else.**
+   `zabalack.schema_migrations` is keyed by *filename*, so the runner's drift
+   check speaks only for a file it has already seen. An installation carrying
+   the superseded `008_intent_retirement.sql` .. `013_seed_ledger_on_verification.sql`
+   set has none of those names in this tree and reports schema 9; without a
+   precondition the runner would apply `008_generation_fence.sql` cleanly on top
+   of it — over the ledger objects this design replaces — and then set the
+   recorded version back to 4. 008 therefore refuses any incoming version but 3,
+   naming that case. Such an installation needs a forward migration written for
+   it; this file is not that migration and must not be applied to it. An
+   installation that applied an *earlier form of this same file* is refused
+   already, by the runner, on the digest.
+4. **The application grant is inert without the function.** `USAGE` on the
    schema plus `EXECUTE` on one function confers nothing else; it may stay.
    Re-seal the readiness manifest after any catalog change, as
    `13_reseal.sql` does, or every worker reports `functions_ok` false.

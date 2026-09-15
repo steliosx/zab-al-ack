@@ -2108,6 +2108,46 @@ def test_T41_a_routine_body_is_the_one_the_migration_shipped(lab):
     assert health() == "true"
 
 
+def test_T41_the_migration_refuses_a_tree_it_was_not_written_for(lab):
+    """`zabalack.schema_migrations` is keyed by *filename*, so the runner's drift
+    check only speaks for a file it has seen.
+
+    The superseded design (PR #10) shipped `008_intent_retirement.sql` through
+    `013_seed_ledger_on_verification.sql`. An installation carrying that set has
+    none of those names in this tree, and `008_generation_fence.sql` is new to
+    it — so the runner would apply this file cleanly on top of the ledger
+    objects this design replaces, then set `schema_version` back from 9 to 4.
+    The fingerprint guard does not catch it either: on such an installation
+    nothing has drifted from its seal. No migration in this project guarded its
+    incoming version, so the precondition is the only thing that refuses it.
+
+    An installation that applied an earlier form of *this* file is refused
+    already, by the runner, on the digest: same name, different sha256.
+    """
+    source = (ROOT / "sql/migrations/008_generation_fence.sql").read_text()
+    start = source.index("-- This migration is written for a schema-3 installation")
+    precondition = source[start:source.index("-- Before anything here changes the catalog:")]
+    with connect_role(lab, "zabalack_owner") as owner:
+        installed = owner.execute("SELECT schema_version FROM zabalack.installation "
+                                  "WHERE singleton").fetchone()[0]
+        assert installed == 4, "precondition: the lab is at the version 008 produces"
+        # Applying 008 again, as a retained database would have it applied.
+        with pytest.raises(Exception, match="upgrades schema 3 to 4, and found schema 4"):
+            owner.execute(precondition)
+        # ...and the superseded set's version reports 9.
+        owner.execute("UPDATE zabalack.installation SET schema_version=9 WHERE singleton")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="superseded 008_intent_retirement"):
+                owner.execute(precondition)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("UPDATE zabalack.installation SET schema_version=%s WHERE singleton",
+                          (installed,))
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
 def test_T41_the_migration_refuses_a_tree_that_drifted_before_the_upgrade(lab):
     """The other half: drift that arrives *before* the upgrade.
 
