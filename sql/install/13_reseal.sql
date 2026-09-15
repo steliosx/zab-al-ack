@@ -130,11 +130,14 @@ BEGIN
                AND pg_get_userbyid(e.grantee)=i.application_role))) THEN
   RAISE EXCEPTION 'a zabalack function has a grantee the installation does not make; revoke it before sealing';
  END IF;
+ -- Every relation, whatever its kind: tables, views and the identity sequence
+ -- behind the fence, where UPDATE is setval() and a sequence moved backwards
+ -- inverts the ordering the fence rests on.
  IF EXISTS(SELECT 1 FROM pg_class c
-    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) e
-    WHERE c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m')
-     AND e.grantee<>c.relowner) THEN
-  RAISE EXCEPTION 'a zabalack relation admits a grantee other than its owner; revoke it before sealing';
+    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,
+     acldefault((CASE WHEN c.relkind='S' THEN 's' ELSE 'r' END)::"char",c.relowner))) e
+    WHERE c.relnamespace='zabalack'::regnamespace AND e.grantee<>c.relowner) THEN
+  RAISE EXCEPTION 'a zabalack relation or sequence admits a grantee other than its owner; revoke it before sealing';
  END IF;
  IF EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
     WHERE m.roleid IN ('zabalack_worker'::regrole,'zabalack_operator'::regrole) AND NOT mm.rolsuper) THEN

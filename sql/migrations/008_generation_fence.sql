@@ -823,12 +823,18 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
               AND e.grantee=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass))
           OR (p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
               AND pg_get_userbyid(e.grantee)=i.application_role)))
-  -- No relation here admits a non-owner grantee at all: the migrations grant
-  -- none, and every runtime role reaches its data through a function.
+  -- No relation here admits a non-owner grantee at all — tables, views and the
+  -- identity sequence behind the fence alike: the migrations grant none, and
+  -- every runtime role reaches its data through a function. The sequence is not
+  -- an afterthought: UPDATE on it is setval(), and a sequence moved backwards
+  -- gives a later staging a lower seq than an earlier one, which is the fence's
+  -- ordering inverted. acldefault() takes 's' for a sequence and 'r' for the
+  -- rest, and relkind is not filtered so that nothing in the schema is outside
+  -- this rule.
   AND NOT EXISTS(SELECT 1 FROM pg_class c
-   CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) e
-   WHERE c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m')
-    AND e.grantee<>c.relowner)
+   CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,
+    acldefault((CASE WHEN c.relkind='S' THEN 's' ELSE 'r' END)::"char",c.relowner))) e
+   WHERE c.relnamespace='zabalack'::regnamespace AND e.grantee<>c.relowner)
   -- ...and no role may assume the two roles those grants answer to. A NOINHERIT
   -- member resolves no privilege through the ACL above, and SET ROLE is open to
   -- it; the membership is not hashed either unless the member is itself one of

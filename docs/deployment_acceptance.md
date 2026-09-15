@@ -102,7 +102,8 @@ asserts all of it under `functions_ok` — together with the schema's whole gran
 the non-owner grantee of every `zabalack` function is the one the installation makes (`worker_call`/`project` to `zabalack_worker`,
 `operator_call` to `zabalack_operator`, `capture_health` to `zabalack_probe` and `zabalack_operator`, `capture_ack` and
 `seal_installation` to the alerts owner, `stage_generation` to the recorded application role, every other function to no one), no
-relation admits a grantee at all, and neither `zabalack_worker` nor `zabalack_operator` has a non-superuser member — whoever reaches
+relation admits a grantee at all, the fence's identity sequence included (its `UPDATE` is `setval()`, and a sequence moved backwards
+inverts the fence's ordering), and neither `zabalack_worker` nor `zabalack_operator` has a non-superuser member — whoever reaches
 `worker_call()` records captures as verified without the signature check, and whoever reaches `operator_call()` holds the controls —
 even under a matching
 seal, `13_reseal.sql` refuses to seal a tree that breaks any of them, and a false value there is a real

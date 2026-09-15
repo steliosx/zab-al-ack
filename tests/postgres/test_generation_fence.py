@@ -1126,6 +1126,10 @@ def test_T41_the_application_role_executes_nothing_else_in_the_schema(lab):
     ("GRANT SELECT ON zabalack.captures TO zabalack_operator",
      "REVOKE SELECT ON zabalack.captures FROM zabalack_operator",
      "a relation, which the migrations grant to no one at all"),
+    ("GRANT UPDATE ON SEQUENCE zabalack.alert_generations_seq_seq TO zabalack_operator",
+     "REVOKE UPDATE ON SEQUENCE zabalack.alert_generations_seq_seq FROM zabalack_operator",
+     "the fence's identity sequence, where UPDATE is setval() and a sequence "
+     "moved backwards gives a later staging a lower seq than an earlier one"),
 ])
 def test_T41_only_the_installations_own_grants_survive_a_reseal(lab, give, take, what):
     """The grant map of the whole schema, asserted after the seal.

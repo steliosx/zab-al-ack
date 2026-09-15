@@ -551,7 +551,9 @@ makes — `worker_call(text,jsonb)` and `project(uuid)` to `zabalack_worker`,
 `zabalack_probe` and `zabalack_operator`, `capture_ack()` and
 `seal_installation()` to the alerts owner, `stage_generation()` to the recorded
 application role, every other function to no one — no relation here admits a
-grantee at all, and neither `zabalack_worker` nor `zabalack_operator` has a
+grantee at all — the fence's identity sequence included, where `UPDATE` is
+`setval()` and a sequence moved backwards inverts the ordering the fence rests
+on — and neither `zabalack_worker` nor `zabalack_operator` has a
 non-superuser member (`zabalack_owner` excepted, whose members are the
 documented installer topology). Whoever reaches `worker_call()` claims
 verification leases and calls `verify_complete`, so the acknowledgement is
