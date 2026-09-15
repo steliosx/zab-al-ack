@@ -801,23 +801,41 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
    CROSS JOIN pg_class c WHERE a.rolname=i.application_role
     AND c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m')
     AND has_table_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))
-  -- The verification path answers to zabalack_worker alone, whoever the
-  -- application role is. worker_call() claims verification leases and carries
-  -- verify_complete, hold_capture and reject_capture; project() writes the
-  -- acknowledgement through. Either in another role's hands records a capture
-  -- as verified with no signature check on the way. Their ACLs are hashed, so a
-  -- stray grant reads unhealthy through the digests — until a re-seal, which
-  -- every upgrade performs, makes them agree with it; this is the assertion
-  -- that survives that seal. Superusers are not counted, and neither is the
-  -- owner, which can execute what it owns whatever the ACL says.
-  AND NOT EXISTS(SELECT 1 FROM pg_roles r CROSS JOIN pg_proc p
-   WHERE p.oid IN ('zabalack.worker_call(text,jsonb)'::regprocedure,'zabalack.project(uuid)'::regprocedure)
-    AND NOT r.rolsuper AND r.oid<>p.proowner AND r.rolname<>'zabalack_worker'
-    AND has_function_privilege(r.oid,p.oid,'EXECUTE'))
-  -- ...and no role may assume zabalack_worker to reach them: a NOINHERIT member
-  -- resolves no privilege above, and SET ROLE is open to it.
+  -- Every non-owner grant in this schema is one the installation makes, and no
+  -- other. The ACLs are hashed, so a stray grant reads unhealthy through the
+  -- digests — until the re-seal every upgrade performs makes them agree with
+  -- it. This is the assertion that survives that seal, and it is the whole map
+  -- rather than one function at a time: worker_call() and project() carry the
+  -- verification path, operator_call() the controls (external writes, resume,
+  -- cohorts, capture bypass), and the rest answer to their own role or to no
+  -- one. PUBLIC is refused above; a superuser or the owner executes what it
+  -- owns whatever an ACL says.
+  AND NOT EXISTS(SELECT 1 FROM pg_proc p
+   CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+   WHERE p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+    AND e.grantee<>p.proowner AND e.grantee<>0
+    AND NOT ((p.oid IN ('zabalack.worker_call(text,jsonb)'::regprocedure,'zabalack.project(uuid)'::regprocedure)
+              AND e.grantee='zabalack_worker'::regrole)
+          OR (p.oid='zabalack.operator_call(text,jsonb)'::regprocedure AND e.grantee='zabalack_operator'::regrole)
+          OR (p.oid='zabalack.capture_health()'::regprocedure
+              AND e.grantee IN ('zabalack_probe'::regrole,'zabalack_operator'::regrole))
+          OR (p.oid IN ('zabalack.capture_ack()'::regprocedure,'zabalack.seal_installation()'::regprocedure)
+              AND e.grantee=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass))
+          OR (p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
+              AND pg_get_userbyid(e.grantee)=i.application_role)))
+  -- No relation here admits a non-owner grantee at all: the migrations grant
+  -- none, and every runtime role reaches its data through a function.
+  AND NOT EXISTS(SELECT 1 FROM pg_class c
+   CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) e
+   WHERE c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m')
+    AND e.grantee<>c.relowner)
+  -- ...and no role may assume the two roles those grants answer to. A NOINHERIT
+  -- member resolves no privilege through the ACL above, and SET ROLE is open to
+  -- it; the membership is not hashed either unless the member is itself one of
+  -- the four zabalack roles. zabalack_owner is excluded: its members are the
+  -- documented installer topology, and they already own this schema.
   AND NOT EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
-   WHERE m.roleid='zabalack_worker'::regrole AND NOT mm.rolsuper),
+   WHERE m.roleid IN ('zabalack_worker'::regrole,'zabalack_operator'::regrole) AND NOT mm.rolsuper),
  'checked_at',clock_timestamp()) FROM zabalack.installation i LEFT JOIN zabalack.readiness_manifest m USING(singleton)
  CROSS JOIN LATERAL (SELECT zabalack.catalog_fingerprints() hashes) h WHERE i.singleton;
 $$;

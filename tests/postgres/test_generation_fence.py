@@ -1113,21 +1113,29 @@ def test_T41_the_application_role_executes_nothing_else_in_the_schema(lab):
 @pytest.mark.parametrize("give,take,what", [
     ("GRANT EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) TO zabalack_operator",
      "REVOKE EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) FROM zabalack_operator",
-     "a direct grant on the worker's entry point"),
+     "the worker's entry point, which claims verification leases"),
     ("GRANT EXECUTE ON FUNCTION zabalack.project(uuid) TO zabalack_operator",
      "REVOKE EXECUTE ON FUNCTION zabalack.project(uuid) FROM zabalack_operator",
-     "a direct grant on projection"),
+     "projection, which writes the acknowledgement through"),
+    ("GRANT EXECUTE ON FUNCTION zabalack.operator_call(text,jsonb) TO zabalack_worker",
+     "REVOKE EXECUTE ON FUNCTION zabalack.operator_call(text,jsonb) FROM zabalack_worker",
+     "the controls: external writes, resume, cohorts, capture bypass"),
+    ("GRANT EXECUTE ON FUNCTION zabalack.newest_generation(text) TO zabalack_operator",
+     "REVOKE EXECUTE ON FUNCTION zabalack.newest_generation(text) FROM zabalack_operator",
+     "an owner-only function, which the map grants to no one"),
+    ("GRANT SELECT ON zabalack.captures TO zabalack_operator",
+     "REVOKE SELECT ON zabalack.captures FROM zabalack_operator",
+     "a relation, which the migrations grant to no one at all"),
 ])
-def test_T41_only_the_worker_reaches_the_verification_path(lab, give, take, what):
-    """`worker_call()` and `project()` answer to `zabalack_worker` alone.
+def test_T41_only_the_installations_own_grants_survive_a_reseal(lab, give, take, what):
+    """The grant map of the whole schema, asserted after the seal.
 
-    Whoever executes `worker_call()` claims verification leases and calls
-    `verify_complete`, `hold_capture` and `reject_capture` — the acknowledgement
-    is recorded as verified with no signature check on the way. The ACL is
-    hashed, so a stray grant reads unhealthy through the digests until someone
-    re-seals, which every upgrade does; the seal then certifies it. This
-    assertion is about the grantee set itself, for any role and not only the
-    recorded application role, so it survives that seal.
+    Every ACL here is hashed, so a stray grant reads unhealthy through the
+    digests — and the re-seal every upgrade performs then agrees with it. Three
+    review rounds found that same shape one function at a time
+    (`worker_call()`, then `operator_call()`), so what is asserted is the map:
+    the non-owner grantee of every `zabalack` function is the one the
+    installation makes, and no relation here admits a grantee at all.
     """
     reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
 
@@ -1142,7 +1150,7 @@ def test_T41_only_the_worker_reaches_the_verification_path(lab, give, take, what
         with connect_role(lab, "zabalack_owner") as owner:
             # Lab-only: seal over it, as every upgrade's re-seal would.
             owner.execute("SELECT zabalack.seal_installation()")
-        assert health() == "false", what + " is unhealthy under a matching seal"
+        assert health() == "false", "a grant on " + what + " is unhealthy under a matching seal"
         with connect_role(lab, "zabalack_owner") as owner:
             with pytest.raises(Exception, match="before sealing"):
                 owner.execute(reseal)
@@ -1153,16 +1161,19 @@ def test_T41_only_the_worker_reaches_the_verification_path(lab, give, take, what
     assert health() == "true"
 
 
-def test_T41_a_member_of_the_worker_role_reaches_the_verification_path(lab):
+@pytest.mark.parametrize("role,reaches", [("zabalack_worker", "zabalack.worker_call(text,jsonb)"),
+                                          ("zabalack_operator", "zabalack.operator_call(text,jsonb)")])
+def test_T41_a_member_of_the_worker_role_reaches_the_verification_path(lab, role, reaches):
     """And the membership route into it, which no ACL and no digest records.
 
     The member here is `alerta_app_next`, outside the four roles whose
     memberships `catalog_fingerprints()` hashes — a member inside that set moves
     the structures digest and would be caught by the seal comparison alone,
     proving nothing about this conjunct. `NOINHERIT` keeps
-    `has_function_privilege()` from resolving `worker_call()` for it while
-    `SET ROLE zabalack_worker` is open to it, so neither the grantee set nor the
-    digests see the second credential.
+    `has_function_privilege()` from resolving the role's function for it while
+    `SET ROLE` is open to it, so neither the grantee map nor the digests see the
+    second credential. Both roles the map grants to are covered: the worker's
+    verification path and the operator's controls.
     """
     reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
 
@@ -1176,26 +1187,25 @@ def test_T41_a_member_of_the_worker_role_reaches_the_verification_path(lab):
     sealed = reads("SELECT (functions_md5,structures_md5)::text FROM zabalack.readiness_manifest WHERE singleton")
     with connect_role(lab, "zabalack_owner") as admin:
         admin.execute("RESET ROLE")
-        admin.execute("GRANT zabalack_worker TO alerta_app_next")
+        admin.execute(f"GRANT {role} TO alerta_app_next")
     try:
-        assert reads("SELECT pg_has_role('alerta_app_next','zabalack_worker','MEMBER')") is True, \
-            "the member can assume the worker"
-        assert reads("SELECT has_function_privilege('alerta_app_next',"
-                     "'zabalack.worker_call(text,jsonb)','EXECUTE')") is False, \
+        assert reads(f"SELECT pg_has_role('alerta_app_next','{role}','MEMBER')") is True, \
+            "the member can assume the role"
+        assert reads(f"SELECT has_function_privilege('alerta_app_next','{reaches}','EXECUTE')") is False, \
             "NOINHERIT hides it from the privilege lookup: only the membership shows it"
         assert reads("SELECT (functions_md5,structures_md5)::text FROM zabalack.readiness_manifest "
                      "WHERE singleton") == sealed, "no ACL moved, so neither sealed digest moved"
         assert reads("SELECT (zabalack.catalog_fingerprints())->>'structures'=structures_md5 "
                      "FROM zabalack.readiness_manifest WHERE singleton") is True, \
             "the tree still fingerprints to what was sealed"
-        assert health() == "false", "a member of the worker role is unhealthy under a matching seal"
+        assert health() == "false", f"a member of {role} is unhealthy under a matching seal"
         with connect_role(lab, "zabalack_owner") as owner:
             with pytest.raises(Exception, match="before sealing"):
                 owner.execute(reseal)
     finally:
         with connect_role(lab, "zabalack_owner") as admin:
             admin.execute("RESET ROLE")
-            admin.execute("REVOKE zabalack_worker FROM alerta_app_next")
+            admin.execute(f"REVOKE {role} FROM alerta_app_next")
     assert health() == "true"
 
 

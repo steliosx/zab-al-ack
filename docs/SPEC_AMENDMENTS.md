@@ -544,14 +544,21 @@ re-seal, which every upgrade performs, agrees with it; this assertion is what
 still holds afterwards. `capture_health()` asserts all of it under
 `functions_ok`, so a regression there marks every worker unhealthy, and
 `13_reseal.sql` refuses to seal a tree that breaks any of it. The same two
-assert the verification path for every role, not only the application's:
-`worker_call(text,jsonb)` and `project(uuid)` are executable by
-`zabalack_worker` alone, which has no members of its own — whoever reaches
-`worker_call()` claims verification leases and calls `verify_complete`, and the
-acknowledgement is then recorded as verified with no signature check on the way.
-Every one of these ACLs is hashed, so a stray grant reads unhealthy through the
-digests; what these assertions add is that it stays unhealthy after the re-seal
-an upgrade performs. The function is `SECURITY
+assert the schema's whole grant map, not only the application's corner of it:
+the non-owner grantee of every `zabalack` function is the one the installation
+makes — `worker_call(text,jsonb)` and `project(uuid)` to `zabalack_worker`,
+`operator_call(text,jsonb)` to `zabalack_operator`, `capture_health()` to
+`zabalack_probe` and `zabalack_operator`, `capture_ack()` and
+`seal_installation()` to the alerts owner, `stage_generation()` to the recorded
+application role, every other function to no one — no relation here admits a
+grantee at all, and neither `zabalack_worker` nor `zabalack_operator` has a
+non-superuser member (`zabalack_owner` excepted, whose members are the
+documented installer topology). Whoever reaches `worker_call()` claims
+verification leases and calls `verify_complete`, so the acknowledgement is
+recorded as verified with no signature check on the way; whoever reaches
+`operator_call()` holds the controls. Every one of these ACLs is hashed, so a
+stray grant reads unhealthy through the digests; what these assertions add is
+that it stays unhealthy after the re-seal an upgrade performs. The function is `SECURITY
 DEFINER` with a pinned `search_path`, binds the intent to the staging (its
 `action_id`, `alert_id` and the row's customer) and refuses an `action_id`
 already recorded rather than re-staging it.

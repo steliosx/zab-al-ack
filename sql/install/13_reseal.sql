@@ -110,15 +110,35 @@ BEGIN
  -- project() writes the acknowledgement through. A seal over a stray grant on
  -- either would certify a second credential able to record a capture as
  -- verified with no signature check.
- IF EXISTS(SELECT 1 FROM pg_roles r CROSS JOIN pg_proc p
-    WHERE p.oid IN ('zabalack.worker_call(text,jsonb)'::regprocedure,'zabalack.project(uuid)'::regprocedure)
-     AND NOT r.rolsuper AND r.oid<>p.proowner AND r.rolname<>'zabalack_worker'
-     AND has_function_privilege(r.oid,p.oid,'EXECUTE')) THEN
-  RAISE EXCEPTION 'a role other than zabalack_worker can execute zabalack.worker_call() or zabalack.project(); revoke that grant before sealing';
+ -- Every non-owner grant in this schema must be one the installation makes.
+ -- Sealing is what would otherwise bless a stray one: the digests catch it, and
+ -- this seal would then agree with it. The map is the whole schema, not one
+ -- function — worker_call() and project() carry the verification path,
+ -- operator_call() the controls — and no relation here admits a grantee at all.
+ IF EXISTS(SELECT 1 FROM zabalack.installation i CROSS JOIN pg_proc p
+    CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+    WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+     AND e.grantee<>p.proowner AND e.grantee<>0
+     AND NOT ((p.oid IN ('zabalack.worker_call(text,jsonb)'::regprocedure,'zabalack.project(uuid)'::regprocedure)
+               AND e.grantee='zabalack_worker'::regrole)
+           OR (p.oid='zabalack.operator_call(text,jsonb)'::regprocedure AND e.grantee='zabalack_operator'::regrole)
+           OR (p.oid='zabalack.capture_health()'::regprocedure
+               AND e.grantee IN ('zabalack_probe'::regrole,'zabalack_operator'::regrole))
+           OR (p.oid IN ('zabalack.capture_ack()'::regprocedure,'zabalack.seal_installation()'::regprocedure)
+               AND e.grantee=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass))
+           OR (p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
+               AND pg_get_userbyid(e.grantee)=i.application_role))) THEN
+  RAISE EXCEPTION 'a zabalack function has a grantee the installation does not make; revoke it before sealing';
+ END IF;
+ IF EXISTS(SELECT 1 FROM pg_class c
+    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) e
+    WHERE c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m')
+     AND e.grantee<>c.relowner) THEN
+  RAISE EXCEPTION 'a zabalack relation admits a grantee other than its owner; revoke it before sealing';
  END IF;
  IF EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
-    WHERE m.roleid='zabalack_worker'::regrole AND NOT mm.rolsuper) THEN
-  RAISE EXCEPTION 'zabalack_worker has members, each able to assume it and reach the verification path; revoke those memberships before sealing';
+    WHERE m.roleid IN ('zabalack_worker'::regrole,'zabalack_operator'::regrole) AND NOT mm.rolsuper) THEN
+  RAISE EXCEPTION 'zabalack_worker or zabalack_operator has members, each able to assume it and reach the verification path or the controls; revoke those memberships before sealing';
  END IF;
  -- A fresh installation has no manifest yet: it is sealed by 10_trigger.sql
  -- under the alerts owner, not re-sealed here.
