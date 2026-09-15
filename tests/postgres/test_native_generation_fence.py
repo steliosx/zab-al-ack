@@ -667,3 +667,49 @@ def test_T41_native_a_populated_upgrade_carries_captures_awaiting_verification(n
         assert project(lab, second["action_id"]) == "projection_action_generation_mismatch"
         assert [row[1] for row in fence(lab, alert_id)] == ["migration"] * 3, "verification appended nothing"
         assert newest(lab, alert_id) == third["action_id"]
+
+
+SEQUENCE = "zabalack.alert_generations_seq_seq"
+
+
+def _nextval(conn):
+    return conn.execute("SELECT nextval('" + SEQUENCE + "')").fetchone()[0]
+
+
+def test_T41_native_a_cached_sequence_hands_out_numbers_that_do_not_ascend(native):
+    """Why the fence's sequence must cache exactly one value.
+
+    `newest_generation()` reads `seq DESC`, so the fence's order is only as
+    good as the sequence's. Above a cache of one PostgreSQL gives each backend
+    its own block: the numbers ascend within a session and not between them, so
+    a later staging from a backend still spending a low block takes a number
+    beneath an earlier staging from a higher one — and `last_value` already
+    stands at the end of every block allocated, so the position check reads
+    entirely healthy. The per-alert advisory lock serialises the two calls; it
+    cannot make the numbers they are handed ascend. Two real backends are the
+    only way to establish that: PGlite multiplexes onto one and would hand out
+    1, 2, 3 whatever the cache says.
+    """
+    with connect_role(native, "zabalack_owner") as owner:
+        owner.execute("ALTER SEQUENCE " + SEQUENCE + " CACHE 32")
+    try:
+        with connect_role(native, "zabalack_owner") as first:
+            with connect_role(native, "zabalack_owner") as second:
+                earlier, later = _nextval(first), _nextval(second)
+                after = _nextval(first)
+        assert later > earlier, "precondition: the second backend took a higher block"
+        assert after < later, ("the later call was handed a lower number than the earlier one: "
+                               f"{earlier} then {later} then {after}")
+    finally:
+        with connect_role(native, "zabalack_owner") as owner:
+            owner.execute("ALTER SEQUENCE " + SEQUENCE + " CACHE 1")
+    # ...and the positive control the installation ships: at a cache of one the
+    # same three calls ascend across the two backends, which is the property
+    # capture_health() and 13_reseal.sql now require the sequence to keep.
+    with connect_role(native, "zabalack_owner") as first:
+        with connect_role(native, "zabalack_owner") as second:
+            earlier, later = _nextval(first), _nextval(second)
+            after = _nextval(first)
+    assert earlier < later < after, f"{earlier}, {later}, {after}"
+    with connect_role(native, "zabalack_owner") as owner:
+        assert owner.execute("SELECT zabalack.generation_order_intact()").fetchone()[0] is True

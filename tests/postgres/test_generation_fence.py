@@ -1174,6 +1174,9 @@ SEQUENCE = "zabalack.alert_generations_seq_seq"
      "a sequence made to descend, which orders every later staging beneath an earlier one"),
     ("ALTER SEQUENCE " + SEQUENCE + " CYCLE", "counts upward", 0,
      "a sequence allowed to cycle, which wraps back under the rows already recorded"),
+    ("ALTER SEQUENCE " + SEQUENCE + " CACHE 32", "counts upward", 0,
+     "a sequence caching more than one value per backend, whose blocks ascend within a"
+     " session and not between them, while last_value stands at the end of them all"),
     ("SELECT setval('" + SEQUENCE + "',1,true)", "stands below a generation already recorded", 2,
      "a sequence set back below a generation already recorded"),
 ])
@@ -1220,7 +1223,7 @@ def test_T41_the_fence_sequence_still_counts_upward_from_where_it_is(lab, drift,
         with connect_role(lab, "zabalack_owner") as owner:
             owner.execute("DELETE FROM zabalack.alert_generations WHERE alert_id='sequence-drift-lab'")
             owner.execute("ALTER SEQUENCE " + SEQUENCE + " AS bigint INCREMENT BY 1 MINVALUE 1"
-                          " MAXVALUE 9223372036854775807 START WITH 1 NO CYCLE RESTART WITH 1")
+                          " MAXVALUE 9223372036854775807 START WITH 1 NO CYCLE CACHE 1 RESTART WITH 1")
             owner.execute("SELECT setval('" + SEQUENCE + "',"
                           "greatest(coalesce((SELECT max(seq) FROM zabalack.alert_generations),1),1),true)")
             owner.execute(reseal)

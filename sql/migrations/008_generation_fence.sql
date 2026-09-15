@@ -92,7 +92,14 @@ REVOKE ALL ON FUNCTION zabalack.newest_generation(text) FROM PUBLIC;
 -- its projection accepted and the newer one's refused, permanently. Nothing
 -- else sees it. The sequence's owner and ACL are hashed; its parameters are
 -- not, and its position moves legitimately at every staging, so that can never
--- be hashed at all. A fence table its owner cannot read has been reassigned,
+-- be hashed at all. The cache must stay at one for the same reason and is the
+-- one parameter whose effect the position cannot show: above one, PostgreSQL
+-- hands each backend its own block, so the numbers are monotonic per session
+-- and not across them — a later staging from a backend holding a lower block
+-- takes a number beneath an earlier staging from a higher one, while
+-- last_value already stands at the end of every block allocated and reads
+-- entirely healthy. The per-alert lock serialises the calls; it cannot make
+-- the numbers they are handed ascend. A fence table its owner cannot read has been reassigned,
 -- which the ownership rule refuses in its own right: report that here rather
 -- than raise, so readiness still answers.
 CREATE FUNCTION zabalack.generation_order_intact() RETURNS boolean
@@ -102,7 +109,7 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM pg_sequence s
    WHERE s.seqrelid='zabalack.alert_generations_seq_seq'::regclass
     AND s.seqincrement=1 AND s.seqstart=1 AND s.seqmin=1
-    AND s.seqmax=9223372036854775807 AND NOT s.seqcycle) THEN
+    AND s.seqmax=9223372036854775807 AND NOT s.seqcycle AND s.seqcache=1) THEN
   RETURN false;
  END IF;
  BEGIN

@@ -324,8 +324,8 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM pg_sequence s
    WHERE s.seqrelid='zabalack.alert_generations_seq_seq'::regclass
     AND s.seqincrement=1 AND s.seqstart=1 AND s.seqmin=1
-    AND s.seqmax=9223372036854775807 AND NOT s.seqcycle) THEN
-  RAISE EXCEPTION 'zabalack.alert_generations_seq_seq no longer counts upward by one without cycling; restore its parameters before sealing';
+    AND s.seqmax=9223372036854775807 AND NOT s.seqcycle AND s.seqcache=1) THEN
+  RAISE EXCEPTION 'zabalack.alert_generations_seq_seq no longer counts upward by one from one, without cycling and without caching; restore its parameters before sealing';
  END IF;
  IF NOT zabalack.generation_order_intact() THEN
   RAISE EXCEPTION 'zabalack.alert_generations_seq_seq stands below a generation already recorded; the next staging would be ordered beneath an earlier one — restore its position before sealing';
