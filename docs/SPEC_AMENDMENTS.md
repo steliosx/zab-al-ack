@@ -527,12 +527,15 @@ former role's credentials able to stage, and records the grantee in
 while no function in the schema is executable by `PUBLIC`, the fence admits no
 grantee but its owner, and the entry point's only non-owner grantee is the
 recorded role, which holds `USAGE` on the schema (without it the qualified call
-fails at schema access behind a passing probe) and has no non-superuser member
-of its own (a member inherits its privileges or reaches them with `SET ROLE`,
-and stages through the entry point while the ACL — and the digests, which a
-membership does not move — still name one grantee; the grant script refuses a
-role that already has members, having no `ADMIN OPTION` to revoke one with);
-`capture_health()` asserts all five under `functions_ok`, so a regression there
+fails at schema access behind a passing probe), has no non-superuser member of
+its own, and is, and can assume, none of the `zabalack_*` roles. A member of it
+inherits its privileges or reaches them with `SET ROLE` and stages through the
+entry point; an application role that can assume `zabalack_worker` reaches
+`worker_call()` and verifies, holds and rejects captures without the verifier's
+signature check. Neither membership moves an ACL, so the grantee list and the
+sealed digests read the same with it as without; the grant script refuses a role
+in either position, having no `ADMIN OPTION` to revoke a membership with.
+`capture_health()` asserts all six under `functions_ok`, so a regression there
 marks every worker unhealthy, and `13_reseal.sql` refuses to seal a tree that
 breaks any of them. The function is `SECURITY
 DEFINER` with a pinned `search_path`, binds the intent to the staging (its

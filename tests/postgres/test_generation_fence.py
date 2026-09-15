@@ -1011,6 +1011,61 @@ def test_T41_a_member_of_the_recorded_application_role_is_unhealthy(lab):
         assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
+def test_T41_an_application_role_that_can_assume_a_zabalack_role_is_unhealthy(lab):
+    """The membership that matters in the other direction: what the application
+    role can act as.
+
+    `zabalack_worker` carries `EXECUTE` on `worker_call(text,jsonb)`, whose
+    operations include `verify_complete`, `hold_capture` and `reject_capture`.
+    An application role granted that role reaches them — inheriting, or with
+    `SET ROLE` — and marks captures verified without the Python verifier's
+    signature check, while every ACL in the schema, and so both sealed digests,
+    stay exactly as they were: `catalog_fingerprints()` hashes memberships only
+    where the *member* is one of the four zabalack roles, and here the member is
+    the application role. `capture_health()` refuses it, `13_reseal.sql` refuses
+    to seal it, and the grant script refuses to record such a role.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    grant = (ROOT / "sql/install/12_application_grant.sql").read_text()
+
+    def reads(query, *params):
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute(query, params).fetchone()[0]
+
+    sealed = reads("SELECT (functions_md5,structures_md5)::text FROM zabalack.readiness_manifest WHERE singleton")
+    assert reads("SELECT pg_has_role('alerta_app','zabalack_worker','MEMBER')") is False, "precondition"
+
+    # Lab-only: granting a zabalack role is the role administrator's act, not
+    # zabalack_owner's — which is why the scripts refuse rather than revoke.
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute("GRANT zabalack_worker TO alerta_app")
+    try:
+        assert reads("SELECT pg_has_role('alerta_app','zabalack_worker','MEMBER')") is True, \
+            "the application role can act as the worker"
+        assert reads("SELECT has_function_privilege('alerta_app',"
+                     "'zabalack.worker_call(text,jsonb)','EXECUTE')") is False, \
+            "and NOINHERIT hides it from the privilege lookup: only the membership shows it"
+        assert reads("SELECT (functions_md5,structures_md5)::text FROM zabalack.readiness_manifest "
+                     "WHERE singleton") == sealed, "no ACL moved, so neither sealed digest moved"
+        assert reads("SELECT (zabalack.capture_health())->>'functions_ok'") == "false", \
+            "an application role that can assume a zabalack role is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="name a separate application role"):
+                owner.execute(grant.replace(':"alert_app_role"', '"alerta_app"'))
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("REVOKE zabalack_worker FROM alerta_app")
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute(grant.replace(':"alert_app_role"', '"alerta_app"'))
+        owner.execute(reseal)
+    assert reads("SELECT (zabalack.capture_health())->>'functions_ok'") == "true"
+
+
 def test_T41_the_reseal_refuses_a_tree_that_is_not_at_the_expected_schema(lab):
     reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
     with connect_role(lab, "zabalack_owner") as owner:
@@ -1055,10 +1110,12 @@ def test_T41_changing_the_application_role_revokes_the_former_one(lab):
 
     assert grantee_of() == (["alerta_app"], "alerta_app"), "precondition: the lab granted the application role"
     try:
-        # A stand-in for a former application role: any role the lab has.
+        # A stand-in for a former application role: a lab role the rules allow
+        # as one — not a zabalack role, which no application role may be or
+        # assume (see test_T41_an_application_role_that_can_assume_a_zabalack_role_is_unhealthy).
         with connect_role(lab, "zabalack_owner") as owner:
-            owner.execute(grant.replace(':"alert_app_role"', '"zabalack_operator"'))
-        assert grantee_of() == (["zabalack_operator"], "zabalack_operator"), "the former grantee lost the entry point"
+            owner.execute(grant.replace(':"alert_app_role"', '"zabalack_installer"'))
+        assert grantee_of() == (["zabalack_installer"], "zabalack_installer"), "the former grantee lost the entry point"
         with connect_role(lab, "alerta_app") as app:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 app.execute("SELECT zabalack.stage_generation(%s,%s,%s)", (str(uuid.uuid4()), str(uuid.uuid4()), Jsonb({})))

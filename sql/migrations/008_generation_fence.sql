@@ -767,7 +767,18 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- counted; a superuser executes this function whatever its ACL says, which
   -- no probe can change.
   AND NOT EXISTS(SELECT 1 FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid
-   JOIN pg_roles m ON m.oid=a.member WHERE r.rolname=i.application_role AND NOT m.rolsuper),
+   JOIN pg_roles m ON m.oid=a.member WHERE r.rolname=i.application_role AND NOT m.rolsuper)
+  -- ...and it is none of the zabalack roles and can assume none of them. A role
+  -- it can assume is a role it acts as: zabalack_worker carries worker_call(),
+  -- so an application role that reaches it verifies, holds and rejects captures
+  -- without the verifier's signature check. pg_has_role() follows the chain, so
+  -- an indirect membership is caught too, and it holds whether the membership
+  -- inherits or is reached with SET ROLE. The ACLs of those roles are hashed,
+  -- this membership is not.
+  AND NOT EXISTS(SELECT 1 FROM pg_roles a CROSS JOIN pg_roles z
+   WHERE a.rolname=i.application_role
+    AND z.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+    AND pg_has_role(a.oid,z.oid,'MEMBER')),
  'checked_at',clock_timestamp()) FROM zabalack.installation i LEFT JOIN zabalack.readiness_manifest m USING(singleton)
  CROSS JOIN LATERAL (SELECT zabalack.catalog_fingerprints() hashes) h WHERE i.singleton;
 $$;

@@ -62,4 +62,21 @@ BEGIN
   RAISE EXCEPTION 'the application role has members able to stage through it: %; revoke those memberships first',members;
  END IF;
 END $$;
+-- Nor may the application role be, or be able to assume, a zabalack role:
+-- zabalack_worker carries worker_call(), so such an application role verifies,
+-- holds and rejects captures without the verifier's signature check, whatever
+-- this script grants. Refuse; the membership is the role administrator's to
+-- revoke, or name a separate application role.
+DO $$
+DECLARE assumed text;
+BEGIN
+ SELECT string_agg(z.rolname,', ' ORDER BY z.rolname) INTO assumed
+  FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
+  CROSS JOIN pg_roles z WHERE i.singleton
+   AND z.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+   AND pg_has_role(a.oid,z.oid,'MEMBER');
+ IF assumed IS NOT NULL THEN
+  RAISE EXCEPTION 'the application role is, or can assume, zabalack role(s): %; revoke that membership, or name a separate application role',assumed;
+ END IF;
+END $$;
 COMMIT;

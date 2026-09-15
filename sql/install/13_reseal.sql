@@ -74,6 +74,16 @@ BEGIN
     WHERE i.singleton AND NOT m.rolsuper) THEN
   RAISE EXCEPTION 'the recorded application role has members, each a credential able to stage through it; revoke those memberships before sealing';
  END IF;
+ -- Nor may it be, or be able to assume, a zabalack role: zabalack_worker
+ -- carries worker_call(), so an application role that reaches it verifies,
+ -- holds and rejects captures without the verifier's signature check. A seal
+ -- over that would agree with it, since a membership moves no ACL here.
+ IF EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
+    CROSS JOIN pg_roles z WHERE i.singleton
+     AND z.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+     AND pg_has_role(a.oid,z.oid,'MEMBER')) THEN
+  RAISE EXCEPTION 'the recorded application role is, or is a member of, a zabalack role and can act as it; revoke that membership or name a separate application role before sealing';
+ END IF;
  -- A fresh installation has no manifest yet: it is sealed by 10_trigger.sql
  -- under the alerts owner, not re-sealed here.
  IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m WHERE m.singleton) THEN
