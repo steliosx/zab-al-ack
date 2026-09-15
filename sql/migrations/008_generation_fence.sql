@@ -832,6 +832,26 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
               AND e.grantee=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass))
           OR (p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
               AND pg_get_userbyid(e.grantee)=i.application_role)))
+  -- ...and every grant the installation makes is still there. The rule above
+  -- only refuses an entry that should not be; a missing one it cannot see, and
+  -- revoking EXECUTE on operator_call() from zabalack_operator leaves no
+  -- unexpected row for it to find while every control — pause, resume, cohorts,
+  -- external writes — fails with permission denied behind a probe reporting
+  -- healthy. The migrations do not restore a grant they already made, so the
+  -- re-seal records the grantless ACL as the baseline. The map is therefore
+  -- two-sided, as it already was for stage_generation(): exactly these pairs,
+  -- no more and no fewer.
+  AND NOT EXISTS(SELECT 1 FROM (
+   SELECT 'zabalack.worker_call(text,jsonb)'::regprocedure proc,'zabalack_worker'::regrole::oid grantee
+   UNION ALL SELECT 'zabalack.project(uuid)'::regprocedure,'zabalack_worker'::regrole::oid
+   UNION ALL SELECT 'zabalack.operator_call(text,jsonb)'::regprocedure,'zabalack_operator'::regrole::oid
+   UNION ALL SELECT 'zabalack.capture_health()'::regprocedure,'zabalack_probe'::regrole::oid
+   UNION ALL SELECT 'zabalack.capture_health()'::regprocedure,'zabalack_operator'::regrole::oid
+   UNION ALL SELECT 'zabalack.capture_ack()'::regprocedure,(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
+   UNION ALL SELECT 'zabalack.seal_installation()'::regprocedure,(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
+  ) x WHERE NOT EXISTS(SELECT 1 FROM pg_proc p
+    CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+    WHERE p.oid=x.proc AND e.grantee=x.grantee AND e.privilege_type='EXECUTE'))
   -- No relation here admits a non-owner grantee at all — tables, views and the
   -- identity sequence behind the fence alike: the migrations grant none, and
   -- every runtime role reaches its data through a function. The sequence is not
@@ -904,15 +924,19 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- act that sets it, empty where migrations run as a superuser and no role
   -- holds zabalack_owner at all. Superusers are never counted; they assume any
   -- role whatever this says.
+  -- Reach, not the edge: pg_has_role() follows the chain, so a member of a
+  -- recorded installer — outside login → installer → zabalack_owner — is
+  -- refused as the installer's own member rather than exempted along with it.
+  -- Only the roles named here reach zabalack_owner; anything that reaches them
+  -- must be named too.
   AND i.installer_roles IS NOT NULL
-  AND NOT EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
-   WHERE m.roleid IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
-                      'zabalack_probe'::regrole,'zabalack_operator'::regrole)
-    AND NOT mm.rolsuper
-    AND NOT (m.roleid='zabalack_owner'::regrole
-             AND mm.rolname<>ALL(ARRAY['zabalack_owner','zabalack_worker',
-                                       'zabalack_probe','zabalack_operator'])
-             AND mm.rolname=ANY(i.installer_roles)))
+  AND NOT EXISTS(SELECT 1 FROM pg_roles r CROSS JOIN pg_roles z
+   WHERE z.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+    AND NOT r.rolsuper AND r.oid<>z.oid AND pg_has_role(r.oid,z.oid,'MEMBER')
+    AND NOT (z.rolname='zabalack_owner'
+             AND r.rolname<>ALL(ARRAY['zabalack_owner','zabalack_worker',
+                                      'zabalack_probe','zabalack_operator'])
+             AND r.rolname=ANY(i.installer_roles)))
   -- And the four keep the attributes 00_roles.sql declares. A role attribute is
   -- not an ACL and not an ownership: SUPERUSER or BYPASSRLS on a runtime login
   -- walks past every rule above. The digests hash five of these; LOGIN on the

@@ -130,6 +130,25 @@ BEGIN
                AND pg_get_userbyid(e.grantee)=i.application_role))) THEN
   RAISE EXCEPTION 'a zabalack function has a grantee the installation does not make; revoke it before sealing';
  END IF;
+ -- And every grant the installation makes is still there. The rule above only
+ -- refuses an entry that should not be; a missing one it cannot see, and a
+ -- revoked EXECUTE on operator_call() leaves every control failing with
+ -- permission denied behind a probe reporting healthy, with nothing to restore
+ -- it — the migrations do not re-make a grant they already made. Exactly these
+ -- pairs, no more and no fewer, as already held for stage_generation().
+ IF EXISTS(SELECT 1 FROM (
+    SELECT 'zabalack.worker_call(text,jsonb)'::regprocedure proc,'zabalack_worker'::regrole::oid grantee
+    UNION ALL SELECT 'zabalack.project(uuid)'::regprocedure,'zabalack_worker'::regrole::oid
+    UNION ALL SELECT 'zabalack.operator_call(text,jsonb)'::regprocedure,'zabalack_operator'::regrole::oid
+    UNION ALL SELECT 'zabalack.capture_health()'::regprocedure,'zabalack_probe'::regrole::oid
+    UNION ALL SELECT 'zabalack.capture_health()'::regprocedure,'zabalack_operator'::regrole::oid
+    UNION ALL SELECT 'zabalack.capture_ack()'::regprocedure,(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
+    UNION ALL SELECT 'zabalack.seal_installation()'::regprocedure,(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
+   ) x WHERE NOT EXISTS(SELECT 1 FROM pg_proc p
+     CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+     WHERE p.oid=x.proc AND e.grantee=x.grantee AND e.privilege_type='EXECUTE')) THEN
+  RAISE EXCEPTION 'a zabalack function is missing a grant the installation makes; the role it answers to cannot call it — restore the grant before sealing';
+ END IF;
  -- Every relation, whatever its kind: tables, views and the identity sequence
  -- behind the fence, where UPDATE is setval() and a sequence moved backwards
  -- inverts the ordering the fence rests on.
@@ -182,17 +201,18 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM zabalack.installation i WHERE i.singleton AND i.installer_roles IS NOT NULL) THEN
   RAISE EXCEPTION 'the installer roles are not recorded; run sql/install/09_installer_roles.sql, naming the principals that hold zabalack_owner, before sealing';
  END IF;
- IF EXISTS(SELECT 1 FROM zabalack.installation i CROSS JOIN pg_auth_members m
-    JOIN pg_roles mm ON mm.oid=m.member
+ -- Reach, not the edge: pg_has_role() follows the chain, so a member of a
+ -- recorded installer — outside login, installer, zabalack_owner — is refused
+ -- rather than exempted along with it.
+ IF EXISTS( SELECT 1 FROM zabalack.installation i CROSS JOIN pg_roles r CROSS JOIN pg_roles z
     WHERE i.singleton
-     AND m.roleid IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
-                      'zabalack_probe'::regrole,'zabalack_operator'::regrole)
-     AND NOT mm.rolsuper
-     AND NOT (m.roleid='zabalack_owner'::regrole
-              AND mm.rolname<>ALL(ARRAY['zabalack_owner','zabalack_worker',
-                                        'zabalack_probe','zabalack_operator'])
-              AND mm.rolname=ANY(i.installer_roles))) THEN
-  RAISE EXCEPTION 'a role outside the recorded installer topology holds a zabalack role and can act as it; revoke that membership, or record the installer, before sealing';
+     AND z.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+     AND NOT r.rolsuper AND r.oid<>z.oid AND pg_has_role(r.oid,z.oid,'MEMBER')
+     AND NOT (z.rolname='zabalack_owner'
+              AND r.rolname<>ALL(ARRAY['zabalack_owner','zabalack_worker',
+                                       'zabalack_probe','zabalack_operator'])
+              AND r.rolname=ANY(i.installer_roles))) THEN
+  RAISE EXCEPTION 'a role outside the recorded installer topology can act as a zabalack role, directly or through a role it can assume; revoke that membership, or record the installer, before sealing';
  END IF;
  -- And the four keep the attributes 00_roles.sql declares. SUPERUSER or
  -- BYPASSRLS on a runtime login walks past every rule above, and a seal would

@@ -545,8 +545,11 @@ still holds afterwards. `capture_health()` asserts all of it under
 `functions_ok`, so a regression there marks every worker unhealthy, and
 `13_reseal.sql` refuses to seal a tree that breaks any of it. The same two
 assert the schema's whole grant map, not only the application's corner of it:
-the non-owner grantee of every `zabalack` function is the one the installation
-makes — `worker_call(text,jsonb)` and `project(uuid)` to `zabalack_worker`,
+the grantees of every `zabalack` function are exactly the ones the installation
+makes, read both ways — a revoked `EXECUTE` leaves no unexpected entry for a
+negative rule to find while the role it answers to gets `permission denied`, and
+the migrations do not re-make a grant they already made —
+`worker_call(text,jsonb)` and `project(uuid)` to `zabalack_worker`,
 `operator_call(text,jsonb)` to `zabalack_operator`, `capture_health()` to
 `zabalack_probe` and `zabalack_operator`, `capture_ack()` and
 `seal_installation()` to the alerts owner, `stage_generation()` to the recorded
@@ -562,8 +565,11 @@ application role, and to nobody else, `CREATE` going to the owner alone and
 `USAGE`, without which its fully qualified call fails at schema access while
 every function grant below still reads exactly right, so verification and
 delivery stop behind a probe reporting healthy; no role outside the recorded
-installer topology is a member of any of the four `zabalack_*` roles, whichever
-it is and whoever the member, a `NOINHERIT` member resolving no privilege
+installer topology can act as any of the four `zabalack_*` roles, whichever it
+is and whoever the role — reach rather than the direct edge, `SET ROLE`
+following a chain and `pg_has_role(..., 'MEMBER')` following it too, which is
+what refuses a member of a recorded installer rather than exempting it along
+with the installer — a `NOINHERIT` member resolving no privilege
 through any ACL while `SET ROLE` hands it the role whole, and
 `catalog_fingerprints()` hashing a membership only where the *member* is itself
 one of the four, so an outside one moves no digest at all; each of the four

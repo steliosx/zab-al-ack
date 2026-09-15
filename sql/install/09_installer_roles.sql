@@ -79,9 +79,11 @@ BEGIN
   RAISE EXCEPTION 'named installer role(s) are not members of zabalack_owner: %; grant the membership first, or leave them out',absent;
  END IF;
 END $$;
--- What is left must be nothing: every non-superuser member of any of the four,
--- other than a named installer holding zabalack_owner, is a credential able to
--- act as that role. zabalack_owner holds no ADMIN OPTION on those memberships
+-- What is left must be nothing: every non-superuser role that can act as any of
+-- the four, other than a named installer acting as zabalack_owner, is a second
+-- credential on it. pg_has_role() follows the chain, so a member of a named
+-- installer is refused rather than exempted along with it: a role that reaches
+-- an installer reaches zabalack_owner. zabalack_owner holds no ADMIN OPTION on those memberships
 -- and cannot revoke them, as 12_application_grant.sql cannot revoke a
 -- membership of the application role: refuse, naming them, and let the role
 -- administrator revoke them first. capture_health() and 13_reseal.sql apply the
@@ -89,16 +91,15 @@ END $$;
 DO $$
 DECLARE outside text;
 BEGIN
- SELECT string_agg(DISTINCT mm.rolname||' on '||m.roleid::regrole::text,', ') INTO outside
-  FROM zabalack.installation i CROSS JOIN pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
+ SELECT string_agg(DISTINCT r.rolname||' on '||z.rolname,', ') INTO outside
+  FROM zabalack.installation i CROSS JOIN pg_roles r CROSS JOIN pg_roles z
   WHERE i.singleton
-   AND m.roleid IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
-                    'zabalack_probe'::regrole,'zabalack_operator'::regrole)
-   AND NOT mm.rolsuper
-   AND NOT (m.roleid='zabalack_owner'::regrole
-            AND mm.rolname<>ALL(ARRAY['zabalack_owner','zabalack_worker',
-                                      'zabalack_probe','zabalack_operator'])
-            AND mm.rolname=ANY(i.installer_roles));
+   AND z.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+   AND NOT r.rolsuper AND r.oid<>z.oid AND pg_has_role(r.oid,z.oid,'MEMBER')
+   AND NOT (z.rolname='zabalack_owner'
+            AND r.rolname<>ALL(ARRAY['zabalack_owner','zabalack_worker',
+                                     'zabalack_probe','zabalack_operator'])
+            AND r.rolname=ANY(i.installer_roles));
  IF outside IS NOT NULL THEN
   RAISE EXCEPTION 'role(s) hold a zabalack role outside the recorded installer topology: %; revoke those memberships, or name the installers among :installer_roles',outside;
  END IF;

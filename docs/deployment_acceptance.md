@@ -106,7 +106,7 @@ that is the application role — and that `zabalack.alert_generations` admits no
 moves the digests, so it reads unhealthy until a re-seal agrees with it; the effective-rights assertion is what
 survives that seal, and `worker_call()` in the application's hands is a signature check skipped. `capture_health()`
 asserts all of it under `functions_ok` — together with the schema's whole grant map, not only the application's corner of it:
-the non-owner grantee of every `zabalack` function is the one the installation makes (`worker_call`/`project` to `zabalack_worker`,
+the grantees of every `zabalack` function are exactly the ones the installation makes, and none of them missing — record each grant as held, not merely the absence of strays; a revoked `EXECUTE` leaves nothing unexpected to find while the role it answers to gets `permission denied` (`worker_call`/`project` to `zabalack_worker`,
 `operator_call` to `zabalack_operator`, `capture_health` to `zabalack_probe` and `zabalack_operator`, `capture_ack` and
 `seal_installation` to the alerts owner, `stage_generation` to the recorded application role, every other function to no one), no
 relation admits a grantee at all, the fence's identity sequence included; the schema and everything in it is owned by
@@ -116,9 +116,10 @@ role but the owner, nothing to `PUBLIC`, and that each runtime role still holds 
 qualified call fails at schema access while every function grant still reads right; and each keeps the attributes
 `00_roles.sql` declares (no `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, `REPLICATION` or `INHERIT`; `LOGIN` for
 the three runtime roles only) (its `UPDATE` is `setval()`, and a sequence moved backwards
-inverts the fence's ordering), and no role outside the recorded installer topology is a member of any of the four — record
-`pg_auth_members` for all four and confirm every non-superuser member is `zabalack_owner`'s and is named in
-`installer_roles`; a `NOINHERIT` member resolves no privilege through any ACL while `SET ROLE` hands it the role whole, and
+inverts the fence's ordering), and no role outside the recorded installer topology can act as any of the four — record, for every
+non-superuser role, `pg_has_role(role, '<each of the four>', 'MEMBER')`, and confirm the only ones that answer
+true are the roles named in `installer_roles`, against `zabalack_owner` alone; reach, not the direct edge, since a
+member of a named installer follows the chain to `zabalack_owner` and no direct `pg_auth_members` row shows it; a `NOINHERIT` member resolves no privilege through any ACL while `SET ROLE` hands it the role whole, and
 the fingerprint hashes a membership only where the member is itself one of the four, so an outside one moves no digest at
 all — whoever reaches
 `worker_call()` records captures as verified without the signature check, and whoever reaches `operator_call()` holds the controls —

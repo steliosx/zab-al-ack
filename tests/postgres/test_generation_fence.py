@@ -1429,6 +1429,107 @@ def test_T41_only_a_recorded_installer_may_hold_a_zabalack_role(lab, give, take,
     assert health() == "true"
 
 
+@pytest.mark.parametrize("function,role", [
+    ("zabalack.worker_call(text,jsonb)", "zabalack_worker"),
+    ("zabalack.project(uuid)", "zabalack_worker"),
+    ("zabalack.operator_call(text,jsonb)", "zabalack_operator"),
+    ("zabalack.capture_health()", "zabalack_probe"),
+    ("zabalack.capture_health()", "zabalack_operator"),
+    ("zabalack.capture_ack()", "alerta_owner"),
+    ("zabalack.seal_installation()", "alerta_owner"),
+])
+def test_T41_every_grant_the_installation_makes_is_still_there(lab, function, role):
+    """The grant map read the other way round.
+
+    `test_T41_only_the_installations_own_grants_survive_a_reseal` refuses an ACL
+    entry that should not be there; a *missing* one it cannot see. Revoke
+    `EXECUTE` on `operator_call()` from `zabalack_operator` and there is no
+    unexpected row to find, while every control — pause, resume, cohorts,
+    external writes — fails with `permission denied`; the migrations do not
+    re-make a grant they already made, so the re-seal records the grantless ACL
+    as the baseline and the probe reports healthy over a deployment whose
+    operator can do nothing. The map is two-sided now, as it already was for
+    `stage_generation()`.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("REVOKE EXECUTE ON FUNCTION %s FROM %s" % (function, role))
+        owner.execute("SELECT zabalack.seal_installation()")
+    try:
+        assert health() == "false", "%s without its grant to %s is unhealthy" % (function, role)
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("GRANT EXECUTE ON FUNCTION %s TO %s" % (function, role))
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+def test_T41_a_role_that_reaches_a_recorded_installer_is_refused_too(lab):
+    """Reach, not the edge.
+
+    A recorded installer may act as `zabalack_owner`; a role that can act as the
+    *installer* can therefore act as the owner too, through the two-edge chain
+    `outside login → installer → zabalack_owner`, which a rule reading direct
+    `pg_auth_members` edges with `roleid` among the four never sees. `SET ROLE`
+    follows the chain and `pg_has_role(..., 'MEMBER')` does as well, so the rule
+    is stated as reach: only the roles the installation names may act as any of
+    the four, and anything that reaches one of those roles must be named too.
+    """
+    installer = (ROOT / "sql/install/09_installer_roles.sql").read_text()
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute("GRANT zabalack_owner TO zabalack_installer")
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute(installer.replace(":'installer_roles'", "'zabalack_installer'"))
+        owner.execute(reseal)
+    try:
+        assert health() == "true", "precondition: the recorded installer is allowed"
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("GRANT zabalack_installer TO alerta_app_next")
+            admin.execute("SELECT zabalack.seal_installation()")
+        try:
+            with connect_role(lab, "zabalack_owner") as owner:
+                assert owner.execute(
+                    "SELECT pg_has_role('alerta_app_next','zabalack_owner','MEMBER')").fetchone()[0] is True
+            assert health() == "false", "a role that reaches the installer reaches the owner"
+            with connect_role(lab, "zabalack_owner") as owner:
+                with pytest.raises(Exception, match="before sealing"):
+                    owner.execute(reseal)
+            # The record is not a way in either: naming the chained login is what
+            # the script refuses, since it is no installer of this installation.
+            with connect_role(lab, "zabalack_owner") as owner:
+                with pytest.raises(Exception, match="not members of zabalack_owner"):
+                    owner.execute(installer.replace(
+                        ":'installer_roles'", "'zabalack_installer,alerta_app_next'"))
+        finally:
+            with connect_role(lab, "zabalack_owner") as admin:
+                admin.execute("RESET ROLE")
+                admin.execute("REVOKE zabalack_installer FROM alerta_app_next")
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("REVOKE zabalack_owner FROM zabalack_installer")
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(installer.replace(":'installer_roles'", "''"))
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 def test_T41_a_recorded_installer_holds_the_owner_role_and_nothing_else(lab):
     """The exemption the record makes, and its limit.
 
