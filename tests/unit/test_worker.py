@@ -364,6 +364,24 @@ async def test_DB_transport_acquisition_has_true_overall_deadline(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_T41_the_standalone_reconcile_command_retires_intents(monkeypatch):
+    """With the worker stopped and the standalone reconciliation unit kept, as
+    the rollback keeps it, staged intents must still leave live rows: the
+    command asks the database to retire on every run, a local operation, and
+    still sends no source write. Before this only the worker's loop did."""
+    import argparse
+    from zabalack import cli
+    db = FakeDB()
+    monkeypatch.setattr(cli, "load_settings", lambda path: Settings(worker_dsn_file="/reviewed/worker.dsn", cohorts=(COHORT,)))
+    monkeypatch.setattr(cli, "read_protected_file", lambda path: b"postgresql://unused")
+    monkeypatch.setattr(cli, "Postgres", lambda dsn, **kwargs: db)
+    result = await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert result["source_writes"] is False
+    assert [op for op, _ in db.calls if op == "retire_intents"] == ["retire_intents"], db.calls
+    assert "retirement" in result["result"]
+
+
+@pytest.mark.asyncio
 async def test_T41_the_retirement_sweep_runs_under_its_own_statement_budget(monkeypatch):
     """Every other call keeps the 3-second statement timeout; the sweep's scan
     of public.alerts is bounded by the installed table, so it gets the

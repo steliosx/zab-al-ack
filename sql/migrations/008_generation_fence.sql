@@ -683,11 +683,17 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
    AND (p.proacl IS NULL OR EXISTS(SELECT 1 FROM aclexplode(p.proacl) e WHERE e.grantee=0)))
   AND NOT EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) e
    WHERE c.oid='zabalack.alert_generations'::regclass AND e.grantee<>c.relowner)
-  -- The staging entry point admits one non-owner grantee: the application role
-  -- the grant recorded. A former application role, or any other, must not keep it.
-  AND NOT EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+  -- The staging entry point has exactly one non-owner grantee: the application
+  -- role the grant recorded. A former application role, or any other, must not
+  -- keep it; and a tree whose grant was revoked, or whose role was dropped, is
+  -- not healthy either — every eligible acknowledgement would fail behind a
+  -- passing probe.
+  AND i.application_role IS NOT NULL
+  AND (SELECT count(*) FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+   WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner)=1
+  AND EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
    WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner
-    AND (e.grantee=0 OR pg_get_userbyid(e.grantee) IS DISTINCT FROM i.application_role)),
+    AND e.grantee<>0 AND pg_get_userbyid(e.grantee)=i.application_role),
  'checked_at',clock_timestamp()) FROM zabalack.installation i LEFT JOIN zabalack.readiness_manifest m USING(singleton)
  CROSS JOIN LATERAL (SELECT zabalack.catalog_fingerprints() hashes) h WHERE i.singleton;
 $$;

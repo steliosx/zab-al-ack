@@ -95,6 +95,12 @@ async def execute(args: argparse.Namespace) -> Any:
                 approved_versions=settings.approved_versions),
                            worker_id=str(uuid.uuid4()))
         result = await recon.fast_cycle()
+        # Retirement of staged intents (A5 stage two) rides every reconciliation
+        # cycle, not only the worker's: with the worker stopped and the
+        # standalone unit kept, as the rollback keeps it, abandoned intents on
+        # live rows must still be retired. It is a local database operation;
+        # this command still sends no source write.
+        result["retirement"] = await recon.retire_intents()
         if args.nightly:
             result["nightly"] = await recon.nightly_sweep()
         return {"source_writes": False, "result": result}
