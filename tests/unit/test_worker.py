@@ -382,6 +382,85 @@ async def test_T41_the_standalone_reconcile_command_retires_intents(monkeypatch)
     assert "retirement" in result["result"]
 
 
+REGISTRY = {"lab-zbx": {"logical_instance": "lab-zbx", "api_version": "7.0.0",
+                        "url": "https://zbx.invalid/api_jsonrpc.php",
+                        "token_file": "/reviewed/token-that-is-not-there",
+                        "ca_file": "/reviewed/ca-that-is-not-there.pem"}}
+
+
+class DueDB(FakeDB):
+    """A database with one due uncertain action, so the cycle reaches the source."""
+
+    def __init__(self):
+        super().__init__()
+        self.due = [{"action_id": "a1", "instance": "lab-zbx", "event_id": "42", "trigger_id": "12",
+                     "cohort": dict(COHORT), "uncertain": True, "state": "pending", "source": None,
+                     "public_reference": "ref", "issued_at": "2026-01-01T00:00:00+00:00",
+                     "completion_evidence": None}]
+
+
+class UnreachableDB(DueDB):
+    """A database whose due-time scan fails for a reason reconcile_action cannot catch."""
+
+    async def call(self, op, payload=None):
+        if op == "reconcile_due":
+            self.calls.append((op, copy.deepcopy(payload)))
+            raise RuntimeError("terminating connection due to administrator command")
+        return await super().call(op, payload)
+
+
+def _standalone(monkeypatch, db, **settings):
+    from zabalack import cli
+    monkeypatch.setattr(cli, "load_settings",
+        lambda path: Settings(worker_dsn_file="/reviewed/worker.dsn", cohorts=(COHORT,), **settings))
+    monkeypatch.setattr(cli, "read_protected_file", lambda path: b"postgresql://unused")
+    monkeypatch.setattr(cli, "Postgres", lambda dsn, **kwargs: db)
+    return cli
+
+
+@pytest.mark.asyncio
+async def test_T41_an_unreachable_source_does_not_stop_the_standalone_drain(monkeypatch):
+    """The reading a review round proposed, executed rather than assumed.
+
+    The concern was that a missing or unreadable Zabbix token file would end
+    the command before its database-only retirement drain. It does not:
+    `rpc.read_protected_file` turns the `OSError` into an `RPCError`, and
+    `reconcile_action` records that failure and returns — as it does for an
+    endpoint that will not resolve, a bad CA, a timeout or a malformed
+    response, every one of which is an `RPCError` or its `ValidationError`
+    subclass. The drain runs and the run succeeds. This pins that, so an
+    exception path that stopped being wrapped would fail here.
+    """
+    import argparse
+    db = DueDB()
+    cli = _standalone(monkeypatch, db, endpoint_registry=REGISTRY)
+    result = await cli.execute(argparse.Namespace(command="reconcile", config="unused",
+                                                  read_only=True, once=True, nightly=False))
+    assert result["source_writes"] is False
+    assert _sweeps(db) == ["retire_intents"], db.calls
+    assert [p for o, p in db.calls if o == "record_reconciliation"][0]["check_failure"] == "secret_file_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_T41_a_reconciliation_that_fails_outright_does_not_take_the_drain_with_it(monkeypatch):
+    """And the part of that concern which does hold, closed by ordering.
+
+    Retirement is a local database operation, and the rollback makes a
+    completed drain its condition for removing the application adapter. It
+    must not be contingent on the half of this command that reaches the
+    source completing — so it runs first. Here the due-time scan fails with
+    something `reconcile_action` never sees; the run still fails, as it must,
+    but the intents have already left the live rows.
+    """
+    import argparse
+    db = UnreachableDB()
+    cli = _standalone(monkeypatch, db, endpoint_registry=REGISTRY)
+    with pytest.raises(RuntimeError, match="terminating connection"):
+        await cli.execute(argparse.Namespace(command="reconcile", config="unused",
+                                             read_only=True, once=True, nightly=False))
+    assert _sweeps(db) == ["retire_intents"], db.calls
+
+
 class FailingSweepDB(FakeDB):
     """A database whose retirement sweep fails — its scan outrunning its budget."""
 

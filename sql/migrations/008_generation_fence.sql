@@ -84,6 +84,37 @@ SET search_path=pg_catalog,zabalack AS $$
 $$;
 REVOKE ALL ON FUNCTION zabalack.newest_generation(text) FROM PUBLIC;
 
+-- Whether the sequence that gives the fence its order still counts upward from
+-- where it stands. newest_generation() reads seq DESC, so the whole ordering
+-- rests on this: a sequence made to descend, allowed to cycle, or set back
+-- below the rows already recorded hands a later staging a lower number than an
+-- earlier one, and the older acknowledgement becomes the newest generation --
+-- its projection accepted and the newer one's refused, permanently. Nothing
+-- else sees it. The sequence's owner and ACL are hashed; its parameters are
+-- not, and its position moves legitimately at every staging, so that can never
+-- be hashed at all. A fence table its owner cannot read has been reassigned,
+-- which the ownership rule refuses in its own right: report that here rather
+-- than raise, so readiness still answers.
+CREATE FUNCTION zabalack.generation_order_intact() RETURNS boolean
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
+DECLARE highest bigint; standing bigint;
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_sequence s
+   WHERE s.seqrelid='zabalack.alert_generations_seq_seq'::regclass
+    AND s.seqincrement=1 AND s.seqstart=1 AND s.seqmin=1
+    AND s.seqmax=9223372036854775807 AND NOT s.seqcycle) THEN
+  RETURN false;
+ END IF;
+ BEGIN
+  SELECT max(g.seq) INTO highest FROM zabalack.alert_generations g;
+ EXCEPTION WHEN insufficient_privilege THEN RETURN false;
+ END;
+ SELECT q.last_value INTO standing FROM pg_sequences q
+  WHERE q.schemaname='zabalack' AND q.sequencename='alert_generations_seq_seq';
+ RETURN coalesce(standing,0)>=coalesce(highest,0);
+END $$;
+REVOKE ALL ON FUNCTION zabalack.generation_order_intact() FROM PUBLIC;
+
 -- The protected staging operation. Records the generation and writes the
 -- reserved staging keys in one transaction; the caller commits. It writes only
 -- the zabbix_ack_sync* keys the signer would have written, so Alerta's own
@@ -874,6 +905,9 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
    AND (p.proacl IS NULL OR EXISTS(SELECT 1 FROM aclexplode(p.proacl) e WHERE e.grantee=0)))
   AND NOT EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) e
    WHERE c.oid='zabalack.alert_generations'::regclass AND e.grantee<>c.relowner)
+  -- ...and while the sequence behind it still counts upward from where it
+  -- stands, which no digest can see at all. See generation_order_intact().
+  AND zabalack.generation_order_intact()
   -- The staging entry point has exactly one non-owner grantee: the application
   -- role the grant recorded. A former application role, or any other, must not
   -- keep it; and a tree whose grant was revoked, or whose role was dropped, is

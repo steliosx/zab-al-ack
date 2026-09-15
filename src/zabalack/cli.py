@@ -148,7 +148,6 @@ async def execute(args: argparse.Namespace) -> Any:
         recon = Reconciler(settings, db, EndpointRegistry(settings.endpoint_registry, lab=settings.lab_mode,
                 approved_versions=settings.approved_versions),
                            worker_id=str(uuid.uuid4()))
-        result = await recon.fast_cycle()
         # Retirement of staged intents (A5 stage two) rides every reconciliation
         # cycle, not only the worker's: with the worker stopped and the
         # standalone unit kept, as the rollback keeps it, abandoned intents on
@@ -156,7 +155,18 @@ async def execute(args: argparse.Namespace) -> Any:
         # the slot carries the rest to its next cycle; this command drains page
         # by page, bounded. It is a local database operation; this command
         # still sends no source write.
-        result["retirement"] = await drain_retirement(recon, pages=RETIREMENT_PAGES_PER_RUN)
+        #
+        # It runs before the cycle that reaches the source, not after, because
+        # the rollback makes a completed drain its condition for removing the
+        # application adapter: that cleanup must not become contingent on the
+        # remote half of this command finishing. Every source-side failure —
+        # an endpoint that will not resolve, an unreadable token file, TLS, a
+        # malformed response — is an RPCError that `reconcile_action` already
+        # records and swallows, so ordering changes nothing for those; it is
+        # every other way `fast_cycle()` can end that this places beyond reach.
+        retirement = await drain_retirement(recon, pages=RETIREMENT_PAGES_PER_RUN)
+        result = await recon.fast_cycle()
+        result["retirement"] = retirement
         if args.nightly:
             result["nightly"] = await recon.nightly_sweep()
         # A sweep that failed — its scan outrunning `retirement_timeout_seconds`
@@ -165,7 +175,6 @@ async def execute(args: argparse.Namespace) -> Any:
         # this command has none, so it fails instead of reporting the run as
         # complete, and the rollback's automation cannot take a cleanup that
         # did not happen for one that did.
-        retirement = result["retirement"]
         if "error" in retirement or retirement.get("continues"):
             raise RetirementError("retirement_failed" if "error" in retirement else "retirement_incomplete")
         return {"source_writes": False, "result": result}

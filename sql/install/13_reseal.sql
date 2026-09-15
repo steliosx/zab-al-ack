@@ -314,6 +314,22 @@ BEGIN
     AND c.relowner<>'zabalack_owner'::regrole) THEN
   RAISE EXCEPTION 'the zabalack schema, or an object in it, is not owned by zabalack_owner; a SECURITY DEFINER function runs as its owner — restore ownership before sealing';
  END IF;
+ -- The fence's order is its identity sequence, and nothing hashes it: the
+ -- sequence's owner and ACL are in the digests, its parameters are not, and
+ -- its position moves at every staging so it cannot be. A sequence made to
+ -- descend, to cycle, or set back below the rows already recorded hands a
+ -- later staging a lower seq than an earlier one, and newest_generation() then
+ -- names the older acknowledgement. After the ownership rule above, so that a
+ -- fence table its owner cannot read is reported as the reassignment it is.
+ IF NOT EXISTS(SELECT 1 FROM pg_sequence s
+   WHERE s.seqrelid='zabalack.alert_generations_seq_seq'::regclass
+    AND s.seqincrement=1 AND s.seqstart=1 AND s.seqmin=1
+    AND s.seqmax=9223372036854775807 AND NOT s.seqcycle) THEN
+  RAISE EXCEPTION 'zabalack.alert_generations_seq_seq no longer counts upward by one without cycling; restore its parameters before sealing';
+ END IF;
+ IF NOT zabalack.generation_order_intact() THEN
+  RAISE EXCEPTION 'zabalack.alert_generations_seq_seq stands below a generation already recorded; the next staging would be ordered beneath an earlier one — restore its position before sealing';
+ END IF;
  -- No role outside the recorded installer topology may assume any of the four,
  -- whichever it is and whoever the member: a NOINHERIT member resolves no
  -- privilege through any ACL above while SET ROLE hands it the role whole, and

@@ -1165,6 +1165,68 @@ def test_T41_only_the_installations_own_grants_survive_a_reseal(lab, give, take,
     assert health() == "true"
 
 
+SEQUENCE = "zabalack.alert_generations_seq_seq"
+
+
+@pytest.mark.parametrize("drift,refusal,rows,what", [
+    ("ALTER SEQUENCE " + SEQUENCE + " AS bigint INCREMENT BY -1 MINVALUE -9223372036854775808"
+     " MAXVALUE 9223372036854775807 START WITH 1 RESTART WITH 1", "counts upward", 0,
+     "a sequence made to descend, which orders every later staging beneath an earlier one"),
+    ("ALTER SEQUENCE " + SEQUENCE + " CYCLE", "counts upward", 0,
+     "a sequence allowed to cycle, which wraps back under the rows already recorded"),
+    ("SELECT setval('" + SEQUENCE + "',1,true)", "stands below a generation already recorded", 2,
+     "a sequence set back below a generation already recorded"),
+])
+def test_T41_the_fence_sequence_still_counts_upward_from_where_it_is(lab, drift, refusal, rows, what):
+    """The fence's order is a sequence, and no digest can see it.
+
+    `newest_generation()` reads `seq DESC`, so the whole ordering rests on the
+    sequence handing out increasing values. Round nineteen closed who may call
+    `setval()` — nobody but the owner — and the grantee map and the digests
+    cover the sequence's owner and ACL. Neither covers its *parameters*, and
+    its *position* moves legitimately at every staging, so that can never be
+    hashed at all: `functions_ok` read `true` here before the seal as well as
+    after one. A descending, cycling or set-back sequence gives a later staging
+    a lower number than an earlier one, and the older acknowledgement becomes
+    the newest generation — its projection accepted and the newer one's refused
+    for good. Reproduced exactly that way before this assertion existed.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    planted = []
+    with connect_role(lab, "zabalack_owner") as owner:
+        for _ in range(rows):
+            planted.append(owner.execute("""INSERT INTO zabalack.alert_generations(alert_id,action_id,recorded_by)
+                           VALUES('sequence-drift-lab',%s,'staging') RETURNING seq""",
+                           (str(uuid.uuid4()),)).fetchone()[0])
+        if rows:
+            assert max(planted) > 1, "precondition: a recorded generation above the value set back to"
+        owner.execute(drift)
+    try:
+        assert health() == "false", what + " is unhealthy"
+        with connect_role(lab, "zabalack_owner") as owner:
+            # Lab-only: seal over it, as every upgrade's re-seal would. No digest
+            # moved, so this is the only thing standing between the two.
+            owner.execute("SELECT zabalack.seal_installation()")
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match=refusal):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("DELETE FROM zabalack.alert_generations WHERE alert_id='sequence-drift-lab'")
+            owner.execute("ALTER SEQUENCE " + SEQUENCE + " AS bigint INCREMENT BY 1 MINVALUE 1"
+                          " MAXVALUE 9223372036854775807 START WITH 1 NO CYCLE RESTART WITH 1")
+            owner.execute("SELECT setval('" + SEQUENCE + "',"
+                          "greatest(coalesce((SELECT max(seq) FROM zabalack.alert_generations),1),1),true)")
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 @pytest.mark.parametrize("role,reaches", [("zabalack_worker", "zabalack.worker_call(text,jsonb)"),
                                           ("zabalack_operator", "zabalack.operator_call(text,jsonb)")])
 def test_T41_a_member_of_the_worker_role_reaches_the_verification_path(lab, role, reaches):
