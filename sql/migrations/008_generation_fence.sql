@@ -971,6 +971,21 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
              AND r.rolname<>ALL(ARRAY['zabalack_owner','zabalack_worker',
                                       'zabalack_probe','zabalack_operator'])
              AND r.rolname=ANY(i.installer_roles)))
+  -- ...and the four are members of nothing themselves. Every rule above reads
+  -- inward — who can act as one of these four — and this one reads outward:
+  -- what one of them can act as. GRANT alerta_owner TO zabalack_worker and the
+  -- worker does SET ROLE alerta_owner and writes public.alerts directly, past
+  -- the projection boundary the whole design rests on, while
+  -- has_table_privilege('zabalack_worker','public.alerts','UPDATE') stays false
+  -- throughout — that function resolves inherited privilege, and a NOINHERIT
+  -- role inherits none of what SET ROLE still hands it. The membership is
+  -- hashed, the member being one of the four, so the digests catch it until the
+  -- re-seal every upgrade performs agrees with it. There is no exception here:
+  -- 00_roles.sql grants these four no role at all, the installer topology runs
+  -- the other way, and a role one of them could assume is a role it acts as.
+  AND NOT EXISTS(SELECT 1 FROM pg_roles z CROSS JOIN pg_roles r
+   WHERE z.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+    AND r.oid<>z.oid AND pg_has_role(z.oid,r.oid,'MEMBER'))
   -- And the four keep the attributes 00_roles.sql declares. A role attribute is
   -- not an ACL and not an ownership: SUPERUSER or BYPASSRLS on a runtime login
   -- walks past every rule above. The digests hash five of these; LOGIN on the

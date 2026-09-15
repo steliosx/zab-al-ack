@@ -221,6 +221,18 @@ BEGIN
               AND r.rolname=ANY(i.installer_roles))) THEN
   RAISE EXCEPTION 'a role outside the recorded installer topology can act as a zabalack role, directly or through a role it can assume; revoke that membership, or record the installer, before sealing';
  END IF;
+ -- And the four are members of nothing themselves. Every rule above reads
+ -- inward — who can act as one of these four; this one reads outward. GRANT
+ -- alerta_owner TO zabalack_worker and the worker does SET ROLE alerta_owner
+ -- and writes public.alerts directly, past the projection boundary, while
+ -- has_table_privilege() stays false: it resolves inherited privilege, and a
+ -- NOINHERIT role inherits none of what SET ROLE still hands it. 00_roles.sql
+ -- grants these four no role at all.
+ IF EXISTS(SELECT 1 FROM pg_roles z CROSS JOIN pg_roles r
+    WHERE z.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+     AND r.oid<>z.oid AND pg_has_role(z.oid,r.oid,'MEMBER')) THEN
+  RAISE EXCEPTION 'a zabalack role can assume another role and act as it, past every privilege rule here; revoke that membership before sealing';
+ END IF;
  -- And the four keep the attributes 00_roles.sql declares. SUPERUSER or
  -- BYPASSRLS on a runtime login walks past every rule above, and a seal would
  -- record the escalation as the baseline.

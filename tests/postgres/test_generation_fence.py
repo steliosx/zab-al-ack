@@ -1646,6 +1646,93 @@ def test_T41_the_alerts_owner_keeps_its_usage_on_the_schema(lab):
     assert health() == "true"
 
 
+@pytest.mark.parametrize("role,target", [
+    ("zabalack_worker", "alerta_owner"),
+    ("zabalack_probe", "alerta_owner"),
+    ("zabalack_operator", "alerta_app"),
+    ("zabalack_owner", "alerta_app_next"),
+])
+def test_T41_the_four_are_members_of_nothing_themselves(lab, role, target):
+    """Every other membership rule here reads inward — who can act as one of the
+    four. This one reads outward: what one of them can act as.
+
+    `GRANT alerta_owner TO zabalack_worker` and the worker does `SET ROLE
+    alerta_owner` and writes `public.alerts` directly, past the projection
+    boundary the whole design rests on — while
+    `has_table_privilege('zabalack_worker','public.alerts','UPDATE')`, asserted
+    since 005, stays `false` throughout: it resolves *inherited* privilege, and a
+    `NOINHERIT` role inherits none of what `SET ROLE` still hands it. That blind
+    spot is the one this PR has met in every membership round. The membership is
+    hashed, the member being one of the four, so the digests catch it until the
+    re-seal agrees with it; this assertion is what holds afterwards.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute("GRANT %s TO %s" % (target, role))
+        admin.execute("SELECT zabalack.seal_installation()")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            # The role reaches it with SET ROLE and no privilege lookup shows it.
+            assert owner.execute("SELECT pg_has_role(%s,%s,'MEMBER')", (role, target)).fetchone()[0] is True
+            assert owner.execute("SELECT pg_has_role(%s,%s,'USAGE')", (role, target)).fetchone()[0] is False
+        assert health() == "false", "%s able to assume %s is unhealthy under a matching seal" % (role, target)
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("REVOKE %s FROM %s" % (target, role))
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+def test_T41_the_worker_reaches_the_alerts_owner_through_set_role_alone(lab):
+    """The exposure itself, once, rather than only the rule that refuses it.
+
+    A `NOINHERIT` runtime role granted the alerts owner writes the table the
+    projection boundary exists to protect, and every `has_*_privilege()`
+    assertion in this installation reads clean while it does.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    alert_id = str(uuid.uuid4())
+    with connect_role(lab, "alerta_app") as app:
+        app.execute("INSERT INTO alerts(id,resource,event,status,customer,service,attributes,history) "
+                    "VALUES(%s,'outbound','outbound','open',%s,ARRAY['s'],'{}'::jsonb,ARRAY[]::history[])",
+                    (alert_id, CUSTOMER))
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute("GRANT alerta_owner TO zabalack_worker")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute(
+                "SELECT has_table_privilege('zabalack_worker','public.alerts','UPDATE')").fetchone()[0] is False
+        with connect_role(lab, "zabalack_worker") as worker:
+            worker.execute("SET ROLE alerta_owner")
+            assert worker.execute("SELECT current_user").fetchone()[0] == "alerta_owner"
+            written = worker.execute(
+                "UPDATE alerts SET attributes=attributes||'{\"forged\":\"1\"}'::jsonb WHERE id=%s",
+                (alert_id,)).rowcount
+        assert written == 1, "the worker wrote public.alerts through SET ROLE"
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "false"
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("REVOKE alerta_owner FROM zabalack_worker")
+        with connect_role(lab, "alerta_owner") as owner:
+            owner.execute("DELETE FROM alerts WHERE id=%s", (alert_id,))
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+
+
 def test_T41_a_recorded_installer_holds_the_owner_role_and_nothing_else(lab):
     """The exemption the record makes, and its limit.
 

@@ -569,8 +569,13 @@ every function grant below still reads exactly right, so verification and
 delivery stop behind a probe reporting healthy — as does the alerts owner,
 a separate role wherever the deployment splits the application from it, whose
 005 `capture_ack()` and `seal_installation()` grants and whose `10_trigger.sql`
-run both fail at schema access without it; no role outside the recorded
-installer topology can act as any of the four `zabalack_*` roles, whichever it
+run both fail at schema access without it; none of the four `zabalack_*` roles is a member of any role at all, every
+other membership rule here reading inward and this one outward — the alerts
+owner granted to `zabalack_worker` lets it `SET ROLE` to that owner and write
+`public.alerts` directly, past the projection boundary, while
+`has_table_privilege()` stays false, resolving inherited privilege where a
+`NOINHERIT` role inherits none of what `SET ROLE` still hands it; no role
+outside the recorded installer topology can act as any of the four, whichever it
 is and whoever the role — reach rather than the direct edge, `SET ROLE`
 following a chain and `pg_has_role(..., 'MEMBER')` following it too, which is
 what refuses a member of a recorded installer rather than exempting it along
