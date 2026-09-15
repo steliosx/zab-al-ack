@@ -220,6 +220,18 @@ BEGIN
   OR has_table_privilege('zabalack_owner','public.alerts','DELETE,TRUNCATE,TRIGGER') THEN
   RAISE EXCEPTION 'zabalack_owner holds a privilege on public.alerts the installation does not make; it reads id, customer, status, attributes and update_time and writes attributes, and nothing else — revoke the rest before sealing';
  END IF;
+ -- And the other three hold nothing on public.alerts at all. Naming the
+ -- worker's UPDATE and the probe's SELECT one pair at a time left
+ -- zabalack_operator unmentioned: granted UPDATE(attributes) directly, that
+ -- credential rewrites the reserved sync keys and the source identity on any
+ -- row without going through project(). No digest covers this table.
+ IF EXISTS(SELECT 1 FROM unnest(ARRAY['zabalack_worker','zabalack_probe','zabalack_operator']) AS runtime(rolname)
+   WHERE has_table_privilege(runtime.rolname,'public.alerts','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+    OR EXISTS(SELECT 1 FROM pg_attribute a
+     WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0 AND NOT a.attisdropped
+      AND has_column_privilege(runtime.rolname,'public.alerts',a.attname,'SELECT,INSERT,UPDATE,REFERENCES'))) THEN
+  RAISE EXCEPTION 'a zabalack runtime role holds a privilege on public.alerts; only zabalack_owner may, and the runtime roles reach that table solely through SECURITY DEFINER routines — revoke it before sealing';
+ END IF;
  -- The schema's own ACL is the gate in front of every rule above. Without
  -- USAGE on zabalack, zabalack_worker's fully qualified worker_call() fails at
  -- schema access while every function grant below still reads right, and a seal

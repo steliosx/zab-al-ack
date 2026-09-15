@@ -922,6 +922,19 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
       OR has_column_privilege('zabalack_owner','public.alerts',a.attname,'INSERT')
       OR has_column_privilege('zabalack_owner','public.alerts',a.attname,'REFERENCES')))
   AND NOT has_table_privilege('zabalack_owner','public.alerts','DELETE,TRUNCATE,TRIGGER')
+  -- ...and the other three hold nothing on that table at all, stated as a map
+  -- for the same reason. The worker's UPDATE and the probe's SELECT were named
+  -- above one pair at a time, which left zabalack_operator unmentioned: a
+  -- direct GRANT UPDATE(attributes) ON public.alerts TO zabalack_operator lets
+  -- the operator credential rewrite the reserved sync keys and the source
+  -- identity on any row without going through project() at all. public.alerts
+  -- lies outside the schema catalog_fingerprints() hashes, so no digest moves,
+  -- before a re-seal or after one. Only zabalack_owner holds anything here.
+  AND NOT EXISTS(SELECT 1 FROM unnest(ARRAY['zabalack_worker','zabalack_probe','zabalack_operator']) AS runtime(rolname)
+   WHERE has_table_privilege(runtime.rolname,'public.alerts','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+    OR EXISTS(SELECT 1 FROM pg_attribute a
+     WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0 AND NOT a.attisdropped
+      AND has_column_privilege(runtime.rolname,'public.alerts',a.attname,'SELECT,INSERT,UPDATE,REFERENCES')))
   AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member='zabalack_probe'::regrole)
   -- USAGE on the schema is granted to the application role for one function.
   -- That confers nothing only while no function here is executable by PUBLIC,

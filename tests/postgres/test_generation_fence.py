@@ -1350,6 +1350,61 @@ def test_T41_row_level_security_here_is_recorded_by_nothing_else(lab, enable, di
     assert health() == "true"
 
 
+@pytest.mark.parametrize("give,take,what", [
+    ("GRANT UPDATE(attributes) ON public.alerts TO zabalack_operator",
+     "REVOKE UPDATE(attributes) ON public.alerts FROM zabalack_operator",
+     "the operator, which could then rewrite the reserved sync keys without projecting"),
+    ("GRANT SELECT ON public.alerts TO zabalack_operator",
+     "REVOKE SELECT ON public.alerts FROM zabalack_operator",
+     "the operator reading the table directly"),
+    ("GRANT INSERT ON public.alerts TO zabalack_worker",
+     "REVOKE INSERT ON public.alerts FROM zabalack_worker",
+     "the worker, at a privilege no earlier prohibition named"),
+    ("GRANT SELECT(attributes) ON public.alerts TO zabalack_probe",
+     "REVOKE SELECT(attributes) ON public.alerts FROM zabalack_probe",
+     "the probe at column level, where the table-level prohibition does not reach"),
+])
+def test_T41_no_runtime_role_holds_anything_on_the_alerts_table(lab, give, take, what):
+    """The map for the other three roles, after the owner's.
+
+    Round twenty-six stated `zabalack_owner`'s grants on `public.alerts` as a
+    map because every rule there was a prohibition and a prohibition cannot see
+    a grant that is missing. The same list named the worker's `UPDATE` and the
+    probe's `SELECT` one pair at a time, which left `zabalack_operator`
+    unmentioned and every other privilege of the worker and probe unmentioned
+    with it. Reproduced: `GRANT UPDATE(attributes) ON public.alerts TO
+    zabalack_operator` left `functions_ok` `true` before the seal and after
+    one, and `13_reseal.sql` accepted it — that credential could then rewrite
+    the reserved sync keys and the source identity on any row without going
+    through `project()`. `public.alerts` is outside the schema the digests
+    cover, so nothing else sees it either.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "alerta_owner") as owner:
+        owner.execute(give)
+    try:
+        assert health() == "false", what + " is unhealthy"
+        with connect_role(lab, "zabalack_owner") as owner:
+            # Lab-only: seal over it, as every upgrade's re-seal would. No digest
+            # covers this table, so the assertion is the only thing that sees it.
+            owner.execute("SELECT zabalack.seal_installation()")
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="runtime role holds a privilege on public.alerts"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "alerta_owner") as owner:
+            owner.execute(take)
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 @pytest.mark.parametrize("renamed", [True, False])
 def test_T41_only_one_trigger_here_calls_the_capture_function(lab, renamed):
     """The same name-versus-object weakness, one object further out.
