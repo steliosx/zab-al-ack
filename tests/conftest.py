@@ -1,6 +1,7 @@
 """Disposable native PostgreSQL fixture. Absence is explicit environment blockage."""
 import importlib.util
 import os
+import sys
 from pathlib import Path
 import pytest
 import psycopg
@@ -61,3 +62,21 @@ def connect_role(pg_lab,role):
 def pgdb(pg_lab):
     """Role-selected real DB connection factory; role assertions use current_user."""
     return lambda role: connect_role(pg_lab,role)
+
+@pytest.fixture(autouse=True)
+def query_builder_not_inherited():
+    """No test inherits another test's alert query builder.
+
+    `configure_app` installs the reader restriction on the module global
+    `alerta.app.qb.alerts` and refuses an absent one. That global outlives the
+    test that built it, so a Flask fixture omitting `qb.init_app` would pass
+    behind one that did and fail alone. Clearing it first makes the omission
+    fail in any order. Absent for a run that never imports Alerta.
+    """
+    module=sys.modules.get('alerta.app')
+    if module is not None:
+        builder=module.qb
+        # init_app assigns self.__class__.alerts, so the class attribute is the
+        # one that outlives a test; an instance attribute would only shadow it.
+        builder.__dict__.pop('alerts',None)
+        type(builder).alerts=None

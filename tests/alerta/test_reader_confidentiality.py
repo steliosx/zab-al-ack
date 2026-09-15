@@ -35,7 +35,7 @@ import jwt
 import pytest
 from flask import Flask, g
 from alerta import settings as defaults
-from alerta.app import alarm_model, db, hooks, plugins
+from alerta.app import alarm_model, db, hooks, plugins, qb
 from alerta.exceptions import ExceptionHandlers
 from alerta.models.alert import Alert
 from alerta.models.enums import Scope
@@ -86,6 +86,12 @@ def reader_lab(monkeypatch):
     hooks.init_app(app)
     ExceptionHandlers().register(app)
     app.register_blueprint(api)
+    # The query builder must exist before configure_app: it installs the reader
+    # restriction on it, and refuses rather than reporting the adapter ready
+    # over an absent one. init_app selects the backend module without
+    # connecting, which is why an unreachable DSN is enough here.
+    app.config.update(DATABASE_URL="postgres://synthetic-lab-only:5432/unused")
+    qb.init_app(app)
     configure_app(app)
 
     @app.before_request
