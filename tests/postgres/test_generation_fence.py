@@ -927,6 +927,90 @@ def test_T41_a_seal_over_a_public_function_or_a_fence_grantee_stays_unhealthy(la
         assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
+def test_T41_a_member_of_the_recorded_application_role_is_unhealthy(lab):
+    """A membership is not an ACL, and outside the four zabalack roles it is not
+    hashed either, so nothing the manifest seals moves with it.
+
+    Granting the recorded application role to another role makes that role an
+    executor of `stage_generation()` — it inherits the privilege, or, `NOINHERIT`
+    as every role this lab creates is, reaches it with `SET ROLE` — while
+    `aclexplode()` still reports exactly one non-owner grantee. The member here
+    is `zabalack_installer`, outside the set whose memberships
+    `catalog_fingerprints()` hashes, so both sealed digests still match, exactly
+    as they would for any login an operator grants the role to; under `NOINHERIT`
+    not even `has_function_privilege()` resolves the privilege, so the
+    membership itself is the only record of the second credential.
+    `capture_health()` reports `functions_ok` false for it and `13_reseal.sql`
+    refuses to seal it; the grant script refuses to record a role that already
+    has members, having no `ADMIN OPTION` to revoke one with.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    grant = (ROOT / "sql/install/12_application_grant.sql").read_text()
+
+    def direct_grantees():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return [row[0] for row in owner.execute(
+                "SELECT pg_get_userbyid(e.grantee) FROM pg_proc p CROSS JOIN LATERAL aclexplode(p.proacl) e "
+                "WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure "
+                "AND e.grantee<>p.proowner ORDER BY 1").fetchall()]
+
+    def assumes_the_role(role):
+        """`SET ROLE alerta_app` is open to it: it executes whatever that role can."""
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT pg_has_role(%s,'alerta_app','MEMBER')", (role,)).fetchone()[0]
+
+    def resolves_execute(role):
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT has_function_privilege(%s,"
+                                 "'zabalack.stage_generation(text,uuid,jsonb)','EXECUTE')", (role,)).fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        sealed = owner.execute("SELECT functions_md5,structures_md5 FROM zabalack.readiness_manifest "
+                               "WHERE singleton").fetchone()
+    assert direct_grantees() == ["alerta_app"] and assumes_the_role("zabalack_installer") is False, "precondition"
+
+    # Lab-only: the membership is granted by the role's administrator. It is
+    # not zabalack_owner's to grant — nor, for the same reason, to revoke,
+    # which is why 12_application_grant.sql refuses rather than revoking it.
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute("GRANT alerta_app TO zabalack_installer")
+    try:
+        assert assumes_the_role("zabalack_installer") is True, "the member can assume the recorded role"
+        assert resolves_execute("zabalack_installer") is False, \
+            "and a NOINHERIT member does not even resolve the privilege: only the membership shows it"
+        assert direct_grantees() == ["alerta_app"], "the ACL still names one grantee"
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT functions_md5,structures_md5 FROM zabalack.readiness_manifest "
+                                 "WHERE singleton").fetchone() == sealed, \
+                "both digests still match: this membership is neither an ACL nor a hashed one"
+            assert owner.execute("SELECT (zabalack.catalog_fingerprints())->>'structures'="
+                                 "structures_md5 FROM zabalack.readiness_manifest "
+                                 "WHERE singleton").fetchone()[0] is True, \
+                "the tree still fingerprints to what was sealed"
+            assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "false", \
+                "a member of the recorded role is unhealthy under a matching seal"
+        # A failed script leaves its transaction aborted: one per connection.
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="revoke those memberships first"):
+                owner.execute(grant.replace(':"alert_app_role"', '"alerta_app"'))
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("REVOKE alerta_app FROM zabalack_installer")
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+        # The refusal was the membership alone: the same grant runs once it is gone.
+        owner.execute(grant.replace(':"alert_app_role"', '"alerta_app"'))
+        owner.execute(reseal)
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert direct_grantees() == ["alerta_app"]
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
 def test_T41_the_reseal_refuses_a_tree_that_is_not_at_the_expected_schema(lab):
     reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
     with connect_role(lab, "zabalack_owner") as owner:

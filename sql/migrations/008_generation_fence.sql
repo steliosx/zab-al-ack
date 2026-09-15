@@ -759,7 +759,15 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- ...and that role holds USAGE on the schema, without which its fully
   -- qualified call fails at schema access behind a passing probe.
   AND EXISTS(SELECT 1 FROM pg_roles r WHERE r.rolname=i.application_role
-   AND has_schema_privilege(r.oid,'zabalack','USAGE')),
+   AND has_schema_privilege(r.oid,'zabalack','USAGE'))
+  -- ...and no role is a member of it. A member inherits its privileges, or can
+  -- SET ROLE to it, and is a second credential able to stage. A membership is
+  -- not an ACL: neither the grantee count above nor the manifest digests move
+  -- with it, so nothing else here would see it. A superuser member is not
+  -- counted; a superuser executes this function whatever its ACL says, which
+  -- no probe can change.
+  AND NOT EXISTS(SELECT 1 FROM pg_auth_members a JOIN pg_roles r ON r.oid=a.roleid
+   JOIN pg_roles m ON m.oid=a.member WHERE r.rolname=i.application_role AND NOT m.rolsuper),
  'checked_at',clock_timestamp()) FROM zabalack.installation i LEFT JOIN zabalack.readiness_manifest m USING(singleton)
  CROSS JOIN LATERAL (SELECT zabalack.catalog_fingerprints() hashes) h WHERE i.singleton;
 $$;

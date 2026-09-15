@@ -32,9 +32,10 @@ BEGIN
   OR to_regclass('zabalack.alert_generations') IS NULL THEN
   RAISE EXCEPTION 'schema version 4 objects absent; refusing to seal an incomplete tree';
  END IF;
- -- The application role's USAGE on the schema rests on these two facts, which
- -- capture_health() asserts under functions_ok. A seal over a tree that breaks
- -- either would make the digests agree with a real misconfiguration: refuse.
+ -- The application role's USAGE on the schema rests on the facts checked here,
+ -- which capture_health() asserts under functions_ok. A seal over a tree that
+ -- breaks any of them would make the digests agree with a real
+ -- misconfiguration: refuse.
  IF EXISTS(SELECT 1 FROM pg_proc p WHERE p.pronamespace='zabalack'::regnamespace
    AND (p.proacl IS NULL OR EXISTS(SELECT 1 FROM aclexplode(p.proacl) e WHERE e.grantee=0))) THEN
   RAISE EXCEPTION 'a zabalack function is executable by PUBLIC; revoke that before sealing';
@@ -62,6 +63,16 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles r ON r.rolname=i.application_role
     WHERE i.singleton AND has_schema_privilege(r.oid,'zabalack','USAGE')) THEN
   RAISE EXCEPTION 'the recorded application role does not hold USAGE on schema zabalack; run sql/install/12_application_grant.sql for that role before sealing';
+ END IF;
+ -- And no role may be a member of it: a member inherits its privileges, or can
+ -- SET ROLE to it, and stages through the entry point while the ACL above
+ -- still reads as one grantee. A membership changes no ACL, so the digests
+ -- this seals would agree with that second credential. Superusers excepted:
+ -- they execute it whatever the ACL says.
+ IF EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles r ON r.rolname=i.application_role
+    JOIN pg_auth_members a ON a.roleid=r.oid JOIN pg_roles m ON m.oid=a.member
+    WHERE i.singleton AND NOT m.rolsuper) THEN
+  RAISE EXCEPTION 'the recorded application role has members, each a credential able to stage through it; revoke those memberships before sealing';
  END IF;
  -- A fresh installation has no manifest yet: it is sealed by 10_trigger.sql
  -- under the alerts owner, not re-sealed here.

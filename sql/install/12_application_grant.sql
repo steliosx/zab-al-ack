@@ -9,7 +9,8 @@
 -- the schema confers nothing on its own, because every function in it has
 -- EXECUTE revoked from PUBLIC and the generation fence admits no grantee but
 -- its owner — both of which capture_health() asserts under functions_ok, as it
--- asserts that the function's only non-owner grantee is the role recorded here.
+-- asserts that the function's only non-owner grantee is the role recorded here
+-- and that no role is a member of that one, which would stage through it.
 --
 -- This changes the schema and function ACLs the readiness manifest hashes, so
 -- it runs after migration 008 and before the manifest is sealed
@@ -43,4 +44,22 @@ UPDATE zabalack.installation SET application_role=(SELECT pg_get_userbyid(e.gran
  CROSS JOIN LATERAL aclexplode(p.proacl) e
  WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner AND e.grantee<>0)
  WHERE singleton;
+-- A member of that role inherits its privileges, or can SET ROLE to it, and is
+-- a second credential able to stage while the ACL still names one grantee.
+-- zabalack_owner holds no ADMIN OPTION on the application role and cannot
+-- revoke such a membership, as it revokes a former grantee above: refuse the
+-- grant instead, naming them, and let the role's administrator revoke them
+-- first. Superusers are not counted; they execute the function regardless.
+-- capture_health() and 13_reseal.sql apply the same rule afterwards.
+DO $$
+DECLARE members text;
+BEGIN
+ SELECT string_agg(m.rolname,', ' ORDER BY m.rolname) INTO members
+  FROM zabalack.installation i JOIN pg_roles r ON r.rolname=i.application_role
+  JOIN pg_auth_members a ON a.roleid=r.oid JOIN pg_roles m ON m.oid=a.member
+  WHERE i.singleton AND NOT m.rolsuper;
+ IF members IS NOT NULL THEN
+  RAISE EXCEPTION 'the application role has members able to stage through it: %; revoke those memberships first',members;
+ END IF;
+END $$;
 COMMIT;
