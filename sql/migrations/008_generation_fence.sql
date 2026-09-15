@@ -773,6 +773,34 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   AND NOT has_column_privilege('zabalack_owner','public.alerts','customer','UPDATE')
   AND NOT has_table_privilege('zabalack_owner','public.alerts','TRIGGER')
   AND NOT has_table_privilege('zabalack_probe','public.alerts','SELECT')
+  -- ...and zabalack_owner still holds the grants 00_roles.sql makes it on
+  -- public.alerts, exactly those and no more. Every rule above about this table
+  -- is a prohibition, and a prohibition cannot see a grant that is *missing*.
+  -- Revoke UPDATE(attributes) and stage_generation(), SECURITY DEFINER and
+  -- running as this owner, fails with "permission denied for table alerts": every
+  -- eligible acknowledgement is refused with zabalack_generation_unavailable,
+  -- and retirement and projection lose their access too. public.alerts is
+  -- outside the schema catalog_fingerprints() hashes, so no digest moves either
+  -- — not even before a re-seal. This is the only thing that sees it.
+  AND has_column_privilege('zabalack_owner','public.alerts','id','SELECT')
+  AND has_column_privilege('zabalack_owner','public.alerts','customer','SELECT')
+  AND has_column_privilege('zabalack_owner','public.alerts','status','SELECT')
+  AND has_column_privilege('zabalack_owner','public.alerts','attributes','SELECT')
+  AND has_column_privilege('zabalack_owner','public.alerts','update_time','SELECT')
+  AND has_column_privilege('zabalack_owner','public.alerts','attributes','UPDATE')
+  -- ...and nothing beyond them, stated as a map rather than as the four column
+  -- prohibitions above: no SELECT on any other column, no UPDATE on any other,
+  -- no INSERT or REFERENCES anywhere in the table, and none of DELETE, TRUNCATE
+  -- or TRIGGER. The owner reads five columns and writes one.
+  AND NOT EXISTS(SELECT 1 FROM pg_attribute a
+   WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0 AND NOT a.attisdropped
+    AND ((a.attname<>ALL(ARRAY['id','customer','status','attributes','update_time'])
+          AND has_column_privilege('zabalack_owner','public.alerts',a.attname,'SELECT'))
+      OR (a.attname<>'attributes'
+          AND has_column_privilege('zabalack_owner','public.alerts',a.attname,'UPDATE'))
+      OR has_column_privilege('zabalack_owner','public.alerts',a.attname,'INSERT')
+      OR has_column_privilege('zabalack_owner','public.alerts',a.attname,'REFERENCES')))
+  AND NOT has_table_privilege('zabalack_owner','public.alerts','DELETE,TRUNCATE,TRIGGER')
   AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member='zabalack_probe'::regrole)
   -- USAGE on the schema is granted to the application role for one function.
   -- That confers nothing only while no function here is executable by PUBLIC,

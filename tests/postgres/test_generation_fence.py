@@ -1733,6 +1733,96 @@ def test_T41_the_worker_reaches_the_alerts_owner_through_set_role_alone(lab):
             owner.execute(reseal)
 
 
+@pytest.mark.parametrize("give,take,what", [
+    ("REVOKE UPDATE(attributes) ON public.alerts FROM zabalack_owner",
+     "GRANT UPDATE(attributes) ON public.alerts TO zabalack_owner",
+     "the one column the owner writes"),
+    ("REVOKE SELECT(customer) ON public.alerts FROM zabalack_owner",
+     "GRANT SELECT(customer) ON public.alerts TO zabalack_owner",
+     "a column the owner reads"),
+    ("REVOKE SELECT(id,customer,status,attributes,update_time) ON public.alerts FROM zabalack_owner",
+     "GRANT SELECT(id,customer,status,attributes,update_time) ON public.alerts TO zabalack_owner",
+     "every column the owner reads"),
+    ("GRANT UPDATE(text) ON public.alerts TO zabalack_owner",
+     "REVOKE UPDATE(text) ON public.alerts FROM zabalack_owner",
+     "a column the owner must not write"),
+    ("GRANT SELECT(raw_data) ON public.alerts TO zabalack_owner",
+     "REVOKE SELECT(raw_data) ON public.alerts FROM zabalack_owner",
+     "a column the owner must not read"),
+    ("GRANT DELETE ON public.alerts TO zabalack_owner",
+     "REVOKE DELETE ON public.alerts FROM zabalack_owner",
+     "DELETE on the alerts table"),
+])
+def test_T41_the_owner_keeps_exactly_its_grants_on_public_alerts(lab, give, take, what):
+    """The owner's access to `public.alerts`, read both ways.
+
+    Every rule here about that table was a prohibition — no `UPDATE` on `status`,
+    `history`, `severity` or `customer`, no `TRIGGER` — and a prohibition cannot
+    see a grant that is *missing*. Revoke `UPDATE(attributes)` and
+    `stage_generation()`, `SECURITY DEFINER` and running as this owner, fails
+    with `permission denied for table alerts`: every eligible acknowledgement is
+    refused `zabalack_generation_unavailable`, and retirement and projection lose
+    their access too. `public.alerts` is outside the schema
+    `catalog_fingerprints()` hashes, so no digest moves either — `functions_ok`
+    reads `true` before any re-seal as well as after one, and this assertion is
+    the only thing that sees it. The owner reads five columns and writes one.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    # The alerts owner grants and revokes on its own table.
+    with connect_role(lab, "alerta_owner") as owner:
+        owner.execute(give)
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("SELECT zabalack.seal_installation()")
+    try:
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "alerta_owner") as owner:
+            owner.execute(take)
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+def test_T41_without_its_update_grant_the_owner_cannot_stage_at_all(lab):
+    """The consequence itself, once: the entry point fails and the API refuses.
+
+    `stage_generation()` runs as `zabalack_owner`, so the owner's `UPDATE`
+    on `attributes` is what every acknowledgement rests on — and the
+    installation reported healthy without it.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    alert_id, action_id = str(uuid.uuid4()), str(uuid.uuid4())
+    with connect_role(lab, "alerta_owner") as owner:
+        owner.execute("REVOKE UPDATE(attributes) ON public.alerts FROM zabalack_owner")
+    try:
+        with connect_role(lab, "alerta_app") as app:
+            app.execute("INSERT INTO alerts(id,resource,event,status,customer,service,attributes,history) "
+                        "VALUES(%s,'owner-grant','owner-grant','open',%s,ARRAY['s'],'{}'::jsonb,ARRAY[]::history[])",
+                        (alert_id, CUSTOMER))
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                app.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
+                            (alert_id, action_id, Jsonb({"action_id": action_id, "alert_id": alert_id})))
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT count(*) FROM zabalack.alert_generations WHERE alert_id=%s",
+                                 (alert_id,)).fetchone()[0] == 0, "nothing staged, nothing recorded"
+    finally:
+        with connect_role(lab, "alerta_owner") as owner:
+            owner.execute("GRANT UPDATE(attributes) ON public.alerts TO zabalack_owner")
+            owner.execute("DELETE FROM alerts WHERE id=%s", (alert_id,))
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
 def test_T41_a_recorded_installer_holds_the_owner_role_and_nothing_else(lab):
     """The exemption the record makes, and its limit.
 

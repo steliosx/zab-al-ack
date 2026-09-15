@@ -158,6 +158,37 @@ BEGIN
     WHERE c.relnamespace='zabalack'::regnamespace AND e.grantee<>c.relowner) THEN
   RAISE EXCEPTION 'a zabalack relation or sequence admits a grantee other than its owner; revoke it before sealing';
  END IF;
+ -- ...and zabalack_owner still holds the grants 00_roles.sql makes it on
+ -- public.alerts, exactly those and no more. Every rule above about this table
+ -- is a prohibition, and a prohibition cannot see a grant that is *missing*.
+ -- Revoke UPDATE(attributes) and stage_generation(), SECURITY DEFINER and
+ -- running as this owner, fails with "permission denied for table alerts": every
+ -- eligible acknowledgement is refused with zabalack_generation_unavailable,
+ -- and retirement and projection lose their access too. public.alerts is
+ -- outside the schema catalog_fingerprints() hashes, so no digest moves either
+ -- — not even before a re-seal. This is the only thing that sees it.
+ IF NOT (has_column_privilege('zabalack_owner','public.alerts','id','SELECT')
+     AND has_column_privilege('zabalack_owner','public.alerts','customer','SELECT')
+     AND has_column_privilege('zabalack_owner','public.alerts','status','SELECT')
+     AND has_column_privilege('zabalack_owner','public.alerts','attributes','SELECT')
+     AND has_column_privilege('zabalack_owner','public.alerts','update_time','SELECT')
+     AND has_column_privilege('zabalack_owner','public.alerts','attributes','UPDATE')) THEN
+  RAISE EXCEPTION 'zabalack_owner has lost a grant 00_roles.sql makes it on public.alerts (SELECT on id, customer, status, attributes, update_time; UPDATE on attributes); stage_generation() runs as this owner and every acknowledgement would fail — restore the grant before sealing';
+ END IF;
+ -- ...and nothing beyond them: no SELECT on another column, no UPDATE on
+ -- another, no INSERT or REFERENCES anywhere in the table, none of DELETE,
+ -- TRUNCATE or TRIGGER. The owner reads five columns and writes one.
+ IF EXISTS(SELECT 1 FROM pg_attribute a
+    WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0 AND NOT a.attisdropped
+     AND ((a.attname<>ALL(ARRAY['id','customer','status','attributes','update_time'])
+           AND has_column_privilege('zabalack_owner','public.alerts',a.attname,'SELECT'))
+       OR (a.attname<>'attributes'
+           AND has_column_privilege('zabalack_owner','public.alerts',a.attname,'UPDATE'))
+       OR has_column_privilege('zabalack_owner','public.alerts',a.attname,'INSERT')
+       OR has_column_privilege('zabalack_owner','public.alerts',a.attname,'REFERENCES')))
+  OR has_table_privilege('zabalack_owner','public.alerts','DELETE,TRUNCATE,TRIGGER') THEN
+  RAISE EXCEPTION 'zabalack_owner holds a privilege on public.alerts the installation does not make; it reads id, customer, status, attributes and update_time and writes attributes, and nothing else — revoke the rest before sealing';
+ END IF;
  -- The schema's own ACL is the gate in front of every rule above. Without
  -- USAGE on zabalack, zabalack_worker's fully qualified worker_call() fails at
  -- schema access while every function grant below still reads right, and a seal
