@@ -140,9 +140,18 @@ def configure_app(app: Any) -> Any:
         return response
 
     exclude_intent_from_responses()
+    # Raises if the guard is absent or did not take, so the flag below is only
+    # ever set over a control that installed.
     restrict_intent_queries()
     app.extensions["zabalack_privacy_ready"] = True
     return app
+
+
+def _query_guard_live() -> bool:
+    """Whether the alert query builder in use right now carries the guard."""
+    from alerta.app import qb
+    builder = getattr(qb, "alerts", None)
+    return builder is not None and query_guard.is_installed(builder)
 
 
 def restrict_intent_queries() -> None:
@@ -157,9 +166,15 @@ def restrict_intent_queries() -> None:
     from alerta.exceptions import ApiError
     from alerta.database.backends.postgres.queryparser import QueryParser
     builder = getattr(qb, "alerts", None)
-    if builder is None:  # pragma: no cover - non-initialised builder
-        return
+    if builder is None:
+        # Refusing here rather than returning: the caller sets the flag that
+        # tells take_action() staging is safe, and a silent return would set it
+        # over an absent control — the reader-facing restriction gone while
+        # readiness reports installed. Fail at start-up instead.
+        raise RuntimeError("zabalack_privacy_adapter_required: alert query builder not initialised")
     query_guard.install(builder, QueryParser, ApiError)
+    if not query_guard.is_installed(builder):  # pragma: no cover - defensive
+        raise RuntimeError("zabalack_privacy_adapter_required: query guard did not install")
 
 
 def create_app(config_override: dict[str, Any] | None = None, environment: str | None = None) -> Any:
@@ -314,7 +329,10 @@ class AckSigningPlugin(PluginBase):
             compatible = False
         if not compatible:
             return project_skip(alert, "skipped_reference_version", settings), action, text
-        if not current_app.extensions.get("zabalack_privacy_ready"):
+        # The flag says configure_app ran; this asks whether the control is
+        # still on the builder serving *this* request. init_app rebinds
+        # qb.alerts to a fresh class per call, so the two can disagree.
+        if not current_app.extensions.get("zabalack_privacy_ready") or not _query_guard_live():
             raise AlertaException("zabalack_privacy_adapter_required", code=503)
         if not self._last(alert) or not _safe_status_receivers(alert):
             return project_skip(alert, "skipped_routing_order", settings), action, text

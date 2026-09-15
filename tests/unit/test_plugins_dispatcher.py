@@ -20,6 +20,7 @@ from alerta.utils.hooks import status_change_hook
 from zabalack.config import Settings
 from zabalack.health import CaptureUnhealthy
 from zabalack.normalizer import ZabbixNormaliser
+from alerta.app import qb
 from zabalack.plugins import AckSigningPlugin, CaptureLogRedactor, configure_app
 
 
@@ -74,6 +75,12 @@ def context(monkeypatch):
     app.add_url_rule("/_bulk/alerts/action", endpoint="api.bulk_action", view_func=lambda: "unused", methods=["PUT"])
     alarm_model.init_app(app)
     hooks.init_app(app)
+    # The query builder must exist before configure_app: it installs the reader
+    # restriction on it, and refuses rather than reporting the adapter ready
+    # over an absent one. init_app selects the backend module without
+    # connecting, which is why an unreachable DSN is enough here.
+    app.config.update(DATABASE_URL="postgres://synthetic-lab-only:5432/unused")
+    qb.init_app(app)
     configure_app(app)
     probe = Probe()
     generations = []
@@ -285,6 +292,8 @@ def test_T19_logging_and_error_detail_redacted_without_altering_history(context)
     handler = logging.StreamHandler(stream)
     app.logger.addHandler(handler)
     app.logger.setLevel(logging.DEBUG)
+    app.config.update(DATABASE_URL="postgres://synthetic-lab-only:5432/unused")
+    qb.init_app(app)
     configure_app(app)
 
     @app.route("/fail")
@@ -311,6 +320,56 @@ def test_T19_logging_and_error_detail_redacted_without_altering_history(context)
 
 def test_T19_missing_privacy_adapter_rejects_eligible_ack(context):
     context.app.extensions.pop("zabalack_privacy_ready")
+    with pytest.raises(AlertaException, match="privacy_adapter_required"):
+        stage(context)
+
+
+def test_T40_configure_app_refuses_rather_than_reporting_a_control_it_did_not_install(monkeypatch):
+    """`restrict_intent_queries()` used to return silently when the alert query
+    builder was absent, and `configure_app` set `zabalack_privacy_ready`
+    immediately afterwards regardless.
+
+    That flag is what `take_action` reads to decide staging is safe, so the pair
+    could report the reader restriction installed while it was not there at all
+    — the same shape as a probe passing over a control that is missing. It now
+    fails at start-up, and the flag is only set over a control that took.
+    """
+    from alerta.app import qb
+    app = Flask("synthetic-no-builder")
+    app.config.from_object(alerta_defaults)
+    app.config.update(TESTING=True, SECRET_KEY="synthetic-lab-only")
+    monkeypatch.setattr(qb, "alerts", None, raising=False)
+    with pytest.raises(RuntimeError, match="privacy_adapter_required"):
+        configure_app(app)
+    assert not app.extensions.get("zabalack_privacy_ready"), "no readiness over an absent control"
+
+
+def test_T40_a_discarded_query_guard_refuses_the_acknowledgement(context, monkeypatch):
+    """The flag is set once at start-up; the control lives on an object Alerta
+    rebinds.
+
+    `QueryBuilder.init_app` assigns a fresh `alerts` class on every call, so a
+    second `create_app()` in one process replaces the object the guard wrapped
+    while the first app still reports ready. The dispatcher therefore asks
+    whether the builder serving *this* request carries the guard, rather than
+    trusting the flag alone.
+    """
+    from alerta.app import qb
+    from zabalack import query_guard
+
+    assert context.app.extensions.get("zabalack_privacy_ready") is True
+    assert query_guard.is_installed(qb.alerts), "precondition: the guard installed"
+
+    class Rebound:
+        """What init_app leaves behind: same name, unwrapped `from_params`."""
+        VALID_PARAMS = getattr(qb.alerts, "VALID_PARAMS", {})
+
+        @staticmethod
+        def from_params(params, customers=None, query_time=None):
+            return None
+
+    monkeypatch.setattr(qb, "alerts", Rebound, raising=False)
+    assert not query_guard.is_installed(qb.alerts)
     with pytest.raises(AlertaException, match="privacy_adapter_required"):
         stage(context)
 

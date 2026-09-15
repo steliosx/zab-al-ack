@@ -214,6 +214,19 @@ def _listed(params: Any, name: str) -> Iterable[str]:
     return [value] if isinstance(value, str) else []
 
 
+def is_installed(builder: Any) -> bool:
+    """Whether this builder's `from_params` is currently the guarded one.
+
+    Asked at the point of use rather than trusted from a flag set at start-up:
+    Alerta's `QueryBuilder.init_app` rebinds `qb.alerts` to a fresh class on
+    every call, so a second `create_app()` in one process replaces the object
+    this wrapped.
+    """
+    declared = builder.__dict__.get("from_params")
+    original = declared.__func__ if isinstance(declared, staticmethod) else getattr(builder, "from_params", None)
+    return bool(getattr(original, "_zabalack_guarded", False))
+
+
 def install(builder: Any, parser_factory: Callable[[], Any], api_error: Callable[..., Exception]) -> None:
     """Wrap one alert query builder's `from_params` with the guard."""
     declared = builder.__dict__.get("from_params")
