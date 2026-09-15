@@ -1261,6 +1261,65 @@ def test_T41_everything_here_stays_owned_by_the_schema_owner(lab, give, take, wh
     assert health() == "true"
 
 
+@pytest.mark.parametrize("give,take,what", [
+    ("GRANT zabalack_owner TO zabalack_worker",
+     "REVOKE zabalack_owner FROM zabalack_worker",
+     "a runtime login that can assume the owner, reaching every owner-only function"),
+    ("GRANT zabalack_operator TO zabalack_probe",
+     "REVOKE zabalack_operator FROM zabalack_probe",
+     "the probe able to assume the operator and its controls"),
+    ("ALTER ROLE zabalack_operator SUPERUSER",
+     "ALTER ROLE zabalack_operator NOSUPERUSER",
+     "a runtime role made SUPERUSER, which walks past every rule here"),
+    ("ALTER ROLE zabalack_worker BYPASSRLS",
+     "ALTER ROLE zabalack_worker NOBYPASSRLS",
+     "BYPASSRLS on a runtime login"),
+    ("ALTER ROLE zabalack_owner LOGIN",
+     "ALTER ROLE zabalack_owner NOLOGIN",
+     "the owner made directly connectable, which the digests do not hash at all"),
+    ("ALTER ROLE zabalack_worker INHERIT",
+     "ALTER ROLE zabalack_worker NOINHERIT",
+     "a runtime role made INHERIT, against what 00_roles.sql declares"),
+])
+def test_T41_the_roles_keep_their_declared_shape(lab, give, take, what):
+    """Roles themselves, after the seal: memberships among the four, and attributes.
+
+    A role attribute is neither an ACL nor an ownership, so every rule about
+    grants and owners passes while `SUPERUSER` or `BYPASSRLS` on a runtime login
+    walks past all of them; and `zabalack_owner` granted to a runtime role hands
+    that login every owner-only function through `SET ROLE` — the installer
+    exception covers members outside these four, not the four themselves.
+    `catalog_fingerprints()` hashes five attributes and these memberships, so the
+    digests catch most of it until a re-seal agrees; `LOGIN` on the owner it does
+    not hash at all, and only this assertion sees it.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    # Lab-only: role attributes and memberships are the superuser's to change.
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute(give)
+        # Seal over it at once, as every upgrade's re-seal would: the point is
+        # what still refuses it afterwards.
+        admin.execute("SELECT zabalack.seal_installation()")
+    try:
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute(take)
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 def test_T41_the_reseal_refuses_a_tree_that_is_not_at_the_expected_schema(lab):
     reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
     with connect_role(lab, "zabalack_owner") as owner:

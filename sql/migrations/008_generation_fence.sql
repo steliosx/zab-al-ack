@@ -854,7 +854,27 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- the four zabalack roles. zabalack_owner is excluded: its members are the
   -- documented installer topology, and they already own this schema.
   AND NOT EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
-   WHERE m.roleid IN ('zabalack_worker'::regrole,'zabalack_operator'::regrole) AND NOT mm.rolsuper),
+   WHERE m.roleid IN ('zabalack_worker'::regrole,'zabalack_operator'::regrole) AND NOT mm.rolsuper)
+  -- ...and none of these four roles may assume another of them. The exception
+  -- above is for zabalack_owner's *installer* members, which are outside this
+  -- set; a runtime login granted the owner role reaches every owner-only
+  -- function with SET ROLE, which is the whole boundary. The membership is
+  -- hashed here, being one of the four as member, so this is what refuses it
+  -- once a re-seal has agreed with it.
+  AND NOT EXISTS(SELECT 1 FROM pg_auth_members m
+   WHERE m.member IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
+                      'zabalack_probe'::regrole,'zabalack_operator'::regrole)
+    AND m.roleid IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
+                     'zabalack_probe'::regrole,'zabalack_operator'::regrole))
+  -- And the four keep the attributes 00_roles.sql declares. A role attribute is
+  -- not an ACL and not an ownership: SUPERUSER or BYPASSRLS on a runtime login
+  -- walks past every rule above. The digests hash five of these; LOGIN on the
+  -- owner and REPLICATION on any of them they do not hash at all.
+  AND NOT EXISTS(SELECT 1 FROM pg_roles r
+   WHERE r.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+    AND (r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolbypassrls
+         OR r.rolreplication OR r.rolinherit
+         OR r.rolcanlogin<>(r.rolname<>'zabalack_owner'))),
  'checked_at',clock_timestamp()) FROM zabalack.installation i LEFT JOIN zabalack.readiness_manifest m USING(singleton)
  CROSS JOIN LATERAL (SELECT zabalack.catalog_fingerprints() hashes) h WHERE i.singleton;
 $$;

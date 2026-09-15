@@ -103,7 +103,10 @@ the non-owner grantee of every `zabalack` function is the one the installation m
 `operator_call` to `zabalack_operator`, `capture_health` to `zabalack_probe` and `zabalack_operator`, `capture_ack` and
 `seal_installation` to the alerts owner, `stage_generation` to the recorded application role, every other function to no one), no
 relation admits a grantee at all, the fence's identity sequence included; the schema and everything in it is owned by
-`zabalack_owner`, since a `SECURITY DEFINER` function runs as its owner (its `UPDATE` is `setval()`, and a sequence moved backwards
+`zabalack_owner`, since a `SECURITY DEFINER` function runs as its owner; none of the four `zabalack_*` roles is a member of
+another, a runtime login that can assume the owner reaching every owner-only function; and each keeps the attributes
+`00_roles.sql` declares (no `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, `REPLICATION` or `INHERIT`; `LOGIN` for
+the three runtime roles only) (its `UPDATE` is `setval()`, and a sequence moved backwards
 inverts the fence's ordering), and neither `zabalack_worker` nor `zabalack_operator` has a non-superuser member — whoever reaches
 `worker_call()` records captures as verified without the signature check, and whoever reaches `operator_call()` holds the controls —
 even under a matching

@@ -155,6 +155,26 @@ BEGIN
     WHERE m.roleid IN ('zabalack_worker'::regrole,'zabalack_operator'::regrole) AND NOT mm.rolsuper) THEN
   RAISE EXCEPTION 'zabalack_worker or zabalack_operator has members, each able to assume it and reach the verification path or the controls; revoke those memberships before sealing';
  END IF;
+ -- None of the four may assume another of them: the exception above is for
+ -- zabalack_owner's installer members, which are outside this set, and a
+ -- runtime login granted the owner role reaches every owner-only function.
+ IF EXISTS(SELECT 1 FROM pg_auth_members m
+    WHERE m.member IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
+                       'zabalack_probe'::regrole,'zabalack_operator'::regrole)
+     AND m.roleid IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,
+                      'zabalack_probe'::regrole,'zabalack_operator'::regrole)) THEN
+  RAISE EXCEPTION 'a zabalack role is a member of another; a runtime login that can assume zabalack_owner reaches every owner-only function — revoke that membership before sealing';
+ END IF;
+ -- And the four keep the attributes 00_roles.sql declares. SUPERUSER or
+ -- BYPASSRLS on a runtime login walks past every rule above, and a seal would
+ -- record the escalation as the baseline.
+ IF EXISTS(SELECT 1 FROM pg_roles r
+    WHERE r.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+     AND (r.rolsuper OR r.rolcreaterole OR r.rolcreatedb OR r.rolbypassrls
+          OR r.rolreplication OR r.rolinherit
+          OR r.rolcanlogin<>(r.rolname<>'zabalack_owner'))) THEN
+  RAISE EXCEPTION 'a zabalack role no longer carries the attributes 00_roles.sql declares (NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT, no BYPASSRLS or REPLICATION, LOGIN only for the three runtime roles); restore them before sealing';
+ END IF;
  -- A fresh installation has no manifest yet: it is sealed by 10_trigger.sql
  -- under the alerts owner, not re-sealed here.
  IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m WHERE m.singleton) THEN
