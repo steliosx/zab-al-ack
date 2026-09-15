@@ -528,13 +528,21 @@ DEFINER` with a pinned `search_path`, binds the intent to the staging (its
 `action_id`, `alert_id` and the row's customer) and refuses an `action_id`
 already recorded rather than re-staging it.
 
-**Migration policy.** 008 records a generation for every `zabalack.actions` row
-in capture order — assigned by the database at capture, the best pre-fence order
-available — and one for the intent currently on each live row, all at the
-observation tier; a row with neither acquires its generation at its first
-staging and refuses projection until then. Acknowledgement paths are fenced
-across the upgrade, as the deployment guide requires, so no staging is in flight
-between the backfill and the plugin that records generations synchronously. A
+**Migration policy.** 008 records a generation for every capture that produced
+an action or may still produce one — verified, or awaiting verification in the
+outbox (`captured_unverified`, `verifier_hold`) — in capture order, assigned by
+the database at capture, the best pre-fence order available; then one for the
+intent currently on each live row; all at the observation tier. A capture
+awaiting verification whose live intent has already left its row has no other
+record, and left out it would leave the older verified acknowledgement as the
+newest generation while the newer one, once verified, is refused; so its place
+is taken at migration, in capture order — never appended when verification
+finishes, which would be a second ordering. A capture that failed, was rejected
+or expired never becomes an action and records nothing. A row with no record
+acquires its generation at its first staging and refuses projection until then.
+Acknowledgement paths are fenced across the upgrade, as the deployment guide
+requires, so no staging is in flight between the backfill and the plugin that
+records generations synchronously. A
 shipped migration is immutable: `sql/migrate.py` records each file's digest and
 refuses with `Migration drift` when a recorded file's bytes change, so a
 correction is always a further migration.

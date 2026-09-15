@@ -57,7 +57,7 @@
     },
     {
       "path": "sql/migrations/008_generation_fence.sql",
-      "sha256": "f5fe74abe2b9c049f26a91c72caf54f2f3a3d84c1f387a5ab6b328dd0b05a010"
+      "sha256": "ea76e4828c9c33d3795a6cba63d421a0611c1d24215b87ca387800d8e67c53ef"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",

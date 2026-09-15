@@ -667,17 +667,38 @@ DO $$ DECLARE principal name; BEGIN
  EXECUTE format('GRANT EXECUTE ON FUNCTION zabalack.capture_ack() TO %I',principal);
 END $$;
 
--- Backfill, once. Every action row in capture order — assigned by the database
--- at capture, the best pre-fence order there is — then the intent currently on
--- each row, recorded as newest: it is the only evidence an uncaptured staging
--- has, and one that later captures is a no-op. Both are observation-tier rows,
--- so the first staging through stage_generation() outranks them.
+-- Backfill, once. Every capture that produced an action or may still produce
+-- one — verified, or awaiting verification in the outbox (captured_unverified,
+-- verifier_hold) — in capture order, assigned by the database at capture, the
+-- best pre-fence order there is. A capture awaiting verification whose live
+-- intent has since left its row has no other record; left out, an older
+-- verified acknowledgement would be the newest generation and the newer one,
+-- once verified, refused. Its place is taken here, in that order; verification
+-- appends nothing later. A capture that failed, was rejected or expired never
+-- becomes an action and records nothing. Then the intent currently on each
+-- row, recorded as newest: it is the only evidence an uncaptured staging has,
+-- and one that already captured is a no-op. All are observation-tier rows, so
+-- the first staging through stage_generation() outranks them.
 DO $$
 DECLARE row record;
 BEGIN
- FOR row IN SELECT alert_id,action_id FROM zabalack.actions ORDER BY capture_order,action_id LOOP
-  INSERT INTO zabalack.alert_generations(alert_id,action_id,recorded_by) VALUES(row.alert_id,row.action_id,'migration')
-   ON CONFLICT(action_id) DO NOTHING;
+ FOR row IN
+  SELECT c.alert_id,a.action_id,c.intent->>'action_id' AS intent_action
+  FROM zabalack.captures c
+  LEFT JOIN zabalack.actions a ON a.capture_id=c.capture_id
+  LEFT JOIN zabalack.outbox o ON o.capture_id=c.capture_id
+  WHERE a.action_id IS NOT NULL
+   OR (o.state IN ('captured_unverified','verifier_hold') AND jsonb_typeof(c.intent)='object'
+       AND c.intent->>'alert_id'=c.alert_id AND c.intent->>'action_id' IS NOT NULL)
+  ORDER BY c.capture_order
+ LOOP
+  BEGIN
+   INSERT INTO zabalack.alert_generations(alert_id,action_id,recorded_by)
+    VALUES(row.alert_id,coalesce(row.action_id,row.intent_action::uuid),'migration') ON CONFLICT(action_id) DO NOTHING;
+  -- A capture whose action id the cast rejects can never verify; it records
+  -- nothing and never aborts the upgrade.
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
  END LOOP;
  FOR row IN SELECT id,attributes->'zabbix_ack_sync_intent' AS intent FROM public.alerts
    WHERE attributes ? 'zabbix_ack_sync_intent' LOOP

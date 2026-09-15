@@ -91,9 +91,13 @@ topology applies. Confirm that no function in `zabalack` is executable by `PUBLI
 `functions_ok` even under a matching seal, `13_reseal.sql` refuses to seal a tree that breaks either, and a false
 value there is a real misconfiguration, not a probe fault.
 
-Record the backfill's result. 008 records one generation for every `zabalack.actions` row, in capture order, and
-one for every staged intent found on a live row, all at the observation tier; a row with neither acquires its
-generation at its first staging. Run it against live rows and record its scope, its bound and its completion;
+Record the backfill's result. 008 records one generation for every capture that produced an action or still awaits
+verification (`captured_unverified`, `verifier_hold` in the outbox), in capture order — a capture awaiting
+verification whose live intent has already left its row has no other record, and left out it would let the older
+verified acknowledgement stand as the newest generation while the newer one, once verified, is refused — then one
+for every staged intent found on a live row; a capture that failed, was rejected or expired records nothing. All
+are observation-tier rows; a row with none acquires its generation at its first staging. Verification after the
+upgrade appends nothing to the fence: the order is the capture order, fixed at migration. Run it against live rows and record its scope, its bound and its completion;
 historical backups, replicas and previously produced exports are out of its reach and remain governed by G8.
 
 For each lifecycle path recorded in amendment A5 — verified capture, capture-side evidence failure, capture

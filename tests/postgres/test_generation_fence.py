@@ -207,31 +207,51 @@ def project(lab, action_id):
         return worker.execute("SELECT zabalack.project(%s)", (action_id,)).fetchone()[0]["reason"]
 
 
-def verify_through_worker_call(lab, payload):
-    """Verify the newest capture through `worker_call`, the worker's entry point.
+def claim_through_worker_call(lab, payload):
+    """Claim this capture through `worker_call('claim_verification')`, as `zabalack_worker`.
 
-    `claim_verification` then `verify_complete`, as `zabalack_worker`, with the
-    capture's own intent. A hand-built action row would pass with the real
-    verification path broken.
+    Captures other cases left due are postponed, not touched, and this one is
+    made due now (a held capture is due a minute after its hold; the lab does
+    not wait), so the claim — which takes the oldest (every fourth turn, the
+    newest) due row across the outbox — can only return this one.
     """
     with connect_role(lab, "zabalack_owner") as owner:
         capture_id = owner.execute("SELECT capture_id FROM zabalack.captures WHERE alert_id=%s AND intent=%s "
                                    "ORDER BY captured_at DESC LIMIT 1", (payload["alert_id"], Jsonb(payload))).fetchone()[0]
-        # Captures other cases left due are postponed, not touched, so the claim
-        # below — which takes the oldest (every fourth turn, the newest) due row
-        # across the outbox — can only return this one.
         owner.execute("UPDATE zabalack.outbox SET due_at=clock_timestamp()+interval '1 hour' WHERE capture_id<>%s "
                       "AND state IN ('captured_unverified','verifier_hold') AND due_at<=clock_timestamp()", (capture_id,))
+        owner.execute("UPDATE zabalack.outbox SET due_at=least(due_at,clock_timestamp()) WHERE capture_id=%s", (capture_id,))
     # A fresh verifier identity per call: one holds at most four live leases.
     lease = {"worker_id": "fence-verifier-" + uuid.uuid4().hex[:8]}
     with connect_role(lab, "zabalack_worker") as worker:
         claimed = worker.execute("SELECT zabalack.worker_call('claim_verification',%s)",
                                  (Jsonb(lease),)).fetchone()[0]
-        assert claimed is not None and claimed["capture_id"] == str(capture_id) and claimed["intent"] == payload, \
-            "precondition: this capture was claimed"
+    assert claimed is not None and claimed["capture_id"] == str(capture_id) and claimed["intent"] == payload, \
+        "precondition: this capture was claimed"
+    return lease, claimed
+
+
+def verify_through_worker_call(lab, payload):
+    """Verify this capture through `worker_call`, the worker's entry point.
+
+    `claim_verification` then `verify_complete`, as `zabalack_worker`, with the
+    capture's own intent. A hand-built action row would pass with the real
+    verification path broken.
+    """
+    lease, claimed = claim_through_worker_call(lab, payload)
+    with connect_role(lab, "zabalack_worker") as worker:
         return worker.execute("SELECT zabalack.worker_call('verify_complete',%s)", (Jsonb(
             lease | {"capture_id": claimed["capture_id"], "lease_generation": claimed["lease_generation"],
                      "intent": payload, "actor_ref": payload["actor"]["login"]}),)).fetchone()[0]
+
+
+def settle_through_worker_call(lab, payload, operation, reason):
+    """`hold_capture` or `reject_capture` on this capture, through `worker_call`."""
+    lease, claimed = claim_through_worker_call(lab, payload)
+    with connect_role(lab, "zabalack_worker") as worker:
+        return worker.execute("SELECT zabalack.worker_call(%s,%s)", (operation, Jsonb(
+            lease | {"capture_id": claimed["capture_id"], "lease_generation": claimed["lease_generation"],
+                     "reason": reason}),)).fetchone()[0]
 
 
 def new_action(lab, alert_id, event_id, payload, *, order=None):

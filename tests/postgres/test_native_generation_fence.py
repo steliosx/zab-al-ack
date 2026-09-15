@@ -9,6 +9,7 @@ under the WASM layer.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import importlib.util
 from pathlib import Path
@@ -24,7 +25,8 @@ import pytest
 from conftest import connect_role
 from test_generation_fence import (ACTION_KEY, INTENT, attributes_of, cleanup, enrol, fence,
                                    fire_ack, intent_for, new_action, newest, project, stage,
-                                   stage_over, stage_pre_fence, sweep, verify_through_worker_call)
+                                   settle_through_worker_call, stage_over, stage_pre_fence, sweep,
+                                   verify_through_worker_call)
 
 pytestmark = pytest.mark.postgres
 
@@ -303,10 +305,6 @@ def test_T41_native_the_cadence_claim_does_not_block_a_losing_worker(native):
         assert (datetime.now(timezone.utc) - started).total_seconds() < 2
 
 
-def _lab_for(dsn):
-    return {"admin_dsn": dsn, "backend": "native_postgres18"}
-
-
 def _migrator():
     spec = importlib.util.spec_from_file_location("zabalack_upgrade_migrator", ROOT / "sql/migrate.py")
     module = importlib.util.module_from_spec(spec)
@@ -314,27 +312,23 @@ def _migrator():
     return module
 
 
-def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(native, tmp_path):
-    """A schema-3 database with work in flight, upgraded by `sql/migrate.py`.
+@contextmanager
+def schema3_database(native, tmp_path):
+    """A fresh database at schema 3 through the shipped runner, dropped afterwards.
 
-    Populated as the pre-fence plugin left it: A acknowledged, verified through
-    the schema-3 `worker_call` and projected; B staged afterwards as an attribute
-    alone, never signed. After 008, the grant and the re-seal: the fence holds
-    A then B at the migration tier, A's projection is refused, B captures,
-    verifies and projects, and the first staging through the protected
-    operation outranks both. The readiness manifest reports healthy.
+    Roles are cluster-wide; the schema-level part of the lab bootstrap is
+    provisioned here, then `001`–`007` through `sql/migrate.py` pointed at a
+    copy of the tree without 008, then the trigger as the alerts owner.
     """
     admin_dsn = native["admin_dsn"]
     name = "zabalack_upgrade_" + uuid.uuid4().hex[:8]
     with psycopg.connect(admin_dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
-    dsn = conninfo.make_conninfo(admin_dsn, dbname=name)
-    lab = _lab_for(dsn)
+    lab = {"admin_dsn": conninfo.make_conninfo(admin_dsn, dbname=name), "backend": "native_postgres18"}
     migrator = _migrator()
     real_root = migrator.ROOT
     try:
-        with psycopg.connect(dsn, autocommit=True) as db:
-            # Roles are cluster-wide; provision the schema-level part of the lab bootstrap.
+        with psycopg.connect(lab["admin_dsn"], autocommit=True) as db:
             db.execute("GRANT USAGE,CREATE ON SCHEMA public TO alerta_owner")
             db.execute("CREATE SCHEMA zabalack AUTHORIZATION zabalack_owner")
             db.execute("REVOKE ALL ON SCHEMA zabalack FROM PUBLIC")
@@ -344,7 +338,6 @@ def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(n
             db.execute(Path(native["source"]).read_text())
             db.execute("RESET ROLE")
             db.execute((ROOT / "tests/postgres/bootstrap_after_schema.sql").read_text())
-            # Schema 3 through the shipped runner, pointed at a copy without 008.
             staged_root = tmp_path / "sql"
             (staged_root / "migrations").mkdir(parents=True)
             for path in sorted((ROOT / "sql/migrations").glob("*.sql")):
@@ -358,7 +351,43 @@ def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(n
             db.execute((ROOT / "sql/install/10_trigger.sql").read_text())
             db.execute("RESET ROLE")
             assert db.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 3
+        migrator.ROOT = real_root
         enrol(lab)
+        yield lab, migrator
+    finally:
+        migrator.ROOT = real_root
+        with psycopg.connect(admin_dsn, autocommit=True) as admin:
+            admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+def upgrade(lab, migrator):
+    """008, the application grant and the re-seal, through the real entry points."""
+    with psycopg.connect(lab["admin_dsn"], autocommit=True) as db:
+        db.execute("SET ROLE zabalack_owner")
+        migrator.migrate(db)
+        db.execute((ROOT / "sql/install/12_application_grant.sql").read_text().replace(':"alert_app_role"', '"alerta_app"'))
+        db.execute((ROOT / "sql/install/13_reseal.sql").read_text())
+        db.execute("RESET ROLE")
+        assert db.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 4
+
+
+def remove_live_intent(lab, alert_id):
+    """What a whole-object attribute replace, or a pre-fence repair, leaves behind."""
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes-%s WHERE id=%s", (INTENT, alert_id))
+
+
+def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(native, tmp_path):
+    """A schema-3 database with work in flight, upgraded by `sql/migrate.py`.
+
+    Populated as the pre-fence plugin left it: A acknowledged, verified through
+    the schema-3 `worker_call` and projected; B staged afterwards as an attribute
+    alone, never signed. After 008, the grant and the re-seal: the fence holds
+    A then B at the migration tier, A's projection is refused, B captures,
+    verifies and projects, and the first staging through the protected
+    operation outranks both. The readiness manifest reports healthy.
+    """
+    with schema3_database(native, tmp_path) as (lab, migrator):
         # Work in flight at schema 3.
         alert_id, event_id, first = stage(lab, staged=False, extra={"zabbix_ack_sync_local_at": "2026-01-01T00:00:00Z"})
         first = intent_for(alert_id, event_id)
@@ -375,15 +404,7 @@ def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(n
         with connect_role(lab, "alerta_app") as conn:
             conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
                          (Jsonb({INTENT: {key: value for key, value in broken.items() if key != "action_id"}}), malformed))
-        # The upgrade, through the real entry points.
-        migrator.ROOT = real_root
-        with psycopg.connect(dsn, autocommit=True) as db:
-            db.execute("SET ROLE zabalack_owner")
-            migrator.migrate(db)
-            db.execute((ROOT / "sql/install/12_application_grant.sql").read_text().replace(':"alert_app_role"', '"alerta_app"'))
-            db.execute((ROOT / "sql/install/13_reseal.sql").read_text())
-            db.execute("RESET ROLE")
-            assert db.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 4
+        upgrade(lab, migrator)
         assert [(row[0], row[1]) for row in fence(lab, alert_id)] == \
             [(first["action_id"], "migration"), (second["action_id"], "migration")]
         assert fence(lab, untouched) == [], "a row that was never staged acquires its generation at its first staging"
@@ -399,7 +420,54 @@ def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(n
         assert newest(lab, alert_id) == third["action_id"]
         assert [row[1] for row in fence(lab, alert_id)] == ["migration", "migration", "staging"]
         assert project(lab, second["action_id"]) == "projection_action_generation_mismatch"
-    finally:
-        migrator.ROOT = real_root
-        with psycopg.connect(admin_dsn, autocommit=True) as admin:
-            admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+def test_T41_native_a_populated_upgrade_carries_captures_awaiting_verification(native, tmp_path):
+    """Acknowledgements captured before the upgrade and still awaiting
+    verification — B unverified, C on verifier hold — whose live intents left
+    the row before 008 ran. Neither has an action row nor a live intent for the
+    backfill to see. They are recorded from their captures, in capture order:
+    C is the newest generation the moment the fence exists, A (verified,
+    projected, older) is refused, and verification afterwards appends nothing —
+    C verifies and projects, B verifies and is refused. D, rejected by the
+    verifier before the upgrade, never becomes an action and records nothing."""
+    with schema3_database(native, tmp_path) as (lab, migrator):
+        now = datetime.now(timezone.utc)
+        alert_id, event_id, _ = stage(lab, staged=False)
+        first = intent_for(alert_id, event_id, issued=now)
+        stage_pre_fence(lab, alert_id, first)
+        fire_ack(lab, alert_id, first)
+        verify_through_worker_call(lab, first)
+        assert project(lab, first["action_id"]) == "projected"
+        second = intent_for(alert_id, event_id, issued=now)
+        stage_pre_fence(lab, alert_id, second)
+        fire_ack(lab, alert_id, second)                       # captured, unverified
+        third = intent_for(alert_id, event_id, issued=now)
+        stage_pre_fence(lab, alert_id, third)
+        fire_ack(lab, alert_id, third)
+        held = settle_through_worker_call(lab, third, "hold_capture", "verifier_key_unavailable")
+        assert held["state"] == "verifier_hold", "precondition: C is on verifier hold"
+        fourth = intent_for(alert_id, event_id, issued=now)
+        stage_pre_fence(lab, alert_id, fourth)
+        fire_ack(lab, alert_id, fourth)
+        rejected = settle_through_worker_call(lab, fourth, "reject_capture", "failed_intent_invalid")
+        assert rejected["state"] == "failed", "precondition: D was rejected"
+        remove_live_intent(lab, alert_id)
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT count(*) FROM zabalack.actions WHERE alert_id=%s", (alert_id,)).fetchone()[0] == 1
+            states = owner.execute("SELECT o.state FROM zabalack.outbox o JOIN zabalack.captures c USING(capture_id) "
+                                   "WHERE c.alert_id=%s ORDER BY c.capture_order", (alert_id,)).fetchall()
+        assert [row[0] for row in states] == ["verified", "captured_unverified", "verifier_hold", "failed"], "precondition"
+        assert INTENT not in attributes_of(lab, alert_id), "precondition: no live intent remains"
+        upgrade(lab, migrator)
+        assert [(row[0], row[1]) for row in fence(lab, alert_id)] == [
+            (first["action_id"], "migration"), (second["action_id"], "migration"), (third["action_id"], "migration")], \
+            "recorded from the captures, in capture order; the rejected capture records nothing"
+        assert newest(lab, alert_id) == third["action_id"]
+        assert project(lab, first["action_id"]) == "projection_action_generation_mismatch", "A is no longer permitted"
+        verify_through_worker_call(lab, third)
+        assert project(lab, third["action_id"]) == "projected"
+        verify_through_worker_call(lab, second)
+        assert project(lab, second["action_id"]) == "projection_action_generation_mismatch"
+        assert [row[1] for row in fence(lab, alert_id)] == ["migration"] * 3, "verification appended nothing"
+        assert newest(lab, alert_id) == third["action_id"]
