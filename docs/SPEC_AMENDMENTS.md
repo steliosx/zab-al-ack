@@ -558,8 +558,14 @@ the migrations do not re-make a grant they already made —
 application role, every other function to no one — no relation here admits a
 grantee at all — the fence's identity sequence included, where `UPDATE` is
 `setval()` and a sequence moved backwards inverts the ordering the fence rests
-on — the schema and every function and relation in it remain owned by
-`zabalack_owner`, a `SECURITY DEFINER` function running as its owner; schema
+on — every routine here keeps its `search_path` pinned to `pg_catalog,
+zabalack`, which `ALTER FUNCTION … SET search_path` can move afterwards and
+through which a `SECURITY DEFINER` body would resolve an unqualified name; every
+routine anyone but its owner can execute is `SECURITY DEFINER`, `SECURITY
+INVOKER` there removing the path rather than weakening it; no grant carries
+`GRANT OPTION`, whose holder can make grantees of its own that the map, reading
+the grantee alone, would then accept; the schema and every function and relation
+in it remain owned by `zabalack_owner`, a `SECURITY DEFINER` function running as its owner; schema
 `zabalack` itself admits only the grants the installation makes — `USAGE` and no
 other privilege, to the three runtime roles, the alerts owner and the recorded
 application role, and to nobody else, `CREATE` going to the owner alone and

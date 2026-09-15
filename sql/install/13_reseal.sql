@@ -249,6 +249,47 @@ BEGIN
                              'zabalack','USAGE') THEN
   RAISE EXCEPTION 'the alerts owner has lost USAGE on schema zabalack; its capture_ack() and seal_installation() grants and the trigger installer both fail at schema access — restore the grant before sealing';
  END IF;
+ -- No routine here has drifted in how it runs: every one keeps its search_path
+ -- pinned to pg_catalog, zabalack, which ALTER FUNCTION ... SET search_path can
+ -- move afterwards, and a SECURITY DEFINER body resolving an unqualified name
+ -- through someone else's schema is the classic way in.
+ IF EXISTS(SELECT 1 FROM pg_proc p
+    WHERE p.pronamespace='zabalack'::regnamespace
+     AND NOT EXISTS(SELECT 1 FROM unnest(coalesce(p.proconfig,'{}'::text[])) x
+                    WHERE replace(x,' ','')='search_path=pg_catalog,zabalack')) THEN
+  RAISE EXCEPTION 'a zabalack routine no longer pins search_path to pg_catalog, zabalack; a SECURITY DEFINER body would resolve names through whatever schema is first — restore it before sealing';
+ END IF;
+ -- And every routine anyone but its owner can execute runs as its owner: that
+ -- is what the grant is for. SECURITY INVOKER does not weaken the boundary, it
+ -- removes the path, while every ACL still reads exactly right.
+ IF EXISTS(SELECT 1 FROM pg_proc p
+    CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+    WHERE p.pronamespace='zabalack'::regnamespace AND e.grantee<>p.proowner
+     AND NOT p.prosecdef) THEN
+  RAISE EXCEPTION 'a granted zabalack routine is SECURITY INVOKER; it would run with the caller''s rights and its operations would fail — restore SECURITY DEFINER before sealing';
+ END IF;
+ -- And no grant carries the option to pass it on: a grantee with GRANT OPTION
+ -- can make more grantees, which the map — reading the grantee alone — would
+ -- then accept one by one.
+ IF EXISTS(SELECT 1 FROM pg_proc p
+    CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+    WHERE p.pronamespace='zabalack'::regnamespace AND e.grantee<>p.proowner AND e.is_grantable)
+  OR EXISTS(SELECT 1 FROM pg_namespace n
+    CROSS JOIN LATERAL aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) e
+    WHERE n.nspname='zabalack' AND e.grantee<>n.nspowner AND e.is_grantable)
+  OR EXISTS(
+    SELECT 1 FROM (SELECT c.relacl FROM pg_class c
+                   WHERE c.oid='public.alerts'::regclass AND c.relacl IS NOT NULL) t
+     CROSS JOIN LATERAL aclexplode(t.relacl) e
+     WHERE e.grantee='zabalack_owner'::regrole AND e.is_grantable
+    UNION ALL
+    SELECT 1 FROM (SELECT a.attacl FROM pg_attribute a
+                   WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0
+                    AND NOT a.attisdropped AND a.attacl IS NOT NULL) t
+     CROSS JOIN LATERAL aclexplode(t.attacl) e
+     WHERE e.grantee='zabalack_owner'::regrole AND e.is_grantable) THEN
+  RAISE EXCEPTION 'a grant here carries GRANT OPTION; its holder can delegate it to a credential the installation never named — revoke the grant option before sealing';
+ END IF;
  -- Ownership is the other half of the map: a SECURITY DEFINER function runs as
  -- its owner, so reassigning one hands it that role's rights, and the grantee
  -- rules above exclude the owner by definition. Sealing would record the

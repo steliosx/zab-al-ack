@@ -1990,6 +1990,68 @@ def test_T41_the_recorded_application_role_can_still_open_a_session(lab, give, t
     assert health() == "true"
 
 
+@pytest.mark.parametrize("give,take,what", [
+    ("ALTER FUNCTION zabalack.operator_call(text,jsonb) SECURITY INVOKER",
+     "ALTER FUNCTION zabalack.operator_call(text,jsonb) SECURITY DEFINER",
+     "a granted routine made SECURITY INVOKER"),
+    ("ALTER FUNCTION zabalack.worker_call(text,jsonb) SECURITY INVOKER",
+     "ALTER FUNCTION zabalack.worker_call(text,jsonb) SECURITY DEFINER",
+     "the verification path made SECURITY INVOKER"),
+    ("ALTER FUNCTION zabalack.worker_call(text,jsonb) SET search_path=public,pg_catalog,zabalack",
+     "ALTER FUNCTION zabalack.worker_call(text,jsonb) SET search_path=pg_catalog,zabalack",
+     "a search_path that resolves through someone else's schema first"),
+    ("ALTER FUNCTION zabalack.intent_retirable(jsonb,interval,timestamptz) RESET search_path",
+     "ALTER FUNCTION zabalack.intent_retirable(jsonb,interval,timestamptz) SET search_path=pg_catalog,zabalack",
+     "an unpinned search_path on a routine nobody is granted"),
+    ("GRANT EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) TO zabalack_worker WITH GRANT OPTION",
+     "REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) FROM zabalack_worker",
+     "GRANT OPTION on the verification path"),
+    ("GRANT USAGE ON SCHEMA zabalack TO zabalack_probe WITH GRANT OPTION",
+     "REVOKE GRANT OPTION FOR USAGE ON SCHEMA zabalack FROM zabalack_probe",
+     "GRANT OPTION on the schema itself"),
+])
+def test_T41_the_routines_keep_how_they_run_and_no_grant_is_passed_on(lab, give, take, what):
+    """Two things the map could not see, because it reads *who* holds a grant.
+
+    `ALTER FUNCTION zabalack.operator_call(text,jsonb) SECURITY INVOKER` does not
+    weaken the boundary — it removes the path: the operator's controls run with
+    the caller's own rights and fail, while every ACL still reads exactly right.
+    And `ALTER FUNCTION ... SET search_path` moves where a `SECURITY DEFINER`
+    body resolves an unqualified name, which is the classic way into one. Both
+    move the function digest, and the re-seal every upgrade performs then agrees
+    with them.
+
+    `EXECUTE … WITH GRANT OPTION` is the other half: the grantee is the one the
+    map names, so the map accepts it, and that grantee can then make grantees of
+    its own — `zabalack_worker` delegating `worker_call()` to a credential the
+    installation never named, which calls `verify_complete` with no signature
+    check.
+
+    The security-mode rule needs no list of names: it is *every routine anyone
+    but its owner can execute*, which the grant map already fixes. The
+    search_path rule is every routine here, granted or not.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute(give)
+        owner.execute("SELECT zabalack.seal_installation()")
+    try:
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(take)
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 def test_T41_a_recorded_installer_holds_the_owner_role_and_nothing_else(lab):
     """The exemption the record makes, and its limit.
 

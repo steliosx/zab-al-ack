@@ -973,6 +973,51 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- repair — fails at schema access.
   AND has_schema_privilege((SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass),
                            'zabalack','USAGE')
+  -- ...and no routine here has drifted in how it runs. Every one is created
+  -- with its search_path pinned to pg_catalog, zabalack, and ALTER FUNCTION ...
+  -- SET search_path can move it afterwards: a SECURITY DEFINER body resolving
+  -- an unqualified name through a schema someone else writes is the classic
+  -- way in. The stored form carries a space after the comma, and some routines
+  -- also pin TimeZone, so the element is matched whitespace-insensitively
+  -- rather than the array compared whole.
+  AND NOT EXISTS(SELECT 1 FROM pg_proc p
+   WHERE p.pronamespace='zabalack'::regnamespace
+    AND NOT EXISTS(SELECT 1 FROM unnest(coalesce(p.proconfig,'{}'::text[])) x
+                   WHERE replace(x,' ','')='search_path=pg_catalog,zabalack'))
+  -- ...and every routine anyone but its owner can execute runs as its owner.
+  -- That is what these grants are for: worker_call() and operator_call() carry
+  -- operations the caller has no rights of its own to perform, so ALTER
+  -- FUNCTION ... SECURITY INVOKER does not weaken the boundary, it removes the
+  -- path — the operator's controls fail under the unprivileged caller — while
+  -- every ACL still reads exactly right. The rule needs no list of names: it is
+  -- the granted routines, which the map above already fixes.
+  AND NOT EXISTS(SELECT 1 FROM pg_proc p
+   CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+   WHERE p.pronamespace='zabalack'::regnamespace AND e.grantee<>p.proowner
+    AND NOT p.prosecdef)
+  -- ...and no grant here carries the option to pass it on. A grantee with GRANT
+  -- OPTION is a grantee that can make more of them: zabalack_worker holding
+  -- EXECUTE WITH GRANT OPTION on worker_call() delegates the verification path
+  -- to a credential the map never named, and the map reads the grantee alone.
+  -- Relations admit no non-owner grantee at all, so this is the function ACLs,
+  -- the schema's own, and the owner's columns on public.alerts.
+  AND NOT EXISTS(SELECT 1 FROM pg_proc p
+   CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+   WHERE p.pronamespace='zabalack'::regnamespace AND e.grantee<>p.proowner AND e.is_grantable)
+  AND NOT EXISTS(SELECT 1 FROM pg_namespace n
+   CROSS JOIN LATERAL aclexplode(coalesce(n.nspacl,acldefault('n',n.nspowner))) e
+   WHERE n.nspname='zabalack' AND e.grantee<>n.nspowner AND e.is_grantable)
+  AND NOT EXISTS(
+   SELECT 1 FROM (SELECT c.relacl FROM pg_class c
+                  WHERE c.oid='public.alerts'::regclass AND c.relacl IS NOT NULL) t
+    CROSS JOIN LATERAL aclexplode(t.relacl) e
+    WHERE e.grantee='zabalack_owner'::regrole AND e.is_grantable
+   UNION ALL
+   SELECT 1 FROM (SELECT a.attacl FROM pg_attribute a
+                  WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0
+                   AND NOT a.attisdropped AND a.attacl IS NOT NULL) t
+    CROSS JOIN LATERAL aclexplode(t.attacl) e
+    WHERE e.grantee='zabalack_owner'::regrole AND e.is_grantable)
   -- Ownership is the other half of the map, and for a SECURITY DEFINER function
   -- it is the privilege itself: the body runs as the owner. Reassign one and
   -- the grantee rules above skip the new owner, which they exclude by
