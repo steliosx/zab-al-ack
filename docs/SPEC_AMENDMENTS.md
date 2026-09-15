@@ -520,10 +520,15 @@ that serves every other row.
 
 **Privilege.** `12_application_grant.sql`, run as `zabalack_owner` with the
 application role named, grants that role `USAGE` on the schema and `EXECUTE` on
-`stage_generation()` and nothing else. `USAGE` confers nothing on its own only
-while no function in the schema is executable by `PUBLIC` and the fence admits no
-grantee but its owner; `capture_health()` asserts both under `functions_ok`, so a
-regression there marks every worker unhealthy. The function is `SECURITY
+`stage_generation()` and nothing else; it first revokes the function from every
+other non-owner grantee, so a change of application role never leaves the
+former role's credentials able to stage, and records the grantee in
+`zabalack.installation.application_role`. `USAGE` confers nothing on its own only
+while no function in the schema is executable by `PUBLIC`, the fence admits no
+grantee but its owner, and the entry point's only non-owner grantee is the
+recorded role; `capture_health()` asserts all three under `functions_ok`, so a
+regression there marks every worker unhealthy, and `13_reseal.sql` refuses to
+seal a tree that breaks any of them. The function is `SECURITY
 DEFINER` with a pinned `search_path`, binds the intent to the staging (its
 `action_id`, `alert_id` and the row's customer) and refuses an `action_id`
 already recorded rather than re-staging it.

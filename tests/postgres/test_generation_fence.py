@@ -832,6 +832,9 @@ def test_T41_the_readiness_manifest_must_be_resealed_after_the_migration(lab):
      "REVOKE EXECUTE ON FUNCTION zabalack.newest_generation(text) FROM PUBLIC", "a PUBLIC-executable function"),
     ("GRANT SELECT ON zabalack.alert_generations TO zabalack_worker",
      "REVOKE SELECT ON zabalack.alert_generations FROM zabalack_worker", "a grantee on the fence"),
+    ("GRANT EXECUTE ON FUNCTION zabalack.stage_generation(text,uuid,jsonb) TO zabalack_operator",
+     "REVOKE EXECUTE ON FUNCTION zabalack.stage_generation(text,uuid,jsonb) FROM zabalack_operator",
+     "a second grantee on the staging entry point"),
 ])
 def test_T41_a_seal_over_a_public_function_or_a_fence_grantee_stays_unhealthy(lab, grant, revoke, what):
     """`catalog_fingerprints()` hashes ACLs, so a stray grant flips `functions_ok`
@@ -884,6 +887,42 @@ def test_T41_the_reseal_and_the_grant_run_only_as_the_schema_owner(lab):
         with connect_role(lab, "zabalack_worker") as worker:
             with pytest.raises(Exception, match="run as zabalack_owner|permission denied"):
                 worker.execute(text)
+
+
+def test_T41_changing_the_application_role_revokes_the_former_one(lab):
+    """The grant script is re-run for a new application role. The former role
+    loses the staging entry point in the same transaction, the new one gains it,
+    the recorded role follows, and once re-sealed the tree is healthy. Without
+    the revoke, a role change left two credentials able to stage — and the
+    probe, which only refused PUBLIC, reported that healthy."""
+    grant = (ROOT / "sql/install/12_application_grant.sql").read_text()
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def grantee_of():
+        with connect_role(lab, "zabalack_owner") as owner:
+            executors = owner.execute(
+                "SELECT pg_get_userbyid(e.grantee) FROM pg_proc p CROSS JOIN LATERAL aclexplode(p.proacl) e "
+                "WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner "
+                "ORDER BY 1").fetchall()
+            recorded = owner.execute("SELECT application_role FROM zabalack.installation WHERE singleton").fetchone()[0]
+        return [row[0] for row in executors], recorded
+
+    assert grantee_of() == (["alerta_app"], "alerta_app"), "precondition: the lab granted the application role"
+    try:
+        # A stand-in for a former application role: any role the lab has.
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(grant.replace(':"alert_app_role"', '"zabalack_operator"'))
+        assert grantee_of() == (["zabalack_operator"], "zabalack_operator"), "the former grantee lost the entry point"
+        with connect_role(lab, "alerta_app") as app:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                app.execute("SELECT zabalack.stage_generation(%s,%s,%s)", (str(uuid.uuid4()), str(uuid.uuid4()), Jsonb({})))
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(grant.replace(':"alert_app_role"', '"alerta_app"'))
+            owner.execute(reseal)
+    assert grantee_of() == (["alerta_app"], "alerta_app")
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
 def test_T41_the_application_grant_is_exactly_one_function(lab):

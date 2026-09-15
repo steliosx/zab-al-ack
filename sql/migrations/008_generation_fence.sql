@@ -85,7 +85,11 @@ REVOKE ALL ON FUNCTION zabalack.stage_generation(text,uuid,jsonb) FROM PUBLIC;
 -- many workers and sites run. The claim never blocks a loser.
 ALTER TABLE zabalack.installation
  ADD COLUMN IF NOT EXISTS retirement_due_at timestamptz,
- ADD COLUMN IF NOT EXISTS retirement_interval_seconds integer NOT NULL DEFAULT 900;
+ ADD COLUMN IF NOT EXISTS retirement_interval_seconds integer NOT NULL DEFAULT 900,
+ -- The one role granted zabalack.stage_generation(), recorded by
+ -- sql/install/12_application_grant.sql; capture_health() reports functions_ok
+ -- false while the function has any other non-owner grantee.
+ ADD COLUMN IF NOT EXISTS application_role text;
 
 CREATE FUNCTION zabalack.claim_retirement_slot() RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
@@ -678,7 +682,12 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   AND NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.pronamespace='zabalack'::regnamespace
    AND (p.proacl IS NULL OR EXISTS(SELECT 1 FROM aclexplode(p.proacl) e WHERE e.grantee=0)))
   AND NOT EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) e
-   WHERE c.oid='zabalack.alert_generations'::regclass AND e.grantee<>c.relowner),
+   WHERE c.oid='zabalack.alert_generations'::regclass AND e.grantee<>c.relowner)
+  -- The staging entry point admits one non-owner grantee: the application role
+  -- the grant recorded. A former application role, or any other, must not keep it.
+  AND NOT EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+   WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner
+    AND (e.grantee=0 OR pg_get_userbyid(e.grantee) IS DISTINCT FROM i.application_role)),
  'checked_at',clock_timestamp()) FROM zabalack.installation i LEFT JOIN zabalack.readiness_manifest m USING(singleton)
  CROSS JOIN LATERAL (SELECT zabalack.catalog_fingerprints() hashes) h WHERE i.singleton;
 $$;

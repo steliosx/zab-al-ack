@@ -42,6 +42,15 @@ BEGIN
    WHERE c.oid='zabalack.alert_generations'::regclass AND e.grantee<>c.relowner) THEN
   RAISE EXCEPTION 'zabalack.alert_generations admits a grantee other than its owner; revoke that before sealing';
  END IF;
+ -- The staging entry point admits one non-owner grantee, the application role
+ -- 12_application_grant.sql recorded. Any other is a second credential able to
+ -- stage; a grant that was never recorded did not come from that script.
+ IF EXISTS(SELECT 1 FROM zabalack.installation i, pg_proc p
+   CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+   WHERE i.singleton AND p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner
+    AND (e.grantee=0 OR pg_get_userbyid(e.grantee) IS DISTINCT FROM i.application_role)) THEN
+  RAISE EXCEPTION 'zabalack.stage_generation() has a grantee other than the recorded application role; run sql/install/12_application_grant.sql for the one role, or revoke the other, before sealing';
+ END IF;
  -- A fresh installation has no manifest yet: it is sealed by 10_trigger.sql
  -- under the alerts owner, not re-sealed here.
  IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m WHERE m.singleton) THEN

@@ -86,10 +86,13 @@ Record the grant's exact extent: `12_application_grant.sql` gives the applicatio
 and no other function from this grant. Where the application connects as the alerts owner, the upstream default,
 that role also holds 005's grants — `capture_ack()` for the trigger and `seal_installation()` for the installer —
 which are expected and are the reason §2 of the deployment guide prefers a separate login role; record which
-topology applies. Confirm that no function in `zabalack` is executable by `PUBLIC` and that
-`zabalack.alert_generations` admits no grantee but its owner; `capture_health()` asserts both under
-`functions_ok` even under a matching seal, `13_reseal.sql` refuses to seal a tree that breaks either, and a false
-value there is a real misconfiguration, not a probe fault.
+topology applies. The script revokes the entry point from any former grantee and records the role in
+`zabalack.installation.application_role`; confirm that `zabalack.stage_generation()` has that one non-owner grantee
+and no other, that no function in `zabalack` is executable by `PUBLIC`, and that `zabalack.alert_generations`
+admits no grantee but its owner. `capture_health()` asserts all three under `functions_ok` even under a matching
+seal, `13_reseal.sql` refuses to seal a tree that breaks any of them, and a false value there is a real
+misconfiguration, not a probe fault. A change of application role is a re-run of the grant script for the new role
+followed by a re-seal, recorded as a change.
 
 Record the backfill's result. 008 records one generation for every capture that produced an action or still awaits
 verification (`captured_unverified`, `verifier_hold` in the outbox), in capture order — a capture awaiting
