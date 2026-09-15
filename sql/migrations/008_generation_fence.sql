@@ -861,7 +861,17 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
  'capture_disabled',i.capture_disabled,'external_writes_enabled',i.external_writes_enabled,
  'trigger_ok',EXISTS(SELECT 1 FROM pg_trigger t WHERE t.tgrelid='public.alerts'::regclass
   AND t.tgname='zabalack_capture' AND t.tgfoid='zabalack.capture_ack()'::regprocedure
-  AND t.tgtype=17 AND t.tgenabled='O' AND NOT t.tgisinternal AND md5(pg_get_triggerdef(t.oid))=m.trigger_md5),
+  AND t.tgtype=17 AND t.tgenabled='O' AND NOT t.tgisinternal AND md5(pg_get_triggerdef(t.oid))=m.trigger_md5)
+  -- ...and it is the only one. PostgreSQL dispatches a trigger by its
+  -- definition, not by its name, so a second trigger on public.alerts calling
+  -- capture_ack() fires alongside this one and every acknowledgement records
+  -- two captures and two outbox rows. Rename the installed trigger and
+  -- 10_trigger.sql creates a replacement under the expected name, leaving both:
+  -- the sealed fingerprint names one trigger and matches it, and the digest
+  -- names it too, so nothing here saw a second before this counted them.
+  AND (SELECT count(*) FROM pg_trigger t WHERE t.tgrelid='public.alerts'::regclass
+   AND NOT t.tgisinternal AND t.tgfoid='zabalack.capture_ack()'::regprocedure
+   AND t.tgenabled<>'D')=1,
  'functions_ok',m.functions_md5=h.hashes->>'functions' AND m.structures_md5=h.hashes->>'structures'
   AND NOT has_table_privilege('zabalack_worker','public.alerts','UPDATE')
   AND NOT has_column_privilege('zabalack_worker','public.alerts','attributes','UPDATE')

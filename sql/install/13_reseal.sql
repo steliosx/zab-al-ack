@@ -392,6 +392,15 @@ BEGIN
    WHERE m.singleton AND md5(pg_get_triggerdef(t.oid))=m.trigger_md5) THEN
   RAISE EXCEPTION 'trigger fingerprint changed; this is not an 008 upgrade';
  END IF;
+ -- And it is the only trigger here that calls capture_ack(). Dispatch follows
+ -- the definition, not the name: a renamed original left beside the expected
+ -- replacement fires too, and one acknowledgement then records two captures
+ -- and two outbox rows while the named fingerprint still matches.
+ IF (SELECT count(*) FROM pg_trigger t WHERE t.tgrelid='public.alerts'::regclass
+   AND NOT t.tgisinternal AND t.tgfoid='zabalack.capture_ack()'::regprocedure
+   AND t.tgenabled<>'D')<>1 THEN
+  RAISE EXCEPTION 'public.alerts carries more than one enabled trigger calling zabalack.capture_ack(), or none; each acknowledgement would be captured once per trigger — leave exactly the installed one before sealing';
+ END IF;
 END $$;
 SELECT zabalack.seal_installation();
 COMMIT;

@@ -1298,6 +1298,73 @@ def test_T41_the_sequence_validated_is_the_one_the_identity_column_draws_from(la
     assert health() == "true"
 
 
+@pytest.mark.parametrize("renamed", [True, False])
+def test_T41_only_one_trigger_here_calls_the_capture_function(lab, renamed):
+    """The same name-versus-object weakness, one object further out.
+
+    PostgreSQL dispatches a trigger by its definition, not by its name, so a
+    second trigger on `public.alerts` calling `capture_ack()` fires alongside
+    the installed one and every acknowledgement records two captures and two
+    outbox rows. Every check here was keyed on `tgname='zabalack_capture'` —
+    `trigger_ok`, the reseal's fingerprint comparison, and the `trigger` key of
+    `catalog_fingerprints()` — so a renamed original left beside a replacement
+    created by `10_trigger.sql` was invisible to all three, before a seal as
+    well as after one. Reproduced exactly that way: one acknowledgement, two
+    capture rows, `trigger_ok` and `functions_ok` both `true` throughout.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def trigger_ok():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'trigger_ok'").fetchone()[0]
+
+    def captures(alert_id):
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT count(*) FROM zabalack.captures WHERE alert_id=%s",
+                                 (alert_id,)).fetchone()[0]
+
+    alert_id, _, payload = stage(lab)
+    fire_ack(lab, alert_id, payload)
+    assert captures(alert_id) == 1, "precondition: one acknowledgement, one capture"
+    assert trigger_ok() == "true", "precondition: the installation is healthy"
+
+    definition = (ROOT / "sql/install/10_trigger.sql").read_text()
+    create = [part.strip() for part in definition.split(";")
+              if part.strip().upper().startswith("CREATE OR REPLACE TRIGGER")]
+    assert len(create) == 1, "the shipped trigger script defines exactly one trigger"
+    with connect_role(lab, "alerta_owner") as owner:
+        if renamed:
+            # The rename leaves the original dispatching under another name, and
+            # the shipped script then installs a replacement under the expected
+            # one — the exact sequence an interrupted re-installation produces.
+            owner.execute("ALTER TRIGGER zabalack_capture ON public.alerts RENAME TO zabalack_capture_kept")
+            owner.execute(create[0])
+        else:
+            owner.execute(create[0].replace("CREATE OR REPLACE TRIGGER zabalack_capture",
+                                            "CREATE OR REPLACE TRIGGER zabalack_capture_second", 1))
+    try:
+        second, _, payload_two = stage(lab)
+        fire_ack(lab, second, payload_two)
+        assert captures(second) == 2, "the consequence itself: one acknowledgement captured twice"
+        assert trigger_ok() == "false", "a second trigger calling capture_ack() is unhealthy"
+        with connect_role(lab, "zabalack_owner") as owner:
+            # Lab-only: seal over it, as every upgrade's re-seal would.
+            owner.execute("SELECT zabalack.seal_installation()")
+        assert trigger_ok() == "false", "and stays unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="more than one enabled trigger"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "alerta_owner") as owner:
+            if renamed:
+                owner.execute("DROP TRIGGER zabalack_capture_kept ON public.alerts")
+            else:
+                owner.execute("DROP TRIGGER zabalack_capture_second ON public.alerts")
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    assert trigger_ok() == "true"
+
+
 @pytest.mark.parametrize("role,reaches", [("zabalack_worker", "zabalack.worker_call(text,jsonb)"),
                                           ("zabalack_operator", "zabalack.operator_call(text,jsonb)")])
 def test_T41_a_member_of_the_worker_role_reaches_the_verification_path(lab, role, reaches):
