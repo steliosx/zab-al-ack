@@ -1823,6 +1823,88 @@ def test_T41_without_its_update_grant_the_owner_cannot_stage_at_all(lab):
         assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
+@pytest.mark.parametrize("role", ["zabalack_worker", "zabalack_probe", "zabalack_operator"])
+def test_T41_the_runtime_roles_can_still_open_a_session(lab, role):
+    """`CONNECT` is the last line of `00_roles.sql` nothing asserted.
+
+    It is not an ACL this schema hashes and no other rule looks at it, so
+    revoking it is silent in a way the owner's `USAGE` on `public` is not:
+    `capture_health()` answers normally through the probe's existing session
+    while the worker never connects again, and verification and delivery stop
+    behind a probe that passes and a seal that agrees with it.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        database = owner.execute("SELECT current_database()").fetchone()[0]
+    # Lab-only: database-level grants are the superuser's act. PUBLIC holds
+    # CONNECT by default, so the role-level revoke alone changes nothing.
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute('REVOKE CONNECT ON DATABASE "%s" FROM %s, PUBLIC' % (database, role))
+        admin.execute("SELECT zabalack.seal_installation()")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT has_database_privilege(%s,%s,'CONNECT')",
+                                 (role, database)).fetchone()[0] is False
+        assert health() == "false", "%s cannot connect, so the installation is not healthy" % role
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute('GRANT CONNECT ON DATABASE "%s" TO %s, PUBLIC' % (database, role))
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+def test_T41_without_public_usage_the_owner_fails_closed_and_the_reseal_says_why(lab):
+    """The owner's `USAGE` on schema `public` fails *loudly*, and the refusal names it.
+
+    `stage_generation()`, `project()` and `retire_intents()` are `SECURITY
+    DEFINER` and run as `zabalack_owner`, reaching `public.alerts` through that
+    grant — but so do `capture_health()` and `13_reseal.sql` itself, so revoking
+    it seals nothing and reports nothing healthy: both raise `permission denied
+    for schema public`, and the probe's caller treats an exception from
+    `capture_health()` as a failure. This case pins that fail-closed behaviour,
+    and that the re-seal now names the missing grant instead of leaving a bare
+    permission error to be diagnosed.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute("REVOKE USAGE ON SCHEMA public FROM zabalack_owner")
+        admin.execute("REVOKE USAGE ON SCHEMA public FROM PUBLIC")
+    try:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            assert admin.execute(
+                "SELECT has_schema_privilege('zabalack_owner','public','USAGE')").fetchone()[0] is False
+        # Health does not answer "unhealthy" here — it raises, which the probe
+        # treats as a failure. Nothing reports healthy and nothing seals.
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                owner.execute("SELECT zabalack.capture_health()")
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="lost USAGE on schema public"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("GRANT USAGE ON SCHEMA public TO zabalack_owner")
+            admin.execute("GRANT USAGE ON SCHEMA public TO PUBLIC")
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
 def test_T41_a_recorded_installer_holds_the_owner_role_and_nothing_else(lab):
     """The exemption the record makes, and its limit.
 

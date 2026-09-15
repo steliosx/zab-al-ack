@@ -32,6 +32,27 @@ BEGIN
   OR to_regclass('zabalack.alert_generations') IS NULL THEN
   RAISE EXCEPTION 'schema version 4 objects absent; refusing to seal an incomplete tree';
  END IF;
+ -- Before anything below reads public.alerts: this script runs as
+ -- zabalack_owner, and so do stage_generation(), project() and
+ -- retire_intents(), which are SECURITY DEFINER. Without USAGE on schema public
+ -- every one of them fails at schema access — and so does this script, and so
+ -- does capture_health(), which is why nothing seals and nothing reports
+ -- healthy in that state. The check is here to say which grant is missing
+ -- rather than leave a bare "permission denied for schema public" to be
+ -- diagnosed. 00_roles.sql makes the grant.
+ IF NOT has_schema_privilege('zabalack_owner','public','USAGE') THEN
+  RAISE EXCEPTION 'zabalack_owner has lost USAGE on schema public; stage_generation(), project() and retire_intents() run as this owner and reach public.alerts through it — restore the grant 00_roles.sql makes before sealing';
+ END IF;
+ -- The three runtime roles connect to this database as themselves. Losing
+ -- CONNECT is not loud the way the owner's USAGE is: capture_health() answers
+ -- normally through the probe's existing session, and the worker simply never
+ -- connects again, so verification and delivery stop behind a probe that passes
+ -- and a seal that agrees with it. CONNECT is not an ACL this schema hashes.
+ IF NOT (has_database_privilege('zabalack_worker',current_database(),'CONNECT')
+     AND has_database_privilege('zabalack_probe',current_database(),'CONNECT')
+     AND has_database_privilege('zabalack_operator',current_database(),'CONNECT')) THEN
+  RAISE EXCEPTION 'a zabalack runtime role has lost CONNECT on this database; it cannot open a session at all — restore the grant 00_roles.sql makes before sealing';
+ END IF;
  -- The application role's USAGE on the schema rests on the facts checked here,
  -- which capture_health() asserts under functions_ok. A seal over a tree that
  -- breaks any of them would make the digests agree with a real

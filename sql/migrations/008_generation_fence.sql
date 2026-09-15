@@ -773,6 +773,15 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   AND NOT has_column_privilege('zabalack_owner','public.alerts','customer','UPDATE')
   AND NOT has_table_privilege('zabalack_owner','public.alerts','TRIGGER')
   AND NOT has_table_privilege('zabalack_probe','public.alerts','SELECT')
+  -- ...and the three runtime roles can still open a session at all. CONNECT is
+  -- not an ACL this schema hashes and nothing else here looks at it: revoke it
+  -- and capture_health() answers normally through the probe's existing session
+  -- while the worker never connects again, so verification and delivery stop
+  -- behind a probe that passes. zabalack_owner is NOLOGIN and connects as
+  -- nobody; the migration principal assumes it after connecting as itself.
+  AND has_database_privilege('zabalack_worker',current_database(),'CONNECT')
+  AND has_database_privilege('zabalack_probe',current_database(),'CONNECT')
+  AND has_database_privilege('zabalack_operator',current_database(),'CONNECT')
   -- ...and zabalack_owner still holds the grants 00_roles.sql makes it on
   -- public.alerts, exactly those and no more. Every rule above about this table
   -- is a prohibition, and a prohibition cannot see a grant that is *missing*.

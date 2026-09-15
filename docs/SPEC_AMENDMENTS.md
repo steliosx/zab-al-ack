@@ -569,13 +569,20 @@ every function grant below still reads exactly right, so verification and
 delivery stop behind a probe reporting healthy — as does the alerts owner,
 a separate role wherever the deployment splits the application from it, whose
 005 `capture_ack()` and `seal_installation()` grants and whose `10_trigger.sql`
-run both fail at schema access without it; `zabalack_owner` still holds exactly the `public.alerts` grants
-`00_roles.sql` makes it — `SELECT` on `id`, `customer`, `status`, `attributes`
+run both fail at schema access without it; the three runtime roles still hold `CONNECT` on the database, the last
+grant `00_roles.sql` makes that nothing asserted, and a silent one — revoke it
+and `capture_health()` answers normally through the probe's existing session
+while the worker never connects again; `zabalack_owner` still holds exactly the
+`public.alerts` grants `00_roles.sql` makes it — `SELECT` on `id`, `customer`, `status`, `attributes`
 and `update_time`, `UPDATE` on `attributes`, and nothing else — every other rule
 about that table being a prohibition, and a prohibition not seeing a grant that
 is missing, while `stage_generation()` runs as this owner and without
 `UPDATE(attributes)` refuses every acknowledgement, `public.alerts` lying outside
-the schema `catalog_fingerprints()` hashes so that no digest moves either;
+the schema `catalog_fingerprints()` hashes so that no digest moves either — its
+`USAGE` on schema `public` being the loud case instead, `capture_health()` and
+`13_reseal.sql` reaching `public.alerts` through that grant as well, so both
+raise and nothing seals or reports healthy, the re-seal naming the grant rather
+than leaving a bare permission error;
 none of the four `zabalack_*` roles is a member of any role at all, every
 other membership rule here reading inward and this one outward — the alerts
 owner granted to `zabalack_worker` lets it `SET ROLE` to that owner and write
