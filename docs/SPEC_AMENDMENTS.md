@@ -574,8 +574,9 @@ run both fail at schema access without it; the recorded application role can sti
 Alerta connecting *as* that role with no member of it permitted, so one that
 cannot connect leaves nothing able to stage behind grants that read exactly
 right (`rolvaliduntil` is not asserted, binding password authentication only);
-the three runtime roles still hold `CONNECT` on the database, the last
-grant `00_roles.sql` makes that nothing asserted, and a silent one — revoke it
+the three runtime roles can still open a session — `CONNECT` on the
+database, the last grant `00_roles.sql` makes that nothing asserted, and no
+connection limit of zero, which refuses every new session as flatly, and a silent one — revoke it
 and `capture_health()` answers normally through the probe's existing session
 while the worker never connects again; `zabalack_owner` still holds exactly the
 `public.alerts` grants `00_roles.sql` makes it — `SELECT` on `id`, `customer`, `status`, `attributes`

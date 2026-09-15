@@ -1823,15 +1823,19 @@ def test_T41_without_its_update_grant_the_owner_cannot_stage_at_all(lab):
         assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
+@pytest.mark.parametrize("how", ["revoke", "connection_limit"])
 @pytest.mark.parametrize("role", ["zabalack_worker", "zabalack_probe", "zabalack_operator"])
-def test_T41_the_runtime_roles_can_still_open_a_session(lab, role):
-    """`CONNECT` is the last line of `00_roles.sql` nothing asserted.
+def test_T41_the_runtime_roles_can_still_open_a_session(lab, role, how):
+    """`CONNECT` was the last line of `00_roles.sql` nothing asserted, and a
+    connection limit of zero refuses every new session just as flatly.
 
-    It is not an ACL this schema hashes and no other rule looks at it, so
-    revoking it is silent in a way the owner's `USAGE` on `public` is not:
+    Neither is an ACL this schema hashes and no other rule looks at either, so
+    both are silent in a way the owner's `USAGE` on `public` is not:
     `capture_health()` answers normally through the probe's existing session
     while the worker never connects again, and verification and delivery stop
-    behind a probe that passes and a seal that agrees with it.
+    behind a probe that passes and a seal that agrees with it. The application
+    role is asked the same two things; this is the same question of the roles
+    that answer to the other end of the boundary.
     """
     reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
 
@@ -1841,24 +1845,38 @@ def test_T41_the_runtime_roles_can_still_open_a_session(lab, role):
 
     with connect_role(lab, "zabalack_owner") as owner:
         database = owner.execute("SELECT current_database()").fetchone()[0]
-    # Lab-only: database-level grants are the superuser's act. PUBLIC holds
-    # CONNECT by default, so the role-level revoke alone changes nothing.
+    # Lab-only: database grants and role attributes are the superuser's act.
+    # PUBLIC holds CONNECT by default, so the role-level revoke alone changes
+    # nothing — the revoke case takes it from PUBLIC too.
+    give, take = {
+        "revoke": ('REVOKE CONNECT ON DATABASE "%s" FROM %s, PUBLIC' % (database, role),
+                   'GRANT CONNECT ON DATABASE "%s" TO %s, PUBLIC' % (database, role)),
+        "connection_limit": ("ALTER ROLE %s CONNECTION LIMIT 0" % role,
+                             "ALTER ROLE %s CONNECTION LIMIT -1" % role),
+    }[how]
     with connect_role(lab, "zabalack_owner") as admin:
         admin.execute("RESET ROLE")
-        admin.execute('REVOKE CONNECT ON DATABASE "%s" FROM %s, PUBLIC' % (database, role))
+        admin.execute(give)
         admin.execute("SELECT zabalack.seal_installation()")
     try:
         with connect_role(lab, "zabalack_owner") as owner:
-            assert owner.execute("SELECT has_database_privilege(%s,%s,'CONNECT')",
-                                 (role, database)).fetchone()[0] is False
-        assert health() == "false", "%s cannot connect, so the installation is not healthy" % role
+            reachable = owner.execute("SELECT has_database_privilege(%s,%s,'CONNECT')",
+                                      (role, database)).fetchone()[0]
+            limit = owner.execute("SELECT rolconnlimit FROM pg_roles WHERE rolname=%s",
+                                  (role,)).fetchone()[0]
+        if how == "revoke":
+            assert reachable is False
+        else:
+            # The privilege is untouched; only the limit refuses the session.
+            assert reachable is True and limit == 0
+        assert health() == "false", "%s cannot open a session, so the installation is not healthy" % role
         with connect_role(lab, "zabalack_owner") as owner:
             with pytest.raises(Exception, match="before sealing"):
                 owner.execute(reseal)
     finally:
         with connect_role(lab, "zabalack_owner") as admin:
             admin.execute("RESET ROLE")
-            admin.execute('GRANT CONNECT ON DATABASE "%s" TO %s, PUBLIC' % (database, role))
+            admin.execute(take)
         with connect_role(lab, "zabalack_owner") as owner:
             owner.execute(reseal)
     assert health() == "true"

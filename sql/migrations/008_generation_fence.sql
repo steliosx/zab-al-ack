@@ -773,15 +773,19 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   AND NOT has_column_privilege('zabalack_owner','public.alerts','customer','UPDATE')
   AND NOT has_table_privilege('zabalack_owner','public.alerts','TRIGGER')
   AND NOT has_table_privilege('zabalack_probe','public.alerts','SELECT')
-  -- ...and the three runtime roles can still open a session at all. CONNECT is
-  -- not an ACL this schema hashes and nothing else here looks at it: revoke it
-  -- and capture_health() answers normally through the probe's existing session
-  -- while the worker never connects again, so verification and delivery stop
-  -- behind a probe that passes. zabalack_owner is NOLOGIN and connects as
-  -- nobody; the migration principal assumes it after connecting as itself.
-  AND has_database_privilege('zabalack_worker',current_database(),'CONNECT')
-  AND has_database_privilege('zabalack_probe',current_database(),'CONNECT')
-  AND has_database_privilege('zabalack_operator',current_database(),'CONNECT')
+  -- ...and the three runtime roles can still open a session at all. Neither
+  -- CONNECT nor a connection limit is an ACL this schema hashes and nothing
+  -- else here looks at either: take one away and capture_health() answers
+  -- normally through the probe's existing session while the worker never
+  -- connects again, so verification and delivery stop behind a probe that
+  -- passes. A limit of zero refuses every new session as flatly as a revoked
+  -- CONNECT does, which is why both are asked, as they are of the application
+  -- role. LOGIN itself is covered by the declared-attributes rule below.
+  -- zabalack_owner is NOLOGIN and connects as nobody; the migration principal
+  -- assumes it after connecting as itself.
+  AND NOT EXISTS(SELECT 1 FROM pg_roles r
+   WHERE r.rolname IN ('zabalack_worker','zabalack_probe','zabalack_operator')
+    AND (r.rolconnlimit=0 OR NOT has_database_privilege(r.oid,current_database(),'CONNECT')))
   -- ...and zabalack_owner still holds the grants 00_roles.sql makes it on
   -- public.alerts, exactly those and no more. Every rule above about this table
   -- is a prohibition, and a prohibition cannot see a grant that is *missing*.

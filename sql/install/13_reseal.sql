@@ -44,14 +44,15 @@ BEGIN
   RAISE EXCEPTION 'zabalack_owner has lost USAGE on schema public; stage_generation(), project() and retire_intents() run as this owner and reach public.alerts through it — restore the grant 00_roles.sql makes before sealing';
  END IF;
  -- The three runtime roles connect to this database as themselves. Losing
- -- CONNECT is not loud the way the owner's USAGE is: capture_health() answers
+ -- CONNECT, or being given a connection limit of zero, is not loud the way the
+ -- owner's USAGE is: capture_health() answers
  -- normally through the probe's existing session, and the worker simply never
  -- connects again, so verification and delivery stop behind a probe that passes
  -- and a seal that agrees with it. CONNECT is not an ACL this schema hashes.
- IF NOT (has_database_privilege('zabalack_worker',current_database(),'CONNECT')
-     AND has_database_privilege('zabalack_probe',current_database(),'CONNECT')
-     AND has_database_privilege('zabalack_operator',current_database(),'CONNECT')) THEN
-  RAISE EXCEPTION 'a zabalack runtime role has lost CONNECT on this database; it cannot open a session at all — restore the grant 00_roles.sql makes before sealing';
+ IF EXISTS(SELECT 1 FROM pg_roles r
+    WHERE r.rolname IN ('zabalack_worker','zabalack_probe','zabalack_operator')
+     AND (r.rolconnlimit=0 OR NOT has_database_privilege(r.oid,current_database(),'CONNECT'))) THEN
+  RAISE EXCEPTION 'a zabalack runtime role cannot open a session on this database (no CONNECT, or a connection limit of zero); a limit of zero refuses every new session as flatly as a revoked grant — restore it before sealing';
  END IF;
  -- The application role's USAGE on the schema rests on the facts checked here,
  -- which capture_health() asserts under functions_ok. A seal over a tree that
