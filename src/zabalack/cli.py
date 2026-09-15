@@ -92,16 +92,19 @@ class RetirementError(RuntimeError):
 async def drain_retirement(recon: Reconciler, *, pages: int) -> dict[str, Any]:
     """Retire due intents page by page and say whether the drain finished.
 
-    `complete` is true only when a sweep ran and left nothing due behind it —
-    not when the slot was not due or another sweep held it (`skipped`), not
-    when the sweep failed (`error`), and not when the run stopped with work
-    remaining (`continues`): its pages spent, or a page that made no progress
-    over rows other sessions hold, which asking again within one run would
-    only spin on.
+    `complete` is true only when a sweep ran, left nothing due behind it, and
+    counted no row still carrying the key (`remaining`) — not when the slot was
+    not due or another sweep held it (`skipped`), not when the sweep failed
+    (`error`), not when the run stopped with work remaining (`continues`): its
+    pages spent, or a page that made no progress over rows other sessions
+    hold, which asking again within one run would only spin on — and not
+    while a staging inside its window and grace is still on a row, which a
+    pass leaves to a later one by design. The count is the database's, made
+    by the same pass; absent, the drain is not complete.
     """
     totals: dict[str, Any] = {"pages": 0, "examined": 0, "retired": 0, "deferred": 0}
     for _ in range(max(1, pages)):
-        page = await recon.retire_intents()
+        page = await recon.retire_intents(report_remaining=True)
         if "error" in page:
             return {**totals, "error": page["error"], "complete": False}
         if page.get("skipped"):
@@ -110,7 +113,8 @@ async def drain_retirement(recon: Reconciler, *, pages: int) -> dict[str, Any]:
         for key in ("examined", "retired", "deferred"):
             totals[key] += int(page.get(key) or 0)
         if not page.get("continues"):
-            return {**totals, "complete": True}
+            remaining = page.get("remaining")
+            return {**totals, "remaining": remaining, "complete": remaining == 0}
         if not int(page.get("examined") or 0):
             break
     return {**totals, "continues": True, "complete": False}

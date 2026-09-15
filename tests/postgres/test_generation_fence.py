@@ -753,6 +753,43 @@ def test_T41_the_worker_reaches_retirement_through_worker_call(lab):
     assert INTENT not in attributes_of(lab, alert_id)
 
 
+def test_T41_a_pass_counts_what_still_carries_the_key_when_the_drain_asks(lab):
+    """The standalone drain asks (`report_remaining`): once a pass leaves
+    nothing due behind it, the reply carries the rows still carrying the key —
+    a staging inside its window and grace, left to a later pass by design — so
+    a cleanup is complete only at zero. The worker's periodic call does not
+    ask and gets no count. The count is compared with an independent one,
+    since rows other modules left inside their windows count too."""
+    sweep(lab)   # rows other modules left due are retired first
+    fresh_id, event_id, fresh = stage(lab, issued=datetime.now(timezone.utc))
+    due_id, _, _ = stage(lab)
+
+    def pass_through_worker_call(payload):
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("UPDATE zabalack.installation SET retirement_due_at=NULL WHERE singleton")
+        with connect_role(lab, "zabalack_worker") as worker:
+            return worker.execute("SELECT zabalack.worker_call('retire_intents',%s)", (Jsonb(payload),)).fetchone()[0]
+
+    def carrying_the_key():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT count(*) FROM public.alerts WHERE attributes ? %s", (INTENT,)).fetchone()[0]
+
+    asked = pass_through_worker_call({"limit": 1000, "grace_seconds": 0, "report_remaining": True})
+    assert asked["retired"] >= 1 and "continues" not in asked, asked
+    assert INTENT not in attributes_of(lab, due_id) and INTENT in attributes_of(lab, fresh_id)
+    assert asked["remaining"] == carrying_the_key() >= 1, asked
+    unasked = pass_through_worker_call({"limit": 1000, "grace_seconds": 0})
+    assert "remaining" not in unasked, unasked
+    # Its window closed, the same row is retired and no longer counted.
+    with connect_role(lab, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                     (Jsonb({INTENT: intent_for(fresh_id, event_id, action_id=fresh["action_id"],
+                                                issued=datetime.now(timezone.utc) - timedelta(minutes=10))}), fresh_id))
+    closed = pass_through_worker_call({"limit": 1000, "grace_seconds": 0, "report_remaining": True})
+    assert closed["retired"] >= 1 and INTENT not in attributes_of(lab, fresh_id)
+    assert closed["remaining"] == carrying_the_key(), closed
+
+
 def test_T41_the_retirement_cadence_is_deployment_state_not_a_worker_clock(lab):
     """One scan per interval across the deployment, not one per worker."""
     stage(lab)

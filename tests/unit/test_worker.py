@@ -453,10 +453,11 @@ async def test_T41_the_standalone_reconcile_command_drains_the_due_intents_page_
     import argparse
     db = PagedSweepDB([{"examined": 200, "retired": 200, "deferred": 0, "continues": True},
                        {"examined": 200, "retired": 199, "deferred": 1, "continues": True},
-                       {"examined": 3, "retired": 3, "deferred": 0}])
+                       {"examined": 3, "retired": 3, "deferred": 0, "remaining": 0}])
     cli = _standalone_reconcile(monkeypatch, db)
     result = await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
-    assert result["result"]["retirement"] == {"pages": 3, "examined": 403, "retired": 402, "deferred": 1, "complete": True}
+    assert result["result"]["retirement"] == {"pages": 3, "examined": 403, "retired": 402, "deferred": 1,
+                                              "remaining": 0, "complete": True}
     assert len(_sweeps(db)) == 3, "a page that continues is followed by another within the run"
 
 
@@ -495,6 +496,45 @@ async def test_T41_a_slot_that_is_not_due_is_neither_a_failure_nor_a_completed_d
     result = await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
     assert result["result"]["retirement"] == {"pages": 0, "examined": 0, "retired": 0, "deferred": 0,
                                               "skipped": "not_due", "complete": False}
+
+
+@pytest.mark.asyncio
+async def test_T41_a_drain_is_not_complete_while_any_row_still_carries_the_key(monkeypatch):
+    """A pass that leaves nothing due behind it is not a cleanup while a row
+    still carries the key: a staging inside its window and grace is left to a
+    later pass by design, and the adapter that keeps the key from readers must
+    outlive it. The run succeeds — nothing failed — and says so; a reply
+    without the count is not complete either."""
+    import argparse
+    namespace = argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False)
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 0, "remaining": 3}])
+    result = await _standalone_reconcile(monkeypatch, db).execute(namespace)
+    assert result["result"]["retirement"] == {"pages": 1, "examined": 0, "retired": 0, "deferred": 0,
+                                              "remaining": 3, "complete": False}
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 0}])
+    result = await _standalone_reconcile(monkeypatch, db).execute(namespace)
+    assert result["result"]["retirement"]["complete"] is False and result["result"]["retirement"]["remaining"] is None
+
+
+@pytest.mark.asyncio
+async def test_T41_the_standalone_drain_asks_for_the_count_and_the_worker_does_not(monkeypatch):
+    """The count is one more scan of public.alerts; the drain asks for it on
+    every page (the database answers only on a page that does not continue),
+    the worker's periodic call never does."""
+    import argparse
+    from zabalack.rpc import EndpointRegistry
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 0, "remaining": 0}])
+    await _standalone_reconcile(monkeypatch, db).execute(
+        argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert [payload for op, payload in db.calls if op == "retire_intents"] == [{"limit": 200, "report_remaining": True}]
+    settings = Settings(worker_dsn_file="/reviewed/worker.dsn", cohorts=(COHORT,))
+    worker_db = FakeDB()
+    recon = Reconciler(settings, worker_db, EndpointRegistry(settings.endpoint_registry, lab=settings.lab_mode,
+                                                             approved_versions=settings.approved_versions),
+                       worker_id="unit-worker")
+    await recon.retire_intents()
+    assert [payload for op, payload in worker_db.calls if op == "retire_intents"] == [{"limit": 200}], \
+        "the periodic call pays no second scan"
 
 
 def test_T41_an_incomplete_drain_is_a_non_zero_exit(monkeypatch, capsys):

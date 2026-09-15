@@ -154,7 +154,7 @@ class Reconciler:
         self._nightly_cursor = next_cursor if self._nightly_pending else None
         return {"read": processed, "cursor": self._nightly_cursor, "pending": self._nightly_pending}
 
-    async def retire_intents(self) -> dict[str, Any]:
+    async def retire_intents(self, *, report_remaining: bool = False) -> dict[str, Any]:
         """Retire staged intents from live alert rows (A5 stage two, T41).
 
         Deliberately not gated on verification or delivery health: the lifecycle
@@ -165,8 +165,14 @@ class Reconciler:
         eligibility; nothing here chooses which rows are swept, and nothing here
         touches the generation fence.
         """
+        payload: dict[str, Any] = {"limit": self.settings.fast_budget}
+        if report_remaining:
+            # The standalone drain asks what still carries the key once a pass
+            # leaves nothing due; the worker's periodic call does not, and pays
+            # no second scan for it.
+            payload["report_remaining"] = True
         try:
-            result = await self.db.call("retire_intents", {"limit": self.settings.fast_budget})
+            result = await self.db.call("retire_intents", payload)
         except Exception as exc:
             # A sweep that fails — the unindexed scan of public.alerts outrunning
             # its own statement budget (`retirement_timeout_seconds`) on a large

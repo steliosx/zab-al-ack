@@ -668,6 +668,14 @@ BEGIN
      OR coalesce((result->>'deferred')::int,0)>0 THEN
    UPDATE zabalack.installation SET retirement_due_at=now_at WHERE singleton;
    result := result||jsonb_build_object('continues',true);
+  ELSIF coalesce((p->>'report_remaining')::boolean,false) THEN
+   -- The standalone drain asks: a pass that left nothing due behind it is a
+   -- cleanup only while no row still carries the key. A staging inside its
+   -- window and grace is left to a later pass by design, and the adapter
+   -- that keeps the key from readers must outlive it; the count says whether
+   -- it may go. The worker's periodic call does not ask and pays no second scan.
+   result := result||jsonb_build_object('remaining',
+    (SELECT count(*) FROM public.alerts WHERE attributes ? 'zabbix_ack_sync_intent'));
   END IF;
   RETURN result;
  ELSE RAISE EXCEPTION 'unsupported worker operation: %',op;
