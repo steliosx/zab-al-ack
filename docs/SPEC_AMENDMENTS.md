@@ -553,7 +553,8 @@ makes — `worker_call(text,jsonb)` and `project(uuid)` to `zabalack_worker`,
 application role, every other function to no one — no relation here admits a
 grantee at all — the fence's identity sequence included, where `UPDATE` is
 `setval()` and a sequence moved backwards inverts the ordering the fence rests
-on — and neither `zabalack_worker` nor `zabalack_operator` has a
+on — the schema and every function and relation in it remain owned by
+`zabalack_owner`, a `SECURITY DEFINER` function running as its owner, and neither `zabalack_worker` nor `zabalack_operator` has a
 non-superuser member (`zabalack_owner` excepted, whose members are the
 documented installer topology). Whoever reaches `worker_call()` claims
 verification leases and calls `verify_complete`, so the acknowledgement is

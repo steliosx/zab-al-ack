@@ -835,6 +835,19 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
    CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,
     acldefault((CASE WHEN c.relkind='S' THEN 's' ELSE 'r' END)::"char",c.relowner))) e
    WHERE c.relnamespace='zabalack'::regnamespace AND e.grantee<>c.relowner)
+  -- Ownership is the other half of the map, and for a SECURITY DEFINER function
+  -- it is the privilege itself: the body runs as the owner. Reassign one and
+  -- the grantee rules above skip the new owner, which they exclude by
+  -- definition. proowner, relowner and nspowner are all hashed, so a
+  -- reassignment reads unhealthy through the digests — until the re-seal agrees
+  -- with it. Everything the migrations create here is owned by zabalack_owner
+  -- and stays that way.
+  AND EXISTS(SELECT 1 FROM pg_namespace n WHERE n.nspname='zabalack'
+   AND n.nspowner='zabalack_owner'::regrole)
+  AND NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.pronamespace='zabalack'::regnamespace
+   AND p.proowner<>'zabalack_owner'::regrole)
+  AND NOT EXISTS(SELECT 1 FROM pg_class c WHERE c.relnamespace='zabalack'::regnamespace
+   AND c.relowner<>'zabalack_owner'::regrole)
   -- ...and no role may assume the two roles those grants answer to. A NOINHERIT
   -- member resolves no privilege through the ACL above, and SET ROLE is open to
   -- it; the membership is not hashed either unless the member is itself one of

@@ -139,6 +139,18 @@ BEGIN
     WHERE c.relnamespace='zabalack'::regnamespace AND e.grantee<>c.relowner) THEN
   RAISE EXCEPTION 'a zabalack relation or sequence admits a grantee other than its owner; revoke it before sealing';
  END IF;
+ -- Ownership is the other half of the map: a SECURITY DEFINER function runs as
+ -- its owner, so reassigning one hands it that role's rights, and the grantee
+ -- rules above exclude the owner by definition. Sealing would record the
+ -- changed owner as the baseline.
+ IF NOT EXISTS(SELECT 1 FROM pg_namespace n WHERE n.nspname='zabalack'
+    AND n.nspowner='zabalack_owner'::regrole)
+  OR EXISTS(SELECT 1 FROM pg_proc p WHERE p.pronamespace='zabalack'::regnamespace
+    AND p.proowner<>'zabalack_owner'::regrole)
+  OR EXISTS(SELECT 1 FROM pg_class c WHERE c.relnamespace='zabalack'::regnamespace
+    AND c.relowner<>'zabalack_owner'::regrole) THEN
+  RAISE EXCEPTION 'the zabalack schema, or an object in it, is not owned by zabalack_owner; a SECURITY DEFINER function runs as its owner — restore ownership before sealing';
+ END IF;
  IF EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
     WHERE m.roleid IN ('zabalack_worker'::regrole,'zabalack_operator'::regrole) AND NOT mm.rolsuper) THEN
   RAISE EXCEPTION 'zabalack_worker or zabalack_operator has members, each able to assume it and reach the verification path or the controls; revoke those memberships before sealing';

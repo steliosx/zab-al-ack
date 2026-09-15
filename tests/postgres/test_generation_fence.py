@@ -1213,6 +1213,54 @@ def test_T41_a_member_of_the_worker_role_reaches_the_verification_path(lab, role
     assert health() == "true"
 
 
+@pytest.mark.parametrize("give,take,what", [
+    ("ALTER FUNCTION zabalack.worker_call(text,jsonb) OWNER TO zabalack_worker",
+     "ALTER FUNCTION zabalack.worker_call(text,jsonb) OWNER TO zabalack_owner",
+     "a SECURITY DEFINER function reassigned, so its body runs as another role"),
+    ("ALTER TABLE zabalack.alert_generations OWNER TO zabalack_operator",
+     "ALTER TABLE zabalack.alert_generations OWNER TO zabalack_owner",
+     "the fence table reassigned, which hands its new owner every right on it"),
+])
+def test_T41_everything_here_stays_owned_by_the_schema_owner(lab, give, take, what):
+    """Ownership is the other half of the grant map.
+
+    The grantee rules exclude the owner by definition — an owner needs no ACL
+    entry — so reassigning an object moves it out of their reach entirely, and a
+    `SECURITY DEFINER` function reassigned runs its body as the new role.
+    `proowner`, `relowner` and `nspowner` are all hashed, so the digests catch
+    it; this is what still refuses it after the re-seal an upgrade performs.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    # Lab-only: reassigning ownership is the superuser's act, not the owner's.
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute(give)
+    try:
+        assert health() == "false", "the digests alone catch the reassignment"
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute("SELECT zabalack.seal_installation()")
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute(take)
+            admin.execute("REVOKE ALL ON FUNCTION zabalack.worker_call(text,jsonb) FROM PUBLIC")
+            admin.execute("GRANT EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) TO zabalack_worker")
+            admin.execute("REVOKE ALL ON zabalack.alert_generations FROM PUBLIC")
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 def test_T41_the_reseal_refuses_a_tree_that_is_not_at_the_expected_schema(lab):
     reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
     with connect_role(lab, "zabalack_owner") as owner:
