@@ -1990,27 +1990,27 @@ def test_T41_the_recorded_application_role_can_still_open_a_session(lab, give, t
     assert health() == "true"
 
 
-@pytest.mark.parametrize("give,take,what", [
+@pytest.mark.parametrize("give,take,routine,what", [
     ("ALTER FUNCTION zabalack.operator_call(text,jsonb) SECURITY INVOKER",
-     "ALTER FUNCTION zabalack.operator_call(text,jsonb) SECURITY DEFINER",
+     None, "zabalack.operator_call(text,jsonb)",
      "a granted routine made SECURITY INVOKER"),
     ("ALTER FUNCTION zabalack.worker_call(text,jsonb) SECURITY INVOKER",
-     "ALTER FUNCTION zabalack.worker_call(text,jsonb) SECURITY DEFINER",
+     None, "zabalack.worker_call(text,jsonb)",
      "the verification path made SECURITY INVOKER"),
     ("ALTER FUNCTION zabalack.worker_call(text,jsonb) SET search_path=public,pg_catalog,zabalack",
-     "ALTER FUNCTION zabalack.worker_call(text,jsonb) SET search_path=pg_catalog,zabalack",
+     None, "zabalack.worker_call(text,jsonb)",
      "a search_path that resolves through someone else's schema first"),
     ("ALTER FUNCTION zabalack.intent_retirable(jsonb,interval,timestamptz) RESET search_path",
-     "ALTER FUNCTION zabalack.intent_retirable(jsonb,interval,timestamptz) SET search_path=pg_catalog,zabalack",
+     None, "zabalack.intent_retirable(jsonb,interval,timestamptz)",
      "an unpinned search_path on a routine nobody is granted"),
     ("GRANT EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) TO zabalack_worker WITH GRANT OPTION",
      "REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) FROM zabalack_worker",
-     "GRANT OPTION on the verification path"),
+     None, "GRANT OPTION on the verification path"),
     ("GRANT USAGE ON SCHEMA zabalack TO zabalack_probe WITH GRANT OPTION",
      "REVOKE GRANT OPTION FOR USAGE ON SCHEMA zabalack FROM zabalack_probe",
-     "GRANT OPTION on the schema itself"),
+     None, "GRANT OPTION on the schema itself"),
 ])
-def test_T41_the_routines_keep_how_they_run_and_no_grant_is_passed_on(lab, give, take, what):
+def test_T41_the_routines_keep_how_they_run_and_no_grant_is_passed_on(lab, give, take, routine, what):
     """Two things the map could not see, because it reads *who* holds a grant.
 
     `ALTER FUNCTION zabalack.operator_call(text,jsonb) SECURITY INVOKER` does not
@@ -2037,7 +2037,15 @@ def test_T41_the_routines_keep_how_they_run_and_no_grant_is_passed_on(lab, give,
         with connect_role(lab, "zabalack_owner") as owner:
             return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
 
+    # An ALTER FUNCTION is undone by re-executing the routine's own definition,
+    # not by a matching ALTER: `RESET search_path` then setting it again moves
+    # the SET clause after the routine's other one, and `pg_get_functiondef()`
+    # — which the body digest hashes — is not the definition it shipped with.
+    # The first version of this case used the matching ALTER and the digest rule
+    # added in round thirty-one refused every test after it.
     with connect_role(lab, "zabalack_owner") as owner:
+        shipped = (owner.execute("SELECT pg_get_functiondef(%s::regprocedure)",
+                                 (routine,)).fetchone()[0] if routine else None)
         owner.execute(give)
         owner.execute("SELECT zabalack.seal_installation()")
     try:
@@ -2047,9 +2055,96 @@ def test_T41_the_routines_keep_how_they_run_and_no_grant_is_passed_on(lab, give,
                 owner.execute(reseal)
     finally:
         with connect_role(lab, "zabalack_owner") as owner:
-            owner.execute(take)
+            owner.execute(shipped if shipped is not None else take)
             owner.execute(reseal)
     assert health() == "true"
+
+
+def test_T41_a_routine_body_is_the_one_the_migration_shipped(lab):
+    """The one property a seal cannot answer, because a re-seal records whatever
+    it finds.
+
+    Redefine `operator_call()` to call `worker_call()` and the signature, the
+    owner, the ACL, the `SECURITY DEFINER` flag and the pinned `search_path` all
+    still read exactly right — every rule this PR has added reads right — while
+    the operator reaches the verification path. The digest catches it and the
+    re-seal then agrees with it, which is where the argument for pinning the
+    definition in the manifest runs out: the manifest is the thing being
+    replaced.
+
+    So the expected value is kept where no seal writes it:
+    `installation.routine_bodies_md5`, set by migration 008 itself, at the end
+    of 008, when every routine it ships is in place. Definitions alone — owners
+    and ACLs move legitimately between the migration and the seal, when
+    `12_application_grant.sql` runs.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        shipped = owner.execute(
+            "SELECT pg_get_functiondef('zabalack.operator_call(text,jsonb)'::regprocedure)").fetchone()[0]
+        # Same signature, same owner, same ACL, same flags. Only the body moves.
+        owner.execute("""CREATE OR REPLACE FUNCTION zabalack.operator_call(op text, p jsonb DEFAULT '{}'::jsonb)
+                      RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack
+                      AS $drift$ BEGIN RETURN zabalack.worker_call(op,p); END $drift$""")
+        owner.execute("SELECT zabalack.seal_installation()")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute(
+                "SELECT prosecdef FROM pg_proc WHERE oid='zabalack.operator_call(text,jsonb)'::regprocedure"
+            ).fetchone()[0] is True, "the flags round thirty pins are untouched"
+        assert health() == "false", "a redefined body is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="not the one migration 008 shipped"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(shipped)
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+def test_T41_the_migration_refuses_a_tree_that_drifted_before_the_upgrade(lab):
+    """The other half: drift that arrives *before* the upgrade.
+
+    `routine_bodies_md5` records what 008 finds at the end of itself, so a body
+    already drifted when 008 runs would be recorded as the shipped one. 008
+    therefore refuses to migrate a sealed tree whose fingerprint no longer
+    matches its manifest — the seal is what knows, and only until it is
+    replaced. A fresh installation has no manifest and is sealed afterwards by
+    `10_trigger.sql`, so there is nothing to compare and nothing to refuse.
+
+    The guard is executed here as its own statement against a drifted tree; the
+    native populated-upgrade cases run it for real, on a sealed schema-3
+    database, where it must pass.
+    """
+    source = (ROOT / "sql/migrations/008_generation_fence.sql").read_text()
+    start = source.index("-- Before anything here changes the catalog:")
+    guard = source[start:source.index("CREATE TABLE zabalack.alert_generations(")]
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    with connect_role(lab, "zabalack_owner") as owner:
+        # A sealed, undrifted tree: the guard passes.
+        owner.execute(guard)
+        shipped = owner.execute(
+            "SELECT pg_get_functiondef('zabalack.operator_call(text,jsonb)'::regprocedure)").fetchone()[0]
+        owner.execute("""CREATE OR REPLACE FUNCTION zabalack.operator_call(op text, p jsonb DEFAULT '{}'::jsonb)
+                      RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack
+                      AS $drift$ BEGIN RETURN zabalack.worker_call(op,p); END $drift$""")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="drifted from its sealed manifest"):
+                owner.execute(guard)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(shipped)
+            owner.execute(reseal)
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute(guard)
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
 def test_T41_a_recorded_installer_holds_the_owner_role_and_nothing_else(lab):

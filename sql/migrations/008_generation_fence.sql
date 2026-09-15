@@ -22,6 +22,28 @@
 -- capture_ack() runs inside the signed UPDATE, already holding the row, and
 -- takes no generation lock; its insert is ON CONFLICT DO NOTHING.
 
+-- Before anything here changes the catalog: if this installation is sealed,
+-- the tree must still be the one it was sealed over. Every property this
+-- migration goes on to assert is asserted against the *current* catalog, and
+-- the re-seal that follows an upgrade records whatever it finds — so drift that
+-- arrived before the upgrade would be carried across it and blessed. A routine
+-- body is the case that makes this necessary: redefine operator_call() to call
+-- worker_call() and the signature, owner, ACL, SECURITY DEFINER flag and pinned
+-- search_path all still read exactly right. The seal is what knows otherwise,
+-- and only until it is replaced. A fresh installation has no manifest yet and
+-- is sealed by 10_trigger.sql afterwards; there is nothing to compare.
+DO $$
+DECLARE sealed record; live jsonb;
+BEGIN
+ SELECT functions_md5,structures_md5 INTO sealed FROM zabalack.readiness_manifest WHERE singleton;
+ IF FOUND THEN
+  live:=zabalack.catalog_fingerprints();
+  IF live->>'functions'<>sealed.functions_md5 OR live->>'structures'<>sealed.structures_md5 THEN
+   RAISE EXCEPTION 'the zabalack catalog has drifted from its sealed manifest; this upgrade would re-seal over the drift and record it as the baseline — restore the tree, or re-seal deliberately with the drift reviewed, before migrating';
+  END IF;
+ END IF;
+END $$;
+
 CREATE TABLE zabalack.alert_generations(
  seq bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
  alert_id text NOT NULL,
@@ -98,7 +120,14 @@ ALTER TABLE zabalack.installation
  -- it can already act as the owner — it makes the set of principals that can an
  -- explicit part of the installation. capture_health() reports functions_ok
  -- false while this is unset, or while a role outside it holds zabalack_owner.
- ADD COLUMN IF NOT EXISTS installer_roles text[];
+ ADD COLUMN IF NOT EXISTS installer_roles text[],
+ -- The digest of every routine body this schema ships, recorded by this
+ -- migration at the end of it and *not* by the seal. capture_health() and
+ -- 13_reseal.sql compare the live value against it, so a body redefined
+ -- afterwards stays unhealthy and unsealable however often the manifest is
+ -- replaced. It covers definitions alone — owners and ACLs move legitimately
+ -- between this migration and the seal, when 12_application_grant.sql runs.
+ ADD COLUMN IF NOT EXISTS routine_bodies_md5 text;
 
 CREATE FUNCTION zabalack.claim_retirement_slot() RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
@@ -751,6 +780,8 @@ SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   UNION ALL SELECT 'constraint:'||c.conrelid::text||':'||pg_get_constraintdef(c.oid) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='zabalack'
   UNION ALL SELECT 'index:'||i.indexdef FROM pg_indexes i WHERE i.schemaname='zabalack'
  ) x),
+ 'routines',(SELECT md5(string_agg(pg_get_functiondef(p.oid),E'\n' ORDER BY p.oid))
+  FROM pg_proc p WHERE p.pronamespace='zabalack'::regnamespace),
  'trigger',(SELECT md5(pg_get_triggerdef(t.oid)) FROM pg_trigger t WHERE t.tgrelid='public.alerts'::regclass AND t.tgname='zabalack_capture'));
 $$;
 REVOKE ALL ON FUNCTION zabalack.catalog_fingerprints() FROM PUBLIC;
@@ -973,6 +1004,19 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- repair — fails at schema access.
   AND has_schema_privilege((SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass),
                            'zabalack','USAGE')
+  -- ...and every routine body is the one this migration shipped. The seal
+  -- cannot answer this: a re-seal records whatever it finds, so the expected
+  -- value is kept where no seal writes — installation.routine_bodies_md5, set
+  -- by 008 itself. Redefine operator_call() to call worker_call() and the
+  -- signature, owner, ACL, SECURITY DEFINER flag and pinned search_path all
+  -- still read right; only the body says otherwise. Definitions alone, so the
+  -- grant 12_application_grant.sql makes afterwards does not disturb it.
+  -- Asserted for the version that recorded it, and only that one: the digest
+  -- describes the routine set 008 ships, so on a tree at another schema version
+  -- — a rolled-back fixture, a future migration's own bodies — it says nothing.
+  -- A worker pinned to 4 reports unhealthy on such a tree for its own reasons.
+  AND (i.schema_version<>4
+       OR (i.routine_bodies_md5 IS NOT NULL AND i.routine_bodies_md5=h.hashes->>'routines'))
   -- ...and no routine here has drifted in how it runs. Every one is created
   -- with its search_path pinned to pg_catalog, zabalack, and ALTER FUNCTION ...
   -- SET search_path can move it afterwards: a SECURITY DEFINER body resolving
@@ -1150,4 +1194,10 @@ BEGIN
  END LOOP;
 END $$;
 
-UPDATE zabalack.installation SET schema_version=4 WHERE singleton;
+-- Recorded last, when every routine this migration ships is in place. From
+-- here the bodies are fixed: capture_health() and 13_reseal.sql compare against
+-- this value, which no seal replaces.
+UPDATE zabalack.installation
+ SET routine_bodies_md5=(SELECT zabalack.catalog_fingerprints()->>'routines'),
+     schema_version=4
+ WHERE singleton;

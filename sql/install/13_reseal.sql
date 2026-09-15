@@ -249,6 +249,18 @@ BEGIN
                              'zabalack','USAGE') THEN
   RAISE EXCEPTION 'the alerts owner has lost USAGE on schema zabalack; its capture_ack() and seal_installation() grants and the trigger installer both fail at schema access — restore the grant before sealing';
  END IF;
+ -- Every routine body is the one migration 008 shipped. This is the one
+ -- property a seal cannot answer, because a re-seal records whatever it finds:
+ -- the expected value lives in installation.routine_bodies_md5, which 008 sets
+ -- and no seal writes. A body redefined after the upgrade — operator_call()
+ -- made to call worker_call(), say — keeps its signature, owner, ACL, SECURITY
+ -- DEFINER flag and pinned search_path, and every rule here but this one reads
+ -- right.
+ IF NOT EXISTS(SELECT 1 FROM zabalack.installation i
+    WHERE i.singleton AND i.routine_bodies_md5 IS NOT NULL
+     AND i.routine_bodies_md5=(SELECT zabalack.catalog_fingerprints()->>'routines')) THEN
+  RAISE EXCEPTION 'a zabalack routine body is not the one migration 008 shipped; sealing would record the redefinition as the baseline — restore the shipped definitions before sealing';
+ END IF;
  -- No routine here has drifted in how it runs: every one keeps its search_path
  -- pinned to pg_catalog, zabalack, which ALTER FUNCTION ... SET search_path can
  -- move afterwards, and a SECURITY DEFINER body resolving an unqualified name

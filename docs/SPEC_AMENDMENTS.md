@@ -558,8 +558,13 @@ the migrations do not re-make a grant they already made —
 application role, every other function to no one — no relation here admits a
 grantee at all — the fence's identity sequence included, where `UPDATE` is
 `setval()` and a sequence moved backwards inverts the ordering the fence rests
-on — every routine here keeps its `search_path` pinned to `pg_catalog,
-zabalack`, which `ALTER FUNCTION … SET search_path` can move afterwards and
+on — every routine body is the one migration 008 shipped, the one property a
+seal cannot answer — a re-seal records whatever it finds — so the expected
+digest lives in `zabalack.installation.routine_bodies_md5`, set by 008 at the
+end of itself and written by no seal, over definitions alone; and 008 refuses to
+run on a sealed tree whose fingerprint has already drifted, so drift cannot be
+carried across the upgrade either; every routine here keeps its `search_path`
+pinned to `pg_catalog, zabalack`, which `ALTER FUNCTION … SET search_path` can move afterwards and
 through which a `SECURITY DEFINER` body would resolve an unqualified name; every
 routine anyone but its owner can execute is `SECURITY DEFINER`, `SECURITY
 INVOKER` there removing the path rather than weakening it; no grant carries
