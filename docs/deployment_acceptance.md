@@ -129,7 +129,10 @@ persists; it is changed only by `zabalack_owner`, with
 1–86400), recorded as a change under that principal — no `operator_call` operation or CLI command sets it.
 Measure the sweep's cost on the installed table: `public.alerts` carries no index for the
 `attributes ? 'zabbix_ack_sync_intent'` predicate and `zabalack_owner` cannot create one, so the bounded batch
-limits matching rows, not rows scanned. The sweep runs under its own statement budget
+limits matching rows, not rows scanned. The batch is chosen from the rows that are due, so a staging still inside
+its window takes no place in it, and a row another session holds costs a pass at most its own place in that batch:
+a pass retires the rest of what it chose, and makes no progress only if every row it chose was held at that
+moment, in which case `deferred` keeps the slot due and the next pass chooses again. The sweep runs under its own statement budget
 (`retirement_timeout_seconds`, default 30 s, distinct from the 3 s every other worker call gets); a scan that
 does not fit is cancelled, rolled back with its claim and retried every fast cycle at the same cost, and
 retirement then never happens. Record the measured scan time; where it approaches the budget, the alerts owner

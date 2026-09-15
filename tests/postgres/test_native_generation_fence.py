@@ -317,6 +317,37 @@ def test_T41_native_a_deferred_row_keeps_the_slot_due(native):
     assert worker_sweep() == {"examined": 0, "retired": 0, "deferred": 0, "skipped": "not_due"}
 
 
+def test_T41_native_a_held_row_does_not_hold_back_the_rows_behind_it(native):
+    """A mixed batch on a live table: one row another session holds, rows still
+    inside their windows, and more due rows than one batch. While the hold
+    lasts, every pass retires due rows — the held row costs a pass at most its
+    own place, the rows inside their windows cost none — until only the held
+    row is left, reported deferred with the slot kept due; released, the next
+    pass retires it. Before this the batch was chosen before expiry or locks
+    were looked at, and held or fresh rows at the front of the heap could keep
+    the due rows behind them out of every pass."""
+    sweep(native, grace=0)   # rows other modules left due are retired first
+    held_id, _, _ = stage(native)
+    fresh = [stage(native, issued=datetime.now(timezone.utc))[0] for _ in range(3)]
+    due = [stage(native)[0] for _ in range(5)]
+    with HeldTransaction(native, "alerta_app", ROW_LOCK, (held_id,)):
+        passes = []
+        while any(INTENT in attributes_of(native, alert_id) for alert_id in due):
+            passes.append(sweep(native, grace=0, limit=2))
+            assert passes[-1]["retired"] >= 1, "one held row against a batch of two: every pass retires the other place"
+            # Five due rows at one per pass beside the held row is the worst case;
+            # the slack is for a row another module staged that came due meanwhile.
+            assert len(passes) <= 8, passes
+        assert INTENT in attributes_of(native, held_id) and all(INTENT in attributes_of(native, a) for a in fresh)
+        last = sweep(native, grace=0, limit=2)
+        assert last["deferred"] >= 1, last
+        assert last["examined"] == last["retired"], "every row the pass examines is one it retires"
+        assert INTENT in attributes_of(native, held_id)
+    assert sweep(native, grace=0, limit=2)["retired"] >= 1
+    assert INTENT not in attributes_of(native, held_id)
+    assert all(INTENT in attributes_of(native, alert_id) for alert_id in fresh)
+
+
 def test_T41_native_the_cadence_claim_does_not_block_a_losing_worker(native):
     """A worker that loses the claim returns at once; it never waits out
     `statement_timeout` and is never marked unhealthy for losing."""

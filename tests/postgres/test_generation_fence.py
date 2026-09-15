@@ -566,32 +566,32 @@ def test_T41_an_unvalidatable_intent_is_retired_now_not_deferred(lab):
     assert fence(lab, alert_id) == [], "the sweep records no generation for what it retires"
 
 
-def test_T41_sweep_is_bounded(lab):
-    """The limit bounds how many rows a pass examines, not how many it retires.
-
-    The scan has no ORDER BY, so a row still inside its window that precedes
-    this module's rows in heap order is examined on every pass and would starve
-    a limit-2 pass until its window closes. That is the sweep's real behaviour,
-    bounded by the window plus grace; the test must not depend on what other
-    modules left on the table, so the limit is widened by their live rows.
-    """
-    with connect_role(lab, "alerta_owner") as owner:
-        foreign = owner.execute("SELECT count(*) FROM alerts WHERE customer<>%s AND attributes ? %s",
-                                (CUSTOMER, INTENT)).fetchone()[0]
-    for _ in range(4):
-        stage(lab)
-    limit = 2 + foreign
-    bounded = sweep(lab, limit=limit)
-    assert bounded["examined"] == limit, "a pass must not examine more rows than its limit"
-    assert bounded["retired"] <= bounded["examined"]
-    for _ in range(8):
-        sweep(lab, limit=limit)
-    with connect_role(lab, "alerta_owner") as owner:
-        remaining = owner.execute(
-            "SELECT count(*) FROM alerts WHERE customer=%s AND attributes ? %s AND "
-            "(attributes->%s->>'capture_expires_at')::timestamptz<clock_timestamp()",
-            (CUSTOMER, INTENT, INTENT)).fetchone()[0]
-    assert remaining == 0, "repeated bounded passes converge"
+def test_T41_a_bounded_pass_spends_its_batch_only_on_rows_that_are_due(lab):
+    """A mixed table: more stagings still inside their window than one batch
+    holds, and rows that are due behind them. The batch is chosen from the rows
+    that are due, so a staging inside its window takes no place in it and the
+    due rows are retired at the batch's rate whatever precedes them in heap
+    order; the batch still bounds what a pass examines, and repeated passes
+    converge. Rows other modules left inside their windows are ignored the
+    same way, so the case does not depend on what they left on the table."""
+    sweep(lab)   # rows other modules left due are retired first; rows inside their windows stay
+    fresh = [stage(lab, issued=datetime.now(timezone.utc))[0] for _ in range(3)]
+    due = [stage(lab)[0] for _ in range(4)]
+    first = sweep(lab, limit=2)
+    assert first["examined"] == 2 and first["retired"] == 2, first
+    assert all(INTENT in attributes_of(lab, alert_id) for alert_id in fresh), "a row inside its window takes no place"
+    passes = [first]
+    while any(INTENT in attributes_of(lab, alert_id) for alert_id in due):
+        passes.append(sweep(lab, limit=2))
+        assert passes[-1]["retired"] >= 1, "every pass with due rows left makes progress"
+        assert len(passes) <= 8, passes
+    assert all(INTENT in attributes_of(lab, alert_id) for alert_id in fresh)
+    # Nothing of this case is due any more. A pass may still find a row another
+    # module staged that came due meanwhile; what it must not do is spend a
+    # place on a row it then leaves inside its window.
+    after = sweep(lab, limit=2)
+    assert after["examined"] == after["retired"], "every row a pass examines is one it retires"
+    assert all(INTENT in attributes_of(lab, alert_id) for alert_id in fresh)
 
 
 # --- the generation guard ----------------------------------------------------
@@ -785,11 +785,8 @@ def test_T41_a_full_batch_keeps_the_slot_due_until_the_backlog_drains(lab):
     a batch below the limit closes the slot for the interval. Without this a
     burst waited out one interval per batch, and a sustained rate above the
     batch size per interval grew the backlog without bound."""
-    with connect_role(lab, "alerta_owner") as owner:
-        foreign = owner.execute("SELECT count(*) FROM alerts WHERE customer<>%s AND attributes ? %s",
-                                (CUSTOMER, INTENT)).fetchone()[0]
     alerts = [stage(lab)[0] for _ in range(3)]
-    limit = 2 + foreign   # other modules' live rows are examined on every pass; see test_T41_sweep_is_bounded
+    limit = 2   # rows other modules left inside their windows take no place in the batch
     with connect_role(lab, "zabalack_owner") as owner:
         owner.execute("UPDATE zabalack.installation SET retirement_due_at=NULL,retirement_interval_seconds=900 "
                       "WHERE singleton")
@@ -806,7 +803,7 @@ def test_T41_a_full_batch_keeps_the_slot_due_until_the_backlog_drains(lab):
                              "WHERE singleton").fetchone()[0] is True, "a full batch leaves the slot due"
     while passes[-1].get("continues"):
         passes.append(worker_sweep())
-        assert len(passes) <= 4, passes
+        assert len(passes) <= 8, passes
     assert "skipped" not in passes[-1] and passes[-1]["examined"] < limit
     assert all(INTENT not in attributes_of(lab, alert_id) for alert_id in alerts), "the backlog drained"
     assert worker_sweep() == {"examined": 0, "retired": 0, "deferred": 0, "skipped": "not_due"}, \

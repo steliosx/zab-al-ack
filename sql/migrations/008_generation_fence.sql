@@ -102,6 +102,37 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION zabalack.claim_retirement_slot() FROM PUBLIC;
 
+-- Whether a staged intent is due for retirement. The attribute is
+-- API-writable: its timestamps decide only whether the intent is retired now
+-- or on a later pass, and a value that fails the signer's own bounds — or one
+-- the cast rejects, a bad zone displacement as much as a bad format — is
+-- unvalidatable plaintext, retired now. Nothing here raises, so a broken
+-- value never aborts a sweep that serves every other row. capture_ack()
+-- performs no lifetime check of its own — a capture can still be recorded
+-- after the window, and verify_complete is what rejects it — so the grace
+-- margin keeps a capture in flight at expiry from becoming intent_missing.
+CREATE FUNCTION zabalack.intent_retirable(p_intent jsonb, p_grace interval, p_now timestamptz) RETURNS boolean
+LANGUAGE plpgsql STABLE SET search_path=pg_catalog,zabalack SET timezone='UTC' AS $$
+DECLARE until_at timestamptz; issued_at timestamptz;
+BEGIN
+ IF p_intent IS NULL OR jsonb_typeof(p_intent)<>'object' THEN RETURN true; END IF;
+ BEGIN
+  issued_at:=(p_intent->>'issued_at')::timestamptz;
+  until_at:=(p_intent->>'capture_expires_at')::timestamptz;
+  IF issued_at IS NULL OR until_at IS NULL
+     OR isfinite(issued_at) IS NOT TRUE OR isfinite(until_at) IS NOT TRUE
+     -- The same lifetime rule verify_complete enforces on a capture.
+     OR until_at>issued_at+interval '60 seconds' OR until_at<=issued_at
+     OR issued_at>p_now THEN
+   RETURN true;
+  END IF;
+  RETURN until_at+p_grace<=p_now;
+ EXCEPTION WHEN OTHERS THEN
+  RETURN true;
+ END;
+END $$;
+REVOKE ALL ON FUNCTION zabalack.intent_retirable(jsonb,interval,timestamptz) FROM PUBLIC;
+
 -- The bounded sweep. It removes the staged intent from live public.alerts rows
 -- once its capture window has closed by a grace margin, on every lifecycle path
 -- and independently of whether verification or delivery ever succeeds. It
@@ -109,7 +140,7 @@ REVOKE ALL ON FUNCTION zabalack.claim_retirement_slot() FROM PUBLIC;
 CREATE FUNCTION zabalack.retire_intents(p_limit integer DEFAULT 200, p_grace_seconds integer DEFAULT 300)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack SET timezone='UTC' AS $$
 DECLARE
- candidate record; intent jsonb; until_at timestamptz; issued_at timestamptz; grace interval; candidates text[];
+ candidate record; intent jsonb; grace interval; candidates text[];
  now_at timestamptz:=clock_timestamp(); examined integer:=0; retired integer:=0;
 BEGIN
  -- public.alerts carries no index for this predicate — zabalack_owner does not
@@ -119,46 +150,27 @@ BEGIN
   RETURN jsonb_build_object('examined',0,'retired',0,'deferred',0,'skipped','sweep_in_progress');
  END IF;
  grace:=make_interval(secs=>least(86400,greatest(0,coalesce(p_grace_seconds,300))));
- -- No ORDER BY: an ordered scan would sort the whole table for no benefit. Each
- -- pass removes what it processes, so the candidate set shrinks and repeated
- -- passes converge. The candidates are chosen first, without locking, so a row
- -- another session holds — an acknowledgement staging it, a projection — can be
- -- counted as deferred to the next pass rather than silently omitted; the
- -- caller keeps the slot due while any is. SKIP LOCKED then takes the rest.
+ -- No ORDER BY: an ordered scan would sort the whole table for no benefit. The
+ -- batch is chosen from the rows that are due, so a staging still inside its
+ -- window takes no place in it: a burst of fresh acknowledgements ahead of the
+ -- due rows in heap order cannot hold them back. Each pass removes what it
+ -- processes, so the candidate set shrinks and repeated passes converge. The
+ -- candidates are chosen first, without locking, so a row another session
+ -- holds — an acknowledgement staging it, a projection — is counted as
+ -- deferred to the next pass rather than silently omitted, and the caller
+ -- keeps the slot due while any is; SKIP LOCKED then takes the rest. A held
+ -- row costs a pass at most its own place: the rest of the batch is retired.
  SELECT coalesce(array_agg(id),'{}') INTO candidates FROM (SELECT id FROM public.alerts
-  WHERE attributes ? 'zabbix_ack_sync_intent' LIMIT least(1000,greatest(1,coalesce(p_limit,200)))) chosen;
+  WHERE attributes ? 'zabbix_ack_sync_intent'
+   AND zabalack.intent_retirable(attributes->'zabbix_ack_sync_intent',grace,now_at)
+  LIMIT least(1000,greatest(1,coalesce(p_limit,200)))) chosen;
  FOR candidate IN SELECT id,attributes FROM public.alerts WHERE id=ANY(candidates) FOR UPDATE SKIP LOCKED
  LOOP
   examined:=examined+1;
   intent:=candidate.attributes->'zabbix_ack_sync_intent';
-  -- Retired between the choice and the lock (a projection): nothing to do.
-  CONTINUE WHEN intent IS NULL;
-  until_at:=NULL; issued_at:=NULL;
-  -- This attribute is API-writable. Its timestamps decide only whether the
-  -- intent is retired now or on a later pass, and a value that fails the
-  -- signer's own bounds is unvalidatable plaintext: retired now.
-  IF jsonb_typeof(intent)='object' THEN
-   BEGIN
-    issued_at:=(intent->>'issued_at')::timestamptz;
-    until_at:=(intent->>'capture_expires_at')::timestamptz;
-    IF issued_at IS NULL OR until_at IS NULL
-       OR isfinite(issued_at) IS NOT TRUE OR isfinite(until_at) IS NOT TRUE
-       -- The same lifetime rule verify_complete enforces on a capture.
-       OR until_at>issued_at+interval '60 seconds' OR until_at<=issued_at
-       OR issued_at>now_at THEN
-     until_at:=NULL;
-    END IF;
-   EXCEPTION WHEN OTHERS THEN
-    -- Any value the cast rejects — a bad zone displacement as much as a bad
-    -- format — is unvalidatable plaintext. It is retired now; it never aborts
-    -- the sweep for every other row.
-    until_at:=NULL;
-   END;
-  END IF;
-  -- capture_ack() performs no lifetime check of its own: a capture can still be
-  -- recorded after the window, and verify_complete is what rejects it. The
-  -- grace margin keeps a capture in flight at expiry from becoming intent_missing.
-  CONTINUE WHEN until_at IS NOT NULL AND until_at+grace>now_at;
+  -- Retired (a projection), or staged again inside a new window, between the
+  -- choice and the lock: nothing to do.
+  CONTINUE WHEN intent IS NULL OR NOT zabalack.intent_retirable(intent,grace,now_at);
   UPDATE public.alerts SET attributes=coalesce(attributes,'{}'::jsonb)-'zabbix_ack_sync_intent'
    WHERE id=candidate.id;
   retired:=retired+1;
