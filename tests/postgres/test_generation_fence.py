@@ -1363,6 +1363,9 @@ def test_T41_row_level_security_here_is_recorded_by_nothing_else(lab, enable, di
     ("GRANT SELECT(attributes) ON public.alerts TO zabalack_probe",
      "REVOKE SELECT(attributes) ON public.alerts FROM zabalack_probe",
      "the probe at column level, where the table-level prohibition does not reach"),
+    ("GRANT MAINTAIN ON public.alerts TO zabalack_operator",
+     "REVOKE MAINTAIN ON public.alerts FROM zabalack_operator",
+     "MAINTAIN — VACUUM, CLUSTER, REINDEX — which no list of privilege names here had"),
 ])
 def test_T41_no_runtime_role_holds_anything_on_the_alerts_table(lab, give, take, what):
     """The map for the other three roles, after the owner's.
@@ -1395,7 +1398,7 @@ def test_T41_no_runtime_role_holds_anything_on_the_alerts_table(lab, give, take,
             owner.execute("SELECT zabalack.seal_installation()")
         assert health() == "false", what + " is unhealthy under a matching seal"
         with connect_role(lab, "zabalack_owner") as owner:
-            with pytest.raises(Exception, match="runtime role holds a privilege on public.alerts"):
+            with pytest.raises(Exception, match="holds a privilege on public.alerts the installation does not make"):
                 owner.execute(reseal)
     finally:
         with connect_role(lab, "alerta_owner") as owner:
@@ -1403,6 +1406,57 @@ def test_T41_no_runtime_role_holds_anything_on_the_alerts_table(lab, give, take,
         with connect_role(lab, "zabalack_owner") as owner:
             owner.execute(reseal)
     assert health() == "true"
+
+
+@pytest.mark.parametrize("give,take,what", [
+    ("GRANT CREATE ON DATABASE {db} TO zabalack_operator",
+     "REVOKE CREATE ON DATABASE {db} FROM zabalack_operator",
+     "CREATE on the database, which is arbitrary schemas and objects"),
+    ("GRANT CONNECT ON DATABASE {db} TO zabalack_worker WITH GRANT OPTION",
+     "REVOKE GRANT OPTION FOR CONNECT ON DATABASE {db} FROM zabalack_worker",
+     "a grantable CONNECT, which delegates admission to the database"),
+])
+def test_T41_a_zabalack_role_holds_nothing_on_the_database_but_connect(lab, give, take, what):
+    """The database ACL, which is in no fingerprint and was checked positively.
+
+    Rounds twenty-seven to twenty-nine asked whether each runtime role *can*
+    connect. That is positive only: a role granted `CREATE` on the database
+    still connects, and so does one whose `CONNECT` is grantable, so both
+    passed while readiness reported healthy. `00_roles.sql` grants `CONNECT`
+    and nothing else, so the rule is the entries: a `zabalack` role's own ACL
+    entry here may be `CONNECT` and must not be grantable. A null `datacl`
+    carries no entry for anyone and leaves `CONNECT` to `PUBLIC`'s default,
+    which this does not disturb.
+
+    Held to one connection deliberately. PGlite does not carry a
+    database-level `GRANT` across its multiplexed connections — the entry is
+    visible to the session that made it and gone from the next — so the
+    seal-and-reseal shape the other cases use cannot establish this one here.
+    What this does establish is the conjunct itself, against a real entry.
+    Durability of a committed `GRANT ... ON DATABASE` is PostgreSQL's, not this
+    installation's, and is not what needs asserting.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    with psycopg.connect(lab["admin_dsn"], autocommit=True) as admin:
+        database = admin.execute("SELECT current_database()").fetchone()[0]
+
+        def health():
+            admin.execute("SET ROLE zabalack_owner")
+            value = admin.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+            admin.execute("RESET ROLE")
+            return value
+
+        assert health() == "true", "precondition: the installation is healthy"
+        admin.execute(give.format(db=database))
+        try:
+            assert health() == "false", what + " is unhealthy"
+            admin.execute("SET ROLE zabalack_owner")
+            with pytest.raises(Exception, match="database privilege beyond a non-grantable CONNECT"):
+                admin.execute(reseal.replace("BEGIN;", "").replace("COMMIT;", ""))
+            admin.execute("RESET ROLE")
+        finally:
+            admin.execute(take.format(db=database))
+        assert health() == "true"
 
 
 @pytest.mark.parametrize("renamed", [True, False])

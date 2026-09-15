@@ -894,6 +894,17 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   AND NOT EXISTS(SELECT 1 FROM pg_roles r
    WHERE r.rolname IN ('zabalack_worker','zabalack_probe','zabalack_operator')
     AND (r.rolconnlimit=0 OR NOT has_database_privilege(r.oid,current_database(),'CONNECT')))
+  -- ...and hold nothing else on the database. That check is positive only, so
+  -- a runtime role granted CREATE on the database — arbitrary schemas and
+  -- objects — still passed it, and so did a grantable CONNECT, which delegates
+  -- admission to the database. Database ACLs are in no fingerprint. Read as
+  -- entries again: a zabalack role's own entry here may be CONNECT and must
+  -- not be grantable. A null datacl carries no entry for anyone and leaves
+  -- CONNECT to PUBLIC's default, which this does not disturb.
+  AND NOT EXISTS(SELECT 1 FROM pg_database d CROSS JOIN LATERAL aclexplode(d.datacl) e
+   WHERE d.datname=current_database() AND d.datacl IS NOT NULL
+    AND pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+    AND (e.privilege_type<>'CONNECT' OR e.is_grantable))
   -- ...and zabalack_owner still holds the grants 00_roles.sql makes it on
   -- public.alerts, exactly those and no more. Every rule above about this table
   -- is a prohibition, and a prohibition cannot see a grant that is *missing*.
@@ -930,11 +941,24 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- identity on any row without going through project() at all. public.alerts
   -- lies outside the schema catalog_fingerprints() hashes, so no digest moves,
   -- before a re-seal or after one. Only zabalack_owner holds anything here.
-  AND NOT EXISTS(SELECT 1 FROM unnest(ARRAY['zabalack_worker','zabalack_probe','zabalack_operator']) AS runtime(rolname)
-   WHERE has_table_privilege(runtime.rolname,'public.alerts','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-    OR EXISTS(SELECT 1 FROM pg_attribute a
-     WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0 AND NOT a.attisdropped
-      AND has_column_privilege(runtime.rolname,'public.alerts',a.attname,'SELECT,INSERT,UPDATE,REFERENCES')))
+  -- ...read from the ACL entries themselves rather than from a list of
+  -- privilege names, because such a list is a map with one row per name and
+  -- goes stale: PostgreSQL 18's MAINTAIN — VACUUM, CLUSTER, REINDEX — was in
+  -- neither the runtime-role list nor the owner's DELETE/TRUNCATE/TRIGGER one,
+  -- so GRANT MAINTAIN ON public.alerts TO zabalack_operator read healthy and
+  -- sealed. Enumerated, the rule needs no name at all: the four zabalack roles
+  -- hold no table-level entry here, the three runtime roles hold no entry of
+  -- any kind, and the owner's column entries are exactly the six 00_roles.sql
+  -- makes it.
+  AND NOT EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) e
+   WHERE c.oid='public.alerts'::regclass AND c.relacl IS NOT NULL
+    AND pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator'))
+  AND NOT EXISTS(SELECT 1 FROM pg_attribute a CROSS JOIN LATERAL aclexplode(a.attacl) e
+   WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0 AND NOT a.attisdropped AND a.attacl IS NOT NULL
+    AND (pg_get_userbyid(e.grantee) IN ('zabalack_worker','zabalack_probe','zabalack_operator')
+      OR (pg_get_userbyid(e.grantee)='zabalack_owner'
+       AND NOT ((e.privilege_type='SELECT' AND a.attname IN ('id','customer','status','attributes','update_time'))
+             OR (e.privilege_type='UPDATE' AND a.attname='attributes')))))
   AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member='zabalack_probe'::regrole)
   -- USAGE on the schema is granted to the application role for one function.
   -- That confers nothing only while no function here is executable by PUBLIC,
