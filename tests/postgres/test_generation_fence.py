@@ -784,12 +784,20 @@ def test_T41_a_pass_counts_what_still_carries_the_key_when_the_drain_asks(lab):
     assert asked["retired"] >= 1 and "continues" not in asked, asked
     assert INTENT not in attributes_of(lab, due_id) and INTENT in attributes_of(lab, fresh_id)
     assert asked["remaining"] == carrying_the_key() >= 1, asked
-    # Rows inside their windows are due within the window's bound plus grace;
-    # the slot is brought forward to then, not left at the interval, so the
-    # retry the rollback documents is not refused as not due.
-    assert 0 < slot_due_in() <= 60 and asked["slot_due_at"], (slot_due_in(), asked)
+    # The retry named is the latest any counted row can be due — its own
+    # window's end plus the grace, read from the rows — and the slot is brought
+    # forward to no later than it, not left at the interval, so the retry the
+    # rollback documents is not refused as not due and finds those rows due.
+    # A bound from the clock alone would name a later time than the rows need.
+    with connect_role(lab, "zabalack_owner") as owner:
+        latest_due = owner.execute("SELECT max((attributes->%s->>'capture_expires_at')::timestamptz) "
+                                   "FROM public.alerts WHERE attributes ? %s", (INTENT, INTENT)).fetchone()[0]
+        named = owner.execute("SELECT %s::timestamptz", (asked["retry_at"],)).fetchone()[0]
+        slot = owner.execute("SELECT retirement_due_at FROM zabalack.installation WHERE singleton").fetchone()[0]
+    assert named == latest_due and slot <= named, (named, latest_due, slot)
+    assert 0 < slot_due_in() <= 60, slot_due_in()
     unasked = pass_through_worker_call({"limit": 1000, "grace_seconds": 0})
-    assert "remaining" not in unasked and "slot_due_at" not in unasked, unasked
+    assert "remaining" not in unasked and "retry_at" not in unasked, unasked
     assert slot_due_in() > 600, "the periodic call keeps its interval"
     # Its window closed, the same row is retired and no longer counted.
     with connect_role(lab, "alerta_app") as conn:

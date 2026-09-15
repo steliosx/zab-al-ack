@@ -137,6 +137,22 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION zabalack.intent_retirable(jsonb,interval,timestamptz) FROM PUBLIC;
 
+-- When a staged intent can be due, for the drain's retry: its capture window's
+-- end plus the grace, or NULL for a value that cannot be read — such a value
+-- is unvalidatable, due now, and a later pass retires it. Never raises.
+CREATE FUNCTION zabalack.intent_due_at(p_intent jsonb, p_grace interval) RETURNS timestamptz
+LANGUAGE plpgsql STABLE SET search_path=pg_catalog,zabalack SET timezone='UTC' AS $$
+DECLARE until_at timestamptz;
+BEGIN
+ IF p_intent IS NULL OR jsonb_typeof(p_intent)<>'object' THEN RETURN NULL; END IF;
+ BEGIN
+  until_at:=(p_intent->>'capture_expires_at')::timestamptz;
+  IF until_at IS NULL OR isfinite(until_at) IS NOT TRUE THEN RETURN NULL; END IF;
+  RETURN until_at+p_grace;
+ EXCEPTION WHEN OTHERS THEN RETURN NULL; END;
+END $$;
+REVOKE ALL ON FUNCTION zabalack.intent_due_at(jsonb,interval) FROM PUBLIC;
+
 -- The bounded sweep. It removes the staged intent from live public.alerts rows
 -- once its capture window has closed by a grace margin, on every lifecycle path
 -- and independently of whether verification or delivery ever succeeds. It
@@ -357,6 +373,7 @@ DECLARE
  c zabalack.captures; a zabalack.actions; co zabalack.cohorts; ctl zabalack.instance_control; ef zabalack.effects;
  vl zabalack.verification_leases; dl zabalack.delivery_leases; inst zabalack.installation;
  worker text:=p->>'worker_id'; now_at timestamptz:=clock_timestamp(); cid uuid; aid uuid;
+ remaining_n bigint; due_by timestamptz; grace_i interval;
  generation bigint; turn bigint; slot_no integer; attempt uuid; why text; target text;
  i jsonb; result jsonb; wanted_state text; effective_state text; until_at timestamptz;
 BEGIN
@@ -674,24 +691,25 @@ BEGIN
    -- window and grace is left to a later pass by design, and the adapter
    -- that keeps the key from readers must outlive it; the count says whether
    -- it may go. The worker's periodic call does not ask and pays no second scan.
-   result := result||jsonb_build_object('remaining',
-    (SELECT count(*) FROM public.alerts WHERE attributes ? 'zabbix_ack_sync_intent'));
-   -- A count above zero is rows inside their windows, due within the window's
-   -- bound (60 seconds) plus the grace this caller applies. The slot is
-   -- brought forward to then, so the retry the rollback documents is not
-   -- refused as not due by the interval this pass claimed; the periodic call,
-   -- which does not ask, keeps the interval. The bound is taken from the
-   -- clock after the count, not from this call's entry: a staging committed
-   -- while the pass was in flight is counted, and its window runs from its
-   -- own issue, later than the entry — a bound from the entry would schedule
-   -- the retry before that row can be due, and the retry would find it still
-   -- inside its window.
-   IF (result->>'remaining')::int>0 THEN
-    UPDATE zabalack.installation SET retirement_due_at=least(retirement_due_at,
-     clock_timestamp()+interval '60 seconds'+make_interval(secs=>least(86400,greatest(0,coalesce((p->>'grace_seconds')::int,300)))))
-     WHERE singleton;
-    result := result||jsonb_build_object('slot_due_at',
-     (SELECT retirement_due_at FROM zabalack.installation WHERE singleton));
+   grace_i:=make_interval(secs=>least(86400,greatest(0,coalesce((p->>'grace_seconds')::int,300))));
+   SELECT count(*),max(zabalack.intent_due_at(attributes->'zabbix_ack_sync_intent',grace_i))
+    INTO remaining_n,due_by FROM public.alerts WHERE attributes ? 'zabbix_ack_sync_intent';
+   result := result||jsonb_build_object('remaining',remaining_n);
+   -- A count above zero is rows inside their windows. The retry is the latest
+   -- any of them can be due — its own window's end plus the grace this caller
+   -- applies, read from the rows the count saw — capped at the window's bound
+   -- from the clock after the count, which every row the count saw satisfies
+   -- unless it is unvalidatable and so due at once. The slot is brought
+   -- forward to no later than that, so the retry the rollback documents is
+   -- not refused as not due by the interval this pass claimed; a claim that
+   -- is already earlier stays, harmless. The periodic call, which does not
+   -- ask, keeps the interval; every pass that counts the same rows names the
+   -- same time, so passes in between move nothing later.
+   IF remaining_n>0 THEN
+    due_by:=least(coalesce(due_by,clock_timestamp()+interval '60 seconds'+grace_i),
+                  clock_timestamp()+interval '60 seconds'+grace_i);
+    UPDATE zabalack.installation SET retirement_due_at=least(retirement_due_at,due_by) WHERE singleton;
+    result := result||jsonb_build_object('retry_at',due_by);
    END IF;
   END IF;
   RETURN result;

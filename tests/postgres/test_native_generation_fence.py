@@ -438,12 +438,13 @@ def test_T41_native_the_retry_bound_covers_a_staging_committed_during_the_pass(n
     sweeper.join(timeout=BARRIER_TIMEOUT)
     assert not sweeper.is_alive(), "the pass did not finish once the staging committed"
     result = outcome["pass"]
-    assert "skipped" not in result and result["remaining"] >= 1 and result.get("slot_due_at"), result
+    assert "skipped" not in result and result["remaining"] >= 1 and result.get("retry_at"), result
     assert attributes_of(native, alert_id).get(INTENT) == fresh, "the staging counted is the one left inside its window"
     with connect_role(native, "zabalack_owner") as owner:
-        covers = owner.execute("SELECT retirement_due_at>=%s::timestamptz FROM zabalack.installation WHERE singleton",
-                               (fresh["capture_expires_at"],)).fetchone()[0]
-    assert covers is True, "the retry is scheduled no earlier than the counted staging can be due"
+        covers = owner.execute("SELECT retirement_due_at>=%s::timestamptz AND %s::timestamptz>=%s::timestamptz "
+                               "FROM zabalack.installation WHERE singleton",
+                               (fresh["capture_expires_at"], result["retry_at"], fresh["capture_expires_at"])).fetchone()[0]
+    assert covers is True, "the retry named, and the slot, are no earlier than the counted staging can be due"
 
 
 def test_T41_native_held_candidates_do_not_cost_the_pass_its_progress(native):

@@ -27,6 +27,7 @@ BEGIN
   OR to_regprocedure('zabalack.newest_generation(text)') IS NULL
   OR to_regprocedure('zabalack.retire_intents(integer,integer)') IS NULL
   OR to_regprocedure('zabalack.intent_retirable(jsonb,interval,timestamptz)') IS NULL
+  OR to_regprocedure('zabalack.intent_due_at(jsonb,interval)') IS NULL
   OR to_regprocedure('zabalack.claim_retirement_slot()') IS NULL
   OR to_regclass('zabalack.alert_generations') IS NULL THEN
   RAISE EXCEPTION 'schema version 4 objects absent; refusing to seal an incomplete tree';

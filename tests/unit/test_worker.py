@@ -508,7 +508,7 @@ async def test_T41_a_drain_is_not_complete_while_any_row_still_carries_the_key(m
     import argparse
     namespace = argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False)
     db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 0, "remaining": 3,
-                        "slot_due_at": "2026-09-15T16:00:00+00:00"}])
+                        "retry_at": "2026-09-15T16:00:00+00:00"}])
     result = await _standalone_reconcile(monkeypatch, db).execute(namespace)
     assert result["result"]["retirement"] == {"pages": 1, "examined": 0, "retired": 0, "deferred": 0,
                                               "remaining": 3, "complete": False,

@@ -115,10 +115,10 @@ async def drain_retirement(recon: Reconciler, *, pages: int) -> dict[str, Any]:
         if not page.get("continues"):
             remaining = page.get("remaining")
             report: dict[str, Any] = {**totals, "remaining": remaining, "complete": remaining == 0}
-            if remaining and page.get("slot_due_at") is not None:
-                # The database brought the slot forward for the rows still
-                # inside their windows: when the retry is not refused.
-                report["retry_at"] = page["slot_due_at"]
+            if remaining and page.get("retry_at") is not None:
+                # The database's word: the time by which every row it counted
+                # can be due, with the slot brought forward to no later than it.
+                report["retry_at"] = page["retry_at"]
             return report
         if not int(page.get("examined") or 0):
             break
