@@ -8,11 +8,19 @@ import logging
 import sys
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .config import ConfigError, load_settings, read_protected_file
 from .db import Postgres
 from .rpc import EndpointRegistry
+
+if TYPE_CHECKING:
+    from .reconciler import Reconciler
+
+# Pages the standalone command drains per run: each is one bounded sweep of
+# `fast_budget` rows under `retirement_timeout_seconds`, so a run is bounded
+# too, and what remains is the next run's, reported as such.
+RETIREMENT_PAGES_PER_RUN = 10
 
 
 def uuid_argument(value: str) -> str:
@@ -72,12 +80,40 @@ def parser() -> argparse.ArgumentParser:
 
 
 class RetirementError(RuntimeError):
-    """The standalone reconciliation could not retire staged intents.
+    """The standalone reconciliation did not finish retiring staged intents.
 
-    The worker's loop reports a failed sweep and retries it next cycle; the
-    standalone command has no next cycle of its own, and a run that leaves
-    intents on live rows must not read as a completed cleanup.
+    The worker's loop reports a failed sweep and retries it next cycle, and
+    lets the slot carry an unfinished batch to its next cycle; the standalone
+    command has no next cycle of its own, and a run that leaves intents on
+    live rows must not read as a completed cleanup.
     """
+
+
+async def drain_retirement(recon: Reconciler, *, pages: int) -> dict[str, Any]:
+    """Retire due intents page by page and say whether the drain finished.
+
+    `complete` is true only when a sweep ran and left nothing due behind it —
+    not when the slot was not due or another sweep held it (`skipped`), not
+    when the sweep failed (`error`), and not when the run stopped with work
+    remaining (`continues`): its pages spent, or a page that made no progress
+    over rows other sessions hold, which asking again within one run would
+    only spin on.
+    """
+    totals: dict[str, Any] = {"pages": 0, "examined": 0, "retired": 0, "deferred": 0}
+    for _ in range(max(1, pages)):
+        page = await recon.retire_intents()
+        if "error" in page:
+            return {**totals, "error": page["error"], "complete": False}
+        if page.get("skipped"):
+            return {**totals, "skipped": page["skipped"], "complete": False}
+        totals["pages"] += 1
+        for key in ("examined", "retired", "deferred"):
+            totals[key] += int(page.get(key) or 0)
+        if not page.get("continues"):
+            return {**totals, "complete": True}
+        if not int(page.get("examined") or 0):
+            break
+    return {**totals, "continues": True, "complete": False}
 
 
 async def execute(args: argparse.Namespace) -> Any:
@@ -107,18 +143,22 @@ async def execute(args: argparse.Namespace) -> Any:
         # Retirement of staged intents (A5 stage two) rides every reconciliation
         # cycle, not only the worker's: with the worker stopped and the
         # standalone unit kept, as the rollback keeps it, abandoned intents on
-        # live rows must still be retired. It is a local database operation;
-        # this command still sends no source write.
-        result["retirement"] = await recon.retire_intents()
+        # live rows must still be retired. The worker asks once per cycle and
+        # the slot carries the rest to its next cycle; this command drains page
+        # by page, bounded. It is a local database operation; this command
+        # still sends no source write.
+        result["retirement"] = await drain_retirement(recon, pages=RETIREMENT_PAGES_PER_RUN)
         if args.nightly:
             result["nightly"] = await recon.nightly_sweep()
         # A sweep that failed — its scan outrunning `retirement_timeout_seconds`
-        # on an unindexed table, a transient error — is retried by the worker's
-        # next cycle; this command has none, so it fails instead of reporting
-        # the run as complete, and the rollback's automation cannot take a
-        # cleanup that did not happen for one that did.
-        if "error" in result["retirement"]:
-            raise RetirementError(str(result["retirement"]["error"]))
+        # on an unindexed table, a transient error — or a drain that stopped
+        # with work remaining is the worker's next cycle to retry or continue;
+        # this command has none, so it fails instead of reporting the run as
+        # complete, and the rollback's automation cannot take a cleanup that
+        # did not happen for one that did.
+        retirement = result["retirement"]
+        if "error" in retirement or retirement.get("continues"):
+            raise RetirementError("retirement_failed" if "error" in retirement else "retirement_incomplete")
         return {"source_writes": False, "result": result}
     if args.command in {"status", "doctor", "verifier-health", "inspect"}:
         payload = {"state": args.state, "limit": min(200, max(1, args.limit))} if args.command == "inspect" else {}

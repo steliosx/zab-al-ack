@@ -392,6 +392,24 @@ class FailingSweepDB(FakeDB):
         return await super().call(op, payload)
 
 
+class PagedSweepDB(FakeDB):
+    """A database whose retirement sweep answers from a script of pages."""
+
+    def __init__(self, pages):
+        super().__init__()
+        self.pages = list(pages)
+
+    async def call(self, op, payload=None):
+        if op == "retire_intents":
+            self.calls.append((op, copy.deepcopy(payload)))
+            return self.pages.pop(0) if self.pages else {"examined": 0, "retired": 0, "deferred": 0}
+        return await super().call(op, payload)
+
+
+def _sweeps(db):
+    return [op for op, _ in db.calls if op == "retire_intents"]
+
+
 def _standalone_reconcile(monkeypatch, db):
     from zabalack import cli
     monkeypatch.setattr(cli, "load_settings", lambda path: Settings(worker_dsn_file="/reviewed/worker.dsn", cohorts=(COHORT,)))
@@ -424,6 +442,65 @@ def test_T41_a_failed_retirement_is_a_non_zero_exit_with_no_error_text_rendered(
     assert json.loads(captured.err.strip().splitlines()[-1]) == {"ok": False, "error_class": "RetirementError"}
     assert "statement timeout" not in captured.err and captured.out == ""
     assert cli.main(["--config", "unused", "reconcile", "--read-only", "--once"]) == 1, "every run fails alike"
+
+
+@pytest.mark.asyncio
+async def test_T41_the_standalone_reconcile_command_drains_the_due_intents_page_by_page(monkeypatch):
+    """The worker asks once per cycle and the slot carries a full or deferred
+    batch to its next cycle; the standalone command has no next cycle inside a
+    run, so it keeps asking while the sweep reports `continues`, and reports
+    the drain complete only when a sweep left nothing due behind it."""
+    import argparse
+    db = PagedSweepDB([{"examined": 200, "retired": 200, "deferred": 0, "continues": True},
+                       {"examined": 200, "retired": 199, "deferred": 1, "continues": True},
+                       {"examined": 3, "retired": 3, "deferred": 0}])
+    cli = _standalone_reconcile(monkeypatch, db)
+    result = await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert result["result"]["retirement"] == {"pages": 3, "examined": 403, "retired": 402, "deferred": 1, "complete": True}
+    assert len(_sweeps(db)) == 3, "a page that continues is followed by another within the run"
+
+
+@pytest.mark.asyncio
+async def test_T41_a_drain_that_stops_with_work_remaining_fails_the_run(monkeypatch):
+    """A run is bounded: after its pages, what remains is the next run's, and
+    this run is not a completed cleanup. Before this the command exited 0 after
+    one page with `continues` set and staged intents still on live rows."""
+    import argparse
+    db = PagedSweepDB([{"examined": 200, "retired": 200, "deferred": 0, "continues": True}] * 40)
+    cli = _standalone_reconcile(monkeypatch, db)
+    with pytest.raises(cli.RetirementError):
+        await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert len(_sweeps(db)) == cli.RETIREMENT_PAGES_PER_RUN, "the run drains its pages, then stops"
+
+
+@pytest.mark.asyncio
+async def test_T41_a_drain_over_rows_other_sessions_hold_does_not_spin(monkeypatch):
+    """A page that examined nothing left only rows other sessions hold; asking
+    again within the run would spin on them. The run stops, incomplete."""
+    import argparse
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 2, "continues": True}] * 10)
+    cli = _standalone_reconcile(monkeypatch, db)
+    with pytest.raises(cli.RetirementError):
+        await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert len(_sweeps(db)) == 1
+
+
+@pytest.mark.asyncio
+async def test_T41_a_slot_that_is_not_due_is_neither_a_failure_nor_a_completed_drain(monkeypatch):
+    """Another caller claimed this interval's slot: the ordinary answer beside
+    a running worker. The run succeeds and says the drain is not complete."""
+    import argparse
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 0, "skipped": "not_due"}])
+    cli = _standalone_reconcile(monkeypatch, db)
+    result = await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert result["result"]["retirement"] == {"pages": 0, "examined": 0, "retired": 0, "deferred": 0,
+                                              "skipped": "not_due", "complete": False}
+
+
+def test_T41_an_incomplete_drain_is_a_non_zero_exit(monkeypatch, capsys):
+    cli = _standalone_reconcile(monkeypatch, PagedSweepDB([{"examined": 200, "retired": 200, "deferred": 0, "continues": True}] * 40))
+    assert cli.main(["--config", "unused", "reconcile", "--read-only", "--once"]) == 1
+    assert json.loads(capsys.readouterr().err.strip().splitlines()[-1]) == {"ok": False, "error_class": "RetirementError"}
 
 
 @pytest.mark.asyncio
