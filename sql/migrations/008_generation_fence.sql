@@ -680,10 +680,15 @@ BEGIN
    -- bound (60 seconds) plus the grace this caller applies. The slot is
    -- brought forward to then, so the retry the rollback documents is not
    -- refused as not due by the interval this pass claimed; the periodic call,
-   -- which does not ask, keeps the interval.
+   -- which does not ask, keeps the interval. The bound is taken from the
+   -- clock after the count, not from this call's entry: a staging committed
+   -- while the pass was in flight is counted, and its window runs from its
+   -- own issue, later than the entry — a bound from the entry would schedule
+   -- the retry before that row can be due, and the retry would find it still
+   -- inside its window.
    IF (result->>'remaining')::int>0 THEN
     UPDATE zabalack.installation SET retirement_due_at=least(retirement_due_at,
-     now_at+interval '60 seconds'+make_interval(secs=>least(86400,greatest(0,coalesce((p->>'grace_seconds')::int,300)))))
+     clock_timestamp()+interval '60 seconds'+make_interval(secs=>least(86400,greatest(0,coalesce((p->>'grace_seconds')::int,300)))))
      WHERE singleton;
     result := result||jsonb_build_object('slot_due_at',
      (SELECT retirement_due_at FROM zabalack.installation WHERE singleton));

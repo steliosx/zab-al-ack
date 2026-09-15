@@ -409,6 +409,43 @@ def test_T41_native_a_staging_committed_during_the_sweep_is_left_alone(native):
     assert INTENT not in attributes_of(native, alert_id)
 
 
+def test_T41_native_the_retry_bound_covers_a_staging_committed_during_the_pass(native):
+    """A pass asked to count is held at its scan while an acknowledgement stages
+    a new intent on a row and commits; the count sees that row, and the retry
+    the pass schedules must be no earlier than the moment that row can be due
+    — its window runs from its own issue, after the pass began. A bound taken
+    from the pass's entry scheduled the retry before that, and the retry found
+    the row still inside its window and pushed the next attempt out again."""
+    alert_id, event_id, _ = stage(native)   # its previous intent is due
+    with connect_role(native, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.installation SET retirement_due_at=NULL,retirement_interval_seconds=900 "
+                      "WHERE singleton")
+    outcome = {}
+
+    def pass_in_flight():
+        with connect_role(native, "zabalack_worker") as worker:
+            outcome["pass"] = worker.execute(
+                "SELECT zabalack.worker_call('retire_intents',%s)",
+                (Jsonb({"limit": 1000, "grace_seconds": 0, "report_remaining": True}),)).fetchone()[0]
+
+    sweeper = threading.Thread(target=pass_in_flight, daemon=True)
+    with HeldTransaction(native, "alerta_app", "SELECT 1") as staging:
+        staging.run("LOCK TABLE public.alerts IN ACCESS EXCLUSIVE MODE")
+        sweeper.start()
+        wait_until_waiting_on(native, "public.alerts")
+        fresh = intent_for(alert_id, event_id)   # issued now: after the pass began
+        staging.run("SELECT zabalack.stage_generation(%s,%s,%s)", (alert_id, fresh["action_id"], Jsonb(fresh)))
+    sweeper.join(timeout=BARRIER_TIMEOUT)
+    assert not sweeper.is_alive(), "the pass did not finish once the staging committed"
+    result = outcome["pass"]
+    assert "skipped" not in result and result["remaining"] >= 1 and result.get("slot_due_at"), result
+    assert attributes_of(native, alert_id).get(INTENT) == fresh, "the staging counted is the one left inside its window"
+    with connect_role(native, "zabalack_owner") as owner:
+        covers = owner.execute("SELECT retirement_due_at>=%s::timestamptz FROM zabalack.installation WHERE singleton",
+                               (fresh["capture_expires_at"],)).fetchone()[0]
+    assert covers is True, "the retry is scheduled no earlier than the counted staging can be due"
+
+
 def test_T41_native_held_candidates_do_not_cost_the_pass_its_progress(native):
     """Three due rows, a batch of two: the two that come first in heap order —
     the order the scan chooses in — are held by another session, the third is
