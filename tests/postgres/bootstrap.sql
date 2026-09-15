@@ -10,11 +10,14 @@ CREATE ROLE zabalack_installer LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHER
 -- A second application login, for the change-of-application-role case: no
 -- members, no memberships, exactly what the rules require of one.
 CREATE ROLE alerta_app_next LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+-- ...and one that cannot open a session at all, for the case where the named
+-- application role is one Alerta could never connect as.
+CREATE ROLE alerta_app_nologin NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
 GRANT alerta_owner TO zabalack_installer;
 GRANT USAGE,CREATE ON SCHEMA public TO alerta_owner;
 CREATE SCHEMA zabalack AUTHORIZATION zabalack_owner;
 REVOKE ALL ON SCHEMA zabalack FROM PUBLIC;
 GRANT USAGE ON SCHEMA zabalack TO zabalack_worker,zabalack_probe,zabalack_operator,alerta_owner;
-GRANT USAGE ON SCHEMA public TO zabalack_owner,alerta_app,alerta_app_next;
+GRANT USAGE ON SCHEMA public TO zabalack_owner,alerta_app,alerta_app_next,alerta_app_nologin;
 -- Load actual pinned upstream alerta/sql/schema.sql as SET ROLE alerta_owner;
 -- then apply bootstrap_after_schema.sql and run migrations SET ROLE zabalack_owner.

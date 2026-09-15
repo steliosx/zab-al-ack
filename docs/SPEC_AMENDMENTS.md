@@ -569,7 +569,12 @@ every function grant below still reads exactly right, so verification and
 delivery stop behind a probe reporting healthy — as does the alerts owner,
 a separate role wherever the deployment splits the application from it, whose
 005 `capture_ack()` and `seal_installation()` grants and whose `10_trigger.sql`
-run both fail at schema access without it; the three runtime roles still hold `CONNECT` on the database, the last
+run both fail at schema access without it; the recorded application role can still open a session as itself —
+`rolcanlogin`, no connection limit of zero, and `CONNECT` on the database —
+Alerta connecting *as* that role with no member of it permitted, so one that
+cannot connect leaves nothing able to stage behind grants that read exactly
+right (`rolvaliduntil` is not asserted, binding password authentication only);
+the three runtime roles still hold `CONNECT` on the database, the last
 grant `00_roles.sql` makes that nothing asserted, and a silent one — revoke it
 and `capture_health()` answers normally through the probe's existing session
 while the worker never connects again; `zabalack_owner` still holds exactly the

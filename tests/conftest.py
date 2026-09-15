@@ -32,7 +32,7 @@ def pg_lab():
             pytest.fail('zabalack schema already exists: use a fresh disposable database; fixture never deletes existing data')
         admin.execute((ROOT/'tests/postgres/bootstrap.sql').read_text())
         dbname=admin.execute('SELECT current_database()').fetchone()[0]
-        admin.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO alerta_owner,alerta_app,zabalack_owner,zabalack_worker,zabalack_probe,zabalack_operator,zabalack_installer,alerta_app_next').format(sql.Identifier(dbname)))
+        admin.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO alerta_owner,alerta_app,zabalack_owner,zabalack_worker,zabalack_probe,zabalack_operator,zabalack_installer,alerta_app_next,alerta_app_nologin').format(sql.Identifier(dbname)))
         admin.execute('SET ROLE alerta_owner')
         admin.execute(source.read_text())
         admin.execute('RESET ROLE')

@@ -829,6 +829,17 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   AND EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
    WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner
     AND e.grantee<>0 AND pg_get_userbyid(e.grantee)=i.application_role)
+  -- ...and it can still open a session as itself. Alerta connects as this role
+  -- and no member of it is permitted, so there is no other way in: a role
+  -- altered to NOLOGIN, given a connection limit of zero, or stripped of
+  -- CONNECT leaves every eligible acknowledgement refused with
+  -- zabalack_generation_unavailable while every grant below still reads exactly
+  -- right. None of these is an ACL this schema hashes. rolvaliduntil is not
+  -- checked: it binds password authentication only, and a certificate-
+  -- authenticated role outlives it.
+  AND EXISTS(SELECT 1 FROM pg_roles r WHERE r.rolname=i.application_role
+   AND r.rolcanlogin AND r.rolconnlimit<>0
+   AND has_database_privilege(r.oid,current_database(),'CONNECT'))
   -- ...and that role holds USAGE on the schema, without which its fully
   -- qualified call fails at schema access behind a passing probe.
   AND EXISTS(SELECT 1 FROM pg_roles r WHERE r.rolname=i.application_role

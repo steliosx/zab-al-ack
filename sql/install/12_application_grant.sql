@@ -57,6 +57,26 @@ UPDATE zabalack.installation SET application_role=(SELECT pg_get_userbyid(e.gran
  CROSS JOIN LATERAL aclexplode(p.proacl) e
  WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner AND e.grantee<>0)
  WHERE singleton;
+-- And it must be able to open a session as itself. Alerta connects as this role
+-- and no member of it is permitted, so a role that cannot connect leaves the
+-- deployment with no credential able to stage at all, behind grants that read
+-- exactly right: every acknowledgement is refused zabalack_generation_unavailable.
+-- This script is one transaction, so refusing here rolls back the revoke above
+-- as well and the former grantee keeps the entry point. rolcanlogin and a
+-- connection limit of zero block a session outright; rolvaliduntil is not
+-- checked, binding password authentication only, and neither is pg_hba, which
+-- this script cannot read.
+DO $$
+DECLARE target name;
+BEGIN
+ SELECT i.application_role INTO target FROM zabalack.installation i WHERE i.singleton;
+ IF NOT EXISTS(SELECT 1 FROM pg_roles r WHERE r.rolname=target AND r.rolcanlogin AND r.rolconnlimit<>0) THEN
+  RAISE EXCEPTION 'the application role % cannot open a session (NOLOGIN, or a connection limit of zero); Alerta connects as it and no member may assume it — name the role the application actually connects as',target;
+ END IF;
+ IF NOT has_database_privilege(target,current_database(),'CONNECT') THEN
+  RAISE EXCEPTION 'the application role % has no CONNECT on this database; Alerta connects as it — grant CONNECT, or name the role the application actually connects as',target;
+ END IF;
+END $$;
 -- A member of that role inherits its privileges, or can SET ROLE to it, and is
 -- a second credential able to stage while the ACL still names one grantee.
 -- zabalack_owner holds no ADMIN OPTION on the application role and cannot

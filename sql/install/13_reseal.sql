@@ -78,6 +78,15 @@ BEGIN
       AND e.grantee<>0 AND pg_get_userbyid(e.grantee)=i.application_role)) THEN
   RAISE EXCEPTION 'zabalack.stage_generation() must have exactly one grantee, the recorded application role; run sql/install/12_application_grant.sql for that role, or revoke any other, before sealing';
  END IF;
+ -- ...and it can still open a session as itself. Alerta connects as this role
+ -- and no member of it is permitted, so a role altered to NOLOGIN, given a
+ -- connection limit of zero, or stripped of CONNECT leaves nothing able to
+ -- stage, behind grants that all read correctly.
+ IF NOT EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles r ON r.rolname=i.application_role
+    WHERE i.singleton AND r.rolcanlogin AND r.rolconnlimit<>0
+     AND has_database_privilege(r.oid,current_database(),'CONNECT')) THEN
+  RAISE EXCEPTION 'the recorded application role cannot open a session (NOLOGIN, a connection limit of zero, or no CONNECT on this database); Alerta connects as it and no member may assume it — restore that before sealing';
+ END IF;
  -- That role must also hold USAGE on the schema: without it the fully
  -- qualified call fails at schema access, and a seal over that would leave
  -- every eligible acknowledgement failing behind a passing probe.

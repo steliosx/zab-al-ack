@@ -1905,6 +1905,73 @@ def test_T41_without_public_usage_the_owner_fails_closed_and_the_reseal_says_why
         assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
+def test_T41_the_grant_script_refuses_an_application_role_that_cannot_log_in(lab):
+    """Alerta connects *as* the application role, and no member of it is allowed.
+
+    So a role that cannot open a session leaves the deployment with no credential
+    able to stage at all — and the script revokes the former grantee before it
+    records the new one, so naming such a role would take the working credential
+    away and put nothing in its place, behind grants that read exactly right.
+    The script is one transaction: refusing rolls the revoke back with it, which
+    this asserts rather than assumes.
+    """
+    grant = (ROOT / "sql/install/12_application_grant.sql").read_text()
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT rolcanlogin FROM pg_roles "
+                             "WHERE rolname='alerta_app_nologin'").fetchone()[0] is False
+        with pytest.raises(Exception, match="cannot open a session"):
+            owner.execute(grant.replace(':"alert_app_role"', '"alerta_app_nologin"'))
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT application_role FROM zabalack.installation "
+                             "WHERE singleton").fetchone()[0] == "alerta_app"
+        # The working credential is untouched: the revoke rolled back too.
+        assert owner.execute("SELECT has_function_privilege('alerta_app',"
+                             "'zabalack.stage_generation(text,uuid,jsonb)','EXECUTE')").fetchone()[0] is True
+        assert owner.execute("SELECT has_schema_privilege('alerta_app','zabalack','USAGE')").fetchone()[0] is True
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
+@pytest.mark.parametrize("give,take,what", [
+    ("ALTER ROLE alerta_app NOLOGIN", "ALTER ROLE alerta_app LOGIN",
+     "the recorded role made NOLOGIN"),
+    ("ALTER ROLE alerta_app CONNECTION LIMIT 0", "ALTER ROLE alerta_app CONNECTION LIMIT -1",
+     "the recorded role given a connection limit of zero"),
+])
+def test_T41_the_recorded_application_role_can_still_open_a_session(lab, give, take, what):
+    """...and it must keep being able to, after the install as well as during it.
+
+    None of `rolcanlogin`, `rolconnlimit` or `CONNECT` is an ACL this schema
+    hashes, so altering the recorded role moves no digest and every grant below
+    still reads exactly right, while every eligible acknowledgement is refused
+    `zabalack_generation_unavailable`. `rolvaliduntil` is deliberately not
+    asserted: it binds password authentication only, and a certificate-
+    authenticated role outlives it.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    # Lab-only: role attributes are the superuser's to change.
+    with connect_role(lab, "zabalack_owner") as admin:
+        admin.execute("RESET ROLE")
+        admin.execute(give)
+        admin.execute("SELECT zabalack.seal_installation()")
+    try:
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="cannot open a session"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as admin:
+            admin.execute("RESET ROLE")
+            admin.execute(take)
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 def test_T41_a_recorded_installer_holds_the_owner_role_and_nothing_else(lab):
     """The exemption the record makes, and its limit.
 
