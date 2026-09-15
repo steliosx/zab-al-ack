@@ -387,6 +387,20 @@ BEGIN
  END IF;
  -- 008 does not touch the trigger definition, so its fingerprint must still
  -- match the sealed one. A mismatch here means something else moved.
+ -- Row-level security is recorded by no ACL, no ownership rule and no digest.
+ -- On public.alerts without a policy for zabalack_owner it silences
+ -- stage_generation(), which runs as that role and neither owns the table nor
+ -- holds BYPASSRLS: every eligible acknowledgement answers 503 behind a
+ -- passing probe. Inside zabalack the owner bypasses RLS, so only FORCE bites
+ -- there — and it bites every routine here at once.
+ IF (SELECT c.relrowsecurity OR c.relforcerowsecurity FROM pg_class c
+   WHERE c.oid='public.alerts'::regclass) THEN
+  RAISE EXCEPTION 'row-level security is enabled on public.alerts; zabalack_owner neither owns that table nor holds BYPASSRLS, so stage_generation() would write nothing and every acknowledgement would fail — disable it, or give this installation explicit policies and re-review, before sealing';
+ END IF;
+ IF EXISTS(SELECT 1 FROM pg_class c WHERE c.relnamespace='zabalack'::regnamespace
+   AND c.relkind IN ('r','p') AND (c.relrowsecurity OR c.relforcerowsecurity)) THEN
+  RAISE EXCEPTION 'row-level security is enabled on a table in zabalack; forced, it filters the owner its own routines run as — disable it before sealing';
+ END IF;
  IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m JOIN pg_trigger t
    ON t.tgrelid='public.alerts'::regclass AND t.tgname='zabalack_capture'
    WHERE m.singleton AND md5(pg_get_triggerdef(t.oid))=m.trigger_md5) THEN

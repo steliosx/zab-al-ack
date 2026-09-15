@@ -1179,6 +1179,9 @@ SEQUENCE = "zabalack.alert_generations_seq_seq"
      " session and not between them, while last_value stands at the end of them all"),
     ("SELECT setval('" + SEQUENCE + "',1,true)", "stands below a generation already recorded", 2,
      "a sequence set back below a generation already recorded"),
+    ("SELECT setval('" + SEQUENCE + "',(SELECT max(seq) FROM zabalack.alert_generations),false)",
+     "stands below a generation already recorded", 2,
+     "a sequence set to the current maximum but not called, whose next value repeats it"),
 ])
 def test_T41_the_fence_sequence_still_counts_upward_from_where_it_is(lab, drift, refusal, rows, what):
     """The fence's order is a sequence, and no digest can see it.
@@ -1294,6 +1297,55 @@ def test_T41_the_sequence_validated_is_the_one_the_identity_column_draws_from(la
             for statement in restore:
                 owner.execute(statement)
             owner.execute("DELETE FROM zabalack.alert_generations WHERE alert_id='sequence-decoy-lab'")
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+@pytest.mark.parametrize("enable,disable,owner_role,refusal,what", [
+    ("ALTER TABLE public.alerts ENABLE ROW LEVEL SECURITY",
+     "ALTER TABLE public.alerts DISABLE ROW LEVEL SECURITY", "alerta_owner",
+     "row-level security is enabled on public.alerts",
+     "public.alerts, which zabalack_owner neither owns nor bypasses"),
+    ("ALTER TABLE zabalack.alert_generations FORCE ROW LEVEL SECURITY",
+     "ALTER TABLE zabalack.alert_generations NO FORCE ROW LEVEL SECURITY", "zabalack_owner",
+     "row-level security is enabled on a table in zabalack",
+     "a table in zabalack, where only FORCE reaches the owner its routines run as"),
+])
+def test_T41_row_level_security_here_is_recorded_by_nothing_else(lab, enable, disable, owner_role, refusal, what):
+    """A filter no ACL, no ownership rule and no digest can see.
+
+    `stage_generation()` is `SECURITY DEFINER` as `zabalack_owner`, which does
+    not own `public.alerts` and holds no `BYPASSRLS`, so row-level security
+    enabled there without a policy for it silences the write: every eligible
+    acknowledgement answers 503. Reproduced exactly that way — the staging
+    failed with `new row violates row-level security policy` while
+    `functions_ok` and `trigger_ok` both read `true`, before the seal and
+    after one, and `13_reseal.sql` accepted the tree. Inside `zabalack` the
+    owner bypasses RLS, so only `FORCE` bites; it then bites every routine
+    here at once.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, owner_role) as owner:
+        owner.execute(enable)
+    try:
+        assert health() == "false", what + " is unhealthy"
+        with connect_role(lab, "zabalack_owner") as owner:
+            # Lab-only: seal over it, as every upgrade's re-seal would. No ACL,
+            # owner or digest moved, so this is the only thing that sees it.
+            owner.execute("SELECT zabalack.seal_installation()")
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match=refusal):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, owner_role) as owner:
+            owner.execute(disable)
+        with connect_role(lab, "zabalack_owner") as owner:
             owner.execute(reseal)
     assert health() == "true"
 

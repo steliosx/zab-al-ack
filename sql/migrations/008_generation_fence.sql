@@ -933,6 +933,18 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- ...and while the sequence behind it still counts upward from where it
   -- stands, which no digest can see at all. See generation_order_intact().
   AND zabalack.generation_order_intact()
+  -- Row-level security filters what a role may see and write, and no ACL, no
+  -- ownership and no digest records it. Enabled on public.alerts without a
+  -- policy for zabalack_owner, stage_generation() — SECURITY DEFINER as that
+  -- role, which does not own that table and holds no BYPASSRLS — writes
+  -- nothing and every eligible acknowledgement answers 503, while the grant
+  -- map, the ownership rules and both sealed digests read exactly right.
+  -- Inside this schema the owner bypasses RLS, so only FORCE bites there, and
+  -- it bites every routine here at once.
+  AND NOT (SELECT c.relrowsecurity OR c.relforcerowsecurity FROM pg_class c
+   WHERE c.oid='public.alerts'::regclass)
+  AND NOT EXISTS(SELECT 1 FROM pg_class c WHERE c.relnamespace='zabalack'::regnamespace
+   AND c.relkind IN ('r','p') AND (c.relrowsecurity OR c.relforcerowsecurity))
   -- ...and no sequence here is attached to nothing. Every sequence this schema
   -- ships is the identity generator of a column in it; one that generates for
   -- no column was created by hand, and its only use is to stand under a name a
