@@ -274,6 +274,43 @@ def test_T40_restricted_sort_is_refused(search_api, sort_by):
     assert_refused(request(lab, endpoint="/alerts", **{"sort-by": sort_by}))
 
 
+def test_T40_a_compound_sort_key_never_reaches_the_restricted_attribute(search_api):
+    """The guard reads a `sort-by` value exactly as `sort_by_columns()` does.
+
+    Upstream iterates `params.getlist('sort-by')` and validates each whole value
+    against `VALID_PARAMS`; it never splits one on commas. So
+    `sort-by=severity,attributes.<restricted>` is one unknown field name, not two
+    sort keys, and upstream answers 400 naming the whole string — nothing sorts
+    on the restricted key. The guard therefore does not split either, and the
+    repeated-parameter form, which is how the API really takes several sort
+    keys, is refused by the guard itself
+    (`test_T40_restricted_sort_is_refused` covers the single key).
+
+    This case pins the upstream behaviour the guard's reading rests on: an
+    Alerta that started splitting the value would turn this 400 into a 200
+    sorted on the restricted key, and this case fails the moment it does. The
+    400 body carries the redacted message, not upstream's, which would have
+    echoed the restricted key back to the reader.
+    """
+    lab = search_api
+    identity, _event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    compound = f"severity,attributes.{INTENT_ATTRIBUTE}"
+    response = request(lab, endpoint="/alerts", **{"sort-by": compound})
+    # 400 is the pin: an Alerta that split the value would find two valid sort
+    # keys and answer 200, ordered on the restricted attribute.
+    assert response.status_code == 400, response.get_data(as_text=True)
+    # Upstream's own message names the field it rejected, so the redaction
+    # layer replaces it rather than echoing the restricted key back.
+    assert INTENT_ATTRIBUTE not in response.get_data(as_text=True), \
+        "the refusal must not echo the restricted key"
+    # And the form that does carry two sort keys is refused by the guard.
+    two_keys = lab.client.get("/alerts", headers={"Authorization": lab.reader},
+                              query_string=[("sort-by", "severity"),
+                                            ("sort-by", f"attributes.{INTENT_ATTRIBUTE}")])
+    assert_refused(two_keys)
+
+
 @pytest.mark.parametrize("endpoint", ["/alerts/topn/count", "/alerts/topn/flapping", "/alerts/topn/standing"])
 def test_T40_whole_attributes_grouping_is_refused(search_api, endpoint):
     """`group-by=attributes` makes the aggregates select the whole object.
