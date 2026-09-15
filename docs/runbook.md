@@ -42,7 +42,7 @@ zabalack --config /reviewed/config.json reconcile --read-only --once
 zabalack --config /reviewed/config.json reconcile --read-only --nightly
 ```
 
-Reconciliation is source-read-only but records DB outcomes and may repair projections. It uses bounded due work; an empty queue must cause no Zabbix read. Every reconciliation cycle, the worker's and the standalone command's alike, also asks the database to retire staged intents (`retire_intents`, A5 stage two), a local operation that sends no source write; with the worker stopped, the standalone unit is what keeps abandoned intents from staying on live rows. The worker normally schedules the 60-second fast cycle, bounded nightly sweep and 15-minute approved-host inventory. The standalone reconciliation unit is one-shot; the supplied timer is optional and is never installed or started automatically.
+Reconciliation is source-read-only but records DB outcomes and may repair projections. It uses bounded due work; an empty queue must cause no Zabbix read. Every reconciliation cycle, the worker's and the standalone command's alike, also asks the database to retire staged intents (`retire_intents`, A5 stage two), a local operation that sends no source write; with the worker stopped, the standalone unit is what keeps abandoned intents from staying on live rows, and a standalone run whose retirement fails exits non-zero rather than reporting the cycle complete. The worker normally schedules the 60-second fast cycle, bounded nightly sweep and 15-minute approved-host inventory. The standalone reconciliation unit is one-shot; the supplied timer is optional and is never installed or started automatically.
 
 Examples for a **later authorised** operational change:
 

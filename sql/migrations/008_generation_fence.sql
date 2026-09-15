@@ -144,8 +144,8 @@ REVOKE ALL ON FUNCTION zabalack.intent_retirable(jsonb,interval,timestamptz) FRO
 CREATE FUNCTION zabalack.retire_intents(p_limit integer DEFAULT 200, p_grace_seconds integer DEFAULT 300)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack SET timezone='UTC' AS $$
 DECLARE
- candidate record; intent jsonb; grace interval; candidates text[];
- now_at timestamptz:=clock_timestamp(); examined integer:=0; retired integer:=0;
+ candidate record; intent jsonb; grace interval; batch integer; candidates text[]; taken text[];
+ examined integer:=0; retired integer:=0; deferred integer:=0;
 BEGIN
  -- public.alerts carries no index for this predicate — zabalack_owner does not
  -- own the table and cannot create one — so LIMIT bounds matching rows, not rows
@@ -154,37 +154,56 @@ BEGIN
   RETURN jsonb_build_object('examined',0,'retired',0,'deferred',0,'skipped','sweep_in_progress');
  END IF;
  grace:=make_interval(secs=>least(86400,greatest(0,coalesce(p_grace_seconds,300))));
+ batch:=least(1000,greatest(1,coalesce(p_limit,200)));
  -- No ORDER BY: an ordered scan would sort the whole table for no benefit. The
  -- batch is chosen from the rows that are due, so a staging still inside its
  -- window takes no place in it: a burst of fresh acknowledgements ahead of the
  -- due rows in heap order cannot hold them back. Each pass removes what it
- -- processes, so the candidate set shrinks and repeated passes converge. The
- -- candidates are chosen first, without locking, so a row another session
- -- holds — an acknowledgement staging it, a projection — is counted as
- -- deferred to the next pass rather than silently omitted, and the caller
- -- keeps the slot due while any is; SKIP LOCKED then takes the rest. A held
- -- row costs a pass at most its own place: the rest of the batch is retired.
+ -- processes, so the candidate set shrinks and repeated passes converge.
+ -- The predicate is evaluated against the clock at that moment — here, in the
+ -- top-up below and under the lock — never against a time saved when the sweep
+ -- began: the scan of a large table is long enough for an acknowledgement to
+ -- be staged on a row it has yet to reach, and against a saved time that
+ -- staging would read as issued in the future, unvalidatable, retired at once.
  SELECT coalesce(array_agg(id),'{}') INTO candidates FROM (SELECT id FROM public.alerts
   WHERE attributes ? 'zabbix_ack_sync_intent'
-   AND zabalack.intent_retirable(attributes->'zabbix_ack_sync_intent',grace,now_at)
-  LIMIT least(1000,greatest(1,coalesce(p_limit,200)))) chosen;
- FOR candidate IN SELECT id,attributes FROM public.alerts WHERE id=ANY(candidates) FOR UPDATE SKIP LOCKED
+   AND zabalack.intent_retirable(attributes->'zabbix_ack_sync_intent',grace,clock_timestamp())
+  LIMIT batch) chosen;
+ -- The candidates are chosen first, without locking, so a row another session
+ -- holds — an acknowledgement staging it, a projection — is counted as
+ -- deferred to the next pass rather than silently omitted, and the caller
+ -- keeps the slot due while any is; SKIP LOCKED takes the rest.
+ SELECT coalesce(array_agg(id),'{}') INTO taken FROM (SELECT id FROM public.alerts
+  WHERE id=ANY(candidates) FOR UPDATE SKIP LOCKED) locked;
+ deferred:=coalesce(array_length(candidates,1),0)-coalesce(array_length(taken,1),0);
+ -- A held candidate costs the pass nothing: its place is filled from the due
+ -- rows beyond the candidates, locking as it goes so that whatever else is
+ -- held is skipped as well. A pass therefore makes progress whenever any due
+ -- row is free, however many held rows precede it in heap order. Before this
+ -- the batch was the first rows that were due, held or not, and enough held
+ -- rows at the front of the heap had every pass choosing them again.
+ IF deferred>0 THEN
+  SELECT taken||coalesce(array_agg(id),'{}') INTO taken FROM (SELECT id FROM public.alerts
+   WHERE attributes ? 'zabbix_ack_sync_intent' AND NOT (id=ANY(candidates))
+    AND zabalack.intent_retirable(attributes->'zabbix_ack_sync_intent',grace,clock_timestamp())
+   LIMIT batch-coalesce(array_length(taken,1),0) FOR UPDATE SKIP LOCKED) filled;
+ END IF;
+ FOR candidate IN SELECT id,attributes FROM public.alerts WHERE id=ANY(taken) FOR UPDATE
  LOOP
   examined:=examined+1;
   intent:=candidate.attributes->'zabbix_ack_sync_intent';
-  -- Retired (a projection), or staged again inside a new window, between the
-  -- choice and the lock: nothing to do.
-  CONTINUE WHEN intent IS NULL OR NOT zabalack.intent_retirable(intent,grace,now_at);
+  -- Retired (a projection), or staged again, between the choice and the lock:
+  -- the row is read under its lock against the clock now, and left alone.
+  CONTINUE WHEN intent IS NULL OR NOT zabalack.intent_retirable(intent,grace,clock_timestamp());
   UPDATE public.alerts SET attributes=coalesce(attributes,'{}'::jsonb)-'zabbix_ack_sync_intent'
    WHERE id=candidate.id;
   retired:=retired+1;
  END LOOP;
  IF retired>0 THEN
   INSERT INTO zabalack.audit(operation,actor_ref,details) VALUES('retire_intents',session_user,
-   jsonb_build_object('examined',examined,'retired',retired));
+   jsonb_build_object('examined',examined,'retired',retired,'deferred',deferred));
  END IF;
- RETURN jsonb_build_object('examined',examined,'retired',retired,
-  'deferred',greatest(0,coalesce(array_length(candidates,1),0)-examined));
+ RETURN jsonb_build_object('examined',examined,'retired',retired,'deferred',deferred);
 END $$;
 REVOKE ALL ON FUNCTION zabalack.retire_intents(integer,integer) FROM PUBLIC;
 
@@ -693,7 +712,11 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
    WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner)=1
   AND EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
    WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner
-    AND e.grantee<>0 AND pg_get_userbyid(e.grantee)=i.application_role),
+    AND e.grantee<>0 AND pg_get_userbyid(e.grantee)=i.application_role)
+  -- ...and that role holds USAGE on the schema, without which its fully
+  -- qualified call fails at schema access behind a passing probe.
+  AND EXISTS(SELECT 1 FROM pg_roles r WHERE r.rolname=i.application_role
+   AND has_schema_privilege(r.oid,'zabalack','USAGE')),
  'checked_at',clock_timestamp()) FROM zabalack.installation i LEFT JOIN zabalack.readiness_manifest m USING(singleton)
  CROSS JOIN LATERAL (SELECT zabalack.catalog_fingerprints() hashes) h WHERE i.singleton;
 $$;

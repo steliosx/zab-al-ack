@@ -526,9 +526,10 @@ former role's credentials able to stage, and records the grantee in
 `zabalack.installation.application_role`. `USAGE` confers nothing on its own only
 while no function in the schema is executable by `PUBLIC`, the fence admits no
 grantee but its owner, and the entry point's only non-owner grantee is the
-recorded role; `capture_health()` asserts all three under `functions_ok`, so a
-regression there marks every worker unhealthy, and `13_reseal.sql` refuses to
-seal a tree that breaks any of them. The function is `SECURITY
+recorded role, which holds `USAGE` on the schema (without it the qualified call
+fails at schema access behind a passing probe); `capture_health()` asserts all
+four under `functions_ok`, so a regression there marks every worker unhealthy,
+and `13_reseal.sql` refuses to seal a tree that breaks any of them. The function is `SECURITY
 DEFINER` with a pinned `search_path`, binds the intent to the staging (its
 `action_id`, `alert_id` and the row's customer) and refuses an `action_id`
 already recorded rather than re-staging it.

@@ -55,6 +55,13 @@ BEGIN
       AND e.grantee<>0 AND pg_get_userbyid(e.grantee)=i.application_role)) THEN
   RAISE EXCEPTION 'zabalack.stage_generation() must have exactly one grantee, the recorded application role; run sql/install/12_application_grant.sql for that role, or revoke any other, before sealing';
  END IF;
+ -- That role must also hold USAGE on the schema: without it the fully
+ -- qualified call fails at schema access, and a seal over that would leave
+ -- every eligible acknowledgement failing behind a passing probe.
+ IF NOT EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles r ON r.rolname=i.application_role
+    WHERE i.singleton AND has_schema_privilege(r.oid,'zabalack','USAGE')) THEN
+  RAISE EXCEPTION 'the recorded application role does not hold USAGE on schema zabalack; run sql/install/12_application_grant.sql for that role before sealing';
+ END IF;
  -- A fresh installation has no manifest yet: it is sealed by 10_trigger.sql
  -- under the alerts owner, not re-sealed here.
  IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m WHERE m.singleton) THEN

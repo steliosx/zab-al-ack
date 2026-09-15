@@ -88,8 +88,9 @@ that role also holds 005's grants — `capture_ack()` for the trigger and `seal_
 which are expected and are the reason §2 of the deployment guide prefers a separate login role; record which
 topology applies. The script revokes the entry point from any former grantee and records the role in
 `zabalack.installation.application_role`; confirm that `zabalack.stage_generation()` has that one non-owner grantee
-and no other, that no function in `zabalack` is executable by `PUBLIC`, and that `zabalack.alert_generations`
-admits no grantee but its owner. `capture_health()` asserts all three under `functions_ok` even under a matching
+and no other and that the role holds `USAGE` on the schema, that no function in `zabalack` is executable by
+`PUBLIC`, and that `zabalack.alert_generations` admits no grantee but its owner. `capture_health()` asserts all
+four under `functions_ok` even under a matching
 seal, `13_reseal.sql` refuses to seal a tree that breaks any of them, and a false value there is a real
 misconfiguration, not a probe fault. A change of application role is a re-run of the grant script for the new role
 followed by a re-seal, recorded as a change.
@@ -133,9 +134,13 @@ persists; it is changed only by `zabalack_owner`, with
 Measure the sweep's cost on the installed table: `public.alerts` carries no index for the
 `attributes ? 'zabbix_ack_sync_intent'` predicate and `zabalack_owner` cannot create one, so the bounded batch
 limits matching rows, not rows scanned. The batch is chosen from the rows that are due, so a staging still inside
-its window takes no place in it, and a row another session holds costs a pass at most its own place in that batch:
-a pass retires the rest of what it chose, and makes no progress only if every row it chose was held at that
-moment, in which case `deferred` keeps the slot due and the next pass chooses again. The sweep runs under its own statement budget
+its window takes no place in it, and a row another session holds costs a pass nothing: its place is filled from
+the due rows beyond it, skipping whatever else is held, so a pass makes progress whenever any due row is free,
+and the held rows are reported as `deferred`, which keeps the slot due for them. The due test is made against
+the clock at each evaluation, never a time saved when the sweep began, so an acknowledgement staged on a row
+while the scan is in flight is left inside its window when the sweep reaches it; that test and the verifier's
+(`captured_at` no earlier than `issued_at`) share one requirement, that the application host's clock does not
+run ahead of the database's. The sweep runs under its own statement budget
 (`retirement_timeout_seconds`, default 30 s, distinct from the 3 s every other worker call gets); a scan that
 does not fit is cancelled, rolled back with its claim and retried every fast cycle at the same cost, and
 retirement then never happens. Record the measured scan time; where it approaches the budget, the alerts owner

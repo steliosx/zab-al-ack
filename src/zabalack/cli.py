@@ -71,6 +71,15 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+class RetirementError(RuntimeError):
+    """The standalone reconciliation could not retire staged intents.
+
+    The worker's loop reports a failed sweep and retries it next cycle; the
+    standalone command has no next cycle of its own, and a run that leaves
+    intents on live rows must not read as a completed cleanup.
+    """
+
+
 async def execute(args: argparse.Namespace) -> Any:
     settings = load_settings(args.config)
     if args.command == "config-check":
@@ -103,6 +112,13 @@ async def execute(args: argparse.Namespace) -> Any:
         result["retirement"] = await recon.retire_intents()
         if args.nightly:
             result["nightly"] = await recon.nightly_sweep()
+        # A sweep that failed — its scan outrunning `retirement_timeout_seconds`
+        # on an unindexed table, a transient error — is retried by the worker's
+        # next cycle; this command has none, so it fails instead of reporting
+        # the run as complete, and the rollback's automation cannot take a
+        # cleanup that did not happen for one that did.
+        if "error" in result["retirement"]:
+            raise RetirementError(str(result["retirement"]["error"]))
         return {"source_writes": False, "result": result}
     if args.command in {"status", "doctor", "verifier-health", "inspect"}:
         payload = {"state": args.state, "limit": min(200, max(1, args.limit))} if args.command == "inspect" else {}

@@ -15,6 +15,7 @@ import importlib.util
 from pathlib import Path
 import shutil
 import threading
+import time
 import uuid
 
 import psycopg
@@ -140,6 +141,10 @@ class HeldTransaction:
         thread is blocked on an event, not on the connection.
         """
         return self.conn.execute(statement, params).fetchone()
+
+    def run(self, statement, params=None):
+        """One more statement in the held transaction that returns no rows."""
+        self.conn.execute(statement, params)
 
     def __exit__(self, *exc):
         self.release.set()
@@ -346,6 +351,92 @@ def test_T41_native_a_held_row_does_not_hold_back_the_rows_behind_it(native):
     assert sweep(native, grace=0, limit=2)["retired"] >= 1
     assert INTENT not in attributes_of(native, held_id)
     assert all(INTENT in attributes_of(native, alert_id) for alert_id in fresh)
+
+
+def wait_until_waiting_on(lab, relation):
+    """Block until some session is waiting for a lock on `relation`."""
+    deadline = time.monotonic() + BARRIER_TIMEOUT
+    with psycopg.connect(lab["admin_dsn"], autocommit=True) as admin:
+        while time.monotonic() < deadline:
+            if admin.execute("SELECT count(*) FROM pg_locks WHERE relation=%s::regclass AND NOT granted",
+                             (relation,)).fetchone()[0]:
+                return
+            time.sleep(0.02)
+    raise AssertionError(f"no session came to wait on {relation}")
+
+
+def test_T41_native_a_staging_committed_during_the_sweep_is_left_alone(native):
+    """The concurrent acknowledgement race. A sweep begins while a row's previous
+    intent is due; before its scan reaches the row, an acknowledgement stages a
+    new intent there and commits. Reaching the row, the sweep must test it
+    against the clock and leave the new staging inside its window. Against the
+    time saved when the sweep began, the new intent read as issued in the
+    future — unvalidatable — and was retired at once, and the acknowledgement's
+    capture then found no intent on the row.
+
+    The lab holds the sweep at its scan with an ACCESS EXCLUSIVE lock on the
+    table, taken by the staging session and released by its commit; the sweep
+    is the shipped function, unchanged, and the staging goes through the
+    protected operation. The sweep is seen waiting before the intent is issued,
+    so its start precedes the staging by construction."""
+    alert_id, event_id, previous = stage(native)   # its previous intent is due
+    outcome = {}
+
+    def sweep_in_flight():
+        outcome["sweep"] = sweep(native, grace=0)
+
+    sweeper = threading.Thread(target=sweep_in_flight, daemon=True)
+    with HeldTransaction(native, "alerta_app", "SELECT 1") as staging:
+        staging.run("LOCK TABLE public.alerts IN ACCESS EXCLUSIVE MODE")
+        sweeper.start()
+        wait_until_waiting_on(native, "public.alerts")
+        fresh = intent_for(alert_id, event_id)   # issued now: after the sweep began
+        staging.run("SELECT zabalack.stage_generation(%s,%s,%s)", (alert_id, fresh["action_id"], Jsonb(fresh)))
+    sweeper.join(timeout=BARRIER_TIMEOUT)
+    assert not sweeper.is_alive(), "the sweep did not finish once the staging committed"
+    assert "skipped" not in outcome["sweep"], outcome["sweep"]
+    after = attributes_of(native, alert_id)
+    assert after.get(INTENT) == fresh, "a staging committed while the sweep was in flight is left inside its window"
+    assert after[ACTION_KEY] == fresh["action_id"]
+    assert [row[0] for row in fence(native, alert_id)] == [previous["action_id"], fresh["action_id"]]
+    # Once its window has closed, the same row is retired like any other.
+    with connect_role(native, "alerta_app") as conn:
+        conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
+                     (Jsonb({INTENT: intent_for(alert_id, event_id, issued=datetime.now(timezone.utc)
+                                                - timedelta(minutes=10), action_id=fresh["action_id"])}),
+                      alert_id))
+    assert sweep(native, grace=0)["retired"] >= 1
+    assert INTENT not in attributes_of(native, alert_id)
+
+
+def test_T41_native_held_candidates_do_not_cost_the_pass_its_progress(native):
+    """Three due rows, a batch of two: the two that come first in heap order —
+    the order the scan chooses in — are held by another session, the third is
+    free. The batch's places are the held rows, and a pass must still retire
+    the free row while both holds last. Before this the batch was the first
+    rows that were due, held or not; every pass chose the same two held rows
+    again, and the free row behind them waited for the holds to lift,
+    `deferred` keeping the slot due to no effect. Heap order is read, not
+    assumed: reused line pointers put a later row ahead of an earlier one."""
+    sweep(native, grace=0)   # rows other modules left due are retired first
+    rows = [stage(native)[0] for _ in range(3)]
+    with connect_role(native, "alerta_owner") as owner:
+        ordered = [row[0] for row in owner.execute(
+            "SELECT id FROM public.alerts WHERE id=ANY(%s) ORDER BY ctid", (rows,)).fetchall()]
+    held, free_id = ordered[:2], ordered[2]
+    with HeldTransaction(native, "alerta_app", ROW_LOCK, (held[0],)), \
+         HeldTransaction(native, "alerta_app", ROW_LOCK, (held[1],)):
+        first = sweep(native, grace=0, limit=2)
+        assert first["deferred"] == 2, first
+        assert first["retired"] >= 1, "the free row is retired while both holds last"
+        assert INTENT not in attributes_of(native, free_id)
+        assert all(INTENT in attributes_of(native, alert_id) for alert_id in held)
+        again = sweep(native, grace=0, limit=2)
+        assert again["deferred"] == 2 and again["examined"] == again["retired"], again
+        assert all(INTENT in attributes_of(native, alert_id) for alert_id in held)
+    released = sweep(native, grace=0, limit=2)
+    assert released["retired"] >= 2 and released["deferred"] == 0, released
+    assert all(INTENT not in attributes_of(native, alert_id) for alert_id in held)
 
 
 def test_T41_native_the_cadence_claim_does_not_block_a_losing_worker(native):

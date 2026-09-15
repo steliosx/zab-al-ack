@@ -838,6 +838,9 @@ def test_T41_the_readiness_manifest_must_be_resealed_after_the_migration(lab):
     ("REVOKE EXECUTE ON FUNCTION zabalack.stage_generation(text,uuid,jsonb) FROM alerta_app",
      "GRANT EXECUTE ON FUNCTION zabalack.stage_generation(text,uuid,jsonb) TO alerta_app",
      "no grantee at all on the staging entry point: every acknowledgement would fail behind a passing probe"),
+    ("REVOKE USAGE ON SCHEMA zabalack FROM alerta_app",
+     "GRANT USAGE ON SCHEMA zabalack TO alerta_app",
+     "the recorded role without USAGE on the schema: its qualified call would fail at schema access behind a passing probe"),
 ])
 def test_T41_a_seal_over_a_public_function_or_a_fence_grantee_stays_unhealthy(lab, grant, revoke, what):
     """`catalog_fingerprints()` hashes ACLs, so a stray grant flips `functions_ok`

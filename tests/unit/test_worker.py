@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -379,6 +380,50 @@ async def test_T41_the_standalone_reconcile_command_retires_intents(monkeypatch)
     assert result["source_writes"] is False
     assert [op for op, _ in db.calls if op == "retire_intents"] == ["retire_intents"], db.calls
     assert "retirement" in result["result"]
+
+
+class FailingSweepDB(FakeDB):
+    """A database whose retirement sweep fails — its scan outrunning its budget."""
+
+    async def call(self, op, payload=None):
+        if op == "retire_intents":
+            self.calls.append((op, copy.deepcopy(payload)))
+            raise RuntimeError("canceling statement due to statement timeout")
+        return await super().call(op, payload)
+
+
+def _standalone_reconcile(monkeypatch, db):
+    from zabalack import cli
+    monkeypatch.setattr(cli, "load_settings", lambda path: Settings(worker_dsn_file="/reviewed/worker.dsn", cohorts=(COHORT,)))
+    monkeypatch.setattr(cli, "read_protected_file", lambda path: b"postgresql://unused")
+    monkeypatch.setattr(cli, "Postgres", lambda dsn, **kwargs: db)
+    return cli
+
+
+@pytest.mark.asyncio
+async def test_T41_the_standalone_reconcile_command_fails_when_retirement_fails(monkeypatch):
+    """The worker reports a failed sweep and retries it next cycle; the
+    standalone command has no next cycle, so a sweep that fails must fail the
+    run rather than report it complete — the rollback's automation must not
+    take a cleanup that did not happen for one that did. The rest of the cycle
+    still runs first; the failure is the run's verdict, not a short-circuit."""
+    import argparse
+    db = FailingSweepDB()
+    cli = _standalone_reconcile(monkeypatch, db)
+    with pytest.raises(cli.RetirementError):
+        await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert [op for op, _ in db.calls if op == "retire_intents"] == ["retire_intents"]
+
+
+def test_T41_a_failed_retirement_is_a_non_zero_exit_with_no_error_text_rendered(monkeypatch, capsys):
+    """Through the entry point automation runs: exit status 1, the error class
+    on stderr and nothing of the database's message, as for every failure."""
+    cli = _standalone_reconcile(monkeypatch, FailingSweepDB())
+    assert cli.main(["--config", "unused", "reconcile", "--read-only", "--once"]) == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.err.strip().splitlines()[-1]) == {"ok": False, "error_class": "RetirementError"}
+    assert "statement timeout" not in captured.err and captured.out == ""
+    assert cli.main(["--config", "unused", "reconcile", "--read-only", "--once"]) == 1, "every run fails alike"
 
 
 @pytest.mark.asyncio
