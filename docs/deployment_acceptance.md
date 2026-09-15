@@ -98,7 +98,9 @@ or as any role it can assume, the alerts owner's own `capture_ack()` and `seal_i
 that is the application role — and that `zabalack.alert_generations` admits no grantee but its owner. A stray grant
 moves the digests, so it reads unhealthy until a re-seal agrees with it; the effective-rights assertion is what
 survives that seal, and `worker_call()` in the application's hands is a signature check skipped. `capture_health()`
-asserts all of it under `functions_ok` even under a matching
+asserts all of it under `functions_ok` — together with the verification path for every role, not only the application's:
+`zabalack.worker_call(text,jsonb)` and `zabalack.project(uuid)` are executable by `zabalack_worker` alone and that role has no
+members, since whoever reaches `worker_call()` records captures as verified without the signature check — even under a matching
 seal, `13_reseal.sql` refuses to seal a tree that breaks any of them, and a false value there is a real
 misconfiguration, not a probe fault. A change of application role is a re-run of the grant script for the new role
 followed by a re-seal, recorded as a change.

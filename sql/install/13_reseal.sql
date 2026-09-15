@@ -105,6 +105,21 @@ BEGIN
      AND has_table_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')) THEN
   RAISE EXCEPTION 'the recorded application role holds a privilege on a zabalack table; revoke it before sealing';
  END IF;
+ -- And the verification path answers to zabalack_worker alone, whoever the
+ -- application role is: worker_call() carries the verification operations and
+ -- project() writes the acknowledgement through. A seal over a stray grant on
+ -- either would certify a second credential able to record a capture as
+ -- verified with no signature check.
+ IF EXISTS(SELECT 1 FROM pg_roles r CROSS JOIN pg_proc p
+    WHERE p.oid IN ('zabalack.worker_call(text,jsonb)'::regprocedure,'zabalack.project(uuid)'::regprocedure)
+     AND NOT r.rolsuper AND r.oid<>p.proowner AND r.rolname<>'zabalack_worker'
+     AND has_function_privilege(r.oid,p.oid,'EXECUTE')) THEN
+  RAISE EXCEPTION 'a role other than zabalack_worker can execute zabalack.worker_call() or zabalack.project(); revoke that grant before sealing';
+ END IF;
+ IF EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
+    WHERE m.roleid='zabalack_worker'::regrole AND NOT mm.rolsuper) THEN
+  RAISE EXCEPTION 'zabalack_worker has members, each able to assume it and reach the verification path; revoke those memberships before sealing';
+ END IF;
  -- A fresh installation has no manifest yet: it is sealed by 10_trigger.sql
  -- under the alerts owner, not re-sealed here.
  IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m WHERE m.singleton) THEN

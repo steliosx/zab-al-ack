@@ -543,7 +543,15 @@ A stray grant does move the digests and reads unhealthy through them — until a
 re-seal, which every upgrade performs, agrees with it; this assertion is what
 still holds afterwards. `capture_health()` asserts all of it under
 `functions_ok`, so a regression there marks every worker unhealthy, and
-`13_reseal.sql` refuses to seal a tree that breaks any of it. The function is `SECURITY
+`13_reseal.sql` refuses to seal a tree that breaks any of it. The same two
+assert the verification path for every role, not only the application's:
+`worker_call(text,jsonb)` and `project(uuid)` are executable by
+`zabalack_worker` alone, which has no members of its own — whoever reaches
+`worker_call()` claims verification leases and calls `verify_complete`, and the
+acknowledgement is then recorded as verified with no signature check on the way.
+Every one of these ACLs is hashed, so a stray grant reads unhealthy through the
+digests; what these assertions add is that it stays unhealthy after the re-seal
+an upgrade performs. The function is `SECURITY
 DEFINER` with a pinned `search_path`, binds the intent to the staging (its
 `action_id`, `alert_id` and the row's customer) and refuses an `action_id`
 already recorded rather than re-staging it.

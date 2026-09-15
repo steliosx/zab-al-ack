@@ -800,7 +800,24 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   AND NOT EXISTS(SELECT 1 FROM pg_roles a JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER')
    CROSS JOIN pg_class c WHERE a.rolname=i.application_role
     AND c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m')
-    AND has_table_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')),
+    AND has_table_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))
+  -- The verification path answers to zabalack_worker alone, whoever the
+  -- application role is. worker_call() claims verification leases and carries
+  -- verify_complete, hold_capture and reject_capture; project() writes the
+  -- acknowledgement through. Either in another role's hands records a capture
+  -- as verified with no signature check on the way. Their ACLs are hashed, so a
+  -- stray grant reads unhealthy through the digests — until a re-seal, which
+  -- every upgrade performs, makes them agree with it; this is the assertion
+  -- that survives that seal. Superusers are not counted, and neither is the
+  -- owner, which can execute what it owns whatever the ACL says.
+  AND NOT EXISTS(SELECT 1 FROM pg_roles r CROSS JOIN pg_proc p
+   WHERE p.oid IN ('zabalack.worker_call(text,jsonb)'::regprocedure,'zabalack.project(uuid)'::regprocedure)
+    AND NOT r.rolsuper AND r.oid<>p.proowner AND r.rolname<>'zabalack_worker'
+    AND has_function_privilege(r.oid,p.oid,'EXECUTE'))
+  -- ...and no role may assume zabalack_worker to reach them: a NOINHERIT member
+  -- resolves no privilege above, and SET ROLE is open to it.
+  AND NOT EXISTS(SELECT 1 FROM pg_auth_members m JOIN pg_roles mm ON mm.oid=m.member
+   WHERE m.roleid='zabalack_worker'::regrole AND NOT mm.rolsuper),
  'checked_at',clock_timestamp()) FROM zabalack.installation i LEFT JOIN zabalack.readiness_manifest m USING(singleton)
  CROSS JOIN LATERAL (SELECT zabalack.catalog_fingerprints() hashes) h WHERE i.singleton;
 $$;
