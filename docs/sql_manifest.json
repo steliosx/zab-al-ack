@@ -21,7 +21,7 @@
     },
     {
       "path": "sql/install/13_reseal.sql",
-      "sha256": "67b17e8ccd0881524e780b605751fcf8e6a3cbc4d9922f86d8c8f9b6a12a84d6"
+      "sha256": "7890d70d0678f7307fa0ae0bf536c94b47957e8e112efaf7e58b2c81a898256f"
     },
     {
       "path": "sql/migrate.py",
@@ -57,7 +57,7 @@
     },
     {
       "path": "sql/migrations/008_generation_fence.sql",
-      "sha256": "7fb632b1978a750d83ebab2a9a9ddf2590849fc4d38e3c1aa8ec55bed9d570c9"
+      "sha256": "f5fe74abe2b9c049f26a91c72caf54f2f3a3d84c1f387a5ab6b328dd0b05a010"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",
@@ -68,5 +68,5 @@
       "sha256": "5bfbb4ecbb5f14f0fff45e40f9d60027dd7b5ea760849d52e1a2a6b0f0f1b7c8"
     }
   ],
-  "database_schema_version": 3
+  "database_schema_version": 4
 }

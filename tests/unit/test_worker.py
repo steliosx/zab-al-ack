@@ -364,6 +364,52 @@ async def test_DB_transport_acquisition_has_true_overall_deadline(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_T41_the_retirement_sweep_runs_under_its_own_statement_budget(monkeypatch):
+    """Every other call keeps the 3-second statement timeout; the sweep's scan
+    of public.alerts is bounded by the installed table, so it gets the
+    configured budget, with an overall deadline that covers it."""
+    from zabalack.db import Postgres
+    db = Postgres("synthetic-unused", operation_budgets={"retire_intents": 30})
+    assert db.budget_for("worker", "status") == (3000, 8.0)
+    assert db.budget_for("worker", "retire_intents") == (30000, 34.0)
+    assert db.budget_for("operator", "retire_intents") == (3000, 8.0), "an operator call never inherits it"
+    import psycopg
+    statements = []
+
+    class Transaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class Cursor:
+        async def fetchone(self):
+            return ({"examined": 0, "retired": 0},)
+
+    class Connection:
+        def transaction(self):
+            return Transaction()
+
+        async def execute(self, statement, params=None):
+            statements.append(statement)
+            return Cursor()
+
+        async def close(self):
+            pass
+
+    async def connect(*args, **kwargs):
+        return Connection()
+
+    monkeypatch.setattr(psycopg.AsyncConnection, "connect", connect)
+    assert await db.call("retire_intents", {"limit": 200}) == {"examined": 0, "retired": 0}
+    assert statements[0] == "SET LOCAL statement_timeout = 30000"
+    statements.clear()
+    await db.call("status")
+    assert statements[0] == "SET LOCAL statement_timeout = 3000"
+
+
+@pytest.mark.asyncio
 async def test_T31_cancel_after_send_records_unknown_not_unsent():
     import asyncio
     started = asyncio.Event()

@@ -70,6 +70,7 @@ An unresolved remote attempt cannot be retried merely because a reference is abs
 | Source deliberately unacknowledged after delivery | Record drift; do not automatically re-acknowledge |
 | Source event no longer visible | Quarantine and investigate. Inaccessibility does not independently prove deletion/housekeeping |
 | Projection lag / absent target | Repair from ledger through its restricted function. Never replay the source side effect to repair UI state |
+| Acknowledgement failed after its staging committed (signer or capture 503 with `zabbix_ack_sync=pending`, `awaiting_capture`) | The staging's generation is recorded and permanent; the earlier action's re-projection is refused (`projection_action_generation_mismatch`) until an acknowledgement goes through the protected operation again. Fix the cause, then acknowledge again; the sweep retires the stale intent. Never edit the fence |
 | Site failover | Fence old side-effecting consumers before activating the replacement; retain unknown attempts and account for replication RPO |
 
 During an urgent source outage, the NOC may acknowledge the **exact verified event** directly in Zabbix under its existing authority and record the action. Reconciliation can observe acknowledgement without attribution. Never send engineer notes, actor names, internal alert/action IDs or proof markers into the customer-visible neutral comment.

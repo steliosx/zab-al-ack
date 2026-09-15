@@ -468,10 +468,28 @@ request's own Alerta connection — so it runs as the role Alerta connects as, t
 only role granted it — and commits it explicitly before returning, because
 `process_action()` commits `update_tags()` before `update_attributes()` and a
 write left pending would ride the wrong commit. Alerta's later whole-object write
-of the same dictionary changes nothing. If the operation fails for any reason the
-transaction is rolled back and the acknowledgement is refused with
+of the same dictionary leaves the reserved keys as the operation wrote them; as
+on every attribute write, it drops keys whose value is null — the nullable
+source-contract keys among them — which is upstream behaviour the fence neither
+changes nor depends on. If the operation fails for any reason the transaction is
+rolled back and the acknowledgement is refused with
 `zabalack_generation_unavailable` (503): no staging exists without its generation
 recorded, and the plugin fails closed when deployed ahead of the grant.
+
+A staging is made only for an acknowledgement Alerta will record as one.
+`from_action()` decides the alarm-model transition from the history after the
+hook returns — after the protected commit — and for a shelved, closed or expired
+alert raises (409), while for one in `assign` it keeps the status (200); no
+signed status write follows either. The signer takes the same decision first,
+from the same history, and such a request stages nothing: nothing to capture,
+nothing to supersede. What remains is a staging whose status write fails after
+the commit — a refused signing, a capture fault. Its fence row is permanent and
+the sweep retires its intent; it is superseded only by a later acknowledgement
+through the protected operation, and until then the earlier action's
+re-projection is refused with `projection_action_generation_mismatch`. That is
+the designed answer — the newest attempt on the alert is the one whose staging
+committed last, and the refused older projection is reported, never applied —
+and the operator's remedy is to acknowledge again.
 
 The newest generation for an alert is the highest-sequence row recorded at
 staging; rows recorded by observation — `capture_ack()` as a fallback for
@@ -480,8 +498,8 @@ it, and the migration's backfill — rank below every staging-recorded row
 whatever their sequence, so a capture arriving late can never promote an older
 acknowledgement above a newer staging. A replayed older `action_id` already
 exists and is a no-op; a never-seen forged id can only be recorded at the
-observation tier, and only through a capture, which `PUT /alert/<id>/attributes`
-cannot produce. `project()` takes its action row, the generation lock, then the
+observation tier, and only through a capture that bound — marker, intent and
+row in agreement — which `PUT /alert/<id>/attributes` cannot produce. `project()` takes its action row, the generation lock, then the
 alert row — the order staging takes the last two — and refuses with
 `projection_action_generation_mismatch` unless its action is the newest
 generation, or with `projection_generation_unknown` when none is recorded. The
@@ -493,7 +511,9 @@ a capture whose intent validated, and that capture (or the backfill) recorded
 its generation, so the fence sees everything `capture_order` saw — and under
 two concurrent acknowledgements the two orders can disagree, B staged after A
 but captured first, and refuse both actions forever. The fallback records only
-an intent bound to the row it captured on, and every cast of an API-writable
+a capture that bound — an unbound, malformed or bypassed one can never be
+verified into an action, and recorded it would be the newest generation on an
+alert without a staging-recorded row — and every cast of an API-writable
 timestamp in the sweep and in `project()` treats a value the cast rejects as
 unvalidatable — retired now, or refused — rather than raising out of a sweep
 that serves every other row.

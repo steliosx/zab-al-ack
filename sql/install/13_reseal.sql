@@ -30,6 +30,22 @@ BEGIN
   OR to_regclass('zabalack.alert_generations') IS NULL THEN
   RAISE EXCEPTION 'schema version 4 objects absent; refusing to seal an incomplete tree';
  END IF;
+ -- The application role's USAGE on the schema rests on these two facts, which
+ -- capture_health() asserts under functions_ok. A seal over a tree that breaks
+ -- either would make the digests agree with a real misconfiguration: refuse.
+ IF EXISTS(SELECT 1 FROM pg_proc p WHERE p.pronamespace='zabalack'::regnamespace
+   AND (p.proacl IS NULL OR EXISTS(SELECT 1 FROM aclexplode(p.proacl) e WHERE e.grantee=0))) THEN
+  RAISE EXCEPTION 'a zabalack function is executable by PUBLIC; revoke that before sealing';
+ END IF;
+ IF EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) e
+   WHERE c.oid='zabalack.alert_generations'::regclass AND e.grantee<>c.relowner) THEN
+  RAISE EXCEPTION 'zabalack.alert_generations admits a grantee other than its owner; revoke that before sealing';
+ END IF;
+ -- A fresh installation has no manifest yet: it is sealed by 10_trigger.sql
+ -- under the alerts owner, not re-sealed here.
+ IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m WHERE m.singleton) THEN
+  RAISE EXCEPTION 'readiness manifest not yet sealed; a fresh installation seals with sql/install/10_trigger.sql as the alerts owner';
+ END IF;
  -- 008 does not touch the trigger definition, so its fingerprint must still
  -- match the sealed one. A mismatch here means something else moved.
  IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m JOIN pg_trigger t

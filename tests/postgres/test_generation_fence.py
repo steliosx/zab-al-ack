@@ -180,10 +180,15 @@ def sweep(lab, *, grace=0, limit=1000):
         return owner.execute("SELECT zabalack.retire_intents(%s,%s)", (limit, grace)).fetchone()[0]
 
 
-def fire_ack(lab, alert_id, payload, *, marker=True):
-    """Commit the acknowledgement history entry, firing `zabalack_capture`."""
+def fire_ack(lab, alert_id, payload, *, marker=True, proof=None):
+    """Commit the acknowledgement history entry, firing `zabalack_capture`.
+
+    `proof` overrides the marker text: a malformed one still fires the trigger
+    (the reserved prefix is present) and captures as `marker_malformed`.
+    """
     from zabalack.crypto import sign_intent
-    proof = sign_intent(payload, "lab", KEY) if marker else "no marker"
+    if proof is None:
+        proof = sign_intent(payload, "lab", KEY) if marker else "no marker"
     with connect_role(lab, "alerta_app") as conn:
         conn.execute("UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,'fence-event',NULL,'ack',NULL,%s,"
                      "'ack',clock_timestamp() AT TIME ZONE 'UTC',%s,NULL)::history],"
@@ -209,11 +214,21 @@ def verify_through_worker_call(lab, payload):
     capture's own intent. A hand-built action row would pass with the real
     verification path broken.
     """
-    lease = {"worker_id": "fence-verifier"}
+    with connect_role(lab, "zabalack_owner") as owner:
+        capture_id = owner.execute("SELECT capture_id FROM zabalack.captures WHERE alert_id=%s AND intent=%s "
+                                   "ORDER BY captured_at DESC LIMIT 1", (payload["alert_id"], Jsonb(payload))).fetchone()[0]
+        # Captures other cases left due are postponed, not touched, so the claim
+        # below — which takes the oldest (every fourth turn, the newest) due row
+        # across the outbox — can only return this one.
+        owner.execute("UPDATE zabalack.outbox SET due_at=clock_timestamp()+interval '1 hour' WHERE capture_id<>%s "
+                      "AND state IN ('captured_unverified','verifier_hold') AND due_at<=clock_timestamp()", (capture_id,))
+    # A fresh verifier identity per call: one holds at most four live leases.
+    lease = {"worker_id": "fence-verifier-" + uuid.uuid4().hex[:8]}
     with connect_role(lab, "zabalack_worker") as worker:
         claimed = worker.execute("SELECT zabalack.worker_call('claim_verification',%s)",
                                  (Jsonb(lease),)).fetchone()[0]
-        assert claimed is not None and claimed["intent"] == payload, "precondition: this capture was claimed"
+        assert claimed is not None and claimed["capture_id"] == str(capture_id) and claimed["intent"] == payload, \
+            "precondition: this capture was claimed"
         return worker.execute("SELECT zabalack.worker_call('verify_complete',%s)", (Jsonb(
             lease | {"capture_id": claimed["capture_id"], "lease_generation": claimed["lease_generation"],
                      "intent": payload, "actor_ref": payload["actor"]["login"]}),)).fetchone()[0]
@@ -744,6 +759,40 @@ def test_T41_the_retirement_cadence_is_deployment_state_not_a_worker_clock(lab):
     assert "skipped" not in worker_sweep(), "the slot reopens once the interval has elapsed"
 
 
+def test_T41_a_full_batch_keeps_the_slot_due_until_the_backlog_drains(lab):
+    """More eligible intents than one batch. A batch that reached its limit
+    leaves the slot due, so the next call continues at the fast cadence; only
+    a batch below the limit closes the slot for the interval. Without this a
+    burst waited out one interval per batch, and a sustained rate above the
+    batch size per interval grew the backlog without bound."""
+    with connect_role(lab, "alerta_owner") as owner:
+        foreign = owner.execute("SELECT count(*) FROM alerts WHERE customer<>%s AND attributes ? %s",
+                                (CUSTOMER, INTENT)).fetchone()[0]
+    alerts = [stage(lab)[0] for _ in range(3)]
+    limit = 2 + foreign   # other modules' live rows are examined on every pass; see test_T41_sweep_is_bounded
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.installation SET retirement_due_at=NULL,retirement_interval_seconds=900 "
+                      "WHERE singleton")
+
+    def worker_sweep():
+        with connect_role(lab, "zabalack_worker") as worker:
+            return worker.execute("SELECT zabalack.worker_call('retire_intents',%s)",
+                                  (Jsonb({"limit": limit, "grace_seconds": 0}),)).fetchone()[0]
+
+    passes = [worker_sweep()]
+    assert passes[0]["examined"] == limit and passes[0].get("continues") is True, passes[0]
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT retirement_due_at<=clock_timestamp() FROM zabalack.installation "
+                             "WHERE singleton").fetchone()[0] is True, "a full batch leaves the slot due"
+    while passes[-1].get("continues"):
+        passes.append(worker_sweep())
+        assert len(passes) <= 4, passes
+    assert "skipped" not in passes[-1] and passes[-1]["examined"] < limit
+    assert all(INTENT not in attributes_of(lab, alert_id) for alert_id in alerts), "the backlog drained"
+    assert worker_sweep() == {"examined": 0, "retired": 0, "skipped": "not_due"}, \
+        "a batch below the limit closes the slot for the interval"
+
+
 # --- installation ---------------------------------------------------------------
 
 def test_T41_the_readiness_manifest_must_be_resealed_after_the_migration(lab):
@@ -758,6 +807,41 @@ def test_T41_the_readiness_manifest_must_be_resealed_after_the_migration(lab):
             "a stale seal must report unhealthy rather than pass"
         owner.execute(reseal)
         assert owner.execute("SELECT functions_md5 FROM zabalack.readiness_manifest").fetchone()[0] == original
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
+@pytest.mark.parametrize("grant,revoke,what", [
+    ("GRANT EXECUTE ON FUNCTION zabalack.newest_generation(text) TO PUBLIC",
+     "REVOKE EXECUTE ON FUNCTION zabalack.newest_generation(text) FROM PUBLIC", "a PUBLIC-executable function"),
+    ("GRANT SELECT ON zabalack.alert_generations TO zabalack_worker",
+     "REVOKE SELECT ON zabalack.alert_generations FROM zabalack_worker", "a grantee on the fence"),
+])
+def test_T41_a_seal_over_a_public_function_or_a_fence_grantee_stays_unhealthy(lab, grant, revoke, what):
+    """`catalog_fingerprints()` hashes ACLs, so a stray grant flips `functions_ok`
+    through the digests alone — until someone seals over it. The two conjuncts
+    008 adds refuse that tree even under a matching seal, and `13_reseal.sql`
+    refuses to produce such a seal at all. Deleting either conjunct makes the
+    sealed-over case report healthy."""
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute(grant)
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "false", \
+                "the digests alone catch a stray grant"
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+        with connect_role(lab, "zabalack_owner") as owner:
+            # Lab-only: seal over the stray grant, as a principal holding
+            # seal_installation() could. The digests now agree with it.
+            owner.execute("SELECT zabalack.seal_installation()")
+            assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "false", \
+                what + " is unhealthy under a matching seal"
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(revoke)
+            owner.execute(reseal)
+    with connect_role(lab, "zabalack_owner") as owner:
         assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
@@ -871,3 +955,24 @@ def test_T41_the_capture_fallback_records_only_an_intent_bound_to_its_own_row(la
     capture = capture_of(lab, alert_id)
     assert capture is not None and capture[3] == "binding_mismatch", "precondition: the capture failed binding"
     assert fence(lab, alert_id) == [] and fence(lab, other) == [], "an unbound intent records no generation anywhere"
+
+
+
+def test_T41_the_capture_fallback_records_nothing_for_a_capture_that_did_not_bind(lab):
+    """An intent on its own row whose marker names another action, then a
+    marker without a well-formed proof: neither can ever be verified into an
+    action, so neither records a generation. Recorded, one would be the newest
+    generation on an alert that holds no staging-recorded row — forever, since
+    nothing removes a fence row — and refuse the older action's re-projection.
+    A capture that binds still records, pending verification of its proof."""
+    alert_id, _, payload = stage(lab, staged=False)
+    stage_pre_fence(lab, alert_id, payload)
+    fire_ack(lab, alert_id, dict(payload, action_id=str(uuid.uuid4())))
+    assert capture_of(lab, alert_id)[3] == "binding_mismatch", "precondition: the marker named another action"
+    assert fence(lab, alert_id) == []
+    fire_ack(lab, alert_id, payload, proof="[zabalack:v1 action=not-a-proof]")
+    assert capture_of(lab, alert_id)[3] == "marker_malformed", "precondition: the marker was malformed"
+    assert fence(lab, alert_id) == []
+    fire_ack(lab, alert_id, payload)
+    assert capture_of(lab, alert_id)[3] is None, "precondition: the capture bound"
+    assert [(row[0], row[1]) for row in fence(lab, alert_id)] == [(payload["action_id"], "capture")]

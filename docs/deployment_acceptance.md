@@ -81,11 +81,15 @@ which is the intended failure. Acknowledgement paths must be fenced across the w
 deployment guide already requires; an acknowledgement staged by the old plugin between the migration and the
 plugin deployment is recorded only when it captures, at the observation tier.
 
-Record the grant's exact extent: the application role holds `USAGE` on `zabalack`, `EXECUTE` on
-`zabalack.stage_generation(text,uuid,jsonb)` and nothing else — no table privilege in the schema and no other
-function. Confirm that no function in `zabalack` is executable by `PUBLIC` and that `zabalack.alert_generations`
-admits no grantee but its owner; `capture_health()` asserts both under `functions_ok`, and a false value there is
-a real misconfiguration, not a probe fault.
+Record the grant's exact extent: `12_application_grant.sql` gives the application role `USAGE` on `zabalack`,
+`EXECUTE` on `zabalack.stage_generation(text,uuid,jsonb)` and nothing else — no table privilege in the schema
+and no other function from this grant. Where the application connects as the alerts owner, the upstream default,
+that role also holds 005's grants — `capture_ack()` for the trigger and `seal_installation()` for the installer —
+which are expected and are the reason §2 of the deployment guide prefers a separate login role; record which
+topology applies. Confirm that no function in `zabalack` is executable by `PUBLIC` and that
+`zabalack.alert_generations` admits no grantee but its owner; `capture_health()` asserts both under
+`functions_ok` even under a matching seal, `13_reseal.sql` refuses to seal a tree that breaks either, and a false
+value there is a real misconfiguration, not a probe fault.
 
 Record the backfill's result. 008 records one generation for every `zabalack.actions` row, in capture order, and
 one for every staged intent found on a live row, all at the observation tier; a row with neither acquires its
@@ -104,16 +108,30 @@ history write; delete B's reserved keys through `/alert/<id>/attributes`, and se
 attribute dictionary through the same endpoint; confirm A's projection is refused in both cases with
 `projection_action_generation_mismatch` and that `zabalack.newest_generation(<id>)` still names B. Retire B's
 intent with the sweep and confirm the same. Confirm a fence row after a real acknowledgement carries
-`recorded_by='staging'`, and that a failed acknowledgement leaves neither a fence row nor a staged intent.
+`recorded_by='staging'`. Distinguish the two failure points: an acknowledgement refused at the staging step
+(`zabalack_generation_unavailable`, 503) or by Alerta's own transition — `ack` on a shelved, closed or expired
+alert (409), or on one in `assign` (200, `skipped_no_ack_transition`) — leaves neither a fence row nor a staged
+intent, while one that fails after the staging commit (a refused signing, a capture fault) keeps both: the fence
+row permanently, the intent until the sweep retires it. Such a staging is superseded only by a later
+acknowledgement through the protected operation, and until then the earlier action's re-projection is refused;
+that is the designed answer, and the remedy is to acknowledge again.
 
 Record the retirement cadence actually observed across the fleet: the slot is claimed in the installation row,
 so exactly one worker per `retirement_interval_seconds` performs the scan however many workers run; the rest
-return `skipped: not_due`. Confirm the interval is set to a value the deployment accepts, since it bounds how
-long a staged intent persists, and measure the sweep's cost on the installed table: `public.alerts` carries no
-index for the `attributes ? 'zabbix_ack_sync_intent'` predicate and `zabalack_owner` cannot create one, so the
-bounded batch limits matching rows, not rows scanned. Where that cost is unacceptable, the alerts owner may add
-`CREATE INDEX CONCURRENTLY … ON public.alerts (id) WHERE attributes ? 'zabbix_ack_sync_intent'` as an approved
-change under the same principal that installs the trigger; it is optional and changes no `zabalack` object.
+return `skipped: not_due`, and a batch that reached its limit leaves the slot due so the next cycle continues
+draining. Confirm the interval is set to a value the deployment accepts, since it bounds how long a staged intent
+persists; it is changed only by `zabalack_owner`, with
+`UPDATE zabalack.installation SET retirement_interval_seconds=<seconds> WHERE singleton` (the claim clamps it to
+1–86400), recorded as a change under that principal — no `operator_call` operation or CLI command sets it.
+Measure the sweep's cost on the installed table: `public.alerts` carries no index for the
+`attributes ? 'zabbix_ack_sync_intent'` predicate and `zabalack_owner` cannot create one, so the bounded batch
+limits matching rows, not rows scanned. The sweep runs under its own statement budget
+(`retirement_timeout_seconds`, default 30 s, distinct from the 3 s every other worker call gets); a scan that
+does not fit is cancelled, rolled back with its claim and retried every fast cycle at the same cost, and
+retirement then never happens. Record the measured scan time; where it approaches the budget, the alerts owner
+adds `CREATE INDEX CONCURRENTLY … ON public.alerts (id) WHERE attributes ? 'zabbix_ack_sync_intent'` as an
+approved change under the same principal that installs the trigger. The index changes no `zabalack` object; it
+is optional only while the scan fits the budget.
 
 Rollback: see `docs/rollback.md` §008. The SQL is rolled back before the plugin or not at all — a pre-008
 plugin's acknowledgements on an alert that already carries a staging-recorded generation are refused projection

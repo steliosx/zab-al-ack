@@ -234,6 +234,18 @@ def reopen(lab, identity):
     """
     response = lab.client.put(f"/alert/{identity}/status", headers=lab.headers, json={"status": "open"})
     assert response.status_code == 200, response.get_json()
+    restore_source_nulls(lab, identity)
+
+
+def restore_source_nulls(lab, identity):
+    """Restore the nullable source-contract keys to their ingestion shape.
+
+    Every route that lets a plugin return the alert — an action, a status
+    change — ends in Alerta's attribute write, which drops keys whose value is
+    None; the plugin then skips the next acknowledgement with
+    `legacy_missing_mapping`. In production the next source update
+    re-normalises them through `pre_receive`.
+    """
     with lab.pgdb("alerta_app") as app:
         app.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
                     (Jsonb({"zabbix_cause_event_id": None, "zabbix_recovery_event_id": None}), identity))
@@ -308,6 +320,54 @@ def test_T41_the_generation_and_the_staging_commit_together(persisted_api):
     assert "zabbix_ack_sync_intent" in alert_row(lab, identity)[1]
 
 
+def act(lab, identity, action, *, expect=200):
+    response = lab.client.put(f"/alert/{identity}/action", headers=lab.headers, json={"action": action})
+    assert response.status_code == expect, response.get_json()
+    return response
+
+
+@pytest.mark.parametrize("state", ["shelved", "closed", "expired"])
+def test_T41_an_acknowledgement_alerta_refuses_records_no_generation(persisted_api, state):
+    """Alerta answers 409 for `ack` on a shelved, closed or expired alert — from
+    from_action(), after the plugin has run and after process_action() has
+    committed. Nothing may have been staged by then: no fence row, no reserved
+    key, no capture. Without the plugin's own transition check the protected
+    operation commits a staging-tier generation nothing can ever capture."""
+    lab = persisted_api
+    identity = lab.new_alert()
+    act(lab, identity, {"shelved": "shelve", "closed": "close", "expired": "expired"}[state])
+    restore_source_nulls(lab, identity)   # so the acknowledgement reaches the transition check, not a skip
+    assert alert_row(lab, identity)[0] == state, "precondition"
+    acknowledge(lab, identity, expect=409)
+    assert fence_rows(lab, identity) == [] and newest_generation(lab, identity) is None
+    status, attributes, _ = alert_row(lab, identity)
+    assert status == state and not any(key.startswith("zabbix_ack_sync") for key in attributes)
+    assert capture_rows(lab, identity) == []
+
+
+def test_T41_an_acknowledgement_that_does_not_transition_records_no_generation(persisted_api):
+    """From `assign` Alerta keeps the status and answers 200 (rule ALL-*): no
+    signed status write follows. The plugin stages nothing, records the skip,
+    and the alert acknowledges normally once it is open again."""
+    lab = persisted_api
+    identity = lab.new_alert()
+    response = lab.client.put(f"/alert/{identity}/status", headers=lab.headers, json={"status": "assign"})
+    assert response.status_code == 200, response.get_json()
+    restore_source_nulls(lab, identity)
+    acknowledge(lab, identity)
+    assert fence_rows(lab, identity) == []
+    status, attributes, _ = alert_row(lab, identity)
+    assert status == "assign"
+    assert attributes["zabbix_ack_sync"] == "skipped"
+    assert attributes["zabbix_ack_sync_reason"] == "skipped_no_ack_transition"
+    assert "zabbix_ack_sync_intent" not in attributes and "zabbix_ack_sync_action_id" not in attributes
+    assert capture_rows(lab, identity) == []
+    reopen(lab, identity)
+    acknowledge(lab, identity)
+    assert [row[1] for row in fence_rows(lab, identity)] == ["staging"]
+    assert alert_row(lab, identity)[0] == "ack"
+
+
 def stage_unsigned(lab, identity):
     """A second acknowledgement whose staging commits and whose signing fails.
 
@@ -361,7 +421,8 @@ def test_T41_an_older_projection_never_overwrites_a_newer_staging_through_the_ap
 
 def test_T41_a_swept_staging_keeps_its_protection_against_a_reverified_replay(persisted_api):
     """Your case 2. B observed and retired by the sweep; A's capture replayed and
-    verified again as a replay. B's protection holds throughout."""
+    verified again as a replay, after B's retirement. B's protection holds
+    throughout."""
     lab = persisted_api
     identity = lab.new_alert()
     acknowledge(lab, identity)
@@ -369,7 +430,21 @@ def test_T41_a_swept_staging_keeps_its_protection_against_a_reverified_replay(pe
     assert project(lab, first["action_id"]) == "projected"
     signed_text = alert_row(lab, identity)[2]
     assert "[zabalack:" in signed_text
+    # A's proof replayed as a fresh history entry, captured now — inside A's
+    # capture window, which `verify_complete` measures from `captured_at` — and
+    # verified only at the end, after B has been staged and retired: the
+    # delayed verification of a replay. (Read the intent before opening the
+    # writing connection: PGlite multiplexes sessions onto one backend, so a
+    # nested connection's SET ROLE leaks.)
+    first_intent = capture_rows(lab, identity)[0][5]
+    with lab.pgdb("alerta_app") as app:
+        app.execute("UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,'stable-trigger-family',NULL,'ack',NULL,%s,"
+                    "'ack',clock_timestamp() AT TIME ZONE 'UTC','http-human',NULL)::history]||history,"
+                    "attributes=attributes||%s WHERE id=%s",
+                    (str(uuid4()), signed_text, Jsonb({"zabbix_ack_sync_intent": first_intent}), identity))
+    assert len(capture_rows(lab, identity)) == 2, "precondition: the replay was captured"
     second = stage_unsigned(lab, identity)
+    assert [row[1] for row in fence_rows(lab, identity)] == ["staging", "staging"]
     # B was staged seconds ago, so its capture window is still open and the sweep
     # would defer it. Only the attribute's own timestamps decide when it is
     # retired — the attribute is API-writable, and this is what a client can do
@@ -382,16 +457,6 @@ def test_T41_a_swept_staging_keeps_its_protection_against_a_reverified_replay(pe
         assert owner.execute("SELECT zabalack.retire_intents(1000,0)").fetchone()[0]["retired"] >= 1
     assert "zabbix_ack_sync_intent" not in alert_row(lab, identity)[1]
     assert project(lab, first["action_id"]) == "projection_action_generation_mismatch"
-    # A's proof replayed as a fresh history entry: captured again, verified as a replay.
-    # (Read the intent before opening the writing connection: PGlite multiplexes
-    # sessions onto one backend, so a nested connection's SET ROLE leaks.)
-    first_intent = capture_rows(lab, identity)[0][5]
-    with lab.pgdb("alerta_app") as app:
-        app.execute("UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,'stable-trigger-family',NULL,'ack',NULL,%s,"
-                    "'ack',clock_timestamp() AT TIME ZONE 'UTC','http-human',NULL)::history]||history,"
-                    "attributes=attributes||%s WHERE id=%s",
-                    (str(uuid4()), signed_text, Jsonb({"zabbix_ack_sync_intent": first_intent}), identity))
-    assert len(capture_rows(lab, identity)) == 2
     replay = verify_newest_capture(lab, identity)
     assert replay.get("replay") is True and replay["action_id"] == first["action_id"]
     assert [row[1] for row in fence_rows(lab, identity)] == ["staging", "staging"], "a replay records nothing new"

@@ -11,7 +11,8 @@ from typing import Any, Callable
 from uuid import UUID
 
 from flask import current_app, g, has_request_context, request
-from alerta.exceptions import AlertaException
+from alerta.app import alarm_model
+from alerta.exceptions import AlertaException, ApiError, InvalidAction
 from alerta.plugins import PluginBase
 
 from .config import Settings, read_protected_file
@@ -341,6 +342,30 @@ class AckSigningPlugin(PluginBase):
             # A duplicate callback within one request reuses exactly its staged
             # identity. Any changed snapshot is rejected at the final stage.
             return alert, action, text
+        # A5 stage two: stage only an acknowledgement Alerta will record as one.
+        # from_action() decides the transition from the history after this hook
+        # returns — after the protected commit below. For a shelved, closed or
+        # expired alert it raises (409); for one in `assign` it keeps the status
+        # (200). No signed status write follows either, so a staging made for
+        # it would be a generation nothing can capture, supersede or retire.
+        # The same decision is taken here first, from the inputs from_action()
+        # uses, and such a request stages nothing.
+        try:
+            status, _, previous_status, _ = alert._get_hist_info(action)
+            _, new_status = alarm_model.transition(
+                alert=alert, current_status=status, previous_status=previous_status, action=action)
+        except InvalidAction:
+            return None
+        except ApiError:
+            # Alerta's own refusal of the alert (an unknown severity): it
+            # answers the same way a moment later, with nothing staged.
+            raise
+        except Exception:
+            # The transition could not be decided: fail closed rather than
+            # let Alerta record an acknowledgement that was never staged.
+            raise AlertaException("zabalack_generation_unavailable", code=503) from None
+        if new_status != "ack":
+            return project_skip(alert, "skipped_no_ack_transition", settings), action, text
         self._check_health(settings)
         try:
             intent = build_intent(
@@ -352,7 +377,10 @@ class AckSigningPlugin(PluginBase):
         # before anything below is written from memory. It records the
         # generation in zabalack.alert_generations and writes exactly the
         # reserved keys set here, so Alerta's later whole-object write of this
-        # dictionary changes nothing. If it fails, nothing is staged and the
+        # dictionary leaves them as written. (That write drops keys whose value
+        # is None, the nullable source-contract keys among them — upstream
+        # behaviour on every attribute write, which the fence neither changes
+        # nor depends on.) If it fails, nothing is staged and the
         # acknowledgement is refused: no staging exists without its generation.
         try:
             self.stager(str(alert.id), intent)

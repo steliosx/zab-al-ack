@@ -224,12 +224,15 @@ BEGIN
  END IF;
  -- Fallback generation record. A staging made through zabalack.stage_generation()
  -- is already recorded; this covers acknowledgements staged before that existed
- -- or by a plugin that predates it. newest_generation() never lets a row
- -- recorded here outrank one recorded at staging, and an action already
- -- recorded is left exactly where it is, so a capture arriving late can never
- -- promote an older acknowledgement above a newer staging.
- IF i IS NOT NULL AND i<>'null'::jsonb AND i->>'alert_id' IS NOT DISTINCT FROM NEW.id
-    AND i->>'action_id' IS NOT NULL THEN
+ -- or by a plugin that predates it. It records only a capture that bound —
+ -- marker, intent and row agree, with the proof still to be verified. An
+ -- unbound, malformed or bypassed capture can never be verified into an
+ -- action, so it records nothing, and cannot displace the newest generation
+ -- on an alert that holds no staging-recorded row. newest_generation() never
+ -- lets a row recorded here outrank one recorded at staging, and an action
+ -- already recorded is left exactly where it is, so a capture arriving late
+ -- can never promote an older acknowledgement above a newer staging.
+ IF why IS NULL THEN
   BEGIN
    INSERT INTO zabalack.alert_generations(alert_id,action_id,recorded_by)
     VALUES(NEW.id,(i->>'action_id')::uuid,'capture') ON CONFLICT(action_id) DO NOTHING;
@@ -610,7 +613,17 @@ BEGIN
   -- Asked every reconciler cycle. The installation row decides whether it is
   -- due, so one worker per interval scans public.alerts however many are running.
   IF NOT zabalack.claim_retirement_slot() THEN RETURN jsonb_build_object('examined',0,'retired',0,'skipped','not_due'); END IF;
-  RETURN zabalack.retire_intents(coalesce((p->>'limit')::int,200),coalesce((p->>'grace_seconds')::int,300));
+  result := zabalack.retire_intents(coalesce((p->>'limit')::int,200),coalesce((p->>'grace_seconds')::int,300));
+  -- A batch that reached its limit may have left more behind. The slot then
+  -- stays due, so the next cycle — this worker's or another's — continues
+  -- draining at the fast cadence rather than waiting out the interval: a
+  -- backlog is bounded by the worker rate, never by the interval times the
+  -- batch size. A batch below the limit closes the slot for the interval.
+  IF (result->>'examined')::int>=least(1000,greatest(1,coalesce((p->>'limit')::int,200))) THEN
+   UPDATE zabalack.installation SET retirement_due_at=now_at WHERE singleton;
+   result := result||jsonb_build_object('continues',true);
+  END IF;
+  RETURN result;
  ELSE RAISE EXCEPTION 'unsupported worker operation: %',op;
  END IF;
 END $$;

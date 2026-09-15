@@ -109,11 +109,13 @@ class HeldTransaction:
     def __init__(self, lab, role, statement, params=()):
         self.lab, self.role, self.statement, self.params = lab, role, statement, params
         self.holding, self.release, self.result, self.error = threading.Event(), threading.Event(), None, None
+        self.conn = None
         self.thread = threading.Thread(target=self._run, daemon=True)
 
     def _run(self):
         try:
             with psycopg.connect(self.lab["admin_dsn"]) as conn:
+                self.conn = conn
                 conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(self.role)))
                 self.result = conn.execute(self.statement, self.params).fetchone()
                 self.holding.set()
@@ -129,6 +131,14 @@ class HeldTransaction:
         assert self.error is None, self.error
         return self
 
+    def probe(self, statement, params=()):
+        """One more statement in the held transaction, while the holder waits.
+
+        psycopg serialises use of one connection across threads, and the holding
+        thread is blocked on an event, not on the connection.
+        """
+        return self.conn.execute(statement, params).fetchone()
+
     def __exit__(self, *exc):
         self.release.set()
         self.thread.join(timeout=BARRIER_TIMEOUT)
@@ -139,23 +149,35 @@ class HeldTransaction:
 @pytest.mark.parametrize("order", ["sweep_first", "projection_first"])
 def test_T41_native_an_older_projection_never_overwrites_a_newer_staging(native, order):
     """Stage A, then B; retire B's intent without a B action row; resume A's
-    projection six hours later. A cannot overwrite B's state, in either lock
-    order: the sweep takes the row with SKIP LOCKED and never the generation
-    lock; project() takes the generation lock and then the row."""
+    projection six hours later. The order is enforced, not hoped for: the
+    leading session holds its transaction open until the other has been seen
+    to wait, or to skip. The sweep takes the row with SKIP LOCKED and never the
+    generation lock; project() takes the generation lock and then the row. In
+    both orders A cannot overwrite B's state."""
     alert_id, action_id, first, second = two_generations(native)
-    steps = (sweep_in_own_session(native), project_in_own_session(native, action_id))
-    outcome = run_concurrently(*(steps if order == "sweep_first" else steps[::-1]))
-    # One step returns the projection's reason, the other the sweep's result dict.
-    reasons = {value for value in (outcome["first"], outcome["second"]) if isinstance(value, str)}
-    assert reasons == {"projection_action_generation_mismatch"}
+    results = []
+    if order == "sweep_first":
+        # The sweep holds B's row; A's projection queues behind it and then sees B.
+        with HeldTransaction(native, "zabalack_owner", "SELECT zabalack.retire_intents(1000,0)") as held:
+            assert held.result[0]["retired"] >= 1, "precondition: the sweep retired B's intent"
+            blocked = threading.Thread(target=lambda: results.append(project(native, action_id)), daemon=True)
+            blocked.start()
+            blocked.join(timeout=2)
+            assert blocked.is_alive(), "the projection must wait for the row the sweep holds"
+        blocked.join(timeout=BARRIER_TIMEOUT)
+        assert not blocked.is_alive() and results == ["projection_action_generation_mismatch"]
+    else:
+        # The projection holds the generation lock and the row; the sweep skips
+        # the row rather than waiting on it, and retires it on its next pass.
+        with HeldTransaction(native, "zabalack_worker", "SELECT zabalack.project(%s)", (action_id,)) as held:
+            assert INTENT in attributes_of(native, alert_id), "precondition: B's intent is on the row"
+            sweep(native, grace=0)
+            assert INTENT in attributes_of(native, alert_id), "SKIP LOCKED leaves the held row to the next pass"
+        assert held.result[0]["reason"] == "projection_action_generation_mismatch"
+        assert sweep(native, grace=0)["retired"] >= 1
     after = attributes_of(native, alert_id)
+    assert INTENT not in after, "B's intent is retired by the sweep"
     assert after[ACTION_KEY] == second["action_id"] and after["zabbix_ack_sync"] == "pending"
-    assert newest(native, alert_id) == second["action_id"]
-    # The racing pass may have found the row locked by the projection and left
-    # it to the next pass (SKIP LOCKED); retirement is a property of the sweep,
-    # not of that pass. The next pass retires it, and the fence is unchanged.
-    sweep(native, grace=0)
-    assert INTENT not in attributes_of(native, alert_id), "B's intent is retired by the sweep"
     assert newest(native, alert_id) == second["action_id"]
     with connect_role(native, "zabalack_owner") as owner:
         assert owner.execute("SELECT projection_reason FROM zabalack.actions WHERE action_id=%s",
@@ -206,43 +228,55 @@ def test_T41_native_two_stagings_of_one_alert_serialise_on_the_generation_lock(n
     assert newest(native, alert_id) == third["action_id"]
 
 
-@pytest.mark.parametrize("order", ["projection_holds", "staging_holds"])
-def test_T41_native_a_staging_and_a_projection_serialise_without_deadlock(native, order):
-    """Both take the generation lock and then the alert row, so whichever holds
-    first, the other waits — in a third session, so this test cannot block
-    itself — and then sees the committed result."""
+GENERATION_LOCK = "SELECT pg_advisory_xact_lock(hashtextextended('zabalack.generation:'||%s,0))"
+TRY_GENERATION_LOCK = "SELECT pg_try_advisory_xact_lock(hashtextextended('zabalack.generation:'||%s,0))"
+ROW_LOCK = "SELECT id FROM public.alerts WHERE id=%s FOR UPDATE"
+ROW_LOCK_NOWAIT = "SELECT id FROM public.alerts WHERE id=%s FOR UPDATE NOWAIT"
+
+
+@pytest.mark.parametrize("contender", ["projection", "staging"])
+@pytest.mark.parametrize("held", ["row", "generation"])
+def test_T41_native_staging_and_projection_take_the_generation_lock_then_the_row(native, contender, held):
+    """Both take the generation lock first and the alert row second, so they
+    can only queue, never deadlock. Each is made to wait on one lock held
+    alone, and probed from the holding session: waiting on the row, it must
+    already hold the generation lock (the holder's try-lock fails); waiting on
+    the generation lock, it must hold no row lock (the holder's NOWAIT row
+    lock succeeds). Either function taking the row first fails the case."""
     alert_id, event_id, first = stage(native, issued=datetime.now(timezone.utc))
     fire_ack(native, alert_id, first)
     verify_through_worker_call(native, first)
     second = intent_for(alert_id, event_id)
     results = []
-    if order == "projection_holds":
+    if contender == "projection":
+        def contend():
+            results.append(project(native, first["action_id"]))
+    else:
         def contend():
             with connect_role(native, "alerta_app") as conn:
                 results.append(conn.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
                                             (alert_id, second["action_id"], Jsonb(second))).fetchone()[0])
-        with HeldTransaction(native, "zabalack_worker", "SELECT zabalack.project(%s)", (first["action_id"],)) as held:
-            blocked = threading.Thread(target=contend, daemon=True)
-            blocked.start()
-            blocked.join(timeout=2)
-            assert blocked.is_alive(), "the staging must wait for the projection holding the generation lock"
-        blocked.join(timeout=BARRIER_TIMEOUT)
-        assert not blocked.is_alive() and results, "the staging completed once the projection committed"
-        assert held.result[0]["reason"] == "projected", "A was current when its projection took the locks"
-        assert newest(native, alert_id) == second["action_id"]
+    with HeldTransaction(native, "alerta_app", ROW_LOCK if held == "row" else GENERATION_LOCK, (alert_id,)) as holder:
+        blocked = threading.Thread(target=contend, daemon=True)
+        blocked.start()
+        blocked.join(timeout=2)
+        assert blocked.is_alive(), f"the {contender} must wait for the held {held} lock"
+        if held == "row":
+            assert holder.probe(TRY_GENERATION_LOCK, (alert_id,))[0] is False, \
+                f"the {contender} waits on the row already holding the generation lock"
+        else:
+            try:
+                holder.probe(ROW_LOCK_NOWAIT, (alert_id,))
+            except psycopg.errors.LockNotAvailable:
+                pytest.fail(f"the {contender} took the row before the generation lock")
+    blocked.join(timeout=BARRIER_TIMEOUT)
+    assert not blocked.is_alive() and results, f"the {contender} completed once the holder committed"
+    if contender == "projection":
+        assert results == ["projected"], "A was current: the holder changed no generation"
+        assert newest(native, alert_id) == first["action_id"]
     else:
-        def contend():
-            results.append(project(native, first["action_id"]))
-        with HeldTransaction(native, "alerta_app", "SELECT zabalack.stage_generation(%s,%s,%s)",
-                             (alert_id, second["action_id"], Jsonb(second))):
-            blocked = threading.Thread(target=contend, daemon=True)
-            blocked.start()
-            blocked.join(timeout=2)
-            assert blocked.is_alive(), "the projection must wait for the staging holding the generation lock"
-        blocked.join(timeout=BARRIER_TIMEOUT)
-        assert not blocked.is_alive() and results, "the projection completed once the staging committed"
-        assert results[0] == "projection_action_generation_mismatch", "A's projection waited for B, then saw it"
-        assert newest(native, alert_id) == second["action_id"]
+        assert results[0] > 0 and newest(native, alert_id) == second["action_id"]
+        assert [row[0] for row in fence(native, alert_id)] == [first["action_id"], second["action_id"]]
 
 
 def test_T41_native_only_one_sweep_runs_at_a_time(native):

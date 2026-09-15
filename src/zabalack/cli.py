@@ -79,7 +79,8 @@ async def execute(args: argparse.Namespace) -> Any:
     dsn_file = settings.operator_dsn_file if mutating else settings.worker_dsn_file
     if not dsn_file:
         raise ConfigError("operator_dsn_required" if mutating else "worker_dsn_required")
-    db = Postgres(read_protected_file(dsn_file).decode().strip())
+    db = Postgres(read_protected_file(dsn_file).decode().strip(),
+                  operation_budgets={"retire_intents": settings.retirement_timeout_seconds})
     if args.command == "metrics":
         from .metrics import prometheus_text
         return prometheus_text(await db.call("status"), settings)

@@ -94,6 +94,9 @@ def context(monkeypatch):
         return deepcopy(attrs)
 
     monkeypatch.setattr(Alert, "update_attributes", attributes)
+    # from_action() decides the transition from the history; without persistence
+    # the history's current status is the alert's own.
+    monkeypatch.setattr(Alert, "_get_hist_info", lambda self, action=None: (self.status, None, "open", 3600))
     with app.test_request_context(f"/alert/{ALERT_ID}/action", method="PUT", json={"action": "ack"}):
         g.user_id = "synthetic-user-1"
         g.login = "synthetic-human"
@@ -358,3 +361,31 @@ def test_T41_a_refused_generation_refuses_the_acknowledgement_and_stages_nothing
     assert context.updates == [], "Alerta must not have been asked to write anything"
     assert "zabbix_ack_sync_intent" not in context.alert.attributes
     assert context.alert.attributes.get("zabbix_ack_sync") is None
+
+
+@pytest.mark.parametrize("state", ["shelved", "closed", "expired"])
+def test_T41_an_acknowledgement_alerta_will_refuse_stages_nothing(context, state):
+    """Alerta raises InvalidAction for `ack` from these states — in
+    from_action(), after take_action() has returned. The plugin decides first,
+    from the same history, and stages nothing: no generation, no attribute
+    write, no health probe. Alerta's own 409 then follows with nothing behind it."""
+    context.alert.status = state
+    alert, action, note, timeout = stage(context)
+    with pytest.raises(InvalidAction):
+        alert.from_action(action, note, timeout)
+    assert context.generations == [], "a generation nothing could ever capture must not be recorded"
+    assert context.updates == [] and context.probe.calls == 0
+    assert not any(key.startswith("zabbix_ack_sync") for key in alert.attributes)
+
+
+def test_T41_an_acknowledgement_that_does_not_reach_ack_stages_nothing(context):
+    """From `assign`, Alerta answers 200 and keeps the status (rule ALL-*): no
+    signed status write follows, so nothing is staged and the skip is recorded."""
+    context.alert.status = "assign"
+    alert, action, note, timeout = stage(context)
+    assert alarm_model.transition(alert=alert, current_status="assign", previous_status="open", action="ack")[1] == "assign"
+    assert context.generations == [] and context.probe.calls == 0
+    assert alert.attributes["zabbix_ack_sync"] == "skipped"
+    assert alert.attributes["zabbix_ack_sync_reason"] == "skipped_no_ack_transition"
+    assert "zabbix_ack_sync_intent" not in alert.attributes and "zabbix_ack_sync_action_id" not in alert.attributes
+    assert context.updates and context.updates[-1]["zabbix_ack_sync_reason"] == "skipped_no_ack_transition"

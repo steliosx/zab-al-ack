@@ -169,10 +169,13 @@ class Reconciler:
             result = await self.db.call("retire_intents", {"limit": self.settings.fast_budget})
         except Exception as exc:
             # A sweep that fails — the unindexed scan of public.alerts outrunning
-            # the statement timeout on a large table, or a transient error — is
-            # reported and retried next cycle. It must not take the rest of this
-            # cycle's sweeps, or the worker, down with it; the interval's claim
-            # rolled back with the transaction, so nothing is lost.
+            # its own statement budget (`retirement_timeout_seconds`) on a large
+            # table, or a transient error — is reported and retried next cycle.
+            # It must not take the rest of this cycle's sweeps, or the worker,
+            # down with it; the interval's claim rolled back with the
+            # transaction, so nothing is lost. A sweep that never fits its
+            # budget never retires anything: see the retirement paragraph of
+            # docs/deployment_acceptance.md (T41) for the index that bounds it.
             log_event("retire_intents_failure", error_class=type(exc).__name__,
                       reason=getattr(exc, "reason", None))
             return {"error": type(exc).__name__}
