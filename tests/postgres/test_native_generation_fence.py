@@ -549,10 +549,18 @@ def schema3_database(native, tmp_path):
 
 
 def upgrade(lab, migrator):
-    """008, the application grant and the re-seal, through the real entry points."""
+    """008, the installer record, the application grant and the re-seal, through
+    the real entry points and in the runbook's order.
+
+    The scratch database's migrations run as the superuser with `SET ROLE`, so no
+    role holds `zabalack_owner` and the recorded list is empty — still a positive
+    act: the column starts `NULL` and `13_reseal.sql` refuses to seal until it is
+    set.
+    """
     with psycopg.connect(lab["admin_dsn"], autocommit=True) as db:
         db.execute("SET ROLE zabalack_owner")
         migrator.migrate(db)
+        db.execute((ROOT / "sql/install/09_installer_roles.sql").read_text().replace(":'installer_roles'", "''"))
         db.execute((ROOT / "sql/install/12_application_grant.sql").read_text().replace(':"alert_app_role"', '"alerta_app"'))
         db.execute((ROOT / "sql/install/13_reseal.sql").read_text())
         db.execute("RESET ROLE")
