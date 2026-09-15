@@ -778,7 +778,29 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   AND NOT EXISTS(SELECT 1 FROM pg_roles a CROSS JOIN pg_roles z
    WHERE a.rolname=i.application_role
     AND z.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
-    AND pg_has_role(a.oid,z.oid,'MEMBER')),
+    AND pg_has_role(a.oid,z.oid,'MEMBER'))
+  -- ...and, as itself or as any role it can assume, it executes nothing else
+  -- here and reads no table here. The ACL of every function and relation in
+  -- this schema is hashed, so a stray grant reads unhealthy through the digests
+  -- alone — until someone re-seals, which every upgrade does, and the seal then
+  -- agrees with it. This is the standing assertion that survives that seal:
+  -- worker_call() carries the verification operations, and a grant of it to the
+  -- application is a signature check skipped. Where the application connects as
+  -- the alerts owner, the upstream default, that role keeps 005's capture_ack()
+  -- and seal_installation() grants, which the trigger and the installer need.
+  AND NOT EXISTS(SELECT 1 FROM pg_roles a JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER')
+   CROSS JOIN pg_proc p WHERE a.rolname=i.application_role
+    AND p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+    AND p.oid<>'zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
+    AND has_function_privilege(r.oid,p.oid,'EXECUTE')
+    AND NOT (r.rolname=i.application_role
+             AND r.oid=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
+             AND p.oid IN ('zabalack.capture_ack()'::regprocedure,
+                           'zabalack.seal_installation()'::regprocedure)))
+  AND NOT EXISTS(SELECT 1 FROM pg_roles a JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER')
+   CROSS JOIN pg_class c WHERE a.rolname=i.application_role
+    AND c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m')
+    AND has_table_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')),
  'checked_at',clock_timestamp()) FROM zabalack.installation i LEFT JOIN zabalack.readiness_manifest m USING(singleton)
  CROSS JOIN LATERAL (SELECT zabalack.catalog_fingerprints() hashes) h WHERE i.singleton;
 $$;

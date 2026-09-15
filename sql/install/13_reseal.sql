@@ -84,6 +84,27 @@ BEGIN
      AND pg_has_role(a.oid,z.oid,'MEMBER')) THEN
   RAISE EXCEPTION 'the recorded application role is, or is a member of, a zabalack role and can act as it; revoke that membership or name a separate application role before sealing';
  END IF;
+ -- And its effective rights here are the entry point and nothing more, as
+ -- itself or as any role it can assume. Every ACL in this schema is hashed, so
+ -- a stray grant shows through the digests until a re-seal — this one — agrees
+ -- with it: refuse instead, or the seal would certify it.
+ IF EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
+    JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER') CROSS JOIN pg_proc p
+    WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+     AND p.oid<>'zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
+     AND has_function_privilege(r.oid,p.oid,'EXECUTE')
+     AND NOT (r.rolname=i.application_role
+              AND r.oid=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
+              AND p.oid IN ('zabalack.capture_ack()'::regprocedure,
+                            'zabalack.seal_installation()'::regprocedure))) THEN
+  RAISE EXCEPTION 'the recorded application role executes a zabalack function other than the staging entry point; worker_call() alone is a signature check skipped — revoke those grants before sealing';
+ END IF;
+ IF EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
+    JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER') CROSS JOIN pg_class c
+    WHERE i.singleton AND c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m')
+     AND has_table_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')) THEN
+  RAISE EXCEPTION 'the recorded application role holds a privilege on a zabalack table; revoke it before sealing';
+ END IF;
  -- A fresh installation has no manifest yet: it is sealed by 10_trigger.sql
  -- under the alerts owner, not re-sealed here.
  IF NOT EXISTS(SELECT 1 FROM zabalack.readiness_manifest m WHERE m.singleton) THEN

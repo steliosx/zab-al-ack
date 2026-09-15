@@ -1066,6 +1066,50 @@ def test_T41_an_application_role_that_can_assume_a_zabalack_role_is_unhealthy(la
     assert reads("SELECT (zabalack.capture_health())->>'functions_ok'") == "true"
 
 
+def test_T41_the_application_role_executes_nothing_else_in_the_schema(lab):
+    """A stray grant on another zabalack function, sealed over.
+
+    `catalog_fingerprints()` hashes every function's ACL, so a direct
+    `GRANT EXECUTE ON zabalack.worker_call(text,jsonb) TO alerta_app` moves the
+    digest and reads unhealthy — until someone re-seals, which every upgrade
+    does. The seal then agrees with an application role that can call
+    `claim_verification` and `verify_complete`, marking captures verified with
+    no signature check on the way. Health asserts the role's effective rights in
+    the schema, not the entry point's ACL alone, so a sealed-over grant stays
+    unhealthy; `13_reseal.sql` refuses to seal it, and the grant script refuses
+    to record such a role.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    grant = (ROOT / "sql/install/12_application_grant.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("GRANT EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) TO alerta_app")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT has_function_privilege('alerta_app',"
+                                 "'zabalack.worker_call(text,jsonb)','EXECUTE')").fetchone()[0] is True, \
+                "the application role can now reach the worker's operations"
+            assert health() == "false", "the digests alone catch the stray grant"
+            # Lab-only: seal over it, as every upgrade's re-seal would.
+            owner.execute("SELECT zabalack.seal_installation()")
+        assert health() == "false", "a sealed-over grant on another function stays unhealthy"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="before sealing"):
+                owner.execute(reseal)
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="executes|execute"):
+                owner.execute(grant.replace(':"alert_app_role"', '"alerta_app"'))
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("REVOKE EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) FROM alerta_app")
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 def test_T41_the_reseal_refuses_a_tree_that_is_not_at_the_expected_schema(lab):
     reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
     with connect_role(lab, "zabalack_owner") as owner:
@@ -1110,12 +1154,12 @@ def test_T41_changing_the_application_role_revokes_the_former_one(lab):
 
     assert grantee_of() == (["alerta_app"], "alerta_app"), "precondition: the lab granted the application role"
     try:
-        # A stand-in for a former application role: a lab role the rules allow
-        # as one — not a zabalack role, which no application role may be or
-        # assume (see test_T41_an_application_role_that_can_assume_a_zabalack_role_is_unhealthy).
+        # The lab's second application login, which is what the rules require of
+        # one: no members, no zabalack role it is or can assume, and nothing
+        # else in the schema it can execute or read.
         with connect_role(lab, "zabalack_owner") as owner:
-            owner.execute(grant.replace(':"alert_app_role"', '"zabalack_installer"'))
-        assert grantee_of() == (["zabalack_installer"], "zabalack_installer"), "the former grantee lost the entry point"
+            owner.execute(grant.replace(':"alert_app_role"', '"alerta_app_next"'))
+        assert grantee_of() == (["alerta_app_next"], "alerta_app_next"), "the former grantee lost the entry point"
         with connect_role(lab, "alerta_app") as app:
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 app.execute("SELECT zabalack.stage_generation(%s,%s,%s)", (str(uuid.uuid4()), str(uuid.uuid4()), Jsonb({})))

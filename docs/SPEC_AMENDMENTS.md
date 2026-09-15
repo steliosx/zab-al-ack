@@ -535,9 +535,15 @@ entry point; an application role that can assume `zabalack_worker` reaches
 signature check. Neither membership moves an ACL, so the grantee list and the
 sealed digests read the same with it as without; the grant script refuses a role
 in either position, having no `ADMIN OPTION` to revoke a membership with.
-`capture_health()` asserts all six under `functions_ok`, so a regression there
-marks every worker unhealthy, and `13_reseal.sql` refuses to seal a tree that
-breaks any of them. The function is `SECURITY
+Its effective rights here are the entry point and nothing more: as itself or as
+any role it can assume it executes no other function in the schema and holds no
+privilege on a table there, the alerts owner's own `capture_ack()` and
+`seal_installation()` grants excepted where that role is the application role.
+A stray grant does move the digests and reads unhealthy through them — until a
+re-seal, which every upgrade performs, agrees with it; this assertion is what
+still holds afterwards. `capture_health()` asserts all of it under
+`functions_ok`, so a regression there marks every worker unhealthy, and
+`13_reseal.sql` refuses to seal a tree that breaks any of it. The function is `SECURITY
 DEFINER` with a pinned `search_path`, binds the intent to the staging (its
 `action_id`, `alert_id` and the row's customer) and refuses an `action_id`
 already recorded rather than re-staging it.

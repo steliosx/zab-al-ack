@@ -79,4 +79,37 @@ BEGIN
   RAISE EXCEPTION 'the application role is, or can assume, zabalack role(s): %; revoke that membership, or name a separate application role',assumed;
  END IF;
 END $$;
+-- And its effective rights here must be this entry point and nothing more, as
+-- itself or as any role it can assume: a grant of worker_call() to the
+-- application is a signature check skipped. The alerts owner keeps 005's
+-- capture_ack() and seal_installation() grants where it is the application role.
+DO $$
+DECLARE reachable text;
+BEGIN
+ SELECT string_agg(DISTINCT p.proname,', ' ORDER BY p.proname) INTO reachable
+  FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
+  JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER') CROSS JOIN pg_proc p
+  WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+   AND p.oid<>'zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
+   AND has_function_privilege(r.oid,p.oid,'EXECUTE')
+   AND NOT (r.rolname=i.application_role
+            AND r.oid=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
+            AND p.oid IN ('zabalack.capture_ack()'::regprocedure,
+                          'zabalack.seal_installation()'::regprocedure));
+ IF reachable IS NOT NULL THEN
+  RAISE EXCEPTION 'the application role executes other zabalack function(s): %; revoke those grants first',reachable;
+ END IF;
+END $$;
+DO $$
+DECLARE reachable text;
+BEGIN
+ SELECT string_agg(DISTINCT c.relname,', ' ORDER BY c.relname) INTO reachable
+  FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
+  JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER') CROSS JOIN pg_class c
+  WHERE i.singleton AND c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m')
+   AND has_table_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER');
+ IF reachable IS NOT NULL THEN
+  RAISE EXCEPTION 'the application role holds privileges on zabalack table(s): %; revoke them first',reachable;
+ END IF;
+END $$;
 COMMIT;

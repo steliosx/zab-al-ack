@@ -93,8 +93,12 @@ is not, and cannot assume, any `zabalack_*` role (`pg_auth_members` in both dire
 neither the grantee list nor the sealed digests move with it; a member of the application role stages through the entry
 point, and an application role that can assume `zabalack_worker` reaches `worker_call()` and its verification
 operations. The grant script refuses a role in either position), that no function in `zabalack` is executable by
-`PUBLIC`, and that `zabalack.alert_generations` admits no grantee but its owner. `capture_health()` asserts all
-six under `functions_ok` even under a matching
+`PUBLIC`, that the role executes no other function in `zabalack` and holds no privilege on a table there — as itself
+or as any role it can assume, the alerts owner's own `capture_ack()` and `seal_installation()` grants excepted where
+that is the application role — and that `zabalack.alert_generations` admits no grantee but its owner. A stray grant
+moves the digests, so it reads unhealthy until a re-seal agrees with it; the effective-rights assertion is what
+survives that seal, and `worker_call()` in the application's hands is a signature check skipped. `capture_health()`
+asserts all of it under `functions_ok` even under a matching
 seal, `13_reseal.sql` refuses to seal a tree that breaks any of them, and a false value there is a real
 misconfiguration, not a probe fault. A change of application role is a re-run of the grant script for the new role
 followed by a re-seal, recorded as a change.
