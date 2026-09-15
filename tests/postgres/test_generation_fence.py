@@ -766,7 +766,8 @@ def test_T41_a_pass_counts_what_still_carries_the_key_when_the_drain_asks(lab):
 
     def pass_through_worker_call(payload):
         with connect_role(lab, "zabalack_owner") as owner:
-            owner.execute("UPDATE zabalack.installation SET retirement_due_at=NULL WHERE singleton")
+            owner.execute("UPDATE zabalack.installation SET retirement_due_at=NULL,retirement_interval_seconds=900 "
+                          "WHERE singleton")
         with connect_role(lab, "zabalack_worker") as worker:
             return worker.execute("SELECT zabalack.worker_call('retire_intents',%s)", (Jsonb(payload),)).fetchone()[0]
 
@@ -774,12 +775,22 @@ def test_T41_a_pass_counts_what_still_carries_the_key_when_the_drain_asks(lab):
         with connect_role(lab, "zabalack_owner") as owner:
             return owner.execute("SELECT count(*) FROM public.alerts WHERE attributes ? %s", (INTENT,)).fetchone()[0]
 
+    def slot_due_in():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT extract(epoch FROM retirement_due_at-clock_timestamp()) "
+                                 "FROM zabalack.installation WHERE singleton").fetchone()[0]
+
     asked = pass_through_worker_call({"limit": 1000, "grace_seconds": 0, "report_remaining": True})
     assert asked["retired"] >= 1 and "continues" not in asked, asked
     assert INTENT not in attributes_of(lab, due_id) and INTENT in attributes_of(lab, fresh_id)
     assert asked["remaining"] == carrying_the_key() >= 1, asked
+    # Rows inside their windows are due within the window's bound plus grace;
+    # the slot is brought forward to then, not left at the interval, so the
+    # retry the rollback documents is not refused as not due.
+    assert 0 < slot_due_in() <= 60 and asked["slot_due_at"], (slot_due_in(), asked)
     unasked = pass_through_worker_call({"limit": 1000, "grace_seconds": 0})
-    assert "remaining" not in unasked, unasked
+    assert "remaining" not in unasked and "slot_due_at" not in unasked, unasked
+    assert slot_due_in() > 600, "the periodic call keeps its interval"
     # Its window closed, the same row is retired and no longer counted.
     with connect_role(lab, "alerta_app") as conn:
         conn.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",

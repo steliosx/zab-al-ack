@@ -676,6 +676,18 @@ BEGIN
    -- it may go. The worker's periodic call does not ask and pays no second scan.
    result := result||jsonb_build_object('remaining',
     (SELECT count(*) FROM public.alerts WHERE attributes ? 'zabbix_ack_sync_intent'));
+   -- A count above zero is rows inside their windows, due within the window's
+   -- bound (60 seconds) plus the grace this caller applies. The slot is
+   -- brought forward to then, so the retry the rollback documents is not
+   -- refused as not due by the interval this pass claimed; the periodic call,
+   -- which does not ask, keeps the interval.
+   IF (result->>'remaining')::int>0 THEN
+    UPDATE zabalack.installation SET retirement_due_at=least(retirement_due_at,
+     now_at+interval '60 seconds'+make_interval(secs=>least(86400,greatest(0,coalesce((p->>'grace_seconds')::int,300)))))
+     WHERE singleton;
+    result := result||jsonb_build_object('slot_due_at',
+     (SELECT retirement_due_at FROM zabalack.installation WHERE singleton));
+   END IF;
   END IF;
   RETURN result;
  ELSE RAISE EXCEPTION 'unsupported worker operation: %',op;
