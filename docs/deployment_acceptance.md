@@ -106,14 +106,16 @@ that is the application role — and that `zabalack.alert_generations` admits no
 moves the digests, so it reads unhealthy until a re-seal agrees with it; the effective-rights assertion is what
 survives that seal, and `worker_call()` in the application's hands is a signature check skipped. `capture_health()`
 asserts all of it under `functions_ok` — together with the schema's whole grant map, not only the application's corner of it:
-the grantees of every `zabalack` function are exactly the ones the installation makes, and none of them missing — record each grant as held, not merely the absence of strays; a revoked `EXECUTE` leaves nothing unexpected to find while the role it answers to gets `permission denied` (`worker_call`/`project` to `zabalack_worker`,
+the grantees of every routine in `zabalack` — procedures as well as functions, and record `prokind` for each, since a `SECURITY DEFINER` procedure runs as its owner exactly as a function does — are exactly the ones the installation makes, and none of them missing — record each grant as held, not merely the absence of strays; a revoked `EXECUTE` leaves nothing unexpected to find while the role it answers to gets `permission denied` (`worker_call`/`project` to `zabalack_worker`,
 `operator_call` to `zabalack_operator`, `capture_health` to `zabalack_probe` and `zabalack_operator`, `capture_ack` and
 `seal_installation` to the alerts owner, `stage_generation` to the recorded application role, every other function to no one), no
 relation admits a grantee at all, the fence's identity sequence included; the schema and everything in it is owned by
 `zabalack_owner`, since a `SECURITY DEFINER` function runs as its owner; schema `zabalack` admits only `USAGE`, and only to the
 three runtime roles, the alerts owner and the recorded application role — so record its ACL and confirm no `CREATE` to any
 role but the owner, nothing to `PUBLIC`, and that each runtime role still holds that `USAGE`, without which its fully
-qualified call fails at schema access while every function grant still reads right; and each keeps the attributes
+qualified call fails at schema access while every function grant still reads right — and the alerts owner too, where the
+deployment splits it from the application role, since without it 005's `capture_ack()` and `seal_installation()` grants
+and `10_trigger.sql` fail at schema access; and each keeps the attributes
 `00_roles.sql` declares (no `SUPERUSER`, `CREATEDB`, `CREATEROLE`, `BYPASSRLS`, `REPLICATION` or `INHERIT`; `LOGIN` for
 the three runtime roles only) (its `UPDATE` is `setval()`, and a sequence moved backwards
 inverts the fence's ordering), and no role outside the recorded installer topology can act as any of the four — record, for every

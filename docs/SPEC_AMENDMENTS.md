@@ -545,8 +545,10 @@ still holds afterwards. `capture_health()` asserts all of it under
 `functions_ok`, so a regression there marks every worker unhealthy, and
 `13_reseal.sql` refuses to seal a tree that breaks any of it. The same two
 assert the schema's whole grant map, not only the application's corner of it:
-the grantees of every `zabalack` function are exactly the ones the installation
-makes, read both ways — a revoked `EXECUTE` leaves no unexpected entry for a
+the grantees of every routine in `zabalack` — procedures as well as functions,
+a `SECURITY DEFINER` procedure running as its owner exactly as a function does,
+which `catalog_fingerprints()` now hashes too — are exactly the ones the
+installation makes, read both ways — a revoked `EXECUTE` leaves no unexpected entry for a
 negative rule to find while the role it answers to gets `permission denied`, and
 the migrations do not re-make a grant they already made —
 `worker_call(text,jsonb)` and `project(uuid)` to `zabalack_worker`,
@@ -564,7 +566,10 @@ application role, and to nobody else, `CREATE` going to the owner alone and
 `PUBLIC` getting nothing — and each of the three runtime roles still holds that
 `USAGE`, without which its fully qualified call fails at schema access while
 every function grant below still reads exactly right, so verification and
-delivery stop behind a probe reporting healthy; no role outside the recorded
+delivery stop behind a probe reporting healthy — as does the alerts owner,
+a separate role wherever the deployment splits the application from it, whose
+005 `capture_ack()` and `seal_installation()` grants and whose `10_trigger.sql`
+run both fail at schema access without it; no role outside the recorded
 installer topology can act as any of the four `zabalack_*` roles, whichever it
 is and whoever the role — reach rather than the direct edge, `SET ROLE`
 following a chain and `pg_has_role(..., 'MEMBER')` following it too, which is

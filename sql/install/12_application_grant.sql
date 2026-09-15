@@ -102,7 +102,7 @@ BEGIN
  SELECT string_agg(DISTINCT p.proname,', ' ORDER BY p.proname) INTO reachable
   FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
   JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER') CROSS JOIN pg_proc p
-  WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+  WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace
    AND p.oid<>'zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
    AND has_function_privilege(r.oid,p.oid,'EXECUTE')
    AND NOT (r.rolname=i.application_role

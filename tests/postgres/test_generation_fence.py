@@ -1530,6 +1530,122 @@ def test_T41_a_role_that_reaches_a_recorded_installer_is_refused_too(lab):
     assert health() == "true"
 
 
+@pytest.mark.parametrize("grantee,refusal", [
+    ("alerta_app", "other than the staging entry point"),
+    ("zabalack_probe", "a grantee the installation does not make"),
+])
+def test_T41_a_procedure_is_executable_too(lab, grantee, refusal):
+    """`prokind` was a filter on the map, exactly as `relkind` was on the relations.
+
+    A `SECURITY DEFINER` procedure runs as its owner just as a function does, so
+    one added to this schema and granted to a role reaches whatever
+    `zabalack_owner` reaches — `worker_call()` among it, which records a capture
+    as verified with no signature check. `catalog_fingerprints()` hashed only
+    `prokind='f'` and every assertion carried the same filter, so such an object
+    moved no digest and no rule saw it: healthy before the seal and after it.
+    Both cover every routine now, so the application role's effective rights and
+    the schema's grant map each catch it, depending on who holds the grant.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("""CREATE PROCEDURE zabalack.drifted() LANGUAGE plpgsql SECURITY DEFINER
+                      SET search_path=pg_catalog,zabalack AS $$
+                      BEGIN PERFORM zabalack.worker_call('doctor','{}'::jsonb); END $$""")
+        owner.execute("REVOKE ALL ON PROCEDURE zabalack.drifted() FROM PUBLIC")
+        owner.execute("GRANT EXECUTE ON PROCEDURE zabalack.drifted() TO %s" % grantee)
+        owner.execute("SELECT zabalack.seal_installation()")
+    try:
+        # It is a procedure, not a function: the filter that hid it.
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute(
+                "SELECT prokind FROM pg_proc WHERE oid='zabalack.drifted'::regproc").fetchone()[0] == "p"
+        assert health() == "false", "a granted procedure here is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match=refusal):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("DROP PROCEDURE zabalack.drifted()")
+            owner.execute(reseal)
+    assert health() == "true"
+
+
+def test_T41_the_grant_script_refuses_an_application_role_that_reaches_a_procedure(lab):
+    """The map is the standing assertion; the grant script is the door.
+
+    `12_application_grant.sql` has no whole-schema map of its own — it asks what
+    the role it is about to record can reach — so the `prokind` filter was the
+    only thing between it and recording a role that executes a `SECURITY
+    DEFINER` procedure here. That is the one place the filter mattered on its
+    own.
+    """
+    grant = (ROOT / "sql/install/12_application_grant.sql").read_text()
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("""CREATE PROCEDURE zabalack.drifted() LANGUAGE plpgsql SECURITY DEFINER
+                      SET search_path=pg_catalog,zabalack AS $$
+                      BEGIN PERFORM zabalack.worker_call('doctor','{}'::jsonb); END $$""")
+        owner.execute("REVOKE ALL ON PROCEDURE zabalack.drifted() FROM PUBLIC")
+        owner.execute("GRANT EXECUTE ON PROCEDURE zabalack.drifted() TO alerta_app_next")
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="executes other zabalack function"):
+                owner.execute(grant.replace(':"alert_app_role"', '"alerta_app_next"'))
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT application_role FROM zabalack.installation "
+                                 "WHERE singleton").fetchone()[0] == "alerta_app", "a refused grant records nothing"
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("DROP PROCEDURE zabalack.drifted()")
+            owner.execute(reseal)
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
+
+
+def test_T41_the_alerts_owner_keeps_its_usage_on_the_schema(lab):
+    """The positive side of the schema map reached the runtime roles and the
+    recorded application role, and stopped there.
+
+    Wherever the deployment splits the application from the alerts owner — which
+    `docs/deployment.md` prefers — that owner is a fourth role holding `USAGE`,
+    and 005 grants it `capture_ack()` for the trigger and `seal_installation()`
+    for the installer. Revoke its `USAGE` and both fail at schema access, and so
+    does `10_trigger.sql`, which installs and repairs the trigger; the negative
+    rule sees nothing, since nothing unexpected was added.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        assert owner.execute("SELECT pg_get_userbyid(relowner) FROM pg_class "
+                             "WHERE oid='public.alerts'::regclass").fetchone()[0] == "alerta_owner"
+        assert owner.execute("SELECT application_role FROM zabalack.installation "
+                             "WHERE singleton").fetchone()[0] == "alerta_app", "precondition: split roles"
+        owner.execute("REVOKE USAGE ON SCHEMA zabalack FROM alerta_owner")
+        owner.execute("SELECT zabalack.seal_installation()")
+    try:
+        assert health() == "false"
+        with connect_role(lab, "alerta_owner") as owner:
+            with pytest.raises(Exception, match="permission denied for schema zabalack"):
+                owner.execute("SELECT zabalack.seal_installation()")
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match="alerts owner has lost USAGE"):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("GRANT USAGE ON SCHEMA zabalack TO alerta_owner")
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 def test_T41_a_recorded_installer_holds_the_owner_role_and_nothing_else(lab):
     """The exemption the record makes, and its limit.
 

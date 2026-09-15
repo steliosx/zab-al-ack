@@ -728,6 +728,33 @@ END $$;
 REVOKE ALL ON FUNCTION zabalack.worker_call(text,jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION zabalack.worker_call(text,jsonb) TO zabalack_worker;
 
+-- catalog_fingerprints(): 005's body, with the prokind filter dropped. A
+-- procedure is executable too, and a SECURITY DEFINER one runs as its owner
+-- exactly as a function does, so a procedure added here and granted to a role
+-- reaches whatever zabalack_owner reaches. 005 hashed only prokind='f', so such
+-- an object moved no digest at all and the standing assertions, which carried
+-- the same filter, did not see it either. Both cover every routine now. The
+-- definition change moves the functions digest, which this upgrade re-seals.
+CREATE OR REPLACE FUNCTION zabalack.catalog_fingerprints() RETURNS jsonb LANGUAGE sql STABLE
+SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
+ SELECT jsonb_build_object(
+ 'functions', (SELECT md5(string_agg(pg_get_functiondef(p.oid)||p.proowner::text||coalesce(p.proacl::text,''),E'\n' ORDER BY p.oid))
+  FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='zabalack'),
+ 'structures',(SELECT md5(string_agg(v,E'\n' ORDER BY v)) FROM (
+  SELECT 'column:'||c.relname||':'||a.attname||':'||a.atttypid::text||':'||a.attnotnull::text AS v
+   FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid
+   WHERE n.nspname='zabalack' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped
+  UNION ALL SELECT 'relation_acl:'||c.relname||':'||c.relowner::text||':'||coalesce(c.relacl::text,'') FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='zabalack'
+  UNION ALL SELECT 'schema_acl:'||n.nspowner::text||':'||coalesce(n.nspacl::text,'') FROM pg_namespace n WHERE n.nspname='zabalack'
+  UNION ALL SELECT 'role:'||r.rolname||':'||r.rolsuper::text||':'||r.rolcreaterole::text||':'||r.rolcreatedb::text||':'||r.rolinherit::text||':'||r.rolbypassrls::text FROM pg_roles r WHERE r.rolname IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+  UNION ALL SELECT 'membership:'||am.roleid::text||':'||am.member::text||':'||am.admin_option::text FROM pg_auth_members am WHERE am.member IN ('zabalack_owner'::regrole,'zabalack_worker'::regrole,'zabalack_probe'::regrole,'zabalack_operator'::regrole)
+  UNION ALL SELECT 'constraint:'||c.conrelid::text||':'||pg_get_constraintdef(c.oid) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='zabalack'
+  UNION ALL SELECT 'index:'||i.indexdef FROM pg_indexes i WHERE i.schemaname='zabalack'
+ ) x),
+ 'trigger',(SELECT md5(pg_get_triggerdef(t.oid)) FROM pg_trigger t WHERE t.tgrelid='public.alerts'::regclass AND t.tgname='zabalack_capture'));
+$$;
+REVOKE ALL ON FUNCTION zabalack.catalog_fingerprints() FROM PUBLIC;
+
 -- capture_health(): 005's body with two conjuncts on functions_ok.
 CREATE OR REPLACE FUNCTION zabalack.capture_health() RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
@@ -799,7 +826,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- and seal_installation() grants, which the trigger and the installer need.
   AND NOT EXISTS(SELECT 1 FROM pg_roles a JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER')
    CROSS JOIN pg_proc p WHERE a.rolname=i.application_role
-    AND p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+    AND p.pronamespace='zabalack'::regnamespace
     AND p.oid<>'zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
     AND has_function_privilege(r.oid,p.oid,'EXECUTE')
     AND NOT (r.rolname=i.application_role
@@ -821,7 +848,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- owns whatever an ACL says.
   AND NOT EXISTS(SELECT 1 FROM pg_proc p
    CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
-   WHERE p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+   WHERE p.pronamespace='zabalack'::regnamespace
     AND e.grantee<>p.proowner AND e.grantee<>0
     AND NOT ((p.oid IN ('zabalack.worker_call(text,jsonb)'::regprocedure,'zabalack.project(uuid)'::regprocedure)
               AND e.grantee='zabalack_worker'::regrole)
@@ -887,6 +914,13 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   AND has_schema_privilege('zabalack_worker','zabalack','USAGE')
   AND has_schema_privilege('zabalack_probe','zabalack','USAGE')
   AND has_schema_privilege('zabalack_operator','zabalack','USAGE')
+  -- ...and the alerts owner, which is a separate role wherever the deployment
+  -- splits the application from it, as docs/deployment.md prefers. Without it
+  -- that role cannot execute the capture_ack() and seal_installation() grants
+  -- 005 makes to it, and 10_trigger.sql — the trigger's installation and
+  -- repair — fails at schema access.
+  AND has_schema_privilege((SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass),
+                           'zabalack','USAGE')
   -- Ownership is the other half of the map, and for a SECURITY DEFINER function
   -- it is the privilege itself: the body runs as the owner. Reassign one and
   -- the grantee rules above skip the new owner, which they exclude by

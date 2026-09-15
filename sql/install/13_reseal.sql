@@ -90,7 +90,7 @@ BEGIN
  -- with it: refuse instead, or the seal would certify it.
  IF EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
     JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER') CROSS JOIN pg_proc p
-    WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+    WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace
      AND p.oid<>'zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
      AND has_function_privilege(r.oid,p.oid,'EXECUTE')
      AND NOT (r.rolname=i.application_role
@@ -117,7 +117,7 @@ BEGIN
  -- operator_call() the controls — and no relation here admits a grantee at all.
  IF EXISTS(SELECT 1 FROM zabalack.installation i CROSS JOIN pg_proc p
     CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
-    WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace AND p.prokind='f'
+    WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace
      AND e.grantee<>p.proowner AND e.grantee<>0
      AND NOT ((p.oid IN ('zabalack.worker_call(text,jsonb)'::regprocedure,'zabalack.project(uuid)'::regprocedure)
                AND e.grantee='zabalack_worker'::regrole)
@@ -179,6 +179,13 @@ BEGIN
      AND has_schema_privilege('zabalack_probe','zabalack','USAGE')
      AND has_schema_privilege('zabalack_operator','zabalack','USAGE')) THEN
   RAISE EXCEPTION 'a zabalack runtime role has lost USAGE on schema zabalack; its calls fail at schema access behind a passing probe — restore the grant before sealing';
+ END IF;
+ -- The alerts owner too, a separate role wherever the deployment splits the
+ -- application from it: without USAGE it cannot execute 005's capture_ack() and
+ -- seal_installation() grants, and 10_trigger.sql fails at schema access.
+ IF NOT has_schema_privilege((SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass),
+                             'zabalack','USAGE') THEN
+  RAISE EXCEPTION 'the alerts owner has lost USAGE on schema zabalack; its capture_ack() and seal_installation() grants and the trigger installer both fail at schema access — restore the grant before sealing';
  END IF;
  -- Ownership is the other half of the map: a SECURITY DEFINER function runs as
  -- its owner, so reassigning one hands it that role's rights, and the grantee
