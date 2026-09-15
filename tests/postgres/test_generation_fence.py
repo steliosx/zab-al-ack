@@ -1230,6 +1230,74 @@ def test_T41_the_fence_sequence_still_counts_upward_from_where_it_is(lab, drift,
     assert health() == "true"
 
 
+@pytest.mark.parametrize("drift,restore,refusal,what", [
+    (["ALTER SEQUENCE " + SEQUENCE + " RENAME TO real_generator",
+      "ALTER SEQUENCE zabalack.real_generator CACHE 32"],
+     ["ALTER SEQUENCE zabalack.real_generator CACHE 1",
+      "ALTER SEQUENCE zabalack.real_generator RENAME TO alert_generations_seq_seq"],
+     "draws from",
+     "the generator renamed and made unsafe, which a check reading the shipped name cannot even find"),
+    (["ALTER SEQUENCE " + SEQUENCE + " RENAME TO real_generator",
+      "ALTER SEQUENCE zabalack.real_generator CACHE 32",
+      "CREATE SEQUENCE " + SEQUENCE,
+      "SELECT setval('" + SEQUENCE + "',(SELECT coalesce(max(seq),0)+1000 FROM zabalack.alert_generations),true)"],
+     ["DROP SEQUENCE " + SEQUENCE,
+      "ALTER SEQUENCE zabalack.real_generator CACHE 1",
+      "ALTER SEQUENCE zabalack.real_generator RENAME TO alert_generations_seq_seq"],
+     "generates for no column",
+     "a compliant decoy under the shipped name while the renamed generator still feeds the column"),
+    (["CREATE SEQUENCE zabalack.spare_generator"],
+     ["DROP SEQUENCE zabalack.spare_generator"],
+     "generates for no column",
+     "a sequence attached to nothing, which exists only to stand under a name a check might read"),
+])
+def test_T41_the_sequence_validated_is_the_one_the_identity_column_draws_from(lab, drift, restore, refusal, what):
+    """The third round on this one object, so the rule is about resolution.
+
+    Rounds thirty-four and thirty-five asserted the sequence's parameters and
+    its position — both by its shipped name. PostgreSQL keeps
+    `alert_generations.seq` attached to the sequence object, not to the name,
+    so renaming it leaves the column drawing from the renamed object while a
+    compliant sequence created under the old name answers every check. The
+    digests do move on a rename, `relname` being hashed — and the re-seal every
+    upgrade performs then records it, which is the shape the last twenty rounds
+    have had. Reproduced that way: after the seal `functions_ok` read `true`
+    while the column drew from a generator caching thirty-two values.
+
+    `generation_order_intact()` now resolves the generator through the identity
+    column's own catalog dependency, and no sequence here may generate for no
+    column — the second closes the decoy for all four of this schema's
+    sequences rather than for the fence's alone.
+    """
+    reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+
+    def health():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0]
+
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("""INSERT INTO zabalack.alert_generations(alert_id,action_id,recorded_by)
+                      VALUES('sequence-decoy-lab',%s,'staging')""", (str(uuid.uuid4()),))
+        for statement in drift:
+            owner.execute(statement)
+    try:
+        assert health() == "false", what + " is unhealthy"
+        with connect_role(lab, "zabalack_owner") as owner:
+            # Lab-only: seal over it, as every upgrade's re-seal would.
+            owner.execute("SELECT zabalack.seal_installation()")
+        assert health() == "false", what + " is unhealthy under a matching seal"
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(Exception, match=refusal):
+                owner.execute(reseal)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            for statement in restore:
+                owner.execute(statement)
+            owner.execute("DELETE FROM zabalack.alert_generations WHERE alert_id='sequence-decoy-lab'")
+            owner.execute(reseal)
+    assert health() == "true"
+
+
 @pytest.mark.parametrize("role,reaches", [("zabalack_worker", "zabalack.worker_call(text,jsonb)"),
                                           ("zabalack_operator", "zabalack.operator_call(text,jsonb)")])
 def test_T41_a_member_of_the_worker_role_reaches_the_verification_path(lab, role, reaches):

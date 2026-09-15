@@ -104,20 +104,28 @@ REVOKE ALL ON FUNCTION zabalack.newest_generation(text) FROM PUBLIC;
 -- than raise, so readiness still answers.
 CREATE FUNCTION zabalack.generation_order_intact() RETURNS boolean
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
-DECLARE highest bigint; standing bigint;
+DECLARE generator regclass; highest bigint; standing bigint;
 BEGIN
- IF NOT EXISTS(SELECT 1 FROM pg_sequence s
-   WHERE s.seqrelid='zabalack.alert_generations_seq_seq'::regclass
-    AND s.seqincrement=1 AND s.seqstart=1 AND s.seqmin=1
-    AND s.seqmax=9223372036854775807 AND NOT s.seqcycle AND s.seqcache=1) THEN
-  RETURN false;
- END IF;
  BEGIN
+  -- The generator is resolved through the catalog dependency the identity
+  -- column carries, never by name. Renaming that sequence leaves the column
+  -- drawing from the renamed object, so a check that trusts the name can be
+  -- pointed at a compliant sequence created under the old one while the real
+  -- generator stays cached or descending.
+  generator:=pg_get_serial_sequence('zabalack.alert_generations','seq')::regclass;
+  IF generator IS NULL THEN
+   RETURN false;
+  END IF;
+  IF NOT EXISTS(SELECT 1 FROM pg_sequence s
+    WHERE s.seqrelid=generator
+     AND s.seqincrement=1 AND s.seqstart=1 AND s.seqmin=1
+     AND s.seqmax=9223372036854775807 AND NOT s.seqcycle AND s.seqcache=1) THEN
+   RETURN false;
+  END IF;
   SELECT max(g.seq) INTO highest FROM zabalack.alert_generations g;
+  standing:=pg_sequence_last_value(generator);
  EXCEPTION WHEN insufficient_privilege THEN RETURN false;
  END;
- SELECT q.last_value INTO standing FROM pg_sequences q
-  WHERE q.schemaname='zabalack' AND q.sequencename='alert_generations_seq_seq';
  RETURN coalesce(standing,0)>=coalesce(highest,0);
 END $$;
 REVOKE ALL ON FUNCTION zabalack.generation_order_intact() FROM PUBLIC;
@@ -915,6 +923,14 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- ...and while the sequence behind it still counts upward from where it
   -- stands, which no digest can see at all. See generation_order_intact().
   AND zabalack.generation_order_intact()
+  -- ...and no sequence here is attached to nothing. Every sequence this schema
+  -- ships is the identity generator of a column in it; one that generates for
+  -- no column was created by hand, and its only use is to stand under a name a
+  -- check might read. Refusing it closes that for all four, not just the fence's.
+  AND NOT EXISTS(SELECT 1 FROM pg_class c
+   WHERE c.relnamespace='zabalack'::regnamespace AND c.relkind='S'
+    AND NOT EXISTS(SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass
+     AND d.objid=c.oid AND d.refclassid='pg_class'::regclass AND d.deptype='i'))
   -- The staging entry point has exactly one non-owner grantee: the application
   -- role the grant recorded. A former application role, or any other, must not
   -- keep it; and a tree whose grant was revoked, or whose role was dropped, is

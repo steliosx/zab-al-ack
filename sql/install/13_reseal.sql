@@ -321,11 +321,17 @@ BEGIN
  -- later staging a lower seq than an earlier one, and newest_generation() then
  -- names the older acknowledgement. After the ownership rule above, so that a
  -- fence table its owner cannot read is reported as the reassignment it is.
+ IF EXISTS(SELECT 1 FROM pg_class c
+   WHERE c.relnamespace='zabalack'::regnamespace AND c.relkind='S'
+    AND NOT EXISTS(SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass
+     AND d.objid=c.oid AND d.refclassid='pg_class'::regclass AND d.deptype='i')) THEN
+  RAISE EXCEPTION 'a sequence in zabalack generates for no column here; it was created by hand and can only stand under a name a check might read — drop it before sealing';
+ END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_sequence s
-   WHERE s.seqrelid='zabalack.alert_generations_seq_seq'::regclass
+   WHERE s.seqrelid=pg_get_serial_sequence('zabalack.alert_generations','seq')::regclass
     AND s.seqincrement=1 AND s.seqstart=1 AND s.seqmin=1
     AND s.seqmax=9223372036854775807 AND NOT s.seqcycle AND s.seqcache=1) THEN
-  RAISE EXCEPTION 'zabalack.alert_generations_seq_seq no longer counts upward by one from one, without cycling and without caching; restore its parameters before sealing';
+  RAISE EXCEPTION 'the sequence zabalack.alert_generations.seq draws from no longer counts upward by one from one, without cycling and without caching; restore its parameters before sealing';
  END IF;
  IF NOT zabalack.generation_order_intact() THEN
   RAISE EXCEPTION 'zabalack.alert_generations_seq_seq stands below a generation already recorded; the next staging would be ordered beneath an earlier one — restore its position before sealing';
