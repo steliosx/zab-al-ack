@@ -903,8 +903,14 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- CONNECT to PUBLIC's default, which this does not disturb.
   AND NOT EXISTS(SELECT 1 FROM pg_database d CROSS JOIN LATERAL aclexplode(d.datacl) e
    WHERE d.datname=current_database() AND d.datacl IS NOT NULL
-    AND pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
-    AND (e.privilege_type<>'CONNECT' OR e.is_grantable))
+    AND ((pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+          AND (e.privilege_type<>'CONNECT' OR e.is_grantable))
+      -- PUBLIC again: CREATE granted to it lets every identity in the database
+      -- make schemas and objects, and no name matches grantee zero. What it may
+      -- hold is what a database is created with — CONNECT and TEMPORARY, neither
+      -- grantable — which is also what a null datacl means.
+      OR (e.grantee=0
+          AND (e.privilege_type NOT IN ('CONNECT','TEMPORARY') OR e.is_grantable))))
   -- ...and zabalack_owner still holds the grants 00_roles.sql makes it on
   -- public.alerts, exactly those and no more. Every rule above about this table
   -- is a prohibition, and a prohibition cannot see a grant that is *missing*.
@@ -950,12 +956,19 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,zabalack AS $$
   -- hold no table-level entry here, the three runtime roles hold no entry of
   -- any kind, and the owner's column entries are exactly the six 00_roles.sql
   -- makes it.
+  -- PUBLIC is grantee zero and carries no role name, so a map scoped by name
+  -- steps over it while every role in the database holds what it grants:
+  -- GRANT SELECT(attributes) ON public.alerts TO PUBLIC hands the worker, the
+  -- probe and the operator the live attributes and every staged intent in them.
+  -- The installation grants PUBLIC nothing here, so the rule is none.
   AND NOT EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) e
    WHERE c.oid='public.alerts'::regclass AND c.relacl IS NOT NULL
-    AND pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator'))
+    AND (e.grantee=0
+      OR pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')))
   AND NOT EXISTS(SELECT 1 FROM pg_attribute a CROSS JOIN LATERAL aclexplode(a.attacl) e
    WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0 AND NOT a.attisdropped AND a.attacl IS NOT NULL
-    AND (pg_get_userbyid(e.grantee) IN ('zabalack_worker','zabalack_probe','zabalack_operator')
+    AND (e.grantee=0
+      OR pg_get_userbyid(e.grantee) IN ('zabalack_worker','zabalack_probe','zabalack_operator')
       OR (pg_get_userbyid(e.grantee)='zabalack_owner'
        AND NOT ((e.privilege_type='SELECT' AND a.attname IN ('id','customer','status','attributes','update_time'))
              OR (e.privilege_type='UPDATE' AND a.attname='attributes')))))

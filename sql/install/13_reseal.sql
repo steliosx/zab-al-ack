@@ -230,23 +230,27 @@ BEGIN
  -- above, so GRANT MAINTAIN ON public.alerts TO zabalack_operator sealed.
  IF EXISTS(SELECT 1 FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) e
    WHERE c.oid='public.alerts'::regclass AND c.relacl IS NOT NULL
-    AND pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator'))
+    AND (e.grantee=0
+      OR pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')))
   OR EXISTS(SELECT 1 FROM pg_attribute a CROSS JOIN LATERAL aclexplode(a.attacl) e
    WHERE a.attrelid='public.alerts'::regclass AND a.attnum>0 AND NOT a.attisdropped AND a.attacl IS NOT NULL
-    AND (pg_get_userbyid(e.grantee) IN ('zabalack_worker','zabalack_probe','zabalack_operator')
+    AND (e.grantee=0
+      OR pg_get_userbyid(e.grantee) IN ('zabalack_worker','zabalack_probe','zabalack_operator')
       OR (pg_get_userbyid(e.grantee)='zabalack_owner'
        AND NOT ((e.privilege_type='SELECT' AND a.attname IN ('id','customer','status','attributes','update_time'))
              OR (e.privilege_type='UPDATE' AND a.attname='attributes'))))) THEN
-  RAISE EXCEPTION 'a zabalack role holds a privilege on public.alerts the installation does not make; the owner reads five columns and writes one, the runtime roles hold nothing and reach that table only through SECURITY DEFINER routines — revoke the rest before sealing';
+  RAISE EXCEPTION 'public.alerts carries a privilege the installation does not make — for a zabalack role, or for PUBLIC, which hands it to every role in the database; the owner reads five columns and writes one, the runtime roles hold nothing and reach that table only through SECURITY DEFINER routines — revoke the rest before sealing';
  END IF;
  -- And nothing but a non-grantable CONNECT on the database itself: CREATE there
  -- is arbitrary schemas and objects, and a grantable CONNECT delegates
  -- admission. No fingerprint covers a database ACL.
  IF EXISTS(SELECT 1 FROM pg_database d CROSS JOIN LATERAL aclexplode(d.datacl) e
    WHERE d.datname=current_database() AND d.datacl IS NOT NULL
-    AND pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
-    AND (e.privilege_type<>'CONNECT' OR e.is_grantable)) THEN
-  RAISE EXCEPTION 'a zabalack role holds a database privilege beyond a non-grantable CONNECT; 00_roles.sql grants CONNECT and nothing else — revoke the rest before sealing';
+    AND ((pg_get_userbyid(e.grantee) IN ('zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator')
+          AND (e.privilege_type<>'CONNECT' OR e.is_grantable))
+      OR (e.grantee=0
+          AND (e.privilege_type NOT IN ('CONNECT','TEMPORARY') OR e.is_grantable)))) THEN
+  RAISE EXCEPTION 'a database privilege here goes beyond what the installation makes: a zabalack role may hold a non-grantable CONNECT, and PUBLIC only the CONNECT and TEMPORARY a database is created with — CREATE granted to PUBLIC lets every identity make schemas and objects — revoke the rest before sealing';
  END IF;
  -- The schema's own ACL is the gate in front of every rule above. Without
  -- USAGE on zabalack, zabalack_worker's fully qualified worker_call() fails at

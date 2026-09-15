@@ -1366,6 +1366,12 @@ def test_T41_row_level_security_here_is_recorded_by_nothing_else(lab, enable, di
     ("GRANT MAINTAIN ON public.alerts TO zabalack_operator",
      "REVOKE MAINTAIN ON public.alerts FROM zabalack_operator",
      "MAINTAIN — VACUUM, CLUSTER, REINDEX — which no list of privilege names here had"),
+    ("GRANT SELECT(attributes) ON public.alerts TO PUBLIC",
+     "REVOKE SELECT(attributes) ON public.alerts FROM PUBLIC",
+     "PUBLIC, whose grantee is zero and matches no role name while every role holds what it grants"),
+    ("GRANT UPDATE(attributes) ON public.alerts TO PUBLIC",
+     "REVOKE UPDATE(attributes) ON public.alerts FROM PUBLIC",
+     "PUBLIC on a column inside the owner's own permitted set, which its map therefore cannot see"),
 ])
 def test_T41_no_runtime_role_holds_anything_on_the_alerts_table(lab, give, take, what):
     """The map for the other three roles, after the owner's.
@@ -1381,6 +1387,15 @@ def test_T41_no_runtime_role_holds_anything_on_the_alerts_table(lab, give, take,
     the reserved sync keys and the source identity on any row without going
     through `project()`. `public.alerts` is outside the schema the digests
     cover, so nothing else sees it either.
+
+    `PUBLIC` is here too, and its grantee is zero: a map scoped by role name
+    steps over it while every role in the database holds what it grants. Two of
+    those variants are kept for coverage rather than discrimination — a
+    `PUBLIC` grant outside the owner's permitted set, or one handing a runtime
+    role a privilege a round-twenty-six prohibition names, fires those older
+    rules first. The variant that isolates the `PUBLIC` arm is
+    `SELECT(attributes)`: inside the owner's permitted set and on a column no
+    prohibition mentions, which is why the finding used exactly that grant.
     """
     reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
 
@@ -1398,7 +1413,7 @@ def test_T41_no_runtime_role_holds_anything_on_the_alerts_table(lab, give, take,
             owner.execute("SELECT zabalack.seal_installation()")
         assert health() == "false", what + " is unhealthy under a matching seal"
         with connect_role(lab, "zabalack_owner") as owner:
-            with pytest.raises(Exception, match="holds a privilege on public.alerts the installation does not make"):
+            with pytest.raises(Exception, match="public.alerts carries a privilege the installation does not make"):
                 owner.execute(reseal)
     finally:
         with connect_role(lab, "alerta_owner") as owner:
@@ -1415,6 +1430,9 @@ def test_T41_no_runtime_role_holds_anything_on_the_alerts_table(lab, give, take,
     ("GRANT CONNECT ON DATABASE {db} TO zabalack_worker WITH GRANT OPTION",
      "REVOKE GRANT OPTION FOR CONNECT ON DATABASE {db} FROM zabalack_worker",
      "a grantable CONNECT, which delegates admission to the database"),
+    ("GRANT CREATE ON DATABASE {db} TO PUBLIC",
+     "REVOKE CREATE ON DATABASE {db} FROM PUBLIC",
+     "CREATE to PUBLIC, which every identity in the database holds and no role name matches"),
 ])
 def test_T41_a_zabalack_role_holds_nothing_on_the_database_but_connect(lab, give, take, what):
     """The database ACL, which is in no fingerprint and was checked positively.
@@ -1451,7 +1469,7 @@ def test_T41_a_zabalack_role_holds_nothing_on_the_database_but_connect(lab, give
         try:
             assert health() == "false", what + " is unhealthy"
             admin.execute("SET ROLE zabalack_owner")
-            with pytest.raises(Exception, match="database privilege beyond a non-grantable CONNECT"):
+            with pytest.raises(Exception, match="database privilege here goes beyond what the installation makes"):
                 admin.execute(reseal.replace("BEGIN;", "").replace("COMMIT;", ""))
             admin.execute("RESET ROLE")
         finally:
