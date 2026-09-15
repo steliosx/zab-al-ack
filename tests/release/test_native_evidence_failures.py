@@ -38,6 +38,38 @@ def seed_reports(tmp_path):
     return evidence, raw
 
 
+@pytest.mark.parametrize('context', [
+    '', 'null', '{}', '[]', '[null]', '[{}]',
+    '[{"Endpoints": null}]', '[{"Endpoints": {}}]',
+    '[{"Endpoints": {"docker": null}}]',
+    '[{"Endpoints": {"docker": {}}}]',
+])
+def test_native_runner_classifies_malformed_docker_context_as_unavailable(monkeypatch, context):
+    monkeypatch.setattr(native_ci.sys, 'platform', 'linux')
+    monkeypatch.setattr(native_ci.shutil, 'which', lambda name: '/synthetic/docker')
+    monkeypatch.delenv('DOCKER_HOST', raising=False)
+    monkeypatch.delenv('DOCKER_CONTEXT', raising=False)
+    monkeypatch.setattr(native_ci.subprocess, 'check_output', lambda *args, **kwargs: context)
+    monkeypatch.setattr(native_ci.subprocess, 'run',
+                        lambda *args, **kwargs: pytest.fail('Malformed context reached Docker Compose'))
+    with pytest.raises(RuntimeError, match='context inspection was malformed'):
+        native_ci.ensure_local_docker()
+
+
+@pytest.mark.parametrize('host', [None, False, 42, [], {}, 'tcp://remote.invalid:2376'])
+def test_native_runner_rejects_nonlocal_context_hosts(monkeypatch, host):
+    monkeypatch.setattr(native_ci.sys, 'platform', 'linux')
+    monkeypatch.setattr(native_ci.shutil, 'which', lambda name: '/synthetic/docker')
+    monkeypatch.delenv('DOCKER_HOST', raising=False)
+    monkeypatch.delenv('DOCKER_CONTEXT', raising=False)
+    document = json.dumps([{'Endpoints': {'docker': {'Host': host}}}])
+    monkeypatch.setattr(native_ci.subprocess, 'check_output', lambda *args, **kwargs: document)
+    monkeypatch.setattr(native_ci.subprocess, 'run',
+                        lambda *args, **kwargs: pytest.fail('Nonlocal context reached Docker Compose'))
+    with pytest.raises(RuntimeError, match='Remote Docker context refused'):
+        native_ci.ensure_local_docker()
+
+
 @pytest.mark.parametrize('failure', ['docker-unavailable', 'startup', 'startup-cleanup-timeout',
                                    'malformed-junit', 'cleanup-timeout', 'cleanup-error'])
 def test_native_attempt_replaces_previous_evidence_before_service_operations(tmp_path, monkeypatch, failure):

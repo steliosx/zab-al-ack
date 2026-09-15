@@ -3,9 +3,6 @@
 The delivered candidate is 0.1.0a16. Creating its source archive/wheel does not
 publish it, assign a public namespace or authorize production changes. No
 publication workflow is active: `release/publish.yml.example` is a template.
-The concise [readiness table](READINESS.md) separates merge, alpha-release and
-installed-environment requirements; evidence from one boundary does not satisfy
-another.
 
 ## Local release preparation
 

@@ -36,8 +36,13 @@ def ensure_local_docker() -> None:
     if override and not override.startswith('unix://'):
         raise RuntimeError('Only a local Unix-socket Docker daemon is accepted')
     if not override:
-        data = json.loads(subprocess.check_output(['docker', 'context', 'inspect'], text=True, timeout=10))
-        if not data[0]['Endpoints']['docker']['Host'].startswith('unix://'):
+        try:
+            data = json.loads(subprocess.check_output(
+                ['docker', 'context', 'inspect'], text=True, timeout=10))
+            host = data[0]['Endpoints']['docker']['Host']
+        except (json.JSONDecodeError, IndexError, KeyError, TypeError) as error:
+            raise RuntimeError('Docker context inspection was malformed') from error
+        if not isinstance(host, str) or not host.startswith('unix://'):
             raise RuntimeError('Remote Docker context refused')
     subprocess.run(['docker', 'compose', 'version'], check=True, timeout=10)
 
