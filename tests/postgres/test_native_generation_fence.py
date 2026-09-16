@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+import hashlib
 import importlib.util
 from pathlib import Path
 import shutil
@@ -575,6 +576,189 @@ def remove_live_intent(lab, alert_id):
     """What a whole-object attribute replace, or a pre-fence repair, leaves behind."""
     with connect_role(lab, "alerta_app") as conn:
         conn.execute("UPDATE alerts SET attributes=attributes-%s WHERE id=%s", (INTENT, alert_id))
+
+
+def migration_state(lab):
+    """Committed installation, routines and pending work, without volatile health timestamps."""
+    with connect_role(lab, "zabalack_owner") as owner:
+        state = {table: owner.execute(sql.SQL(
+            "SELECT to_jsonb(t) FROM {} t ORDER BY to_jsonb(t)::text"
+        ).format(sql.Identifier("zabalack", table))).fetchall() for table in (
+            "installation", "schema_migrations", "readiness_manifest", "captures", "outbox",
+            "verification_leases", "actions", "effects")}
+        state["routines"] = owner.execute(
+            "SELECT p.oid::regprocedure::text,pg_get_functiondef(p.oid) FROM pg_proc p "
+            "WHERE p.pronamespace='zabalack'::regnamespace ORDER BY 1").fetchall()
+    return state
+
+
+def upgrade_health(lab, *, healthy):
+    """Read the real probe entry point as its caller, not as the migration owner."""
+    with connect_role(lab, "zabalack_probe") as probe:
+        health = probe.execute("SELECT zabalack.capture_health()").fetchone()[0]
+    assert health["trigger_ok"] is True, "the existing capture trigger remains attached and unchanged"
+    assert health["functions_ok"] is healthy, health
+    return health
+
+
+def test_T41_native_a_failed_migration_loop_rolls_back_and_recovers_forward(native, tmp_path):
+    """A failure after 008/009 rolls back the entire migrate() call, not only its last file.
+
+    The injected migration exists only in a private copy. It proves the backfill
+    and both ledger entries were reached, changes queued work, then raises. The
+    original tree must subsequently upgrade the same populated database intact.
+    """
+    with schema3_database(native, tmp_path) as (lab, migrator):
+        alert_id, event_id, _ = stage(lab, staged=False)
+        first = intent_for(alert_id, event_id)
+        stage_pre_fence(lab, alert_id, first)
+        fire_ack(lab, alert_id, first)
+        verify_through_worker_call(lab, first)
+        second = intent_for(alert_id, event_id)
+        stage_pre_fence(lab, alert_id, second)
+        fire_ack(lab, alert_id, second)
+        before = migration_state(lab)
+        attributes_before = attributes_of(lab, alert_id)
+        assert before["actions"] and len(before["captures"]) == 2, "populated upgrade precondition"
+        assert {row[0]["state"] for row in before["outbox"]} == {"verified", "captured_unverified"}
+        assert upgrade_health(lab, healthy=True)["zabalack_schema_version"] == 3
+
+        fault_root = tmp_path / "failing-sql"
+        shutil.copytree(ROOT / "sql/migrations", fault_root / "migrations")
+        failure = fault_root / "migrations/010_synthetic_upgrade_failure.sql"
+        failure.write_text("""DO $$ BEGIN
+ IF (SELECT schema_version FROM zabalack.installation WHERE singleton)<>4
+  OR (SELECT count(*) FROM zabalack.schema_migrations WHERE version IN
+      ('008_generation_fence.sql','009_abandoned_attempt_sweep.sql'))<>2 THEN
+  RAISE EXCEPTION 'injection did not reach both prior migrations';
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM zabalack.alert_generations g JOIN zabalack.captures c
+      ON g.action_id=(c.intent->>'action_id')::uuid JOIN zabalack.outbox o USING(capture_id)
+      WHERE g.recorded_by='migration' AND o.state='captured_unverified') THEN
+  RAISE EXCEPTION 'injection did not observe the pending capture backfill';
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM zabalack.installation WHERE singleton
+      AND routine_bodies_md5=(SELECT zabalack.catalog_fingerprints()->>'routines')) THEN
+  RAISE EXCEPTION 'injection did not observe the migrated routine pin';
+ END IF;
+END $$;
+UPDATE zabalack.outbox SET state='failed',reason='synthetic_upgrade_failure'
+ WHERE state='captured_unverified';
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM zabalack.outbox WHERE reason='synthetic_upgrade_failure') THEN
+  RAISE EXCEPTION 'injection did not change pending work';
+ END IF;
+ RAISE EXCEPTION 'injected failure after migrations 008 and 009';
+END $$;
+""", encoding="utf-8")
+        real_root = migrator.ROOT
+        try:
+            migrator.ROOT = fault_root
+            with connect_role(lab, "zabalack_owner") as owner:
+                with pytest.raises(psycopg.errors.RaiseException, match="injected failure after migrations 008 and 009"):
+                    migrator.migrate(owner)
+        finally:
+            migrator.ROOT = real_root
+
+        assert migration_state(lab) == before, "failed upgrade changed committed schema, routines or captured work"
+        assert attributes_of(lab, alert_id) == attributes_before
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT to_regclass('zabalack.alert_generations'),"
+                                 "to_regprocedure('zabalack.stage_generation(text,uuid,jsonb)')").fetchone() == (None, None)
+        assert upgrade_health(lab, healthy=True)["zabalack_schema_version"] == 3
+
+        upgrade(lab, migrator)
+        assert upgrade_health(lab, healthy=True)["zabalack_schema_version"] == 4
+        after = migration_state(lab)
+        for table in ("captures", "outbox", "verification_leases", "actions", "effects"):
+            assert after[table] == before[table], f"forward recovery rewrote retained {table}"
+        with connect_role(lab, "zabalack_owner") as owner:
+            recorded = dict(owner.execute("SELECT version,sha256 FROM zabalack.schema_migrations").fetchall())
+        assert recorded == {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                            for path in (ROOT / "sql/migrations").glob("*.sql")}
+        assert [row[0] for row in fence(lab, alert_id)] == [first["action_id"], second["action_id"]]
+        verify_through_worker_call(lab, second)
+        assert project(lab, second["action_id"]) == "projected", "retained pending work remains usable"
+
+
+def test_T41_native_an_incomplete_installation_refuses_health_until_forward_recovery(native, tmp_path):
+    """migrate, 09, 12 and 13 commit separately; only the completed sequence is healthy.
+
+    Both role records begin NULL. The first reseal refusal names the application
+    grant (12), which is checked before the installer record (09); the operator
+    still completes the documented order rather than treating that message as
+    proof that the other step is done.
+    """
+    with schema3_database(native, tmp_path) as (lab, migrator):
+        alert_id, event_id, _ = stage(lab, staged=False)
+        payload = intent_for(alert_id, event_id)
+        before = migration_state(lab)
+        reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+        with connect_role(lab, "zabalack_owner") as owner:
+            migrator.migrate(owner)
+            assert owner.execute("SELECT installer_roles,application_role FROM zabalack.installation "
+                                 "WHERE singleton").fetchone() == (None, None)
+
+        for installers_recorded in (False, True):
+            if installers_recorded:
+                with connect_role(lab, "zabalack_owner") as owner:
+                    owner.execute((ROOT / "sql/install/09_installer_roles.sql").read_text().replace(
+                        ":'installer_roles'", "''"))
+                    assert owner.execute("SELECT installer_roles,application_role FROM zabalack.installation "
+                                         "WHERE singleton").fetchone() == ([], None)
+            assert upgrade_health(lab, healthy=False)["zabalack_schema_version"] == 4
+            with connect_role(lab, "alerta_app") as app:
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    app.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
+                                (alert_id, payload["action_id"], Jsonb(payload)))
+            with connect_role(lab, "zabalack_owner") as owner:
+                with pytest.raises(psycopg.errors.RaiseException) as refused:
+                    owner.execute(reseal)
+            assert "12_application_grant.sql" in str(refused.value) and "before sealing" in str(refused.value)
+            assert migration_state(lab)["readiness_manifest"] == before["readiness_manifest"], \
+                "a refused seal must leave the previous manifest intact"
+
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute((ROOT / "sql/install/12_application_grant.sql").read_text().replace(
+                ':"alert_app_role"', '"alerta_app"'))
+            assert owner.execute("SELECT installer_roles,application_role FROM zabalack.installation "
+                                 "WHERE singleton").fetchone() == ([], "alerta_app")
+            assert owner.execute("SELECT has_schema_privilege('alerta_app','zabalack','USAGE'),"
+                                 "has_schema_privilege('alerta_app','zabalack','CREATE')").fetchone() == (True, False)
+            assert owner.execute(
+                "SELECT DISTINCT p.oid::regprocedure::text FROM pg_proc p CROSS JOIN pg_roles r "
+                "WHERE p.pronamespace='zabalack'::regnamespace AND pg_has_role('alerta_app',r.oid,'MEMBER') "
+                "AND has_function_privilege(r.oid,p.oid,'EXECUTE') ORDER BY 1").fetchall() == [
+                    ("zabalack.stage_generation(text,uuid,jsonb)",)]
+            assert owner.execute(
+                "SELECT c.relname FROM pg_class c CROSS JOIN pg_roles r "
+                "WHERE c.relnamespace='zabalack'::regnamespace AND c.relkind IN ('r','p','v','m') "
+                "AND pg_has_role('alerta_app',r.oid,'MEMBER') "
+                "AND has_table_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')"
+            ).fetchall() == []
+        upgrade_health(lab, healthy=False)
+        assert migration_state(lab)["readiness_manifest"] == before["readiness_manifest"]
+        with connect_role(lab, "alerta_app") as app:
+            for statement in ("SELECT zabalack.worker_call('claim_verification','{}')",
+                              "SELECT count(*) FROM zabalack.alert_generations"):
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    app.execute(statement)
+        with connect_role(lab, "zabalack_worker") as worker:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                worker.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
+                               (alert_id, payload["action_id"], Jsonb(payload)))
+        assert fence(lab, alert_id) == [], "refused callers recorded no staging"
+
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+        upgrade_health(lab, healthy=True)
+        with connect_role(lab, "alerta_app") as app:
+            app.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
+                        (alert_id, payload["action_id"], Jsonb(payload)))
+        assert newest(lab, alert_id) == payload["action_id"]
+        fire_ack(lab, alert_id, payload)
+        verify_through_worker_call(lab, payload)
+        assert project(lab, payload["action_id"]) == "projected"
 
 
 def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(native, tmp_path):
