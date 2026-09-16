@@ -118,13 +118,15 @@ def main() -> int:
                 stage = 'relay-activation'
                 relays.activate(compose, project, ROOT)
                 stage = 'pytest'
+                ports = relays.ports
                 env = {key: value for key, value in os.environ.items() if not key.startswith('ACK_TEST_')}
                 # The Compose lab database is `alerta`; native tests read the actual
                 # database name from the fixture (tests/conftest.py) rather than
                 # assuming it, so this DSN and lab/local_runtime.py (`postgres`) both work.
-                env.update(ACK_TEST_ADMIN_DSN='postgresql://lab_admin@127.0.0.1:55432/alerta',
+                env.update(ACK_TEST_ADMIN_DSN=f'postgresql://lab_admin@127.0.0.1:{ports["postgres"]}/alerta',
                            ACK_TEST_DESTRUCTIVE_LAB='YES_ISOLATED_LAB',
-                           ACK_TEST_PGBOUNCER_DSN='postgresql://zabalack_probe@127.0.0.1:56432/alerta',
+                           ACK_TEST_PGBOUNCER_DSN=f'postgresql://zabalack_probe@127.0.0.1:{ports["pgbouncer"]}/alerta',
+                           ACK_TEST_PGBOUNCER_EXPECTED_PORT=str(ports['pgbouncer']),
                            TZ='UTC', HYPOTHESIS_STORAGE_DIRECTORY=str(ROOT / 'build/private/hypothesis'))
                 raw_xml = raw / ('native-' + phase + '.xml')
                 public_xml = evidence / raw_xml.name

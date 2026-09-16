@@ -1,5 +1,6 @@
 """Synthetic TCP and inspection tests; no Docker or database evidence."""
 from concurrent.futures import ThreadPoolExecutor
+import errno
 import json
 import socket
 
@@ -81,6 +82,31 @@ def test_unowned_or_noninternal_destinations_are_rejected_before_socket_access(m
     relays = relay_tool.DockerLabRelays()
     with pytest.raises(ValueError):
         relays.activate(COMPOSE, PROJECT, tmp_path)
+
+
+def test_simultaneous_lab_reservations_have_distinct_kernel_assigned_ports():
+    with relay_tool.DockerLabRelays() as first, relay_tool.DockerLabRelays() as second:
+        ports = [*first.ports.values(), *second.ports.values()]
+        assert len(ports) == len(set(ports)) == 4
+        assert all(1 <= port <= 65535 for port in ports)
+        for group in (first, second):
+            for service, relay in group.relays.items():
+                assert relay.listener.getsockname() == ("127.0.0.1", group.ports[service])
+
+
+def test_reservations_are_exclusive_before_activation_and_released_on_exit():
+    with relay_tool.DockerLabRelays() as group:
+        addresses = [relay.listener.getsockname() for relay in group.relays.values()]
+        assert all(relay.thread is None for relay in group.relays.values())
+        for address in addresses:
+            with socket.socket() as competitor:
+                competitor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                with pytest.raises(OSError) as failure:
+                    competitor.bind(address)
+                assert failure.value.errno == errno.EADDRINUSE
+    for address in addresses:
+        with socket.socket() as available:
+            available.bind(address)
 
 
 def test_second_listener_collision_releases_first_without_touching_occupant(monkeypatch):

@@ -23,6 +23,7 @@ PASS_XML = '<testsuites><testsuite><testcase classname="synthetic" name="test_T3
 def relay_context(monkeypatch):
     relay = MagicMock()
     relay.__enter__.return_value = relay
+    relay.ports = {'postgres': 43123, 'pgbouncer': 43124}
     monkeypatch.setattr(native_ci, 'DockerLabRelays', lambda: relay)
     return relay
 
@@ -113,14 +114,25 @@ def test_native_attempt_replaces_previous_evidence_before_service_operations(tmp
         assert report['phases'][0]['shutdown_reason'] == 'TimeoutExpired'
 
 
-def test_native_success_records_only_fresh_selected_reports(tmp_path, monkeypatch):
+def test_native_success_records_only_fresh_selected_reports(tmp_path, monkeypatch, relay_context):
     evidence, _ = seed_reports(tmp_path)
     monkeypatch.setattr(native_ci, 'ROOT', tmp_path)
     monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: None)
     monkeypatch.setattr(sys, 'argv', ['native_ci.py', '--isolated-lab', '--phase', 'postgres'])
+    monkeypatch.setenv('ACK_TEST_ADMIN_DSN', 'inherited-admin-must-be-replaced')
+    monkeypatch.setenv('ACK_TEST_PGBOUNCER_DSN', 'inherited-pool-must-be-replaced')
+    monkeypatch.setenv('ACK_TEST_PGBOUNCER_EXPECTED_PORT', '56432')
+    monkeypatch.setenv('ACK_TEST_UNRELATED', 'must-be-removed')
 
     def child(command, **kwargs):
         if '-m' in command and 'pytest' in command:
+            relay_context.activate.assert_called_once()
+            env = kwargs['env']
+            assert env['ACK_TEST_ADMIN_DSN'] == 'postgresql://lab_admin@127.0.0.1:43123/alerta'
+            assert env['ACK_TEST_PGBOUNCER_DSN'] == 'postgresql://zabalack_probe@127.0.0.1:43124/alerta'
+            assert env['ACK_TEST_PGBOUNCER_EXPECTED_PORT'] == '43124'
+            assert env['ACK_TEST_DESTRUCTIVE_LAB'] == 'YES_ISOLATED_LAB'
+            assert 'ACK_TEST_UNRELATED' not in env
             output = Path(next(value.split('=', 1)[1] for value in command if value.startswith('--junitxml=')))
             output.write_text(PASS_XML)
         return subprocess.CompletedProcess(command, 0)
