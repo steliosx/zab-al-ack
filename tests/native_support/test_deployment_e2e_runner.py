@@ -1,9 +1,12 @@
 """Offline runner checks; these are not native service evidence."""
 import importlib.util
 import json
+import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -116,6 +119,86 @@ def test_compose_can_only_reach_fresh_project_services(tmp_path):
                 assert Path(mount["source"]).is_relative_to(tmp_path)
                 assert "docker.sock" not in mount["source"]
     assert spec["services"]["postgres"]["environment"]["POSTGRES_HOST_AUTH_METHOD"] == "scram-sha-256"
+
+
+def test_runner_identity_uses_private_owner_without_posix_process_queries(tmp_path, monkeypatch):
+    original_stat = Path.stat
+
+    def private_owner(path, **kwargs):
+        if path == tmp_path:
+            return SimpleNamespace(st_uid=1234, st_gid=5678)
+        return original_stat(path, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", private_owner)
+    # Compose construction also runs in offline Windows checks where these
+    # process APIs do not exist. The generated directory supplies both IDs.
+    monkeypatch.delattr(os, "geteuid", raising=False)
+    monkeypatch.delattr(os, "getegid", raising=False)
+    spec = runner.compose_spec(tmp_path, tmp_path / "context", "zabalack-e2e-0123456789ab")
+    assert spec["services"]["runner"]["user"] == "1234:5678"
+    assert all("user" not in service for name, service in spec["services"].items() if name != "runner")
+
+
+def generated_bootstrap(private):
+    private.mkdir(mode=0o700)
+    runner.protected(private / "bootstrap.json", json.dumps({
+        "isolated_lab": True, "project": "zabalack-e2e-0123456789ab",
+        "passwords": dict.fromkeys(("alerta_app", "zabalack_worker", "zabalack_probe", "zabalack_operator",
+                                    "migrator", "human", "ingest", "outside", "admin"), "synthetic-password"),
+    }))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Numeric child identity requires POSIX")
+def test_compose_identity_can_read_bootstrap_and_write_host_readable_private_output(tmp_path):
+    """Exercise real child credentials and unchanged protected-file checks, without Docker."""
+    private = tmp_path / "private"
+    generated_bootstrap(private)
+    spec = runner.compose_spec(private, private / "context", "zabalack-e2e-0123456789ab")
+    uid, gid = map(int, spec["services"]["runner"].get("user", "0:0").split(":"))
+    probe = """import json, os, stat, sys
+from pathlib import Path
+root, private = map(Path, sys.argv[1:])
+sys.path[:0] = [str(root), str(root / 'src')]
+from lab import deployment_e2e_runtime as runtime
+from zabalack.config import read_protected_file
+runtime.PRIVATE = private
+os.environ['ACK_DEPLOYMENT_E2E'] = 'GENERATED_ISOLATED_PROJECT'
+assert runtime.require_generated_lab()['isolated_lab'] is True
+output = Path(runtime.secret('observations.json', json.dumps({'verified': True})))
+assert json.loads(read_protected_file(str(output))) == {'verified': True}
+assert output.stat().st_uid == os.geteuid()
+assert output.stat().st_gid == os.getegid()
+assert stat.S_IMODE(output.stat().st_mode) == 0o600
+"""
+    subprocess.run([sys.executable, "-I", "-c", probe, str(ROOT), str(private)],
+                   user=uid, group=gid, check=True, capture_output=True, timeout=30)
+    output = private / "observations.json"
+    assert json.loads(output.read_text()) == {"verified": True}
+    assert output.stat().st_uid == (private / "bootstrap.json").stat().st_uid == uid
+    assert output.stat().st_gid == (private / "bootstrap.json").stat().st_gid == gid
+    assert stat.S_IMODE(output.stat().st_mode) == stat.S_IMODE((private / "bootstrap.json").stat().st_mode) == 0o600
+    assert stat.S_IMODE(private.stat().st_mode) == 0o700
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Protected-file ownership checks require POSIX")
+def test_generated_bootstrap_rejects_mismatched_effective_owner(tmp_path, monkeypatch):
+    from lab import deployment_e2e_runtime as runtime
+    from zabalack.config import ConfigError
+
+    private = tmp_path / "private"
+    generated_bootstrap(private)
+    if private.stat().st_uid == 0:
+        pytest.skip("Root-owned secrets are intentionally accepted by the protected-file contract")
+    monkeypatch.setattr(runtime, "PRIVATE", private)
+    monkeypatch.setenv("ACK_DEPLOYMENT_E2E", "GENERATED_ISOLATED_PROJECT")
+    # Keep a real non-root-owned 0600 file/open; model the image's former root
+    # effective identity only at the runtime's ownership check.
+    with monkeypatch.context() as identity:
+        identity.setattr(os, "geteuid", lambda: 0)
+        with pytest.raises(ConfigError, match="secret_file_permissions"):
+            runtime.require_generated_lab()
+    assert runtime.require_generated_lab()["isolated_lab"] is True
+    assert stat.S_IMODE((private / "bootstrap.json").stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize("exit_code,failed,skipped", [(1, False, False), (0, True, False), (0, False, True)])

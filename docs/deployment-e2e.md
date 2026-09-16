@@ -89,6 +89,11 @@ separately chosen local cleanup. Do not share that file or its private directory
 The source DB password is mounted as one read-only file readable by the pinned
 Zabbix image's UID 1997; its host parent is mode 0700. Application keys and other
 DSNs are not mounted into Zabbix containers.
+The runner container uses the numeric UID and GID of its generated private
+directory. This lets the installed application read owner-only bootstrap and
+secret files and leaves generated mode-0600 results readable by the host owner.
+Protected-file ownership checks and modes remain unchanged; the other service
+containers retain their pinned images' identities.
 
 Two reference limitations are explicit:
 

@@ -89,6 +89,9 @@ def certificates(private):
 
 def compose_spec(private, context, project):
     """No ports, host network, Docker socket mounts, or shared production volumes."""
+    # The bind-mounted inputs are owner-only. Use that same numeric identity
+    # for protected reads and outputs the host must collect after the run.
+    owner = private.stat()
     mounts = [{"type": "bind", "source": str(private), "target": "/run/zabalack-e2e"}]
     pg = {"image": IMAGES["postgres"], "environment": {"POSTGRES_DB": "alerta", "POSTGRES_USER": "lab_admin",
           "POSTGRES_PASSWORD_FILE": "/run/secrets/pg-password", "POSTGRES_HOST_AUTH_METHOD": "scram-sha-256"},
@@ -110,7 +113,7 @@ def compose_spec(private, context, project):
         "zabbix-web": {"image": IMAGES["zabbix-web"], "environment": zenv | {"ZBX_SERVER_HOST": "zabbix-server", "PHP_TZ": "UTC"},
                        "volumes": zmount, "depends_on": ["zabbix-server"]},
         "runner": {"build": {"context": str(context), "dockerfile": "lab/deployment_e2e.Dockerfile"},
-                   "image": project + "-runner", "volumes": mounts,
+                   "image": project + "-runner", "user": f"{owner.st_uid}:{owner.st_gid}", "volumes": mounts,
                    "environment": {"TZ": "UTC", "ACK_DEPLOYMENT_E2E": "GENERATED_ISOLATED_PROJECT"},
                    "depends_on": {"postgres": {"condition": "service_healthy"}}}}
     for service in services.values():
