@@ -44,8 +44,16 @@ archives, and redact JUnit with the existing evidence tooling.
 On a failed native phase, `tools/native_failure_summary.py` exports only bounded
 allowlisted process/ledger facts and aggregated pytest failure classifications.
 The latter contain exception classes, fixed categories, known SQLSTATEs inferred
-from PostgreSQL exception classes, and counts; no test identifiers, tracebacks,
-messages, connection details or raw files are exported. The summary is bound to
+from PostgreSQL exception classes, and counts. A bounded `source_test` identifier
+is included only when the JUnit module and base function match a top-level
+`test_*` definition in the current phase's fixed source files. Test source is
+parsed without execution, at most once per module the JUnit names; parameter
+values are discarded. Missing, unsupported or unsafe identities are omitted
+without discarding the failure classification. Counts and classifications cover
+every case in the bounded document; `truncated` marks dropped export detail
+rather than unread input.
+No raw JUnit identifiers, tracebacks, messages, connection details or raw files
+are exported. The summary is bound to
 the current source/harness record, written to `evidence/native-failure-summary.json`
 and printed as JSON in the hosted job log. Missing, unsafe or oversized JUnit
 input is explicitly unavailable. This diagnostic summary is not acceptance

@@ -142,6 +142,29 @@ allowlisted public reports, not the private retention tree. Preserve the
 same-run artifact boundary even though jobs now execute sequentially on one
 runner; leftover workspace files cannot substitute for producer artifacts.
 
+Native pytest failure groups may include a `source_test` such as
+`tests/postgres/test_stateful_ledger.py::test_generated_delivery_ledger`.
+The exporter derives these identifiers from top-level `test_*` function
+definitions in the current phase's fixed source files, without importing tests.
+It matches the JUnit module/function against that catalog and discards the entire
+parameter suffix. Unknown or unavailable source identities leave the existing
+failure category and count intact, without an identifier. Different source tests
+remain separate groups; parameter variants of the same source test and failure
+classification are aggregated.
+
+The bounds are on the source read and on the exported detail, not on how much of
+the JUnit is examined. Every `<testcase>` in the document is counted and
+classified — the document is already capped at 1 MiB before it is parsed, so
+reading all of it is bounded — and `truncated` reports that distinct failure
+*groups* were dropped at the export limit, never that cases went unread. A phase
+whose failures come after its passes therefore reports them; a cap on cases read
+would report `failed: 0` for it. Source is parsed at most once per module named
+by the JUnit, resolved from the phase's fixed file list, so growth in one test
+file cannot exhaust a shared budget and silently disable identification for
+another. Identifier length remains bounded. These identifiers aid diagnosis; they
+do not attest execution, recover historical reports or add failure artifacts for
+reference/WASM jobs.
+
 Pull requests, main/tag pushes and manual runs select the bounded `pr` Hypothesis
 profile. A daily 03:23 UTC schedule selects `nightly`, with larger bounded
 generated sequences. Failed examples are minimized by Hypothesis and retained

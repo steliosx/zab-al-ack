@@ -269,14 +269,24 @@ def test_unsafe_or_unavailable_pytest_xml_exports_no_details(tmp_path, flaw):
     assert PRIVATE not in json.dumps(result)
 
 
-def test_pytest_summary_bounds_cases_and_ignores_other_phase_files(tmp_path):
+def test_pytest_summary_counts_every_case_and_ignores_other_phase_files(tmp_path):
+    """Counts cover the whole bounded document; another phase's file is not read.
+
+    This case previously asserted that reading stopped at MAX_ITEMS cases. The
+    bound moved to the exported detail — the document is already capped at
+    MAX_FILE_BYTES — so a phase with more cases than that limit now reports all
+    of them rather than reporting the first MAX_ITEMS and calling the rest
+    truncated. Identical facts remain a single group, so nothing is dropped here.
+    """
     fixture_tree(tmp_path)
     write_junit(tmp_path, [("failure", "AssertionError: " + PRIVATE, "")] * (summary_tool.MAX_ITEMS + 1))
+    # A different phase's raw file is unreadable garbage: this phase must not touch it.
     (tmp_path / "build/evidence-raw/native-postgres.xml").write_text(PRIVATE)
     result = summary_tool.build_summary(tmp_path)["phases"][0]["pytest"]
-    assert result["truncated"] is True
-    assert result["counts"]["failed"] == summary_tool.MAX_ITEMS
-    assert result["failures"][0]["count"] == summary_tool.MAX_ITEMS
+    assert result["status"] == "AVAILABLE"
+    assert result["counts"]["failed"] == summary_tool.MAX_ITEMS + 1
+    assert result["failures"][0]["count"] == summary_tool.MAX_ITEMS + 1
+    assert result["truncated"] is False
 
 
 @pytest.mark.parametrize("flaw", ["missing", "stale", "malformed"])
