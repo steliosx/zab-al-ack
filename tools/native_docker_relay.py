@@ -90,8 +90,8 @@ class LoopbackRelay:
 
     def __init__(self, port: int):
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # Keep an exclusive reservation even before listen() at activation.
-        # SO_REUSEADDR would let another reuse-enabled socket bind this address.
+        # On Linux, before listen(), two reuse-enabled sockets may bind the
+        # same address. Keep reuse disabled throughout this held reservation.
         try:
             self.listener.bind(("127.0.0.1", port))
         except BaseException:

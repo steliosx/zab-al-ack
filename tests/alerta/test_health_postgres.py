@@ -102,6 +102,9 @@ def test_T34_native_pgbouncer_timeout_role_and_clean_reuse(pg_lab, pgdb, record_
     ROLE fallback: a pool forcing a broader database identity fails this test.
     The Docker runner declares its held relay port in
     ACK_TEST_PGBOUNCER_EXPECTED_PORT; local services retain the 56432 default.
+    This port comparison checks the runner's declared reservation, not
+    independent endpoint discovery. Pool configuration, connected-role and
+    target checks below establish their separate identity boundaries.
     The profile's lab administrator is used only for read-only SHOW commands;
     fault installation remains on the separately scoped direct lab connection.
     """
