@@ -99,6 +99,78 @@ def test_completed_attempt_is_preserved_and_post_hook_changes_are_archived(setup
     assert {record['status'] for record in records(paths, first['attempt'])} == {'JOB_COMPLETED', 'PRE_RESET_SNAPSHOT'}
 
 
+@pytest.mark.parametrize('absolute', [False, True], ids=['relative-alias', 'pytest-absolute-alias'])
+def test_pytest_current_alias_and_target_logs_survive_completion_and_next_start(setup, absolute):
+    paths, context = setup
+    first = begin(paths, context)
+    base = paths.workspace / 'build/evidence-raw/native-postgres-attempt'
+    log = write(base, 'test_native_failure0/diagnostic.log', 'retain native failure diagnostics')
+    alias = base / 'test_native_failurecurrent'
+    alias.symlink_to(log.parent if absolute else Path(log.parent.name), target_is_directory=True)
+    hooks.run_hook('complete', paths, context, head_reader=lambda path: 'a' * 40)
+    report, = records(paths, first['attempt'])
+    relative_alias = alias.relative_to(paths.workspace).as_posix()
+    relative_target = log.parent.relative_to(paths.workspace).as_posix()
+    assert report['internal_aliases'] == [
+        {'path': relative_alias, 'linkname': 'test_native_failure0', 'target': relative_target}]
+    assert report['alias_target_directories'] == [relative_target]
+    with tarfile.open(paths.evidence / first['attempt'] / report['archive']) as retained:
+        link = retained.getmember(relative_alias)
+        assert link.issym() and link.linkname == 'test_native_failure0'
+        assert not Path(link.linkname).is_absolute()
+        assert retained.getmember(relative_target).isdir()
+        assert retained.extractfile(log.relative_to(paths.workspace).as_posix()).read() == b'retain native failure diagnostics'
+    begin(paths, {'fixture': 'next-synthetic-job'})
+    assert not list(paths.workspace.iterdir())
+    snapshots = records(paths, first['attempt'])
+    assert {record['status'] for record in snapshots} == {'JOB_COMPLETED', 'PRE_RESET_SNAPSHOT'}
+    assert all(record['internal_aliases'] == report['internal_aliases'] for record in snapshots)
+
+
+@pytest.mark.parametrize('target_kind', ['excluded', 'dangling', 'chain', 'parent-escape'])
+def test_aliases_to_unretained_or_nonconcrete_targets_fail_before_reset(setup, tmp_path, target_kind):
+    paths, context = setup
+    first = begin(paths, context)
+    target = write(paths.workspace, 'actual/log', 'preserve')
+    alias = paths.workspace / 'current'
+    if target_kind == 'excluded':
+        target = write(paths.workspace, '.git/credential', 'excluded')
+    elif target_kind == 'dangling':
+        target = paths.workspace / 'missing'
+    elif target_kind == 'chain':
+        chain = paths.workspace / 'chain'
+        chain.symlink_to(target)
+        target = chain
+    elif target_kind == 'parent-escape':
+        target = Path('../outside')
+        write(paths.workspace.parent, 'outside', 'outside')
+    alias.symlink_to(target)
+    with pytest.raises((ValueError, FileNotFoundError)):
+        begin(paths, {'fixture': 'next-job'})
+    assert alias.is_symlink()
+    assert hooks.read_json(paths.evidence / 'current-job.json') == first
+
+
+def test_alias_retargeted_after_selection_is_refused_without_reset(setup, monkeypatch):
+    paths, context = setup
+    first = begin(paths, context)
+    original = write(paths.workspace, 'test0/log', 'original diagnostic')
+    replacement = write(paths.workspace, 'test1/log', 'different diagnostic')
+    alias = paths.workspace / 'testcurrent'
+    alias.symlink_to(original.parent, target_is_directory=True)
+    select = hooks.selected_files
+    def retarget(root):
+        selected = select(root)
+        alias.unlink()
+        alias.symlink_to(replacement.parent, target_is_directory=True)
+        return selected
+    monkeypatch.setattr(hooks, 'selected_files', retarget)
+    with pytest.raises(ValueError, match='workspace_changed_during_retention'):
+        begin(paths, {'fixture': 'next-job'})
+    assert original.exists() and replacement.exists()
+    assert hooks.read_json(paths.evidence / 'current-job.json') == first
+
+
 def test_archive_failure_leaves_workspace_start_state_and_temp_untouched(setup, monkeypatch):
     paths, context = setup
     first = begin(paths, context)

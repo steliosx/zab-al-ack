@@ -183,9 +183,10 @@ def actual_head(workspace):
 
 
 def selected_files(root):
-    """Never traverse a link or special file, even for retained private output."""
+    """Retain safe internal alias metadata without traversing a symlink."""
     checked(root)
     files = []
+    target_directories = {}
     total = 0
     if not root.exists():
         return files, total
@@ -196,16 +197,28 @@ def selected_files(root):
         for name in [*directories, *names]:
             if name in EXCLUDED:
                 continue
-            path = checked(Path(directory) / name)
+            path = Path(directory) / name
+            checked(path.parent)
             info = path.lstat()
+            if stat.S_ISLNK(info.st_mode):
+                alias = internal_alias(root, path, info)
+                files.append((path, info, alias))
+                if stat.S_ISDIR(alias.target_stat.st_mode):
+                    target_directories[alias.target] = alias.target_stat
+                if name in directories:
+                    directories.remove(name)
+                continue
             if stat.S_ISDIR(info.st_mode):
                 continue
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                 raise ValueError('unsafe_workspace_entry')
-            files.append((path, info))
+            files.append((path, info, None))
             total += info.st_size
-            if len(files) > MAX_FILES or total > MAX_ARCHIVE_BYTES:
+            if len(files) + len(target_directories) > MAX_FILES or total > MAX_ARCHIVE_BYTES:
                 raise ValueError('retention_bound_exceeded')
+        if len(files) + len(target_directories) > MAX_FILES:
+            raise ValueError('retention_bound_exceeded')
+    files.extend((path, info, None) for path, info in target_directories.items())
     return sorted(files), total
 
 
@@ -221,7 +234,47 @@ class HashingReader:
 
 
 def file_identity(info):
-    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_mode, info.st_nlink
+
+
+@dataclass(frozen=True)
+class InternalAlias:
+    original: str
+    linkname: str
+    target: Path
+    target_stat: os.stat_result
+
+
+def internal_alias(root, path, expected):
+    """Inspect link text and concrete target metadata; never follow a link."""
+    checked(path.parent)
+    before = path.lstat()
+    if file_identity(before) != file_identity(expected) or not stat.S_ISLNK(before.st_mode):
+        raise ValueError('workspace_changed_during_retention')
+    original = os.readlink(path)
+    raw = Path(original)
+    target = Path(os.path.normpath(raw if raw.is_absolute() else path.parent / raw))
+    if (target == root or not target.is_relative_to(root)
+            or any(part in EXCLUDED for part in target.relative_to(root).parts)):
+        raise ValueError('unsafe_workspace_alias')
+    checked(target)  # Reject chains and linked ancestors before any target read.
+    target_stat = target.lstat()
+    if (not (stat.S_ISREG(target_stat.st_mode) or stat.S_ISDIR(target_stat.st_mode))
+            or (stat.S_ISREG(target_stat.st_mode) and target_stat.st_nlink != 1)):
+        raise ValueError('unsafe_workspace_alias')
+    if file_identity(path.lstat()) != file_identity(before) or os.readlink(path) != original:
+        raise ValueError('workspace_changed_during_retention')
+    # Tar symlinks resolve from their containing directory. Absolute host paths
+    # become canonical relative links whose normalized target remains in root.
+    return InternalAlias(original, Path(os.path.relpath(target, path.parent)).as_posix(), target, target_stat)
+
+
+def verify_alias(root, path, expected, alias):
+    observed = internal_alias(root, path, expected)
+    if (observed.original != alias.original or observed.linkname != alias.linkname
+            or observed.target != alias.target
+            or file_identity(observed.target_stat) != file_identity(alias.target_stat)):
+        raise ValueError('workspace_changed_during_retention')
 
 
 def archive_workspace(paths, attempt, status, context, head_reader=actual_head):
@@ -237,16 +290,40 @@ def archive_workspace(paths, attempt, status, context, head_reader=actual_head):
     # An interrupted .partial is retained; no cleanup may erase this attempt.
     fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     manifest = []
+    aliases = []
+    directories = []
     with os.fdopen(fd, 'wb') as output:
         with tarfile.open(fileobj=output, mode='w') as archive:
-            for path, expected in files:
+            for path, expected, alias in files:
+                name = path.relative_to(paths.workspace).as_posix()
+                if alias is not None:
+                    verify_alias(paths.workspace, path, expected, alias)
+                    entry = tarfile.TarInfo(name)
+                    entry.type = tarfile.SYMTYPE
+                    entry.linkname = alias.linkname
+                    entry.mode = expected.st_mode & 0o777
+                    entry.mtime = int(expected.st_mtime)
+                    archive.addfile(entry)
+                    verify_alias(paths.workspace, path, expected, alias)
+                    aliases.append({'path': name, 'linkname': alias.linkname,
+                                    'target': alias.target.relative_to(paths.workspace).as_posix()})
+                    continue
                 checked(path)
+                if stat.S_ISDIR(expected.st_mode):
+                    if file_identity(path.lstat()) != file_identity(expected):
+                        raise ValueError('workspace_changed_during_retention')
+                    entry = tarfile.TarInfo(name)
+                    entry.type = tarfile.DIRTYPE
+                    entry.mode = expected.st_mode & 0o777
+                    entry.mtime = int(expected.st_mtime)
+                    archive.addfile(entry)
+                    directories.append(name)
+                    continue
                 source_fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
                 with os.fdopen(source_fd, 'rb') as source:
                     observed = os.fstat(source.fileno())
                     if file_identity(observed) != file_identity(expected) or not stat.S_ISREG(observed.st_mode):
                         raise ValueError('workspace_changed_during_retention')
-                    name = path.relative_to(paths.workspace).as_posix()
                     entry = tarfile.TarInfo(name)
                     entry.size = observed.st_size
                     entry.mode = observed.st_mode & 0o777
@@ -256,6 +333,9 @@ def archive_workspace(paths, attempt, status, context, head_reader=actual_head):
                     if file_identity(os.fstat(source.fileno())) != file_identity(observed):
                         raise ValueError('workspace_changed_during_retention')
                     manifest.append({'path': name, 'size': entry.size, 'sha256': reader.digest.hexdigest()})
+            for path, expected, alias in files:
+                if alias is not None:
+                    verify_alias(paths.workspace, path, expected, alias)
         output.flush()
         os.fsync(output.fileno())
     os.replace(temporary, final)
@@ -264,6 +344,7 @@ def archive_workspace(paths, attempt, status, context, head_reader=actual_head):
     record = {'schema_version': 1, 'status': status, 'captured_at_utc': now(),
               'context': context, 'actual_checkout_sha': head_reader(paths.workspace),
               'archive': final.name, 'archive_sha256': digest, 'files': manifest,
+              'internal_aliases': aliases, 'alias_target_directories': directories,
               'excluded_dependency_names': sorted(EXCLUDED),
               'job_result': 'UNAVAILABLE_FROM_HOOK_USE_ACTIONS_RESULT',
               'cleanup': 'NO_DOCKER_OPERATIONS_PERFORMED'}

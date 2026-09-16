@@ -89,8 +89,15 @@ is explicitly `INTERRUPTED`; it never replaces an earlier successful record.
 A workspace without a known start is retained as an orphan snapshot. Incomplete
 `.tar.partial` files are kept. Private attempts are never automatically deleted.
 
-Path ancestors, retained entries and state files must not be symlinks. The
-archive reader refuses special files and hard links and never follows links.
+Workspace ancestors, state files and concrete archive targets must not be
+symlinks. Valid internal aliases, including pytest's per-test `*current`
+directory links, are retained as symlink metadata without following them.
+Their existing target must remain inside the retained workspace, outside
+excluded dependency paths, and have no linked ancestors or alias chain.
+Absolute internal link text is converted to a canonical relative tar link;
+the actual target directories and diagnostic files are retained separately.
+Link and target identities are rechecked while archiving. Escaping or dangling
+links, special files and hard links fail closed before workspace reset.
 Dependency directories are excluded before traversal. The archive is bounded
 to 50,000 files and 4 GiB, and free-space checks reserve at least 5 GiB after
 the projected archive on the evidence filesystem and require 5 GiB on the
