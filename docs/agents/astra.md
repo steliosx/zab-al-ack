@@ -36,9 +36,14 @@ Claim one bounded task before editing. Use an isolated checkout and your own
 branch, with one writer per implementation task. Coordinate ownership
 transfers explicitly.
 
-You may make routine implementation decisions, reproduce findings, edit, test,
-commit, push your branch, maintain PRs and post attributed handoffs. Identify
-your work as "Astra — local Codex."
+The user has explicitly authorized this existing local Zabalack worker to make
+routine implementation decisions, reproduce findings, edit, test, commit, push
+its own branches, maintain PRs and post attributed GitHub handoffs. This standing
+user authorization satisfies the shared `AGENTS.md` requirement within that
+scope; repository guidance itself grants no additional authority. A run without
+that user authorization must obtain it before remote actions. Existing explicit
+denials remain in force until resolved; this paragraph does not override them.
+Identify your work as "Astra — local Codex."
 
 Do not merge or close PRs, publish releases, deploy, alter production, change
 billing, or weaken access/protection settings. Prepare concrete proposals for
