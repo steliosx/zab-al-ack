@@ -506,7 +506,9 @@ def schema3_database(native, tmp_path):
 
     Roles are cluster-wide; the schema-level part of the lab bootstrap is
     provisioned here, then `001`–`007` through `sql/migrate.py` pointed at a
-    copy of the tree without 008, then the trigger as the alerts owner.
+    copy of the tree without 008 *or anything after it*, then the trigger as the
+    alerts owner. Excluding 008 alone would hand a schema-3 database every later
+    migration, each of which is written for the tree 008 leaves behind.
     """
     admin_dsn = native["admin_dsn"]
     name = "zabalack_upgrade_" + uuid.uuid4().hex[:8]
@@ -529,7 +531,7 @@ def schema3_database(native, tmp_path):
             staged_root = tmp_path / "sql"
             (staged_root / "migrations").mkdir(parents=True)
             for path in sorted((ROOT / "sql/migrations").glob("*.sql")):
-                if not path.name.startswith("008"):
+                if int(path.name[:3]) < 8:
                     shutil.copy(path, staged_root / "migrations" / path.name)
             migrator.ROOT = staged_root
             db.execute("SET ROLE zabalack_owner")
@@ -549,8 +551,10 @@ def schema3_database(native, tmp_path):
 
 
 def upgrade(lab, migrator):
-    """008, the installer record, the application grant and the re-seal, through
-    the real entry points and in the runbook's order.
+    """008 onward, the installer record, the application grant and the re-seal,
+    through the real entry points and in the runbook's order. The runner applies
+    every migration the schema-3 tree was missing, in one pass, which is how a
+    real upgrade arrives.
 
     The scratch database's migrations run as the superuser with `SET ROLE`, so no
     role holds `zabalack_owner` and the recorded list is empty — still a positive

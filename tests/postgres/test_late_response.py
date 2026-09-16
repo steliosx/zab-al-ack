@@ -1,6 +1,9 @@
-"""T29/T31 coordination regression; engine/lab scope follows pg_lab evidence."""
+"""T29/T31/T42 coordination regression; engine/lab scope follows pg_lab evidence."""
 from pathlib import Path
+import pytest
 from conftest import connect_role
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_T29_T31_T38_late_responses_preserve_uncertainty_and_fencing(pg_lab):
@@ -53,3 +56,68 @@ def test_T42_an_abandoned_send_is_fenced_whatever_state_it_was_left_in(pg_lab):
     with connect_role(pg_lab, 'zabalack_worker') as conn:
         conn.execute('RESET ROLE')
         conn.execute(script)
+
+
+def guards_of_the_repair_migration():
+    """009's two preconditions, as their own statements."""
+    source = (ROOT / 'sql/migrations/009_abandoned_attempt_sweep.sql').read_text()
+    version_start = source.index('DO $$\nDECLARE installed integer;')
+    routine_start = source.index('DO $$\nDECLARE recorded text; live jsonb;')
+    end = source.index('-- worker_call(): 008\'s body')
+    return (source[version_start:source.index('DO $$', version_start + 5)],
+            source[routine_start:end])
+
+
+def test_T42_the_repair_migration_refuses_what_it_cannot_repair(pg_lab):
+    """A file that replaces a routine body and re-records the digest pinning
+    every body here must refuse a tree it was not written for, and must not
+    refuse an ordinary upgrade.
+
+    The second half is the one worth stating. A sealed schema-3 installation
+    upgrades in one runner pass: 008 adds the fence and its routines, 009
+    follows, and only `13_reseal.sql` replaces the seal afterwards. A
+    sealed-manifest comparison in 009 would see 008's own work as drift and
+    refuse every upgrade, so 009 keeps 008's routine-body pin — which 008
+    re-records at the end of itself, before 009 reads it — and leaves the seal
+    comparison to the first migration of the pass. The native populated-upgrade
+    cases run that pass for real.
+    """
+    version_guard, routine_guard = guards_of_the_repair_migration()
+    with connect_role(pg_lab, 'zabalack_owner') as owner:
+        installed = owner.execute('SELECT schema_version FROM zabalack.installation WHERE singleton').fetchone()[0]
+        assert installed == 4, 'precondition: the lab is at the version 009 is written for'
+        owner.execute(version_guard)
+        owner.execute(routine_guard)
+        owner.execute('UPDATE zabalack.installation SET schema_version=3 WHERE singleton')
+    try:
+        with connect_role(pg_lab, 'zabalack_owner') as owner:
+            with pytest.raises(Exception, match='found schema 3'):
+                owner.execute(version_guard)
+    finally:
+        with connect_role(pg_lab, 'zabalack_owner') as owner:
+            owner.execute('UPDATE zabalack.installation SET schema_version=%s WHERE singleton', (installed,))
+    with connect_role(pg_lab, 'zabalack_owner') as owner:
+        shipped = owner.execute(
+            "SELECT pg_get_functiondef('zabalack.operator_call(text,jsonb)'::regprocedure)").fetchone()[0]
+        owner.execute("""CREATE OR REPLACE FUNCTION zabalack.operator_call(op text, p jsonb DEFAULT '{}'::jsonb)
+                      RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,zabalack
+                      AS $drift$ BEGIN RETURN zabalack.worker_call(op,p); END $drift$""")
+    try:
+        with connect_role(pg_lab, 'zabalack_owner') as owner:
+            with pytest.raises(Exception, match='drifted from the set 008 recorded'):
+                owner.execute(routine_guard)
+    finally:
+        with connect_role(pg_lab, 'zabalack_owner') as owner:
+            owner.execute(shipped)
+    with connect_role(pg_lab, 'zabalack_owner') as owner:
+        owner.execute(routine_guard)
+        # An upgrade pass in progress: an earlier migration has added structure
+        # the seal does not know about, exactly as 008 adds the fence table.
+        # 009 must not read that as drift.
+        with owner.transaction(force_rollback=True):
+            owner.execute('CREATE TABLE zabalack.upgrade_pass_scratch(x integer)')
+            live = owner.execute("SELECT zabalack.catalog_fingerprints()->>'structures'").fetchone()[0]
+            sealed = owner.execute('SELECT structures_md5 FROM zabalack.readiness_manifest WHERE singleton').fetchone()[0]
+            assert live != sealed, 'precondition: the catalog no longer matches the seal'
+            owner.execute(routine_guard)
+        assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == 'true'

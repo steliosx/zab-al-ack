@@ -46,20 +46,23 @@ BEGIN
  END IF;
 END $$;
 
--- The same precondition 008 states, for the same reason: this file replaces a
--- routine body and re-records the digest that pins every routine body here, so
--- drift already present would be recorded as the shipped bodies and blessed.
--- Both halves are checked -- the seal, for a sealed installation, and 008's
--- routine-body pin, which no seal writes and which is what knows a redefined
--- body from the shipped one.
+-- Half of 008's precondition, and deliberately not the other half. This file
+-- replaces a routine body and re-records the digest that pins every routine
+-- body here, so drift already present would be recorded as the shipped bodies
+-- and blessed: 008's routine-body pin, which no seal writes, is what knows a
+-- redefined body from the shipped one, and it is checked here.
+--
+-- The sealed-manifest comparison 008 makes is *not* repeated, and must not be.
+-- A sealed schema-3 installation upgrades through one runner pass: 008 runs,
+-- legitimately adding the fence table and its routines, and the seal is only
+-- replaced afterwards by 13_reseal.sql. A second migration in that same pass
+-- cannot tell 008's own changes from drift -- it would refuse every ordinary
+-- upgrade. Only the first migration of a pass can compare against the seal, and
+-- 008 already does, for both of us.
 DO $$
-DECLARE sealed record; recorded text; live jsonb;
+DECLARE recorded text; live jsonb;
 BEGIN
  live:=zabalack.catalog_fingerprints();
- SELECT functions_md5,structures_md5 INTO sealed FROM zabalack.readiness_manifest WHERE singleton;
- IF FOUND AND (live->>'functions'<>sealed.functions_md5 OR live->>'structures'<>sealed.structures_md5) THEN
-  RAISE EXCEPTION 'the zabalack catalog has drifted from its sealed manifest; this upgrade would re-seal over the drift and record it as the baseline — restore the tree, or re-seal deliberately with the drift reviewed, before migrating';
- END IF;
  SELECT routine_bodies_md5 INTO recorded FROM zabalack.installation WHERE singleton;
  IF recorded IS NULL OR recorded<>live->>'routines' THEN
   RAISE EXCEPTION 'a routine body here has drifted from the set 008 recorded; this migration re-records that digest and would carry the drift across as shipped — restore the tree before migrating';

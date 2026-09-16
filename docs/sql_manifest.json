@@ -65,7 +65,7 @@
     },
     {
       "path": "sql/migrations/009_abandoned_attempt_sweep.sql",
-      "sha256": "ce610b484b6ca9f5b4123e1f8917800993c3f1d1f1c629a9f80c345ad018308c"
+      "sha256": "b30a846b0291419dcb71b55b1285fa163b362394b8ed4f4bcc025fd56f709a29"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",
