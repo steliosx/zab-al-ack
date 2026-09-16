@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import traceback
 import xml.etree.ElementTree as ET
 from uuid import uuid4
 from evidence_utils import redact_junit, cases, code_digests
@@ -40,6 +41,23 @@ def ensure_local_docker() -> None:
         if not data[0]['Endpoints']['docker']['Host'].startswith('unix://'):
             raise RuntimeError('Remote Docker context refused')
     subprocess.run(['docker', 'compose', 'version'], check=True, timeout=10)
+
+
+def retain_phase_exception(raw: Path, phase: str, run_id: str, stage: str, error: Exception) -> None:
+    """Keep full exception details private without obstructing owned cleanup."""
+    # Sibling of --basetemp: pytest may recreate its directory during startup.
+    path = raw / f'native-{phase}-{run_id}-exception.log'
+    try:
+        if any(parent.is_symlink() for parent in (raw, *raw.parents)):
+            raise OSError('Unsafe private diagnostic directory')
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+        with os.fdopen(descriptor, 'w', encoding='utf-8', errors='backslashreplace') as log:
+            log.write(f'stage: {stage}\n')
+            traceback.print_exception(type(error), error, error.__traceback__, file=log)
+    except OSError:
+        # The phase already failed. Do not replace its reason or skip finally,
+        # and never print exception messages or private paths into Actions logs.
+        print('Native private exception diagnostic could not be retained.', file=sys.stderr, flush=True)
 
 
 def main() -> int:
@@ -83,11 +101,15 @@ def main() -> int:
         print(json.dumps({'phase': phase, 'project': project, 'layer': 'native_postgres18_pgbouncer'}), flush=True)
         result = {'phase': phase, 'project': project, 'exit_code': 1, 'status': 'FAIL',
                   'diagnostic_dir': 'build/evidence-raw/native-' + phase + '-' + run_id}
+        stage = 'relay-reservation'
         try:
             with DockerLabRelays() as relays:
+                stage = 'compose-startup'
                 subprocess.run([*compose, 'up', '-d', '--build', '--wait', '--wait-timeout', '60'],
                                cwd=ROOT, check=True, timeout=600)
+                stage = 'relay-activation'
                 relays.activate(compose, project, ROOT)
+                stage = 'pytest'
                 env = {key: value for key, value in os.environ.items() if not key.startswith('ACK_TEST_')}
                 # The Compose lab database is `alerta`; native tests read the actual
                 # database name from the fixture (tests/conftest.py) rather than
@@ -104,6 +126,7 @@ def main() -> int:
                     code = subprocess.run([sys.executable, '-m', 'pytest', *targets, '-q',
                         '--junitxml=' + str(raw_xml), '--basetemp=' + str(raw / ('native-' + phase + '-' + run_id))], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=600).returncode
                 result['exit_code'] = code
+                stage = 'junit-processing'
                 if raw_xml.exists():
                     result['raw_junit_sha256'] = hashlib.sha256(raw_xml.read_bytes()).hexdigest()
                     redact_junit(raw_xml, public_xml, ROOT)
@@ -112,9 +135,11 @@ def main() -> int:
                     result['junit'] = str(public_xml.relative_to(ROOT))
                     if code == 0 and rows and all(row['status'] == 'passed' for row in rows):
                         result['status'] = 'PASS'
+                stage = 'relay-shutdown'
         except (subprocess.SubprocessError, OSError, ET.ParseError, ValueError, RuntimeError) as error:
             result['status'] = 'FAIL'
             result['reason'] = type(error).__name__
+            retain_phase_exception(raw, phase, run_id, stage, error)
         finally:
             # Never remove volumes or reset source acknowledgements. Fresh
             # generated projects prevent collision with an earlier lab run.
