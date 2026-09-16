@@ -123,12 +123,17 @@ def compose_spec(private, context, project):
 
 
 def staged_context(destination):
-    destination.mkdir()
+    # Docker COPY preserves these nonsecret directory modes while changing
+    # ownership to root; the selected runner UID must still traverse them.
+    destination.mkdir(mode=0o755)
+    destination.chmod(0o755)
+    for name in ("lab", "tests"):
+        (destination / name).mkdir(mode=0o755)
+        (destination / name).chmod(0o755)
     for name in ("pyproject.toml", "README.md", "LICENSE", "NOTICE", "MANIFEST.in", "requirements.lock"):
         shutil.copy2(ROOT / name, destination / name)
     shutil.copytree(ROOT / "src", destination / "src", ignore=shutil.ignore_patterns("__pycache__", "*.egg-info", "*.pyc"))
     shutil.copytree(ROOT / "sql", destination / "sql", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    (destination / "lab").mkdir()
     for path in sorted((ROOT / "lab").glob("deployment_e2e*")):
         if path.is_file():
             shutil.copy2(path, destination / "lab" / path.name)

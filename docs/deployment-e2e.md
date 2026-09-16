@@ -94,6 +94,9 @@ directory. This lets the installed application read owner-only bootstrap and
 secret files and leaves generated mode-0600 results readable by the host owner.
 Protected-file ownership checks and modes remain unchanged; the other service
 containers retain their pinned images' identities.
+The generated nonsecret build-context directories use mode 0755 even under a
+restrictive host umask, so the runner can traverse copied source after Docker
+assigns it root ownership. The enclosing private directory stays mode 0700.
 
 Two reference limitations are explicit:
 

@@ -62,6 +62,47 @@ assert Path(zabbix_roles.__file__).resolve().is_relative_to(root)
                    cwd=destination, check=True, capture_output=True, timeout=30)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="Build-context permission modes require POSIX")
+def test_staged_context_remains_traversable_under_private_umask(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    inputs = ["pyproject.toml", "README.md", "LICENSE", "NOTICE", "MANIFEST.in", "requirements.lock",
+              "src/product.py", "sql/migrate.py", "lab/deployment_e2e.Dockerfile",
+              "lab/deployment_e2e_runtime.py", "lab/zabbix_roles.py", "zabbix/media.yaml",
+              "tests/deployment_e2e/test_service_path.py"]
+    for name in inputs:
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("synthetic source: " + name)
+        path.chmod(0o644)
+        for directory in (path.parent, *path.parent.parents):
+            if not directory.is_relative_to(source):
+                break
+            directory.chmod(0o755)
+    monkeypatch.setattr(runner, "ROOT", source)
+    private = tmp_path / "private"
+    private.mkdir(mode=0o700)
+    private.chmod(0o700)
+    runner.protected(private / "bootstrap.json", "synthetic-private-input")
+    destination = private / "context"
+    previous_umask = os.umask(0o077)
+    try:
+        runner.staged_context(destination)
+    finally:
+        os.umask(previous_umask)
+
+    # All copied source remains accessible after Docker gives it root ownership,
+    # including the implicit tests parent that copytree otherwise leaves 0700.
+    for directory in [destination, *[path for path in destination.rglob("*") if path.is_dir()]]:
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o755, directory.relative_to(destination)
+    for name in inputs:
+        assert (destination / name).read_bytes() == (source / name).read_bytes()
+        assert stat.S_IMODE((destination / name).stat().st_mode) == 0o644
+    assert stat.S_IMODE(private.stat().st_mode) == 0o700
+    assert stat.S_IMODE((private / "bootstrap.json").stat().st_mode) == 0o600
+    assert (private / "bootstrap.json").read_text() == "synthetic-private-input"
+    assert not (destination / "bootstrap.json").exists()
+
+
 def test_opt_in_required_before_docker(monkeypatch):
     monkeypatch.setattr(runner, "local_docker", lambda *_: pytest.fail("missing opt-in contacted Docker"))
     with pytest.raises(SystemExit):
