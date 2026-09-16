@@ -18,7 +18,7 @@ The facade is `SELECT zabalack.worker_call(%s,%s::jsonb)`. Calls are separate co
 | claim_background | instance,worker_id; {allowed,lease_generation,expires_at}. One shared background request and at least 1 second between starts. |
 | finish_background | instance,worker_id,lease_generation; releases only matching generation. |
 | record_reconciliation | instance,worker_id,background_generation,action_id,state,reason,completion_evidence,uncertain,retry_delay; background-fenced, read-only external outcome. Active delivery is not overwritten. |
-| reconcile_due | limit≤200; indexed bounded due redacted actions. Abandoned writes become uncertain; ordinary expired work expires without source writes. |
+| reconcile_due | limit≤200; indexed bounded due redacted actions. Abandoned writes become uncertain; ordinary expired work expires without source writes. A write is abandoned when an attempt recorded against a lease generation is still unsettled and that lease has expired — whatever state the action was left in (`authorised`, `pending`, `held`, `delivery_claimed`, `unknown`), since an operator `retry` may requeue a claimed action while its lease is live and maintenance may hold it afterwards. Rows already uncertain are left as they are. Fencing runs before the expiry statement, so a send whose outcome nobody observed is never recorded terminally expired. |
 | projection_due / project | limit≤200 → [{action_id}], or action_id → authoritative guarded projection result. |
 | status / inspect / doctor / verifier_health | redacted counts/actions/health; inspect accepts state/action_id/limit≤200. No actor-person mapping or proof export. |
 | host_inventory_due | optional instance; due controlled cohorts. |

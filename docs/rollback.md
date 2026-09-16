@@ -81,3 +81,31 @@ for rollback:
 Workers pinned to schema 4 hold when the version is moved back; earlier workers
 require schema 3 and are deliberately incompatible with 4.
 
+## 009 abandoned-attempt sweep (schema stays 4)
+
+Migration 009 replaces `worker_call()` with 008's body carrying one wider
+predicate: `reconcile_due` fences an action whose attempt against an expired
+lease generation is still unsettled, in any of the non-terminal states a
+delivery can be abandoned in, rather than in `delivery_claimed` alone. It ships
+no new structure, and the recorded schema version deliberately stays 4, so a
+worker pinned to 4 runs against a tree with or without it.
+
+1. **Rolling it back returns the gap, not a safe older behaviour.** Without it,
+   an action requeued by an operator `retry` while its delivery lease was live
+   keeps `uncertain=false` after the send is abandoned: the reconciler's fast
+   recovery never examines it, `settle_unknown` refuses it because it is not
+   uncertain, and once the execution deadline passes the expiry statement
+   records it terminally `expired` — an outcome nobody observed. Prefer a
+   forward migration to reverting this one.
+2. **It re-records `installation.routine_bodies_md5`.** No seal writes that
+   column; `capture_health()` and `13_reseal.sql` compare the live routine
+   digest against it. Replacing `worker_call()` again — by rollback or by a
+   later migration — must re-record it in the same transaction that changes the
+   body, or every worker reports unhealthy. 009 refuses to run at all unless the
+   digest it finds already matches what 008 recorded, so drift cannot be carried
+   across it and blessed as shipped.
+3. **Nothing it writes is undone by removing it.** Actions it fenced stay
+   `unknown`/uncertain, which is the truthful record of a send whose outcome was
+   never observed; they are settled through the ordinary fenced-and-settled
+   operator route.
+

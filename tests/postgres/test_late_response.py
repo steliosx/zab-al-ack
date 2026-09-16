@@ -40,3 +40,16 @@ def test_T21_T29_T31_forward_migration_repairs_existing_late_response(pg_lab):
             conn.execute('SELECT zabalack.seal_installation()')
             conn.execute('SET ROLE zabalack_worker')
             assert conn.execute("SELECT zabalack.worker_call('doctor','{}')").fetchone()[0]['functions_ok'] is True
+
+
+def test_T42_an_abandoned_send_is_fenced_whatever_state_it_was_left_in(pg_lab):
+    """The sweep's subject is the attempt and its lease, not the action's state.
+
+    Astra's minimized sequence, deterministic and without Hypothesis: a retry
+    requeues a claimed action while its delivery lease is live, the replacement
+    send is recorded against that lease, and the lease expires unobserved.
+    """
+    script = Path(__file__).with_name('assertions_abandoned_attempt.sql').read_text()
+    with connect_role(pg_lab, 'zabalack_worker') as conn:
+        conn.execute('RESET ROLE')
+        conn.execute(script)
