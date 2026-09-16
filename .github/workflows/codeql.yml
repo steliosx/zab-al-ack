@@ -23,7 +23,7 @@ jobs:
     # An absent variable keeps this job visibly skipped; it is not a clean scan.
     if: ${{ vars.ZABALACK_CODEQL_ENABLED == 'true' }}
     name: CodeQL (${{ matrix.language }})
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, ARM64, zabalack]
     timeout-minutes: 30
     permissions:
       contents: read

@@ -340,7 +340,9 @@ def test_ci_package_waits_for_same_run_required_jobs_and_rebuilds_mapping():
     for kind in ci.KINDS:
         steps = workflow['jobs'][kind]['steps']
         commands = [step['run'] for step in steps if 'run' in step]
-        assert commands.index(f'python tools/collect_ci_evidence.py prepare --kind {kind}') == 0
+        prepare_index = commands.index(f'python tools/collect_ci_evidence.py prepare --kind {kind}')
+        assert prepare_index == 1  # Only fresh-venv setup precedes invalidation.
+        assert 'python -m venv "$RUNNER_TEMP/venv"' in commands[0]
         assert 'python -m pip install --require-hashes -r requirements-quality.lock' in commands
         assert f'python tools/collect_ci_evidence.py pack --kind {kind}' in commands
         uploads = [step for step in steps if step.get('uses', '').startswith('actions/upload-artifact@')]
@@ -378,7 +380,57 @@ def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_re
     assert value['permissions'] == {'contents': 'read'}
     job = value['jobs']['service-lab']
     assert job['if'] == "${{ vars.ZABALACK_DEPLOYMENT_E2E_ENABLED == 'true' }}"
-    assert any(step.get('run') == 'python tools/run_deployment_e2e.py --isolated-lab' for step in job['steps'])
+    assert any(step.get('run') == 'flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
+               'python tools/run_deployment_e2e.py --isolated-lab' for step in job['steps'])
     uploads = [step for step in job['steps'] if step.get('uses', '').startswith('actions/upload-artifact@')]
     assert len(uploads) == 1 and uploads[0]['with']['path'] == 'evidence/deployment-e2e-run.json'
     assert uploads[0]['if'] == 'always()'
+
+
+def test_every_active_job_requires_the_dedicated_arm64_runner_without_hosted_fallback():
+    paths = list((ROOT / '.github/workflows').glob('*.yml'))
+    assert {path.name for path in paths} == {'ci.yml', 'security.yml', 'codeql.yml', 'deployment-e2e.yml'}
+    for path in paths:
+        workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+        for job in workflow['jobs'].values():
+            assert job['runs-on'] == ['self-hosted', 'Linux', 'ARM64', 'zabalack']
+            assert 'continue-on-error' not in job
+            for step in job['steps']:
+                # Context comes from Actions; local preflight must never forge it.
+                assert not any(key.startswith('GITHUB_') for key in step.get('env', {}))
+                if step.get('uses', '').startswith('actions/upload-artifact@'):
+                    assert step['with']['retention-days'] == '3'
+                    assert step['with']['if-no-files-found'] == 'error'
+
+
+def test_dependency_installations_use_a_new_environment_before_any_installs_or_evidence():
+    for name in ('ci.yml', 'security.yml', 'deployment-e2e.yml'):
+        workflow = yaml.load((ROOT / '.github/workflows' / name).read_text(), Loader=yaml.BaseLoader)
+        for job in workflow['jobs'].values():
+            steps = job['steps']
+            setup_index = next(i for i, step in enumerate(steps)
+                               if step.get('uses', '').startswith('actions/setup-python@'))
+            commands = [(i, step['run']) for i, step in enumerate(steps) if 'run' in step]
+            venvs = [(i, script) for i, script in commands if 'python -m venv' in script]
+            assert len(venvs) == 1
+            venv_index, venv = venvs[0]
+            assert setup_index < venv_index
+            assert venv.splitlines() == [
+                'test ! -e "$RUNNER_TEMP/venv"',
+                'python -m venv "$RUNNER_TEMP/venv"',
+                'printf \'%s\\n\' "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"',
+            ]
+            assert all(venv_index < i for i, script in commands
+                       if 'pip install' in script or 'collect_ci_evidence.py' in script)
+
+
+def test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner():
+    targets = {'ci.yml': ('native', 'tools/native_ci.py'),
+               'deployment-e2e.yml': ('service-lab', 'tools/run_deployment_e2e.py')}
+    for filename, (job_name, runner) in targets.items():
+        workflow = yaml.load((ROOT / '.github/workflows' / filename).read_text(), Loader=yaml.BaseLoader)
+        scripts = [step['run'] for step in workflow['jobs'][job_name]['steps'] if 'run' in step]
+        invocations = [script for script in scripts if runner in script]
+        assert invocations == ['flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
+                               f'python {runner} --isolated-lab']
+        assert not any('docker system prune' in script or 'down --volumes' in script for script in scripts)

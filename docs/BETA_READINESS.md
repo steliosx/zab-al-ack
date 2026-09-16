@@ -70,8 +70,13 @@ captures added, including a real Zabbix frontend screenshot of the lab event.
 
 Still required before calling this beta ready:
 
-- Execute hosted quality/reference/native/mutation and security workflows on
-  the final commit; run the Docker Compose forms of the native and
+- Execute quality/reference/native/mutation, package and security workflows
+  through actual Actions allocation on the dedicated Linux ARM64 self-hosted
+  runner against the final reviewed commit. This explicitly replaces the
+  hosted execution policy with no paid-hosted fallback and requires Opus
+  review; retain authentic run/attempt/head/base/tested-SHA and same-run
+  artifacts. Configuration or local tests alone do not satisfy it, and ARM64
+  does not establish x64 coverage. Run the Docker Compose forms of the native and
   deployment-path labs (the a8/a10 reports used local processes; a10 proved the
   installed-wheel path on those local services, not the Compose image path).
 - Resolve reference webhook transport amendment A2 with inspected installed

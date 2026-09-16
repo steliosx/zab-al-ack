@@ -27,7 +27,7 @@ def test_codeql_upload_permission_is_only_in_the_analysis_job():
     assert set(value['jobs']) == {'analyze'}
     job = value['jobs']['analyze']
     assert job['permissions'] == {'contents': 'read', 'security-events': 'write'}
-    assert job['runs-on'] == 'ubuntu-24.04'
+    assert job['runs-on'] == ['self-hosted', 'Linux', 'ARM64', 'zabalack']
     assert 1 <= int(job['timeout-minutes']) <= 30
 
 
