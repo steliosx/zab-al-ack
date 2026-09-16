@@ -52,9 +52,20 @@ It matches the JUnit module/function against that catalog and discards the entir
 parameter suffix. Unknown or unavailable source identities leave the existing
 failure category and count intact, without an identifier. Different source tests
 remain separate groups; parameter variants of the same source test and failure
-classification are aggregated. Catalog size, identifier length and parsed input
-remain bounded. These identifiers aid diagnosis; they do not attest execution,
-recover historical reports or add failure artifacts for reference/WASM jobs.
+classification are aggregated.
+
+The bounds are on the source read and on the exported detail, not on how much of
+the JUnit is examined. Every `<testcase>` in the document is counted and
+classified — the document is already capped at 1 MiB before it is parsed, so
+reading all of it is bounded — and `truncated` reports that distinct failure
+*groups* were dropped at the export limit, never that cases went unread. A phase
+whose failures come after its passes therefore reports them; a cap on cases read
+would report `failed: 0` for it. Source is parsed at most once per module named
+by the JUnit, resolved from the phase's fixed file list, so growth in one test
+file cannot exhaust a shared budget and silently disable identification for
+another. Identifier length remains bounded. These identifiers aid diagnosis; they
+do not attest execution, recover historical reports or add failure artifacts for
+reference/WASM jobs.
 
 Pull requests, pushes and manual runs select the bounded `pr` Hypothesis
 profile. A daily 03:23 UTC schedule selects `nightly`, with larger bounded

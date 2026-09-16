@@ -47,8 +47,11 @@ The latter contain exception classes, fixed categories, known SQLSTATEs inferred
 from PostgreSQL exception classes, and counts. A bounded `source_test` identifier
 is included only when the JUnit module and base function match a top-level
 `test_*` definition in the current phase's fixed source files. Test source is
-parsed without execution; parameter values are discarded. Missing, unsupported
-or unsafe identities are omitted without discarding the failure classification.
+parsed without execution, at most once per module the JUnit names; parameter
+values are discarded. Missing, unsupported or unsafe identities are omitted
+without discarding the failure classification. Counts and classifications cover
+every case in the bounded document; `truncated` marks dropped export detail
+rather than unread input.
 No raw JUnit identifiers, tracebacks, messages, connection details or raw files
 are exported. The summary is bound to
 the current source/harness record, written to `evidence/native-failure-summary.json`

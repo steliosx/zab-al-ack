@@ -18,8 +18,12 @@ MODULE = "tests.postgres.test_native_delivery_faults"
 VISIBLE = SOURCE + "::test_visible"
 
 
-def bound_summary(root, cases, *, phase="delivery_faults", sources=None):
-    """Seed source first, then bind both that tree and the exact synthetic XML."""
+def bound_summary(root, cases, *, phase="delivery_faults", sources=None, passing=()):
+    """Seed source first, then bind both that tree and the exact synthetic XML.
+
+    `passing` cases carry no failure child, so a phase can be given the shape a
+    long native run has: many passes, then the failures.
+    """
     if sources is None:
         sources = {SOURCE: "def test_visible():\n    pass\n"}
     for relative, contents in sources.items():
@@ -27,6 +31,8 @@ def bound_summary(root, cases, *, phase="delivery_faults", sources=None):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(contents)
     suite = ET.Element("testsuite", hostname=PRIVATE)
+    for classname, name in passing:
+        ET.SubElement(suite, "testcase", classname=classname, name=name, file=PRIVATE, line=PRIVATE)
     for classname, name in cases:
         case = ET.SubElement(suite, "testcase", classname=classname, name=name,
                              file=PRIVATE, line=PRIVATE)
@@ -165,17 +171,73 @@ def test_unavailable_source_omits_identity_without_losing_failure_facts(tmp_path
     assert_private_absent(result, tmp_path)
 
 
-def test_source_catalog_is_bounded_independently_of_junit_case_count(tmp_path):
+def test_source_parsing_is_bounded_per_module_and_does_not_starve_later_files(tmp_path, monkeypatch):
+    """The bound is one parse per module named, not a shared cap over definitions.
+
+    A single catalog cap across a phase's files is spent by whichever files come
+    first, so identification stops for the ones that come last as the early ones
+    grow — and the last file in a phase is where a native-only failure lives.
+    This asserts the replacement bound: a file far larger than the old cap still
+    identifies both its first and its last definition, a second file in the same
+    phase is unaffected by that size, and each module's source is read exactly
+    once however many cases name it.
+    """
     limit = summary_tool.MAX_ITEMS
-    source = "\n".join(f"def test_source_{index}():\n    pass\n" for index in range(limit + 1))
+    first, second = "tests/postgres/test_postgres.py", "tests/postgres/test_settled_expiry.py"
+    reads = []
+    safe_bytes = summary_tool._safe_bytes
+
+    def counted(candidate, root):
+        reads.append(str(candidate))
+        return safe_bytes(candidate, root)
+
+    monkeypatch.setattr(summary_tool, "_safe_bytes", counted)
     result = bound_summary(tmp_path, [
-        (MODULE, "test_source_0"), (MODULE, f"test_source_{limit}"),
-    ], sources={SOURCE: source})
+        ("tests.postgres.test_postgres", "test_source_0"),
+        ("tests.postgres.test_postgres", f"test_source_{limit}"),
+        ("tests.postgres.test_settled_expiry", "test_last_file"),
+        ("tests.postgres.test_settled_expiry", "test_last_file[second-variant]"),
+    ], phase="postgres", sources={
+        first: "\n".join(f"def test_source_{index}():\n    pass\n" for index in range(limit + 1)),
+        second: "def test_last_file():\n    pass\n"})
     facts = pytest_facts(result)
-    assert facts["counts"]["failed"] == 2 and facts["truncated"] is False
-    assert {failure.get("source_test") for failure in facts["failures"]} == {
-        SOURCE + "::test_source_0", None}
-    assert sum(failure["count"] for failure in facts["failures"]) == 2
+    assert facts["counts"]["failed"] == 4 and facts["truncated"] is False
+    assert {failure["source_test"] for failure in facts["failures"]} == {
+        first + "::test_source_0", first + f"::test_source_{limit}", second + "::test_last_file"}
+    assert sum(failure["count"] for failure in facts["failures"]) == 4
+    assert sum(name.endswith(first) for name in reads) == 1, "one parse per module, not per case"
+    assert sum(name.endswith(second) for name in reads) == 1
+
+
+def test_a_failure_after_the_old_case_bound_is_counted_classified_and_identified(tmp_path):
+    """The shape a long native phase actually has: many passes, then the failures.
+
+    Reading only the first MAX_ITEMS cases reports `failed: 0` for a phase that
+    failed — which is what the hosted native summary exported on 2026-09-16 for
+    a postgres phase of 201 passed and 2 failed.
+    """
+    limit = summary_tool.MAX_ITEMS
+    result = bound_summary(tmp_path, [(MODULE, "test_visible[" + PRIVATE + "]")],
+                           passing=[(MODULE, f"test_passing_{index}") for index in range(limit + 73)])
+    facts = pytest_facts(result)
+    assert facts["counts"] == {"passed": limit + 73, "failed": 1, "skipped": 0}
+    assert facts["truncated"] is False, "the input is bounded by size, not by case count"
+    assert facts["failures"] == [{"kind": "failure", "stage": "unspecified",
+        "category": "assertion", "exception_class": "AssertionError",
+        "source_test": VISIBLE, "count": 1}]
+    assert_private_absent(result, tmp_path)
+
+
+def test_exported_detail_is_bounded_while_the_counts_stay_complete(tmp_path):
+    """What `truncated` now means: dropped export detail, never unread input."""
+    limit = summary_tool.MAX_ITEMS
+    result = bound_summary(tmp_path, [(MODULE, f"test_group_{index}") for index in range(limit + 5)],
+                           sources={SOURCE: "\n".join(f"def test_group_{index}():\n    pass\n"
+                                                      for index in range(limit + 5))})
+    facts = pytest_facts(result)
+    assert facts["counts"] == {"passed": 0, "failed": limit + 5, "skipped": 0}
+    assert len(facts["failures"]) == limit and facts["truncated"] is True
+    assert sum(failure["count"] for failure in facts["failures"]) == limit
 
 
 def test_overlong_source_name_is_not_exported_or_allowed_to_hide_short_names(tmp_path):
