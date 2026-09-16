@@ -15,7 +15,11 @@
           - zabalack_migration_script is defined
           - zabalack_migration_python is defined
           - zabalack_migration_service is defined
-        fail_msg: "Explicit fenced migration selection and reviewed zabalack_owner command required."
+          - zabalack_application_role is defined
+          - zabalack_application_grant_script is defined
+          - zabalack_installer_roles is defined
+          - zabalack_installer_roles_script is defined
+        fail_msg: "Explicit fenced migration selection, reviewed zabalack_owner command, the application role and the recorded installer roles required."
   tasks:
     - name: Run checksummed migration CLI under its own restricted principal
       ansible.builtin.command:
@@ -23,6 +27,27 @@
       environment:
         ZABALACK_MIGRATION_DSN: "service={{ zabalack_migration_service }}"
       no_log: true
+    - name: Record the principals that may hold zabalack_owner (A5 stage two), as the schema owner
+      ansible.builtin.command:
+        argv: [psql, -X, --no-password, --set, ON_ERROR_STOP=1, --dbname, "service={{ zabalack_migration_service }}",
+               --set, "installer_roles={{ zabalack_installer_roles }}", --command, "SET ROLE zabalack_owner",
+               --file, "{{ zabalack_installer_roles_script }}"]
+      no_log: true
+    - name: Grant the application role its single entry point (A5 stage two), as the schema owner
+      ansible.builtin.command:
+        argv: [psql, -X, --no-password, --set, ON_ERROR_STOP=1, --dbname, "service={{ zabalack_migration_service }}",
+               --set, "alert_app_role={{ zabalack_application_role }}", --command, "SET ROLE zabalack_owner",
+               --file, "{{ zabalack_application_grant_script }}"]
+      no_log: true
 # zabalack_migration_script selects the reviewed sql/migrate.py in this artifact.
 # The CLI enforces zabalack_owner. Do not put the trigger installer DSN here.
 # No role creation, alerts ownership change, trigger administration or restart.
+# zabalack_installer_roles_script must be the reviewed sql/install/09_installer_roles.sql artifact and
+# zabalack_installer_roles the comma-separated list of installation principals that are members of zabalack_owner
+# (empty where the migrations run as a superuser and none is). The column starts NULL: until it is recorded,
+# capture_health() reports functions_ok false and the seal is refused.
+# zabalack_application_grant_script must be the reviewed sql/install/12_application_grant.sql artifact and
+# zabalack_application_role the role the Alerta application connects as. The grant changes ACLs the readiness
+# manifest hashes, so it runs here, before 03_trigger_install.yml seals a fresh installation; an already-sealed
+# installation is re-sealed by 04_reseal.yml afterwards instead.
+

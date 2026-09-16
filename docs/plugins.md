@@ -30,6 +30,12 @@ Activation supports exactly installed `alerta-server==9.1.0` and the default
 explicitly extended. Full canonical UUID `/alert/<id>/action` URLs are required;
 abbreviated IDs and native bulk/status routes remain local-only. Alerta's normal
 repeat-Ack HTTP 409 is preserved without creating an intent or extending expiry.
+The same holds for every acknowledgement Alerta will not record as one: the
+signer decides the alarm-model transition from the history before it stages,
+so an `ack` on a shelved, closed or expired alert stages nothing ahead of
+Alerta's own 409, and one that leaves the status unchanged (`assign`) stages
+nothing and projects `skipped_no_ack_transition`. A staging is made only for
+an acknowledgement whose signed status write can follow it.
 
 Only authenticated request `g.user_id` plus `g.login` establishes user-authenticated
 context. API-key owner labels and source-ingestion mappings never establish a

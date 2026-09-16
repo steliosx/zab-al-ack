@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -361,6 +362,313 @@ async def test_DB_transport_acquisition_has_true_overall_deadline(monkeypatch):
     with pytest.raises(TimeoutError):
         await Postgres("synthetic-unused", overall_timeout_seconds=0.02).call("status")
     assert time.monotonic() - started < 0.2
+
+
+@pytest.mark.asyncio
+async def test_T41_the_standalone_reconcile_command_retires_intents(monkeypatch):
+    """With the worker stopped and the standalone reconciliation unit kept, as
+    the rollback keeps it, staged intents must still leave live rows: the
+    command asks the database to retire on every run, a local operation, and
+    still sends no source write. Before this only the worker's loop did."""
+    import argparse
+    from zabalack import cli
+    db = FakeDB()
+    monkeypatch.setattr(cli, "load_settings", lambda path: Settings(worker_dsn_file="/reviewed/worker.dsn", cohorts=(COHORT,)))
+    monkeypatch.setattr(cli, "read_protected_file", lambda path: b"postgresql://unused")
+    monkeypatch.setattr(cli, "Postgres", lambda dsn, **kwargs: db)
+    result = await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert result["source_writes"] is False
+    assert [op for op, _ in db.calls if op == "retire_intents"] == ["retire_intents"], db.calls
+    assert "retirement" in result["result"]
+
+
+REGISTRY = {"lab-zbx": {"logical_instance": "lab-zbx", "api_version": "7.0.0",
+                        "url": "https://zbx.invalid/api_jsonrpc.php",
+                        "token_file": "/reviewed/token-that-is-not-there",
+                        "ca_file": "/reviewed/ca-that-is-not-there.pem"}}
+
+
+class DueDB(FakeDB):
+    """A database with one due uncertain action, so the cycle reaches the source."""
+
+    def __init__(self):
+        super().__init__()
+        self.due = [{"action_id": "a1", "instance": "lab-zbx", "event_id": "42", "trigger_id": "12",
+                     "cohort": dict(COHORT), "uncertain": True, "state": "pending", "source": None,
+                     "public_reference": "ref", "issued_at": "2026-01-01T00:00:00+00:00",
+                     "completion_evidence": None}]
+
+
+class UnreachableDB(DueDB):
+    """A database whose due-time scan fails for a reason reconcile_action cannot catch."""
+
+    async def call(self, op, payload=None):
+        if op == "reconcile_due":
+            self.calls.append((op, copy.deepcopy(payload)))
+            raise RuntimeError("terminating connection due to administrator command")
+        return await super().call(op, payload)
+
+
+def _standalone(monkeypatch, db, **settings):
+    from zabalack import cli
+    monkeypatch.setattr(cli, "load_settings",
+        lambda path: Settings(worker_dsn_file="/reviewed/worker.dsn", cohorts=(COHORT,), **settings))
+    monkeypatch.setattr(cli, "read_protected_file", lambda path: b"postgresql://unused")
+    monkeypatch.setattr(cli, "Postgres", lambda dsn, **kwargs: db)
+    return cli
+
+
+@pytest.mark.asyncio
+async def test_T41_an_unreachable_source_does_not_stop_the_standalone_drain(monkeypatch):
+    """The reading a review round proposed, executed rather than assumed.
+
+    The concern was that a missing or unreadable Zabbix token file would end
+    the command before its database-only retirement drain. It does not:
+    `rpc.read_protected_file` turns the `OSError` into an `RPCError`, and
+    `reconcile_action` records that failure and returns — as it does for an
+    endpoint that will not resolve, a bad CA, a timeout or a malformed
+    response, every one of which is an `RPCError` or its `ValidationError`
+    subclass. The drain runs and the run succeeds. This pins that, so an
+    exception path that stopped being wrapped would fail here.
+    """
+    import argparse
+    db = DueDB()
+    cli = _standalone(monkeypatch, db, endpoint_registry=REGISTRY)
+    result = await cli.execute(argparse.Namespace(command="reconcile", config="unused",
+                                                  read_only=True, once=True, nightly=False))
+    assert result["source_writes"] is False
+    assert _sweeps(db) == ["retire_intents"], db.calls
+    assert [p for o, p in db.calls if o == "record_reconciliation"][0]["check_failure"] == "secret_file_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_T41_a_reconciliation_that_fails_outright_does_not_take_the_drain_with_it(monkeypatch):
+    """And the part of that concern which does hold, closed by ordering.
+
+    Retirement is a local database operation, and the rollback makes a
+    completed drain its condition for removing the application adapter. It
+    must not be contingent on the half of this command that reaches the
+    source completing — so it runs first. Here the due-time scan fails with
+    something `reconcile_action` never sees; the run still fails, as it must,
+    but the intents have already left the live rows.
+    """
+    import argparse
+    db = UnreachableDB()
+    cli = _standalone(monkeypatch, db, endpoint_registry=REGISTRY)
+    with pytest.raises(RuntimeError, match="terminating connection"):
+        await cli.execute(argparse.Namespace(command="reconcile", config="unused",
+                                             read_only=True, once=True, nightly=False))
+    assert _sweeps(db) == ["retire_intents"], db.calls
+
+
+class FailingSweepDB(FakeDB):
+    """A database whose retirement sweep fails — its scan outrunning its budget."""
+
+    async def call(self, op, payload=None):
+        if op == "retire_intents":
+            self.calls.append((op, copy.deepcopy(payload)))
+            raise RuntimeError("canceling statement due to statement timeout")
+        return await super().call(op, payload)
+
+
+class PagedSweepDB(FakeDB):
+    """A database whose retirement sweep answers from a script of pages."""
+
+    def __init__(self, pages):
+        super().__init__()
+        self.pages = list(pages)
+
+    async def call(self, op, payload=None):
+        if op == "retire_intents":
+            self.calls.append((op, copy.deepcopy(payload)))
+            return self.pages.pop(0) if self.pages else {"examined": 0, "retired": 0, "deferred": 0}
+        return await super().call(op, payload)
+
+
+def _sweeps(db):
+    return [op for op, _ in db.calls if op == "retire_intents"]
+
+
+def _standalone_reconcile(monkeypatch, db):
+    from zabalack import cli
+    monkeypatch.setattr(cli, "load_settings", lambda path: Settings(worker_dsn_file="/reviewed/worker.dsn", cohorts=(COHORT,)))
+    monkeypatch.setattr(cli, "read_protected_file", lambda path: b"postgresql://unused")
+    monkeypatch.setattr(cli, "Postgres", lambda dsn, **kwargs: db)
+    return cli
+
+
+@pytest.mark.asyncio
+async def test_T41_the_standalone_reconcile_command_fails_when_retirement_fails(monkeypatch):
+    """The worker reports a failed sweep and retries it next cycle; the
+    standalone command has no next cycle, so a sweep that fails must fail the
+    run rather than report it complete — the rollback's automation must not
+    take a cleanup that did not happen for one that did. The rest of the cycle
+    still runs first; the failure is the run's verdict, not a short-circuit."""
+    import argparse
+    db = FailingSweepDB()
+    cli = _standalone_reconcile(monkeypatch, db)
+    with pytest.raises(cli.RetirementError):
+        await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert [op for op, _ in db.calls if op == "retire_intents"] == ["retire_intents"]
+
+
+def test_T41_a_failed_retirement_is_a_non_zero_exit_with_no_error_text_rendered(monkeypatch, capsys):
+    """Through the entry point automation runs: exit status 1, the error class
+    on stderr and nothing of the database's message, as for every failure."""
+    cli = _standalone_reconcile(monkeypatch, FailingSweepDB())
+    assert cli.main(["--config", "unused", "reconcile", "--read-only", "--once"]) == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.err.strip().splitlines()[-1]) == {"ok": False, "error_class": "RetirementError"}
+    assert "statement timeout" not in captured.err and captured.out == ""
+    assert cli.main(["--config", "unused", "reconcile", "--read-only", "--once"]) == 1, "every run fails alike"
+
+
+@pytest.mark.asyncio
+async def test_T41_the_standalone_reconcile_command_drains_the_due_intents_page_by_page(monkeypatch):
+    """The worker asks once per cycle and the slot carries a full or deferred
+    batch to its next cycle; the standalone command has no next cycle inside a
+    run, so it keeps asking while the sweep reports `continues`, and reports
+    the drain complete only when a sweep left nothing due behind it."""
+    import argparse
+    db = PagedSweepDB([{"examined": 200, "retired": 200, "deferred": 0, "continues": True},
+                       {"examined": 200, "retired": 199, "deferred": 1, "continues": True},
+                       {"examined": 3, "retired": 3, "deferred": 0, "remaining": 0}])
+    cli = _standalone_reconcile(monkeypatch, db)
+    result = await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert result["result"]["retirement"] == {"pages": 3, "examined": 403, "retired": 402, "deferred": 1,
+                                              "remaining": 0, "complete": True}
+    assert len(_sweeps(db)) == 3, "a page that continues is followed by another within the run"
+
+
+@pytest.mark.asyncio
+async def test_T41_a_drain_that_stops_with_work_remaining_fails_the_run(monkeypatch):
+    """A run is bounded: after its pages, what remains is the next run's, and
+    this run is not a completed cleanup. Before this the command exited 0 after
+    one page with `continues` set and staged intents still on live rows."""
+    import argparse
+    db = PagedSweepDB([{"examined": 200, "retired": 200, "deferred": 0, "continues": True}] * 40)
+    cli = _standalone_reconcile(monkeypatch, db)
+    with pytest.raises(cli.RetirementError):
+        await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert len(_sweeps(db)) == cli.RETIREMENT_PAGES_PER_RUN, "the run drains its pages, then stops"
+
+
+@pytest.mark.asyncio
+async def test_T41_a_drain_over_rows_other_sessions_hold_does_not_spin(monkeypatch):
+    """A page that examined nothing left only rows other sessions hold; asking
+    again within the run would spin on them. The run stops, incomplete."""
+    import argparse
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 2, "continues": True}] * 10)
+    cli = _standalone_reconcile(monkeypatch, db)
+    with pytest.raises(cli.RetirementError):
+        await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert len(_sweeps(db)) == 1
+
+
+@pytest.mark.asyncio
+async def test_T41_a_slot_that_is_not_due_is_neither_a_failure_nor_a_completed_drain(monkeypatch):
+    """Another caller claimed this interval's slot: the ordinary answer beside
+    a running worker. The run succeeds and says the drain is not complete."""
+    import argparse
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 0, "skipped": "not_due"}])
+    cli = _standalone_reconcile(monkeypatch, db)
+    result = await cli.execute(argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert result["result"]["retirement"] == {"pages": 0, "examined": 0, "retired": 0, "deferred": 0,
+                                              "skipped": "not_due", "complete": False}
+
+
+@pytest.mark.asyncio
+async def test_T41_a_drain_is_not_complete_while_any_row_still_carries_the_key(monkeypatch):
+    """A pass that leaves nothing due behind it is not a cleanup while a row
+    still carries the key: a staging inside its window and grace is left to a
+    later pass by design, and the adapter that keeps the key from readers must
+    outlive it. The run succeeds — nothing failed — and says so; a reply
+    without the count is not complete either."""
+    import argparse
+    namespace = argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False)
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 0, "remaining": 3,
+                        "retry_at": "2026-09-15T16:00:00+00:00"}])
+    result = await _standalone_reconcile(monkeypatch, db).execute(namespace)
+    assert result["result"]["retirement"] == {"pages": 1, "examined": 0, "retired": 0, "deferred": 0,
+                                              "remaining": 3, "complete": False,
+                                              "retry_at": "2026-09-15T16:00:00+00:00"}, \
+        "the run says when the retry is not refused: the slot the database brought forward"
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 0}])
+    result = await _standalone_reconcile(monkeypatch, db).execute(namespace)
+    assert result["result"]["retirement"]["complete"] is False and result["result"]["retirement"]["remaining"] is None
+
+
+@pytest.mark.asyncio
+async def test_T41_the_standalone_drain_asks_for_the_count_and_the_worker_does_not(monkeypatch):
+    """The count is one more scan of public.alerts; the drain asks for it on
+    every page (the database answers only on a page that does not continue),
+    the worker's periodic call never does."""
+    import argparse
+    from zabalack.rpc import EndpointRegistry
+    db = PagedSweepDB([{"examined": 0, "retired": 0, "deferred": 0, "remaining": 0}])
+    await _standalone_reconcile(monkeypatch, db).execute(
+        argparse.Namespace(command="reconcile", config="unused", read_only=True, once=True, nightly=False))
+    assert [payload for op, payload in db.calls if op == "retire_intents"] == [{"limit": 200, "report_remaining": True}]
+    settings = Settings(worker_dsn_file="/reviewed/worker.dsn", cohorts=(COHORT,))
+    worker_db = FakeDB()
+    recon = Reconciler(settings, worker_db, EndpointRegistry(settings.endpoint_registry, lab=settings.lab_mode,
+                                                             approved_versions=settings.approved_versions),
+                       worker_id="unit-worker")
+    await recon.retire_intents()
+    assert [payload for op, payload in worker_db.calls if op == "retire_intents"] == [{"limit": 200}], \
+        "the periodic call pays no second scan"
+
+
+def test_T41_an_incomplete_drain_is_a_non_zero_exit(monkeypatch, capsys):
+    cli = _standalone_reconcile(monkeypatch, PagedSweepDB([{"examined": 200, "retired": 200, "deferred": 0, "continues": True}] * 40))
+    assert cli.main(["--config", "unused", "reconcile", "--read-only", "--once"]) == 1
+    assert json.loads(capsys.readouterr().err.strip().splitlines()[-1]) == {"ok": False, "error_class": "RetirementError"}
+
+
+@pytest.mark.asyncio
+async def test_T41_the_retirement_sweep_runs_under_its_own_statement_budget(monkeypatch):
+    """Every other call keeps the 3-second statement timeout; the sweep's scan
+    of public.alerts is bounded by the installed table, so it gets the
+    configured budget, with an overall deadline that covers it."""
+    from zabalack.db import Postgres
+    db = Postgres("synthetic-unused", operation_budgets={"retire_intents": 30})
+    assert db.budget_for("worker", "status") == (3000, 8.0)
+    assert db.budget_for("worker", "retire_intents") == (30000, 34.0)
+    assert db.budget_for("operator", "retire_intents") == (3000, 8.0), "an operator call never inherits it"
+    import psycopg
+    statements = []
+
+    class Transaction:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class Cursor:
+        async def fetchone(self):
+            return ({"examined": 0, "retired": 0},)
+
+    class Connection:
+        def transaction(self):
+            return Transaction()
+
+        async def execute(self, statement, params=None):
+            statements.append(statement)
+            return Cursor()
+
+        async def close(self):
+            pass
+
+    async def connect(*args, **kwargs):
+        return Connection()
+
+    monkeypatch.setattr(psycopg.AsyncConnection, "connect", connect)
+    assert await db.call("retire_intents", {"limit": 200}) == {"examined": 0, "retired": 0}
+    assert statements[0] == "SET LOCAL statement_timeout = 30000"
+    statements.clear()
+    await db.call("status")
+    assert statements[0] == "SET LOCAL statement_timeout = 3000"
 
 
 @pytest.mark.asyncio

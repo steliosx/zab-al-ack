@@ -20,6 +20,7 @@ from alerta.utils.hooks import status_change_hook
 from zabalack.config import Settings
 from zabalack.health import CaptureUnhealthy
 from zabalack.normalizer import ZabbixNormaliser
+from alerta.app import qb
 from zabalack.plugins import AckSigningPlugin, CaptureLogRedactor, configure_app
 
 
@@ -74,14 +75,24 @@ def context(monkeypatch):
     app.add_url_rule("/_bulk/alerts/action", endpoint="api.bulk_action", view_func=lambda: "unused", methods=["PUT"])
     alarm_model.init_app(app)
     hooks.init_app(app)
+    # The query builder must exist before configure_app: it installs the reader
+    # restriction on it, and refuses rather than reporting the adapter ready
+    # over an absent one. init_app selects the backend module without
+    # connecting, which is why an unreachable DSN is enough here.
+    app.config.update(DATABASE_URL="postgres://synthetic-lab-only:5432/unused")
+    qb.init_app(app)
     configure_app(app)
     probe = Probe()
-    signer = AckSigningPlugin(settings=SETTINGS, probe=probe, keys={"lab": b"synthetic-test-key-only-32bytes!!!!"})
+    generations = []
+    updates = []
+    # No PostgreSQL behind this app: the protected staging operation is recorded
+    # instead of executed, in the order it is called relative to the writes.
+    signer = AckSigningPlugin(settings=SETTINGS, probe=probe, keys={"lab": b"synthetic-test-key-only-32bytes!!!!"},
+                              stager=lambda alert_id, intent: generations.append((alert_id, intent["action_id"], len(updates))) or 1)
     observer = Observer()
     monkeypatch.setattr(plugins, "plugins", OrderedDict(observer=observer, signer=signer))
     monkeypatch.setattr(plugins, "rules", None)
     monkeypatch.setattr(plugins, "config", app.config)
-    updates = []
     monkeypatch.setattr(Alert, "update_tags", lambda self, tags: True)
     monkeypatch.setattr(Alert, "tag", lambda self, tags: True)
 
@@ -90,6 +101,9 @@ def context(monkeypatch):
         return deepcopy(attrs)
 
     monkeypatch.setattr(Alert, "update_attributes", attributes)
+    # from_action() decides the transition from the history; without persistence
+    # the history's current status is the alert's own.
+    monkeypatch.setattr(Alert, "_get_hist_info", lambda self, action=None: (self.status, None, "open", 3600))
     with app.test_request_context(f"/alert/{ALERT_ID}/action", method="PUT", json={"action": "ack"}):
         g.user_id = "synthetic-user-1"
         g.login = "synthetic-human"
@@ -97,7 +111,8 @@ def context(monkeypatch):
         g.scopes = ["write:alerts"]
         alert = Alert("unchanged-resource", "stable-trigger-family", id=ALERT_ID,
                       attributes=deepcopy(SOURCE), customer="synthetic-a", status="open", severity="major")
-        yield SimpleNamespace(app=app, signer=signer, observer=observer, probe=probe, alert=alert, updates=updates)
+        yield SimpleNamespace(app=app, signer=signer, observer=observer, probe=probe, alert=alert, updates=updates,
+                              generations=generations)
 
 
 def stage(context):
@@ -277,6 +292,8 @@ def test_T19_logging_and_error_detail_redacted_without_altering_history(context)
     handler = logging.StreamHandler(stream)
     app.logger.addHandler(handler)
     app.logger.setLevel(logging.DEBUG)
+    app.config.update(DATABASE_URL="postgres://synthetic-lab-only:5432/unused")
+    qb.init_app(app)
     configure_app(app)
 
     @app.route("/fail")
@@ -307,6 +324,56 @@ def test_T19_missing_privacy_adapter_rejects_eligible_ack(context):
         stage(context)
 
 
+def test_T40_configure_app_refuses_rather_than_reporting_a_control_it_did_not_install(monkeypatch):
+    """`restrict_intent_queries()` used to return silently when the alert query
+    builder was absent, and `configure_app` set `zabalack_privacy_ready`
+    immediately afterwards regardless.
+
+    That flag is what `take_action` reads to decide staging is safe, so the pair
+    could report the reader restriction installed while it was not there at all
+    — the same shape as a probe passing over a control that is missing. It now
+    fails at start-up, and the flag is only set over a control that took.
+    """
+    from alerta.app import qb
+    app = Flask("synthetic-no-builder")
+    app.config.from_object(alerta_defaults)
+    app.config.update(TESTING=True, SECRET_KEY="synthetic-lab-only")
+    monkeypatch.setattr(qb, "alerts", None, raising=False)
+    with pytest.raises(RuntimeError, match="privacy_adapter_required"):
+        configure_app(app)
+    assert not app.extensions.get("zabalack_privacy_ready"), "no readiness over an absent control"
+
+
+def test_T40_a_discarded_query_guard_refuses_the_acknowledgement(context, monkeypatch):
+    """The flag is set once at start-up; the control lives on an object Alerta
+    rebinds.
+
+    `QueryBuilder.init_app` assigns a fresh `alerts` class on every call, so a
+    second `create_app()` in one process replaces the object the guard wrapped
+    while the first app still reports ready. The dispatcher therefore asks
+    whether the builder serving *this* request carries the guard, rather than
+    trusting the flag alone.
+    """
+    from alerta.app import qb
+    from zabalack import query_guard
+
+    assert context.app.extensions.get("zabalack_privacy_ready") is True
+    assert query_guard.is_installed(qb.alerts), "precondition: the guard installed"
+
+    class Rebound:
+        """What init_app leaves behind: same name, unwrapped `from_params`."""
+        VALID_PARAMS = getattr(qb.alerts, "VALID_PARAMS", {})
+
+        @staticmethod
+        def from_params(params, customers=None, query_time=None):
+            return None
+
+    monkeypatch.setattr(qb, "alerts", Rebound, raising=False)
+    assert not query_guard.is_installed(qb.alerts)
+    with pytest.raises(AlertaException, match="privacy_adapter_required"):
+        stage(context)
+
+
 @pytest.mark.parametrize("variant", ["version", "model"])
 def test_unknown_reference_version_or_alarm_model_never_signs(context, monkeypatch, variant):
     if variant == "version":
@@ -325,3 +392,59 @@ def test_non_eligible_activity_does_not_load_broken_capture_config(context):
     context.alert.attributes = {"source_system": "unrelated"}
     assert context.signer.take_action(context.alert, "ack", "note", config=context.app.config) is None
     assert ZabbixNormaliser().pre_receive(context.alert, config=context.app.config) is context.alert
+
+
+def test_T41_the_generation_is_recorded_before_any_attribute_write(context):
+    """The protected staging operation runs before Alerta writes anything.
+
+    The stager records how many attribute writes had happened when it was
+    called: zero. The generation it recorded is the one the staged intent
+    carries, and the write that follows carries that same intent.
+    """
+    alert, action, note, timeout = stage(context)
+    action_id = alert.attributes["zabbix_ack_sync_intent"]["action_id"]
+    assert context.generations == [(str(alert.id), action_id, 0)]
+    assert context.updates and context.updates[-1]["zabbix_ack_sync_intent"]["action_id"] == action_id
+    stage(context)
+    assert len(context.generations) == 1, "a duplicate callback reuses its staged identity and records nothing new"
+
+
+def test_T41_a_refused_generation_refuses_the_acknowledgement_and_stages_nothing(context):
+    """No staging exists without its generation recorded."""
+    def refuse(alert_id, intent):
+        raise RuntimeError("synthetic fence unavailable")
+    context.signer.stager = refuse
+    with pytest.raises(AlertaException) as refused:
+        stage(context)
+    assert refused.value.code == 503 and "zabalack_generation_unavailable" in str(refused.value)
+    assert context.updates == [], "Alerta must not have been asked to write anything"
+    assert "zabbix_ack_sync_intent" not in context.alert.attributes
+    assert context.alert.attributes.get("zabbix_ack_sync") is None
+
+
+@pytest.mark.parametrize("state", ["shelved", "closed", "expired"])
+def test_T41_an_acknowledgement_alerta_will_refuse_stages_nothing(context, state):
+    """Alerta raises InvalidAction for `ack` from these states — in
+    from_action(), after take_action() has returned. The plugin decides first,
+    from the same history, and stages nothing: no generation, no attribute
+    write, no health probe. Alerta's own 409 then follows with nothing behind it."""
+    context.alert.status = state
+    alert, action, note, timeout = stage(context)
+    with pytest.raises(InvalidAction):
+        alert.from_action(action, note, timeout)
+    assert context.generations == [], "a generation nothing could ever capture must not be recorded"
+    assert context.updates == [] and context.probe.calls == 0
+    assert not any(key.startswith("zabbix_ack_sync") for key in alert.attributes)
+
+
+def test_T41_an_acknowledgement_that_does_not_reach_ack_stages_nothing(context):
+    """From `assign`, Alerta answers 200 and keeps the status (rule ALL-*): no
+    signed status write follows, so nothing is staged and the skip is recorded."""
+    context.alert.status = "assign"
+    alert, action, note, timeout = stage(context)
+    assert alarm_model.transition(alert=alert, current_status="assign", previous_status="open", action="ack")[1] == "assign"
+    assert context.generations == [] and context.probe.calls == 0
+    assert alert.attributes["zabbix_ack_sync"] == "skipped"
+    assert alert.attributes["zabbix_ack_sync_reason"] == "skipped_no_ack_transition"
+    assert "zabbix_ack_sync_intent" not in alert.attributes and "zabbix_ack_sync_action_id" not in alert.attributes
+    assert context.updates and context.updates[-1]["zabbix_ack_sync_reason"] == "skipped_no_ack_transition"

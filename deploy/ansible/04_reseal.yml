@@ -1,0 +1,27 @@
+---
+- name: Re-seal the readiness manifest after a catalog-only migration
+  hosts: "{{ zabalack_database_group | default('__zabalack_no_hosts_selected__') }}"
+  gather_facts: false
+  serial: 1
+  vars:
+    zabalack_reseal_opt_in: false
+  pre_tasks:
+    - ansible.builtin.assert:
+        that:
+          - zabalack_reseal_opt_in | bool
+          - zabalack_database_group is defined
+          - zabalack_change_ref | default('') | length > 0
+          - zabalack_paths_fenced | default(false) | bool
+          - zabalack_migration_service is defined
+          - zabalack_reseal_script is defined
+        fail_msg: "Re-sealing requires the fenced zabalack_owner connection and an explicit opt-in."
+  tasks:
+    - name: Seal the changed catalog as the schema owner
+      ansible.builtin.command:
+        argv: [psql, -X, --no-password, --set, ON_ERROR_STOP=1, --dbname, "service={{ zabalack_migration_service }}",
+               --command, "SET ROLE zabalack_owner", --file, "{{ zabalack_reseal_script }}"]
+      no_log: true
+# zabalack_reseal_script must be the reviewed sql/install/13_reseal.sql artifact. It refuses unless the schema
+# version is the one it was written for and the trigger fingerprint still matches; it changes no object and no
+# privilege. Run it after 02_zabalack_migrations.yml on an installation 03_trigger_install.yml already sealed.
+# No trigger administration, worker start or automatic source writes.

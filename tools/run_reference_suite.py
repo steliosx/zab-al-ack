@@ -19,17 +19,17 @@ def main() -> int:
     args = parser.parse_args()
     phases = [('unit-mocked', 'unit_mocked', [sys.executable, '-m', 'pytest',
         'tests/unit', 'tests/rpc', 'tests/security', 'tests/release', 'tests/property', 'tests/native_support',
-        'tests/alerta/test_http_mocked_storage.py', '-q'])]
+        'tests/alerta/test_http_mocked_storage.py', 'tests/alerta/test_reader_confidentiality.py', '-q'])]
     if args.wasm:
         for name, targets in [
-            ('postgres-wasm', ['tests/postgres/test_postgres.py', 'tests/postgres/test_late_response.py', 'tests/postgres/test_stateful_ledger.py', 'tests/postgres/test_settled_expiry.py']),
+            ('postgres-wasm', ['tests/postgres/test_postgres.py', 'tests/postgres/test_late_response.py', 'tests/postgres/test_stateful_ledger.py', 'tests/postgres/test_settled_expiry.py', 'tests/postgres/test_generation_fence.py']),
             ('worker-sql-wasm', ['tests/postgres/test_worker_path.py']),
-            ('alerta-persistence-wasm', ['tests/alerta/test_postgres_http.py', 'tests/alerta/test_health_postgres.py', 'tests/alerta/test_docs_walkthrough.py']),
+            ('alerta-persistence-wasm', ['tests/alerta/test_postgres_http.py', 'tests/alerta/test_health_postgres.py', 'tests/alerta/test_docs_walkthrough.py', 'tests/alerta/test_postgres_search_confidentiality.py']),
             ('performance-wasm', ['tests/performance/test_reference_batches.py'])]:
             phases.append((name, 'postgres_wasm', [sys.executable, 'lab/pglite_exec.py',
                 '--isolated-lab', '--', sys.executable, '-m', 'pytest', *targets, '-q']))
     phases.append(('optional-services', 'optional_native_real_zabbix', [sys.executable,
-        '-m', 'pytest', 'tests/real_zabbix', 'tests/deployment_e2e', 'tests/postgres/test_native_login.py', 'tests/postgres/test_native_delivery_faults.py', '-q']))
+        '-m', 'pytest', 'tests/real_zabbix', 'tests/deployment_e2e', 'tests/postgres/test_native_login.py', 'tests/postgres/test_native_delivery_faults.py', 'tests/alerta/test_native_staging_interval.py', 'tests/postgres/test_native_generation_fence.py', '-q']))
     evidence = ROOT / 'evidence'
     raw_dir = ROOT / 'build/evidence-raw'
     evidence.mkdir(exist_ok=True)

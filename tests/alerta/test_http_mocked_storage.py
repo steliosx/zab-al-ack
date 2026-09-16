@@ -12,7 +12,7 @@ import jwt
 import pytest
 from flask import Flask, g
 from alerta import settings as defaults
-from alerta.app import alarm_model, db, hooks, plugins
+from alerta.app import alarm_model, db, hooks, plugins, qb
 from alerta.exceptions import ExceptionHandlers
 from alerta.models.alert import Alert
 from alerta.models.enums import Scope
@@ -44,6 +44,12 @@ def http_lab(monkeypatch):
     hooks.init_app(app)
     ExceptionHandlers().register(app)
     app.register_blueprint(api)
+    # The query builder must exist before configure_app: it installs the reader
+    # restriction on it, and refuses rather than reporting the adapter ready
+    # over an absent one. init_app selects the backend module without
+    # connecting, which is why an unreachable DSN is enough here.
+    app.config.update(DATABASE_URL="postgres://synthetic-lab-only:5432/unused")
+    qb.init_app(app)
     configure_app(app)
 
     @app.before_request
@@ -51,8 +57,10 @@ def http_lab(monkeypatch):
         g.request_id = "synthetic-request"
 
     settings = Settings(enabled=True, config_revision="lab-r1", signing_kid="lab", cohorts=(COHORT,))
+    # Mocked storage: the protected staging operation is recorded, not executed.
     signer = AckSigningPlugin(settings=settings, probe=SimpleNamespace(check=lambda: {}),
-                              keys={"lab": b"synthetic-hmac-lab-only-32bytes!!!"})
+                              keys={"lab": b"synthetic-hmac-lab-only-32bytes!!!"},
+                              stager=lambda alert_id, intent: 1)
     monkeypatch.setattr(plugins, "plugins", OrderedDict(signer=signer))
     monkeypatch.setattr(plugins, "rules", None)
     monkeypatch.setattr(plugins, "config", app.config)

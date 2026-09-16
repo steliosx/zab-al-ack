@@ -103,6 +103,11 @@
     "fast_budget": {
       "type": "integer"
     },
+    "retirement_timeout_seconds": {
+      "type": "integer",
+      "minimum": 3,
+      "maximum": 900
+    },
     "nightly_cycle_seconds": {
       "type": "integer"
     },

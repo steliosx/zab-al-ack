@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build truthful T1–T39 matrix from explicitly selected final test reports.
+"""Build truthful T1–T41 matrix from explicitly selected final test reports.
 
 Never infers execution from test-file existence and never turns lab fixtures into
 G1–G8 deployment evidence. Historical regression failures remain separate files.
@@ -15,9 +15,15 @@ import xml.etree.ElementTree as ET
 from evidence_utils import code_digests
 
 ROOT = Path(__file__).resolve().parents[1]
-IDS = {f'T{i}' for i in range(1, 40)} - {'T11'} | {'T11a', 'T11b'}
+# T40/T41 are the amendment A5 additions: reader-facing confidentiality and safe
+# retirement of stored intents. Both need native evidence. T41 needs real
+# PostgreSQL cleanup and concurrency. T40 is not response-only: it also covers
+# the authenticated search predicate and the interval in which a staged intent is
+# committed but the acknowledgement has not finished, which needs two concurrent
+# sessions and so cannot be established by the single-backend WASM layer.
+IDS = {f'T{i}' for i in range(1, 42)} - {'T11'} | {'T11a', 'T11b'}
 NATIVE_REQUIRED = {'T1','T2','T4','T5','T6','T7','T8','T10','T14','T15','T16','T19','T20','T21','T22',
-                   'T30','T31','T32','T34','T35','T36','T37','T38','T39'}
+                   'T30','T31','T32','T34','T35','T36','T37','T38','T39','T40','T41'}
 MANUAL = {'T2','T20','T27','T30','T31','T34'}
 
 
@@ -40,7 +46,13 @@ def read_xml(path, layer):
             reason = (case.find('skipped').get('message') or '')
             status = 'BLOCKED_ENVIRONMENT' if 'BLOCKED_ENVIRONMENT' in reason else 'NOT_RUN'
         actual_layer = layer
-        if 'native_concurrent' in name or 'migration_rerun' in name or 'test_native_login' in classname or 'test_native_delivery_faults' in classname:
+        # The optional phase defaults to the real_zabbix layer. Cases that are
+        # native-PostgreSQL evidence must be classified as such, whether they
+        # executed or were skipped for want of a native backend.
+        if ('native_concurrent' in name or 'migration_rerun' in name or 'test_native_login' in classname
+                or 'test_native_delivery_faults' in classname
+                or 'test_native_staging_interval' in classname
+                or 'test_native_generation_fence' in classname):
             actual_layer = 'native_postgres'
         if 'pgbouncer' in (classname + name).lower():
             actual_layer = 'pgbouncer'
@@ -119,7 +131,7 @@ def main():
     path = ROOT / 'docs/acceptance_matrix.csv'
     with path.open(newline='') as stream:
         matrix = list(csv.DictReader(stream))
-    assert {row['test_id'] for row in matrix} == IDS and len(matrix) == 40
+    assert {row['test_id'] for row in matrix} == IDS and len(matrix) == 42
     for row in matrix:
         tid = row['test_id']
         relevant = [item for item in evidence if tid in item['ids']]

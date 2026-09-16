@@ -139,10 +139,10 @@
   },
   "alpha_version": "0.1.0a16",
   "ci_workflows": "SUPPLIED_NOT_RUN_ON_GITHUB",
-  "database_schema_version": 3,
+  "database_schema_version": 4,
   "review_base_commit": "14b8c72f34d93b16c102013a232a995d75f7a6eb",
-  "review_status": "Zab-al-ack a16: the independent a15 review reproduced and adopted \u2014 ten writer regressions and precise corrections to the R20 history, the optional-when-absent mutation records, the service-run attribution and the verifier dependency (R21); no runtime or SQL change",
-  "native_and_real_zabbix_evidence": "EXECUTED for a16 on local services (not_docker: true): evidence/native-run.json 42 passed, evidence/real-zabbix-run.json 6 passed, evidence/deployment-e2e-run.json 4 passed with 13/13 observations.",
+  "review_status": "Zab-al-ack a16 with A5 stage two under review (PR #11, unreleased): migration 008 moves the schema to 4 and adds the generation fence, zabalack.stage_generation(), the retirement sweep, the application grant (12) and re-seal (13) scripts and the matching plugin, worker and health changes; the a16 review outcome (ten writer regressions, R20 history, R21 verifier dependency) is retained in docs/RELEASE_AMENDMENTS.md",
+  "native_and_real_zabbix_evidence": "a16 evidence, recorded before A5 stage two and predating every T41 case: evidence/native-run.json 42 passed, evidence/real-zabbix-run.json 6 passed, evidence/deployment-e2e-run.json 4 passed with 13/13 observations (local services, not_docker: true). The T41 native, worker and HTTP cases run in the native CI job; evidence for schema 4 is re-recorded as a new run before the next release, never by replacing these digests.",
   "quality_tools": {
     "ruff": "0.16.7",
     "mypy": "2.3.1",
