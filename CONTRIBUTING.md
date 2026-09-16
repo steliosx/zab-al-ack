@@ -45,9 +45,20 @@ Follow SECURITY.md for vulnerability reports.
 
 `requirements.lock`, `requirements-runtime.lock` and `requirements-scanner.lock`
 are refreshed by hand (Dependabot only tracks the `pyproject.toml` pins); CI runs
-`pip check` to catch pyproject/lock drift. The reference runners rewrite the
-committed files under `evidence/` (`*.xml`, `reference-run.json`,
-`batch-*-supplemental.json`); commit regenerated evidence only in a deliberate
+`pip check` to catch pyproject/lock drift. The quality, SQL and reference
+runners rewrite committed files under `evidence/` (`quality-run.json`,
+`runtime_wasm_sql.json`, `test-summary.json`, `*.xml`, `reference-run.json`,
+`batch-*-supplemental.json`), so an ordinary local check leaves the tree
+modified. Run checks in an isolated checkout or worktree that holds no other
+uncommitted work, and inspect what changed afterwards (`git status --porcelain
+evidence`, `git diff -- evidence`) before cleaning up. Records the task needs,
+including failed or interrupted attempts, stay retained: `tools/run_review.py`
+keeps each attempt under `build/review-runs/`, and other private output stays
+under `build/private/`; copy anything else you must keep out of the checkout
+before restoring. Do not use a blanket restore such as `git checkout --
+evidence` on a checkout that may hold the only copy of a required record or
+unrelated work; restore only the files a check you ran rewrote, and stage only
+intended changes. Commit regenerated evidence only in a deliberate
 release-preparation change, with `TZ=UTC` so timestamps carry no local zone.
 Run records carry `code_digests` of the implementation and harness they ran
 on; a change under `src/`, `sql/`, `tests/`, `tools/`, `lab/`, `zabbix/`,
