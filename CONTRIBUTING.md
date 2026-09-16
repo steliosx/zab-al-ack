@@ -45,10 +45,13 @@ Follow SECURITY.md for vulnerability reports.
 
 `requirements.lock`, `requirements-runtime.lock` and `requirements-scanner.lock`
 are refreshed by hand (Dependabot only tracks the `pyproject.toml` pins); CI runs
-`pip check` to catch pyproject/lock drift. The reference runners rewrite the
-committed files under `evidence/` (`*.xml`, `reference-run.json`,
-`batch-*-supplemental.json`); commit regenerated evidence only in a deliberate
-release-preparation change, with `TZ=UTC` so timestamps carry no local zone.
+`pip check` to catch pyproject/lock drift. The quality, SQL and reference
+runners rewrite committed files under `evidence/` (`quality-run.json`,
+`runtime_wasm_sql.json`, `test-summary.json`, `*.xml`, `reference-run.json`,
+`batch-*-supplemental.json`), so an ordinary local check leaves the tree
+modified; discard those changes with `git checkout -- evidence` and commit
+regenerated evidence only in a deliberate release-preparation change, with
+`TZ=UTC` so timestamps carry no local zone.
 Run records carry `code_digests` of the implementation and harness they ran
 on; a change under `src/`, `sql/`, `tests/`, `tools/`, `lab/`, `zabbix/`,
 `collectors/` or the project metadata/lock files makes the existing native and
