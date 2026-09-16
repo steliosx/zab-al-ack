@@ -9,6 +9,15 @@ runtime prevents CI candidate packaging; it does not become a passing native
 result. A local development candidate can still record native `NOT_RUN` under
 the normal release tooling and must describe that limitation.
 
+Alpha validation runs for every pull request, including stacked PRs, and for
+pushes to `main` or any tag. Other branch pushes do not start a second Alpha
+run; their validation runs through the pull request. No PR base-branch or path
+filter is applied. The schedule, manual dispatch and reusable workflow entrypoint
+are retained, as are the workflow/job check names and package dependencies.
+The tag filter is explicit because a branch-only push filter would also stop
+tag-triggered validation. Separate security scans, CodeQL, automatic PR reviews
+and website automation retain their own existing configuration.
+
 Each producer first runs `collect_ci_evidence.py prepare`, which discards
 generated reports inherited from Git and records the source/harness digests and
 Actions repository, run ID, attempt and commit. After its required commands
@@ -44,7 +53,7 @@ credentials, DSNs, private file paths or generated examples. This diagnostic
 artifact is outside the release-evidence download pattern and cannot satisfy
 the required native gate.
 
-Pull requests, pushes and manual runs select the bounded `pr` Hypothesis
+Pull requests, main/tag pushes and manual runs select the bounded `pr` Hypothesis
 profile. A daily 03:23 UTC schedule selects `nightly`, with larger bounded
 generated sequences. Failed examples are minimized by Hypothesis and retained
 only under the private build directory for local replay. Hosted scheduled jobs

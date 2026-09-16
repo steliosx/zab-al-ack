@@ -10,12 +10,12 @@ import sys
 import pytest
 import yaml
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 import collect_ci_evidence as ci
 from evidence_utils import code_digests
 from mutation_fixtures import passing_mutation_record
 
+ROOT = Path(__file__).resolve().parents[2]
 CONTEXT = {'repository': 'synthetic/zabalack', 'run_id': '123', 'run_attempt': '2', 'sha': 'a' * 40}
 
 
@@ -304,6 +304,24 @@ def test_prepare_discards_committed_prior_run_reports(tmp_path):
     (root / 'evidence/reference-run.json').write_text('{"status":"PASS"}')
     ci.prepare(root, 'reference', CONTEXT)
     assert [path.name for path in (root / 'evidence').iterdir()] == ['README.md']
+
+
+def test_alpha_workflow_filters_pushes_without_filtering_prs_or_required_events():
+    workflow = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+    assert workflow['name'] == 'Alpha reference checks'
+    events = workflow['on']
+    assert set(events) == {'push', 'pull_request', 'workflow_dispatch', 'workflow_call', 'schedule'}
+    # Branch and tag filters are separate in Actions: keeping only a branch
+    # filter would silently remove tag validation. No PR base/path filter may
+    # drop required checks for stacked PRs or documentation-only changes.
+    assert events['push'] == {'branches': ['main'], 'tags': ['**']}
+    for event in ('pull_request', 'workflow_dispatch', 'workflow_call'):
+        assert events[event] == ''
+    assert events['schedule'] == [{'cron': '23 3 * * *'}]
+    assert set(workflow['jobs']) == {'quality', 'reference', 'native', 'mutation', 'package'}
+    for name, job in workflow['jobs'].items():
+        assert job.get('name', name) == name
+        assert 'if' not in job
 
 
 def test_ci_package_waits_for_same_run_required_jobs_and_rebuilds_mapping():
