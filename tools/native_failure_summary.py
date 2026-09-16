@@ -2,6 +2,7 @@
 """Export bounded, allowlisted native failure facts; never upload raw lab files."""
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -11,9 +12,10 @@ import stat
 import xml.etree.ElementTree as ET
 
 from evidence_utils import binding_error, code_digests
+from native_ci import PHASES as NATIVE_PHASES
 
 ROOT = Path(__file__).resolve().parents[1]
-PHASES = {"postgres", "delivery_faults", "worker", "alerta", "performance"}
+PHASES = set(NATIVE_PHASES)
 STATES = {"captured_unverified", "authorised", "pending", "sending", "unknown", "ok",
           "failed", "expired", "skipped", "late_response", "verifier_hold"}
 REASONS = {"acknowledged", "already_acknowledged", "outcome_unknown", "lease_fenced",
@@ -31,6 +33,7 @@ CHECKPOINTS = {"ready", "done", "error"} | {
 MAX_FILE_BYTES = 1024 * 1024
 MAX_FILES = 256
 MAX_ITEMS = 128
+MAX_TEST_ID_CHARS = 256
 # Values originate here, never from exception messages or arbitrary SQLSTATEs.
 EXCEPTIONS = {
     "AssertionError": ("assertion", None), "Failed": ("pytest_failure", None),
@@ -106,6 +109,28 @@ def _failure_facts(element) -> dict:
     return result
 
 
+def _source_tests(root: Path, phase: str) -> dict[tuple[str, str], str]:
+    """Catalog fixed phase targets without importing tests or following XML paths."""
+    result = {}
+    for relative in NATIVE_PHASES[phase]:
+        try:
+            document = ast.parse(_safe_bytes(root / relative, root))
+        except (OSError, ValueError, UnicodeError, SyntaxError, RecursionError):
+            continue
+        module = ".".join(PurePosixPath(relative).with_suffix("").parts)
+        for node in document.body:
+            if (not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    or not re.fullmatch(r"test_[A-Za-z0-9_]+", node.name)):
+                continue
+            identity = relative + "::" + node.name
+            if len(identity) > MAX_TEST_ID_CHARS:
+                continue
+            result[module, node.name] = identity
+            if len(result) >= MAX_ITEMS:
+                return result
+    return result
+
+
 def _pytest_summary(root: Path, phase: str, expected_digest) -> dict:
     """Classify only this phase's JUnit; return no raw XML strings or paths."""
     raw = _safe_bytes(root / "build/evidence-raw" / ("native-" + phase + ".xml"), root)
@@ -121,6 +146,7 @@ def _pytest_summary(root: Path, phase: str, expected_digest) -> dict:
         raise ValueError("invalid JUnit root")
     result = {"status": "AVAILABLE", "counts": {"passed": 0, "failed": 0, "skipped": 0},
               "failures": [], "truncated": False}
+    source_tests = _source_tests(root, phase)
     groups = {}
     for index, case in enumerate(document.iter("testcase")):
         if index >= MAX_ITEMS:
@@ -129,8 +155,13 @@ def _pytest_summary(root: Path, phase: str, expected_digest) -> dict:
         failures = [child for child in case if child.tag in {"failure", "error"}]
         state = "failed" if failures else "skipped" if case.find("skipped") is not None else "passed"
         result["counts"][state] += 1
+        name, bracket, parameters = case.get("name", "").partition("[")
+        identity = source_tests.get((case.get("classname", ""), name)) if (
+            not bracket or parameters.endswith("]")) else None
         for failure in failures[:2]:
             facts = _failure_facts(failure)
+            if identity is not None:
+                facts["source_test"] = identity
             key = tuple(sorted(facts.items()))
             if key not in groups:
                 groups[key] = {**facts, "count": 0}

@@ -44,6 +44,18 @@ credentials, DSNs, private file paths or generated examples. This diagnostic
 artifact is outside the release-evidence download pattern and cannot satisfy
 the required native gate.
 
+Native pytest failure groups may include a `source_test` such as
+`tests/postgres/test_stateful_ledger.py::test_generated_delivery_ledger`.
+The exporter derives these identifiers from top-level `test_*` function
+definitions in the current phase's fixed source files, without importing tests.
+It matches the JUnit module/function against that catalog and discards the entire
+parameter suffix. Unknown or unavailable source identities leave the existing
+failure category and count intact, without an identifier. Different source tests
+remain separate groups; parameter variants of the same source test and failure
+classification are aggregated. Catalog size, identifier length and parsed input
+remain bounded. These identifiers aid diagnosis; they do not attest execution,
+recover historical reports or add failure artifacts for reference/WASM jobs.
+
 Pull requests, pushes and manual runs select the bounded `pr` Hypothesis
 profile. A daily 03:23 UTC schedule selects `nightly`, with larger bounded
 generated sequences. Failed examples are minimized by Hypothesis and retained
