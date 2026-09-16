@@ -38,6 +38,7 @@ inventory or production credentials. Track assignments in
 | Primary/backup maintainers and private contacts | Unassigned | Verify security-report recipients and conduct-report contact |
 | Rights and public-content review | Pending | Approve project copyright, upstream notices and curated source/history |
 | Standalone secret scan and Actions CI | Local scan records remain local; dedicated Linux ARM64 self-hosted workflow routing is not execution proof | Obtain Opus review of the explicit execution-policy change, then retain authentic final-commit Actions allocation and producer-to-package artifacts with no hosted fallback; no external security-review claim |
+| Target x86_64 validation | Open acceptance gate; all migrated workflow jobs, including package, execute on ARM64 | Supply an authorized x86_64 environment and retain final-candidate quality/reference/native/package and installed-environment results before claiming target compatibility; preserve existing pins |
 | Explicit public upload authorization | Not given | Approve the reviewed commit/tag and publication destination |
 
 The stable-release roadmap additionally requires independent external security

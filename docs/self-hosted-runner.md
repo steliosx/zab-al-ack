@@ -1,6 +1,6 @@
 # Dedicated Linux Actions runner
 
-The reviewed workflow policy selects one repository-specific Linux ARM64 runner
+The workflow policy selects one repository-specific Linux ARM64 runner
 for `steliosx/zab-al-ack`. It has no automatic GitHub-hosted fallback. Windows
 remains the Codex controller. Configuration and unit tests are preparation;
 completion requires an authentic allocated Actions producer-to-package run on
@@ -33,7 +33,15 @@ not a script executed from whichever PR checkout happens to be present. A hook
 update needs a reviewed source revision and installed-file hash recorded in
 the host readiness evidence. The runner account can write its private evidence;
 these records are cooperative operational retention, not tamper-proof signed
-attestations or a sandbox for untrusted code.
+attestations or a sandbox for untrusted code. Hooks and job steps share the same
+UID: job code can read, rewrite or delete all retained attempts, including other
+jobs' archives and partial files. Mode 0700 restricts other unprivileged users;
+it does not isolate the archives from the job. Docker membership also gives job
+code root-equivalent control of this VM, including its lab, retention storage
+and installed hooks. Root ownership protects against ordinary accidental writes,
+not against a hostile job using Docker. Hashes detect inconsistent bytes; they
+do not make this same-host diagnostic store tamper-evident. Preserve reviewed
+copies outside that host and compare authentic Actions results separately.
 
 ## Hook installation contract
 
@@ -112,9 +120,26 @@ then create a fresh environment; no shared editable environment is reused.
 The hooks serialize with a separate process-owned private hook lock and keep
 its inode. They perform no Docker stop, remove, prune or volume reset.
 
+The runner's own temporary-directory manager cleans the rest of `_work/_temp`
+at job initialization and completion; the service unit adds no blanket reset.
+In runner v2.337.0, this is best-effort cleanup: deletion errors are logged and
+can leave residue. See the pinned
+[TempDirectoryManager](https://github.com/actions/runner/blob/v2.337.0/src/Runner.Worker/TempDirectoryManager.cs)
+and [JobRunner lifecycle](https://github.com/actions/runner/blob/v2.337.0/src/Runner.Worker/JobRunner.cs).
+The hook separately fails closed when resetting its known `venv`/`gitleaks`
+paths. It must not delete the whole temp directory during the start hook, when
+the current job already needs its event and command files. Do not treat temp
+cleanup as hostile-job isolation or reuse leftover temp files as evidence.
+Keep required diagnostics under the retained workspace, not only in temp;
+investigate a reported cleanup error before assuming a clean environment.
+
 Both native workflow entrypoints hold the shared Linux lab lock for their
 complete service/test/normal-cleanup invocation. Direct agent labs must use the
-same lock. A stopped hook/process does not prove containers stopped; retain the
+same lock. The lock is taken explicitly in the workflow command, not by the
+service unit or hook: `ci.yml` wraps `tools/native_ci.py --isolated-lab` and
+`deployment-e2e.yml` wraps `tools/run_deployment_e2e.py --isolated-lab` with
+`flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock`.
+A stopped hook/process does not prove containers stopped; retain the
 attempt and inspect exact owned resources before another service lab starts.
 Never reset resources belonging to another agent or job.
 
@@ -127,10 +152,17 @@ bindings separately, using `tools/run_review.py` for local work. Then inspect
 real Actions allocation, the unchanged producer requirements and package's
 same-run artifact download/collection on the reviewed commit.
 
-Actions artifacts retain their existing allowlists with three-day retention.
+Actions artifacts retain their existing allowlists. All active artifact uploads
+now request three days: Alpha (including candidate packages) and deployment-lab
+uploads previously requested 14, while security used the repository default.
+This deliberately limits hosted artifact storage and is separate from the VM's
+disk-retention policy. Reviewers must retain required candidate bytes before
+that expiry.
 Check actual storage against the free allowance and keep required private
 copies outside disposable workspaces; retention duration alone is not a
-storage-budget guarantee. ARM64 is distinct from x64. CodeQL enablement and
+storage-budget guarantee. All migrated jobs, including package, produce ARM64
+execution evidence. Target x86_64 validation remains an open acceptance gate;
+keeping x64 wheel hashes does not execute that gate. CodeQL enablement and
 ingestion, the separate daily scan, independent review, installed-environment
 acceptance and G1–G8/A5/T40/T41/T42 retain their existing requirements. The
 inactive signed-attestation template and its hosted-signer verifier remain a

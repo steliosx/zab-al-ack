@@ -27,7 +27,12 @@ runner on the authorized lab VM; Windows remains the Codex controller. There is
 no paid-hosted fallback. An unavailable matching runner leaves work queued or
 unexecuted, never passing. The policy change requires Opus technical review and
 actual Actions execution before it establishes candidate readiness. Linux ARM64
-success does not establish x64 coverage.
+success does not establish x64 coverage. The selected policy keeps all jobs on
+the authorized ARM64 VM; it does not retain a hosted x64 lane or fallback.
+Target x86_64 execution is an **open acceptance gate**: retain final-candidate
+quality/reference/native/package and installed-environment results on an
+authorized x86_64 environment before claiming that target is validated. Added
+ARM64 wheel hashes preserve x64 installation pins, not x64 execution evidence.
 
 | Workflow | Preserved entrypoints | Preserved jobs |
 |---|---|---|
@@ -45,6 +50,11 @@ setup action, and selects its interpreter for subsequent installs and commands.
 Do not reuse the agent's editable environment. Provision only the required
 Python 3.12, Node 22, Git, archive/download tools, Docker Compose and compatible
 pinned wheels/images; keep dependency versions and action commits unchanged.
+The job UID can rewrite the private archives, and its Docker access is
+root-equivalent on the lab VM. These copies are diagnostic retention, not
+tamper-evident evidence; preserve reviewed copies outside the VM. The runner
+cleans the remaining temporary directory on a best-effort basis. See
+[host boundaries and cleanup](self-hosted-runner.md) for the exact lifecycle.
 
 Both native service entrypoints run their complete service/test/cleanup command
 under nonblocking `flock` on the host's shared Linux lab lock. Direct agent lab
@@ -68,6 +78,9 @@ CodeQL retains its explicit repository enablement gate and pinned action/CLI.
 and the pinned action selects its ARM64 bundle. Repository Code Scanning
 availability, resource sufficiency and successful ingestion remain separate
 checks; self-hosting does not turn a skipped analysis into a clean scan.
+Before enabling the existing gate, verify that the pinned bundle executes on
+this runner and that a real analysis uploads and is ingested successfully.
+This migration does not enable CodeQL or satisfy the separate daily scan.
 
 Branches that still contain older hosted-runner definitions retain those
 definitions until their owners explicitly incorporate the reviewed migration.
@@ -116,9 +129,13 @@ artifact on success or failure. This contains bounded process and ledger/source
 counts from the native diagnostic helper. It contains no raw log messages,
 credentials, DSNs, private file paths or generated examples. This diagnostic
 artifact is outside the release-evidence download pattern and cannot satisfy
-the required native gate. Active workflow artifacts have three-day retention;
-the host must retain durable private copies of required attempts, diagnostics,
+the required native gate. All active artifact uploads now request a three-day
+GitHub retrieval window. Alpha (including candidate packages) and deployment-lab
+uploads previously requested 14 days; security used the repository default.
+The host must retain durable private copies of required attempts, diagnostics,
 cleanup results and candidate files before disposable workspace cleanup.
+Save required review copies before GitHub expiry. This hosted-storage choice
+does not authorize deletion of the VM's retained attempts.
 Check artifact sizes and account storage usage against the free allowance;
 short retention alone does not prove usage is within it. Upload only existing
 allowlisted public reports, not the private retention tree. Preserve the

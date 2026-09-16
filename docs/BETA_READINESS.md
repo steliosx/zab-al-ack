@@ -76,7 +76,12 @@ Still required before calling this beta ready:
   hosted execution policy with no paid-hosted fallback and requires Opus
   review; retain authentic run/attempt/head/base/tested-SHA and same-run
   artifacts. Configuration or local tests alone do not satisfy it, and ARM64
-  does not establish x64 coverage. Run the Docker Compose forms of the native and
+  does not establish x64 coverage. Target x86_64 validation is an open acceptance
+  gate: all migrated jobs, including packaging, run on ARM64. Obtain the final
+  candidate's required x86_64 execution and installed-environment evidence on
+  an authorized host before claiming that deployment target is validated.
+  Existing x64 wheel hashes are installation pins, not execution results.
+  Run the Docker Compose forms of the native and
   deployment-path labs (the a8/a10 reports used local processes; a10 proved the
   installed-wheel path on those local services, not the Compose image path).
 - Resolve reference webhook transport amendment A2 with inspected installed
