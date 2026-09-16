@@ -16,12 +16,12 @@ python tools/native_ci.py --isolated-lab --phase postgres
 python tools/native_ci.py --isolated-lab
 ```
 
-The runner reserves loopback ports 55432 and 56432 before Compose startup,
+The runner reserves two kernel-assigned loopback ports before Compose startup,
 validates the generated project's exact containers and internal bridge, and
 relays TCP only to their owned PostgreSQL/PgBouncer addresses. Compose declares
 no published ports: recent Docker versions skip publications on internal
 networks. The relays close before the runner stops its containers; volumes and
-failed-attempt evidence are preserved. Port collisions, unreachable bridge
+failed-attempt evidence are preserved. Port allocation failures, unreachable bridge
 addresses and incomplete relay cleanup fail the phase. Docker Desktop and
 rootless networking are not assumed to provide this host route; use the local
 service runner in `docs/local-services.md` when the bridge is inaccessible.
@@ -58,13 +58,18 @@ for the lab (record the version in the evidence); the supplemental WASM engine
 below permits SQL and actual Alerta persistence checks in a clearly separate
 evidence layer.
 
-The lab ports (55432 PostgreSQL, 55433 WASM socket, 56432 PgBouncer, 58080
-Zabbix API, 10051 Zabbix trapper) are inside Linux's default ephemeral port
-range, so a lab client can briefly occupy one of them in `TIME_WAIT`.
-`local_runtime.py` retries the start. The Compose native runner binds both of
-its loopback relay ports before starting services or opening outbound probes,
-and fails cleanly if another process already owns a port. It changes no global
-port reservation or network settings.
+Fixed local lab ports such as 55432 PostgreSQL, 55433 WASM socket and 56432
+PgBouncer can overlap the host's ephemeral port range, so a lab client can
+briefly occupy one in `TIME_WAIT`. `local_runtime.py` retries its fixed-port
+start. The Compose native runner instead binds port zero on loopback and holds
+both assigned sockets exclusively through service startup and relay activation.
+It supplies their actual ports in the test DSNs and declares the pool port
+separately as `ACK_TEST_PGBOUNCER_EXPECTED_PORT`; the probe test still requires
+the declared port, loopback host, `alerta` database and dedicated probe user.
+Local service/manual callers retain the default expected pool port 56432.
+No port is released and rebound during startup, and no occupied port is retried
+or taken from another process. Global port reservations and network settings
+are unchanged.
 
 ## SQL fixture and test roles
 

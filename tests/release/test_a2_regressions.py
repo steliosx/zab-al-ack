@@ -106,6 +106,7 @@ def test_native_runner_never_reuses_previous_junit(tmp_path, monkeypatch):
     import native_ci
     relay = MagicMock()
     relay.__enter__.return_value = relay
+    relay.ports = {'postgres': 43123, 'pgbouncer': 43124}
     monkeypatch.setattr(native_ci, 'DockerLabRelays', lambda: relay)
     raw = tmp_path / 'build/evidence-raw'
     public = tmp_path / 'evidence'

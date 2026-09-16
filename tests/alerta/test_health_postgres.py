@@ -1,6 +1,7 @@
 """Restricted-role actual health calls; native cancellation separated from WASM."""
 from contextlib import contextmanager
 import os
+import re
 import time
 
 import psycopg
@@ -79,12 +80,28 @@ def test_T34_native_statement_timeout_rollback_and_reconnect(real_probe, pgdb, p
     assert real_probe.check(force=True)["trigger_ok"] is True
 
 
+def pool_connection_info(pool_dsn, expected_port="56432"):
+    """Validate the declared lab endpoint before any pool connection."""
+    if not re.fullmatch(r"[1-9][0-9]{0,4}", expected_port) or int(expected_port) > 65535:
+        raise ValueError("Expected pool port must be a canonical decimal from 1 through 65535")
+    pool_info = psycopg.conninfo.conninfo_to_dict(pool_dsn)
+    if (pool_info.get("host") not in {"127.0.0.1", "::1"}
+            or pool_info.get("hostaddr", pool_info["host"]) not in {"127.0.0.1", "::1"}
+            or pool_info.get("port") != expected_port
+            or pool_info.get("dbname") != "alerta"
+            or pool_info.get("user") != "zabalack_probe"):
+        raise ValueError("Pool DSN must select the declared loopback port, alerta database and dedicated probe user")
+    return pool_info
+
+
 @pytest.mark.pgbouncer
 def test_T34_native_pgbouncer_timeout_role_and_clean_reuse(pg_lab, pgdb, record_property):
     """Run with the declared loopback `pooling` Compose profile and probe DSN.
 
     ACK_TEST_PGBOUNCER_DSN must log in as zabalack_probe. There is no SET
     ROLE fallback: a pool forcing a broader database identity fails this test.
+    The Docker runner declares its held relay port in
+    ACK_TEST_PGBOUNCER_EXPECTED_PORT; local services retain the 56432 default.
     The profile's lab administrator is used only for read-only SHOW commands;
     fault installation remains on the separately scoped direct lab connection.
     """
@@ -93,13 +110,10 @@ def test_T34_native_pgbouncer_timeout_role_and_clean_reuse(pg_lab, pgdb, record_
         pytest.skip("NOT_RUN_PGBOUNCER: ACK_TEST_PGBOUNCER_DSN for the isolated loopback pooling profile is absent")
     if pg_lab["backend"] != "native_postgres18":
         pytest.skip("NOT_RUN_NATIVE_PGBOUNCER: WASM cannot establish transaction pooling, authentication or cancellation")
-    pool_info = psycopg.conninfo.conninfo_to_dict(pool_dsn)
-    if (pool_info.get("host") not in {"127.0.0.1", "::1"}
-            or pool_info.get("hostaddr", pool_info["host"]) not in {"127.0.0.1", "::1"}
-            or pool_info.get("port") != "56432"
-            or pool_info.get("dbname") != "alerta"
-            or pool_info.get("user") != "zabalack_probe"):
-        pytest.fail("Pool DSN must select the declared loopback:56432/alerta profile and dedicated probe user")
+    try:
+        pool_info = pool_connection_info(pool_dsn, os.environ.get("ACK_TEST_PGBOUNCER_EXPECTED_PORT", "56432"))
+    except ValueError as error:
+        pytest.fail(str(error))
 
     # Read the running pool's actual configuration. Credentials derive solely
     # from the explicitly authorised synthetic lab administrator connection.
