@@ -126,7 +126,7 @@ class PrivateAttempt:
         self.path = Path(tempfile.mkdtemp(prefix='real-zabbix-', dir=parent))
         self.record = {'schema_version': 1, 'status': 'RUNNING', 'started_at': utc_now(),
                        'root': str(root), 'code_digests_before': before,
-                       'command': None, 'pytest_exit_code': None, 'events': []}
+                       'command': None, 'pytest_exit_code': None, 'published': False, 'events': []}
         self.checkpoint('PREPARING')
 
     def checkpoint(self, phase: str) -> None:
@@ -151,7 +151,7 @@ class PrivateAttempt:
             with os.fdopen(private_file(path), 'rb') as stream:
                 data = stream.read()
             files[name] = {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
-        self.record.update(status=record['status'], reason=record.get('reason'),
+        self.record.update(status=record['status'], reason=record.get('reason'), published=False,
                            finished_at=utc_now(), code_digests_after=code_digests(root),
                            pytest_exit_code=record.get('pytest_exit_code'), files=files)
         self.checkpoint('FINISHED')
@@ -283,6 +283,10 @@ def main() -> int:
         attempt.finish(ROOT, record)
         publish_xml(staged, public)
         write_record(record_path, record)
+        # FINISHED describes retained execution bytes, not successful export.
+        # An unhandled interruption before this checkpoint leaves published=False.
+        attempt.record['published'] = True
+        attempt.checkpoint('PUBLISHED')
         print(json.dumps({'status': record['status'], 'counts': counts, 'pytest_exit_code': result.returncode}))
         return result.returncode if result.returncode > 0 else (0 if record['status'] == 'PASS' else 1)
     except subprocess.TimeoutExpired:

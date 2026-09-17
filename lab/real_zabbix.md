@@ -124,8 +124,18 @@ remove or broaden access to its private staging copy.
 Success, assertion failure, timeout, interruption and leak rejection all keep
 their raw records. An abruptly killed recorder or failed manifest write can
 leave a RUNNING manifest; that is unfinished, regardless of any passing XML.
+FINISHED records the retained execution result; it does not confirm public
+publication. The manifest starts with `published: false`, and a final PUBLISHED
+checkpoint sets it true only after both the public XML and JSON are written.
+An interruption before that checkpoint leaves publication unconfirmed, even
+when the retained execution status is PASS. PUBLISHED confirms export of the
+recorded result, which can also be FAIL; it does not turn failures into passes.
+Older manifests without this field likewise do not establish publication.
 Public publication errors invalidate the current evidence while retaining the
-attempt. No attempt overwrites an earlier one. Back up these private directories
+attempt. Preflight refusals (for example an invalid timeout or missing lab
+opt-in) also retain an attempt, without a child command or raw execution files;
+these directories do not establish that tests ran.
+No attempt overwrites an earlier one. Back up these private directories
 before discarding a checkout, verify the archived bytes and retain failed and
 successful attempts separately. They can contain synthetic tokens, fixture paths
 and raw exceptions: never commit them or upload them to public GitHub records.

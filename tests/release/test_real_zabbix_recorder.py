@@ -64,9 +64,10 @@ def run_lab(tmp_path, monkeypatch):
             assert Path(probe.stdout.strip()) == root / 'src/zabalack/__init__.py'
         assert 'tests/real_zabbix' in command and 'pytest_asyncio.plugin' in command
         raw = Path(next(arg.split('=', 1)[1] for arg in command if arg.startswith('--junitxml=')))
-        assert not raw.exists() or raw.read_bytes() == b''
+        assert raw.is_file() and raw.read_bytes() == b''
         if os.name == 'posix':
             assert raw.parent.stat().st_mode & 0o077 == 0
+            assert stat.S_IMODE(raw.stat().st_mode) == 0o600
         state['calls'].append(command)
         kwargs['stdout'].write(b'private synthetic console output\n')
         kwargs['stdout'].flush()
@@ -251,7 +252,10 @@ def test_raw_files_survive_owned_attempt(run_lab, outcome):
     assert manifest['command'] == state['calls'][0]
     assert manifest['pytest_exit_code'] == public.get('pytest_exit_code')
     assert manifest['code_digests_before'] == manifest['code_digests_after'] == evidence_utils.code_digests(root)
-    assert [event['phase'] for event in manifest['events']] == ['PREPARING', 'EXECUTING', 'FINISHED']
+    published = outcome in {'pass', 'assertion-failure'}
+    assert manifest['published'] is published
+    assert [event['phase'] for event in manifest['events']] == [
+        'PREPARING', 'EXECUTING', 'FINISHED', *(['PUBLISHED'] if published else [])]
     assert manifest['started_at'] <= manifest['finished_at']
     for name, binding in manifest['files'].items():
         data = (raw.parent / name).read_bytes()
@@ -289,14 +293,14 @@ def test_attempts_are_unique_private_and_leave_existing_ancestors_unchanged(run_
         assert stat.S_IMODE((root / recorder.PUBLIC).stat().st_mode) == 0o644
 
 
-@pytest.mark.parametrize('failure', ['retention', 'xml-publication', 'json-publication'])
+@pytest.mark.parametrize('failure', ['retention', 'xml-publication', 'json-publication', 'publication-checkpoint'])
 def test_finalization_failure_retains_attempt_and_never_leaves_public_pass(run_lab, monkeypatch, failure):
     root, state, run, *_ = run_lab
-    if failure == 'retention':
+    if failure in {'retention', 'publication-checkpoint'}:
         original = recorder.PrivateAttempt.checkpoint
 
         def checkpoint(attempt, phase):
-            if phase == 'FINISHED':
+            if phase == ('FINISHED' if failure == 'retention' else 'PUBLISHED'):
                 raise OSError('private finalization failure')
             original(attempt, phase)
 
@@ -321,9 +325,41 @@ def test_finalization_failure_retains_attempt_and_never_leaves_public_pass(run_l
     assert (attempt / 'run.xml').read_text() == state['xml']
     assert (attempt / 'console.log').read_bytes() == b'private synthetic console output\n'
     manifest = json.loads((attempt / 'manifest.json').read_text())
+    assert manifest['published'] is False
     assert manifest['status'] == ('RUNNING' if failure == 'retention' else 'FAIL')
     if failure == 'retention':
         assert public['reason'] == 'private_retention_failed'
+
+
+@pytest.mark.parametrize('boundary', ['before-xml', 'before-json', 'after-json'])
+def test_interrupted_publication_is_not_recorded_as_published(run_lab, monkeypatch, boundary):
+    root, state, run, *_ = run_lab
+    if boundary == 'before-xml':
+        def publish(*args):
+            raise SystemExit(143)
+
+        monkeypatch.setattr(recorder, 'publish_xml', publish)
+    else:
+        original = recorder.write_record
+
+        def write(path, record):
+            if record['status'] == 'PASS' and boundary == 'before-json':
+                raise SystemExit(143)
+            original(path, record)
+            if record['status'] == 'PASS':
+                raise SystemExit(143)
+
+        monkeypatch.setattr(recorder, 'write_record', write)
+    with pytest.raises(SystemExit):
+        run()
+    attempt = next((root / 'build/evidence-raw').iterdir())
+    manifest = json.loads((attempt / 'manifest.json').read_text())
+    assert manifest['status'] == 'PASS' and manifest['published'] is False
+    assert manifest['events'][-1]['phase'] == 'FINISHED'
+    assert (attempt / 'run.xml').read_text() == state['xml']
+    public = json.loads((root / recorder.RECORD).read_text())
+    assert public['status'] == ('PASS' if boundary == 'after-json' else 'RUNNING')
+    assert (root / recorder.PUBLIC).exists() == (boundary != 'before-xml')
 
 
 def test_unfinished_attempt_is_preserved_without_inferring_pass_from_xml(run_lab, monkeypatch):
