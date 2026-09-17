@@ -116,6 +116,47 @@ Respect outstanding tool approval denials. Do not retry a rejected action
 through another agent, CI or another mechanism. Report the exact action and
 stated reason once and continue unrelated authorized work.
 
+## Per-run selection and lifecycle
+
+Refresh issue #13 and relevant current branches, reviews and checks at every
+run. Resume an existing claim when its prerequisites are satisfied. A blocker
+applies only to its dependent task: continue one useful authorized ARM64 or
+software task that is independent of the blocked operation, does not collide
+with another agent's claim and does not compete for locked lab resources.
+Do not restart completed staging, runner migration or evidence receipt without
+a new relevant finding. Fable provides bounded independent review; native x64
+remains deferred until stable beta/RC preparation.
+
+The pending exact Docker-network removal remains blocked. Preserve its target,
+proposed command, preconditions and automatic approval rejection in state and
+the existing approval report. Surface those details for the owner's decision
+when requested or materially changed. Do not retry indirectly or treat these
+operating instructions as authorization for that removal.
+
+Enforce one active scheduled worker using the existing process-owned lock.
+Respect separate lab, checkout and runner locks. Reclaim only through the
+established procedure after proving the owner inactive; elapsed time is not
+proof. Keep the holder alive through the final atomic state checkpoint.
+
+At startup and finish, record last start, last finish, outcome, current task,
+task-specific blocker and next trigger in the existing state file. Preserve
+history and exact revision/evidence bindings. Read actual scheduler and task
+records when available; mark unavailable values explicitly. Separate scheduler
+dispatch, task start, checkpoint and actual completion times. The next trigger
+is the scheduler's stored time; a calculated time must be labelled an estimate.
+Keep execution status (RUNNING or COMPLETED), task disposition
+(WAITING_APPROVAL or WAITING_REVIEW) and run outcome (WAITING when no useful
+work is eligible) separate. A completed quiet poll is not a still-running
+process. Diagnose NOT_LAUNCHING only from scheduler/execution records; do not
+infer it from GitHub inactivity.
+
+If nothing useful is eligible, finish as WAITING with precise task-specific
+reasons and conditions for resumption. Do not manufacture documentation,
+repeat unchanged passing suites or expand infrastructure merely to stay busy.
+Notify once for a new blocker or resumed work, and for material outcomes;
+suppress unchanged status repeats. On lock contention, exit quietly without
+overwriting the active owner's state.
+
 ## CI, acceptance and continuity
 
 Use the functioning repository-specific Linux self-hosted CI with clean runner
