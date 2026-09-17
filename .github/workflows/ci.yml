@@ -127,7 +127,7 @@ jobs:
       - run: python -m pip install --require-hashes -r requirements-quality.lock
       - run: python -m pip install --no-deps --no-build-isolation -e .
       - run: python -m pip check
-      - run: flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock python tools/native_ci.py --isolated-lab
+      - run: flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock python tools/native_ci.py --isolated-lab --retire-empty-networks --network-evidence-root /var/lib/zabalack-evidence/native-networks
       - run: python tools/collect_ci_evidence.py pack --kind native
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

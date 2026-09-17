@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 from uuid import uuid4
 from evidence_utils import redact_junit, cases, code_digests
 from native_docker_relay import DockerLabRelays
+import native_network_retention as network_retention
 
 ROOT = Path(__file__).resolve().parents[1]
 PHASES = {
@@ -62,6 +63,13 @@ def retain_phase_exception(raw: Path, phase: str, run_id: str, stage: str, error
         with os.fdopen(descriptor, 'w', encoding='utf-8', errors='backslashreplace') as log:
             log.write(f'stage: {stage}\n')
             traceback.print_exception(type(error), error, error.__traceback__, file=log)
+            for name in ('stdout', 'stderr'):
+                data = getattr(error, name, None)
+                if data:
+                    log.write(f'\nCaptured {name}:\n')
+                    log.write(data.decode('utf-8', errors='backslashreplace') if isinstance(data, bytes) else data)
+            log.flush()
+            os.fsync(log.fileno())
     except OSError:
         # The phase already failed. Do not replace its reason or skip finally,
         # and never print exception messages or private paths into Actions logs.
@@ -73,11 +81,19 @@ def main() -> int:
     parser.add_argument('--isolated-lab', action='store_true', required=True)
     parser.add_argument('--phase', choices=['all', *PHASES], default='all')
     parser.add_argument('--plan', action='store_true', help='Print bounded phases without starting Docker')
+    parser.add_argument('--retire-empty-networks', action='store_true',
+                        help='Retain successful phase diagnostics privately, then remove only its empty network')
+    parser.add_argument('--network-evidence-root', type=Path,
+                        help='Durable owner-private POSIX directory outside the checkout and runner temp')
     args = parser.parse_args()
+    if args.retire_empty_networks != (args.network_evidence_root is not None):
+        parser.error('--retire-empty-networks and --network-evidence-root must be selected together')
     selected = PHASES if args.phase == 'all' else {args.phase: PHASES[args.phase]}
     if args.plan:
         print(json.dumps({'phases': selected, 'bind': '127.0.0.1', 'network': 'internal',
-            'fresh_cluster_per_phase': True, 'shutdown': 'stop; preserve volumes', 'external_zabbix_writes': False}, indent=2))
+            'fresh_cluster_per_phase': True, 'shutdown': 'stop; preserve containers and volumes',
+            'retire_successful_empty_networks': args.retire_empty_networks,
+            'external_zabbix_writes': False}, indent=2))
         return 0
     evidence = ROOT / 'evidence'
     evidence.mkdir(exist_ok=True)
@@ -94,6 +110,17 @@ def main() -> int:
         'real_zabbix': 'NOT_RUN', 'deployment_gates': 'MANUAL_GATE_PENDING'}
     report_path = evidence / 'native-run.json'
     report_path.write_text(json.dumps(report, indent=2) + '\n')
+    run_id = uuid4().hex[:10]
+    store = None
+    if args.retire_empty_networks:
+        try:
+            store = network_retention.prepare_store(args.network_evidence_root, ROOT)
+        except (OSError, ValueError) as error:
+            report.update(status='NOT_RUN', reason=type(error).__name__, stage='network-retention-preflight')
+            retain_phase_exception(raw, 'preflight', run_id, 'network-retention-preflight', error)
+            report_path.write_text(json.dumps(report, indent=2) + '\n')
+            print(json.dumps(report))
+            return 2
     try:
         ensure_local_docker()
     except (RuntimeError, subprocess.SubprocessError, OSError) as error:
@@ -102,7 +129,6 @@ def main() -> int:
         report_path.write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(report))
         return 2
-    run_id = uuid4().hex[:10]
     for phase, targets in selected.items():
         project = 'ack-alpha-' + run_id + '-' + phase
         compose = ['docker', 'compose', '-p', project, '-f', 'lab/compose.postgres.yml', '--profile', 'pooling']
@@ -110,6 +136,7 @@ def main() -> int:
         result = {'phase': phase, 'project': project, 'exit_code': 1, 'status': 'FAIL',
                   'diagnostic_dir': 'build/evidence-raw/native-' + phase + '-' + run_id}
         stage = 'relay-reservation'
+        identity = None
         try:
             with DockerLabRelays() as relays:
                 stage = 'compose-startup'
@@ -117,6 +144,9 @@ def main() -> int:
                                cwd=ROOT, check=True, timeout=600)
                 stage = 'relay-activation'
                 relays.activate(compose, project, ROOT)
+                if store is not None:
+                    stage = 'network-identity-capture'
+                    identity = network_retention.capture_identity(compose, project, ROOT)
                 stage = 'pytest'
                 ports = relays.ports
                 env = {key: value for key, value in os.environ.items() if not key.startswith('ACK_TEST_')}
@@ -146,7 +176,7 @@ def main() -> int:
                     if code == 0 and rows and all(row['status'] == 'passed' for row in rows):
                         result['status'] = 'PASS'
                 stage = 'relay-shutdown'
-        except (subprocess.SubprocessError, OSError, ET.ParseError, ValueError, RuntimeError) as error:
+        except (subprocess.SubprocessError, OSError, ET.ParseError, ValueError, RuntimeError, KeyError, TypeError, AttributeError) as error:
             result['status'] = 'FAIL'
             result['reason'] = type(error).__name__
             retain_phase_exception(raw, phase, run_id, stage, error)
@@ -161,6 +191,18 @@ def main() -> int:
             except (subprocess.SubprocessError, OSError) as error:
                 result['status'] = 'FAIL'
                 result['shutdown_reason'] = type(error).__name__
+        if store is not None and result['status'] == 'PASS':
+            # Only after relay exit, complete passing JUnit and successful stop.
+            # Never inspect/sweep earlier projects to recover subnet capacity.
+            try:
+                if report['code_digests'] != code_digests(ROOT):
+                    raise ValueError('Source or harness changed before network retirement')
+                result['network_retirement'] = network_retention.retire_network(
+                    ROOT, store, identity, {'code_digests': report['code_digests'], 'phase_result': dict(result)},
+                    [raw / ('native-' + phase + suffix) for suffix in ('.xml', '.log')])
+            except (subprocess.SubprocessError, OSError, ValueError, RuntimeError, KeyError, TypeError, AttributeError) as error:
+                result.update(status='FAIL', reason=type(error).__name__, network_retirement={'status': 'INCOMPLETE'})
+                retain_phase_exception(raw, phase, run_id, 'network-retirement', error)
         report['phases'].append(result)
         report_path.write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(result), flush=True)

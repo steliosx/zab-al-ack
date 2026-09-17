@@ -431,6 +431,8 @@ def test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner
         workflow = yaml.load((ROOT / '.github/workflows' / filename).read_text(), Loader=yaml.BaseLoader)
         scripts = [step['run'] for step in workflow['jobs'][job_name]['steps'] if 'run' in step]
         invocations = [script for script in scripts if runner in script]
+        retirement = (' --retire-empty-networks --network-evidence-root /var/lib/zabalack-evidence/native-networks'
+                      if filename == 'ci.yml' else '')
         assert invocations == ['flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
-                               f'python {runner} --isolated-lab']
+                               f'python {runner} --isolated-lab' + retirement]
         assert not any('docker system prune' in script or 'down --volumes' in script for script in scripts)

@@ -143,6 +143,53 @@ A stopped hook/process does not prove containers stopped; retain the
 attempt and inspect exact owned resources before another service lab starts.
 Never reset resources belonging to another agent or job.
 
+### Successful native phase network retirement
+
+`native_ci.py` retains networks by default. Repeated fresh projects can exhaust
+Docker's address pools even when every container is stopped. The explicit
+`--retire-empty-networks --network-evidence-root /absolute/private/durable/path`
+option preserves each successful phase before retiring that phase's network.
+Keep the shared host lock for the entire invocation. The evidence directory
+must belong to the executing account, have mode 0700, and be outside the
+checkout, `_work` and runner temp. Its ancestors must be owned by root or that
+account and not writable by other users (root-owned sticky ancestors excepted).
+Use persistent storage; this directory is separate from hook snapshots and
+must be included in private evidence backups. No records are uploaded.
+The native `ci.yml` job explicitly selects this option with
+`/var/lib/zabalack-evidence/native-networks`; the existing dedicated runner
+account creates it beneath its private evidence root. Deployment labs do not
+select it. No runner service or trusted hook installation changes are needed.
+
+The runner captures full container/network IDs and volume metadata while the
+two owned services are running. Retirement requires complete passing JUnit,
+unchanged source/harness, successful relay shutdown and successful Compose
+stop. It rejects active endpoints, replaced resources, additional mounts or
+owned resources, and foreign containers referencing the network, including
+stopped containers. Failed or interrupted phases retain their network.
+
+Before the sole `docker network rm <full-id>` operation, a unique mode-0700
+attempt preserves mode-0600 raw JUnit/pytest logs, both container log streams,
+full Docker inventories, the source/harness binding and exact removal intent.
+Writes and directories are fsynced and hashes rechecked. Individual diagnostics
+and inspection responses are limited to 64 MiB; oversized or incomplete
+retention fails the phase without authorizing removal. The complete inventory
+and code binding are checked again before mutation. A final hashed manifest
+binds the removal output and after-inventory; the public phase report contains
+only its digest, status and preservation booleans.
+
+Containers, volumes and other networks must remain unchanged. Stopped
+containers remain forensic records but cannot simply restart against the
+retired network; use a fresh project for subsequent execution. These checks
+assume cooperative users honor the shared lock, not hostile Docker-group
+members. A removal timeout, interrupted command or unexpected post-state is
+an incomplete attempt with an unknown outcome, never an automatic retry or
+an inferred pass. Preserve its partial records and inspect it explicitly.
+
+This option does not discover or remove older projects and cannot start a
+first phase when the address pool is already exhausted. Any initial capacity
+recovery requires a separate exact-resource evidence and ownership check.
+Runner hooks, deployment workflows and failed attempts remain unchanged.
+
 ## Validation and policy limits
 
 Run the hook filesystem regressions locally with injected temporary roots;
