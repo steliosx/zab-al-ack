@@ -8,7 +8,7 @@ that result did not establish the packaged-wheel service path. 0.1.0a10 supplies
 the local runner (`tools/run_deployment_e2e_local.py`, `docs/local-services.md`,
 R14) and records the four cases from a runner environment in which the built
 wheel is installed non-editably, with the installed bytes verified against the
-wheel; the Docker Compose form below has still not been run. Offline
+wheel; that historical run did not execute the Docker Compose form below. Offline
 orchestration tests are separate and establish no PostgreSQL authentication,
 Zabbix permissions, notification or macro-expansion result.
 
