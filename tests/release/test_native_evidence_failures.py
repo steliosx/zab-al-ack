@@ -46,7 +46,7 @@ def test_opt_in_retirement_requires_complete_success(tmp_path, monkeypatch, rela
         assert binding['phase_result']['shutdown_exit_code'] == 0
         assert all(p.is_file() for p in diagnostics)
         if failure == 'retire':
-            raise TypeError('synthetic-private-malformed')
+            raise subprocess.TimeoutExpired(['synthetic-docker'], 30, output=b'synthetic-private-partial-output')
         return {'status': 'RETIRED', 'manifest_sha256': 'a' * 64}
     def child(command, **kwargs):
         if 'up' in command:
@@ -85,6 +85,9 @@ def test_opt_in_retirement_requires_complete_success(tmp_path, monkeypatch, rela
     assert report['status'] == ('PASS' if expected == 0 else 'NOT_RUN' if expected == 2 else 'FAIL')
     assert 'synthetic-private' not in capsys.readouterr().out
     assert 'synthetic-private' not in json.dumps(report)
+    if failure == 'retire':
+        diagnostic, = raw.glob('*exception.log')
+        assert 'synthetic-private-partial-output' in diagnostic.read_text()
 
 
 @pytest.fixture(autouse=True)

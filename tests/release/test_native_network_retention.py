@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 
 import pytest
 
@@ -86,7 +87,8 @@ def lab(tmp_path, monkeypatch):
 
 def retire(lab):
     root, store, _, _, identity, log = lab
-    return retention.retire_network(root, store, identity, BINDING, [log])
+    binding = {**BINDING, 'phase_result': {'raw_junit_sha256': hashlib.sha256(b'synthetic private phase details').hexdigest()}}
+    return retention.retire_network(root, store, identity, binding, [log, log])
 
 
 def test_owned_success_retains_verified_diagnostics_before_exact_network_removal(lab):
@@ -111,10 +113,10 @@ def test_owned_success_retains_verified_diagnostics_before_exact_network_removal
 @pytest.mark.parametrize('mutation', [
     'running', 'active-endpoint', 'foreign-stopped', 'replaced-container', 'replaced-volume',
     'foreign-network', 'extra-network', 'extra-volume', 'extra-mount', 'missing-mount',
-    'not-internal', 'null-state', 'null-config', 'null-endpoints', 'changed-source',
+    'not-internal', 'null-state', 'null-config', 'null-endpoints', 'changed-source', 'changed-junit',
 ])
 def test_ownership_or_revision_uncertainty_never_removes_network(lab, monkeypatch, mutation):
-    _, _, rows, calls, _, _ = lab
+    _, _, rows, calls, _, log = lab
     container = rows['containers'][IDS[0]]
     if mutation == 'running':
         container['State'].update(Status='running', Running=True)
@@ -149,6 +151,8 @@ def test_ownership_or_revision_uncertainty_never_removes_network(lab, monkeypatc
         container['NetworkSettings']['Networks'] = None
     elif mutation == 'changed-source':
         monkeypatch.setattr(retention, 'code_digests', lambda root: {})
+    elif mutation == 'changed-junit':
+        log.write_text('Different JUnit after PASS assessment')
     with pytest.raises((ValueError, KeyError, TypeError, AttributeError)):
         retire(lab)
     assert not any(command[:3] == ['docker', 'network', 'rm'] for command in calls)
@@ -231,9 +235,31 @@ def test_preflight_refuses_unsafe_roots(tmp_path, monkeypatch, unsafe):
         retention.prepare_store(store, root)
 
 
-def test_service_logs_include_stderr(tmp_path, monkeypatch):
-    def child(command, **kwargs):
-        assert kwargs['stderr'] == subprocess.STDOUT
-        return b'both-streams'
-    monkeypatch.setattr(retention.subprocess, 'check_output', child)
-    assert retention.output(['docker', 'logs', IDS[0]], tmp_path, combine_stderr=True) == b'both-streams'
+def test_service_logs_include_stderr(tmp_path):
+    result = retention.output([sys.executable, '-c',
+        'import sys; sys.stdout.write("synthetic-out"); sys.stderr.write("synthetic-err")'], tmp_path, combine_stderr=True)
+    assert b'synthetic-out' in result and b'synthetic-err' in result
+
+
+def test_capture_preserves_both_failed_streams(tmp_path):
+    with pytest.raises(subprocess.CalledProcessError) as raised:
+        retention.output([sys.executable, '-c',
+            'import sys; sys.stdout.write("out"); sys.stderr.write("err"); sys.exit(1)'], tmp_path)
+    assert raised.value.stdout == b'out' and raised.value.stderr == b'err'
+
+
+def test_capture_enforces_bound_while_reading(tmp_path, monkeypatch):
+    monkeypatch.setattr(retention, 'LIMIT', 32)
+    with pytest.raises(retention.CaptureError) as raised:
+        retention.output([sys.executable, '-c', 'import sys; sys.stdout.write("x"*100000)'], tmp_path)
+    assert len(raised.value.stdout) + len(raised.value.stderr) == 32
+
+
+def test_fifo_diagnostic_is_refused_without_waiting_for_writer(tmp_path):
+    fifo = tmp_path / 'fifo'
+    os.mkfifo(fifo, 0o600)
+    try:
+        with pytest.raises(ValueError, match='Unsafe'):
+            retention.digest_file(fifo)
+    finally:
+        fifo.unlink()  # Disposable special-file fixture, never a lab/evidence resource.

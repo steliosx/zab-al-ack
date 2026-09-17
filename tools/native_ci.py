@@ -63,6 +63,13 @@ def retain_phase_exception(raw: Path, phase: str, run_id: str, stage: str, error
         with os.fdopen(descriptor, 'w', encoding='utf-8', errors='backslashreplace') as log:
             log.write(f'stage: {stage}\n')
             traceback.print_exception(type(error), error, error.__traceback__, file=log)
+            for name in ('stdout', 'stderr'):
+                data = getattr(error, name, None)
+                if data:
+                    log.write(f'\nCaptured {name}:\n')
+                    log.write(data.decode('utf-8', errors='backslashreplace') if isinstance(data, bytes) else data)
+            log.flush()
+            os.fsync(log.fileno())
     except OSError:
         # The phase already failed. Do not replace its reason or skip finally,
         # and never print exception messages or private paths into Actions logs.

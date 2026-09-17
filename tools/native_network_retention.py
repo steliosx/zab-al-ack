@@ -11,8 +11,10 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
 import stat
 import subprocess
+import time
 import traceback
 from uuid import uuid4
 from evidence_utils import code_digests
@@ -83,7 +85,7 @@ def write_file(path, data):
 
 def digest_file(path):
     safe_path(path)
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, 'rb') as f:
         info = os.fstat(f.fileno())
         require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_size <= LIMIT,
@@ -91,11 +93,52 @@ def digest_file(path):
         return hashlib.file_digest(f, 'sha256').hexdigest()
 
 
+class CaptureError(RuntimeError):
+    def __init__(self, stdout, stderr):
+        super().__init__('Docker diagnostic exceeds retention bound')
+        self.stdout, self.stderr = stdout, stderr
+
+
 def output(command, root, *, combine_stderr=False):
-    data = subprocess.check_output(command, cwd=root,
-                                   stderr=subprocess.STDOUT if combine_stderr else subprocess.PIPE, timeout=30)
-    require(len(data) <= LIMIT, 'Docker inspection exceeds retention bound')
-    return data
+    """Bound both streams while reading; kill only the owned CLI on uncertainty."""
+    child = subprocess.Popen(command, cwd=root, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT if combine_stderr else subprocess.PIPE)
+    buffers = {'stdout': bytearray(), 'stderr': bytearray()}
+    total = 0
+    deadline = time.monotonic() + 30
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(child.stdout, selectors.EVENT_READ, 'stdout')
+            if child.stderr is not None:
+                selector.register(child.stderr, selectors.EVENT_READ, 'stderr')
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, 30, output=bytes(buffers['stdout']), stderr=bytes(buffers['stderr']))
+                for key, _ in selector.select(min(remaining, 1)):
+                    chunk = os.read(key.fileobj.fileno(), 65536)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    room = LIMIT - total
+                    buffers[key.data].extend(chunk[:room])
+                    total += min(room, len(chunk))
+                    if len(chunk) > room:
+                        raise CaptureError(bytes(buffers['stdout']), bytes(buffers['stderr']))
+        code = child.wait(timeout=max(0.001, deadline - time.monotonic()))
+        if code:
+            raise subprocess.CalledProcessError(code, command, output=bytes(buffers['stdout']), stderr=bytes(buffers['stderr']))
+        return bytes(buffers['stdout'])
+    except subprocess.TimeoutExpired as error:
+        error.output, error.stderr = bytes(buffers['stdout']), bytes(buffers['stderr'])
+        raise
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait()
+        child.stdout.close()
+        if child.stderr is not None:
+            child.stderr.close()
 
 
 def inspect(kind, ids, root):
@@ -228,8 +271,11 @@ def retire_network(root: Path, store: Path, identity: dict, binding: dict, diagn
         before = inventory(root)
         validate_stopped(before, identity)
         save('inventory-before.json', before)
+        require(len(diagnostics) >= 2, 'Raw JUnit and pytest log required')
         for index, source in enumerate(diagnostics):
             digest = digest_file(source)
+            if index == 0:
+                require(digest == binding['phase_result']['raw_junit_sha256'], 'Validated raw JUnit changed')
             data = source.read_bytes()
             require(hashlib.sha256(data).hexdigest() == digest == digest_file(source), 'Diagnostic changed')
             write_file(attempt / f'phase-{index}.raw', data)
