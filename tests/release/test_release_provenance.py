@@ -161,6 +161,24 @@ def test_package_verification_rejects_different_or_omitted_pr_identity(candidate
         release.verify(root, output / 'dist', candidate=output, context=context)
 
 
+@pytest.mark.parametrize('candidate,stored_number', [
+    (PR_CONTEXT, 17.0),
+    (dict(PR_CONTEXT, pull_request=dict(PR_CONTEXT['pull_request'], number=1)), True),
+], indirect=['candidate'], ids=['float', 'boolean'])
+def test_package_rejects_equal_but_invalid_saved_pr_number(candidate, stored_number):
+    root, output = candidate
+    context = ci.read_json(output / 'evidence/ci-collection.json')['context']
+    for directory in (root, output):
+        edit_json(directory / 'evidence/ci-collection.json',
+                  lambda value: value['context']['pull_request'].update(number=stored_number))
+    # Keep source/candidate evidence and all archive checksums consistent, so the
+    # rejection proves stored-context validation rather than a stale checksum.
+    build_fixture(root, output)
+    assert ci.read_json(output / 'evidence/ci-collection.json')['context'] == context
+    with pytest.raises(ci.EvidenceError, match='Invalid pull request number'):
+        release.verify(root, output / 'dist', candidate=output, context=context)
+
+
 def test_historical_package_cannot_satisfy_a_current_pr_context(candidate):
     root, output = candidate
     with pytest.raises(ci.EvidenceError, match='foreign'):

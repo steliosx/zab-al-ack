@@ -214,6 +214,21 @@ def test_pack_rejects_pr_metadata_changed_after_preparation(collection, field):
         ci.pack(root, 'quality', context)
 
 
+@pytest.mark.parametrize('number,stored_number', [(17, 17.0), (1, True)], ids=['float', 'boolean'])
+def test_pack_rejects_equal_but_invalid_saved_pr_number(collection, number, stored_number):
+    root, _ = collection
+    context = deepcopy(PR_CONTEXT)
+    context['pull_request']['number'] = number
+    ci.prepare(root, 'quality', context)
+    create_reports(root, 'quality')
+    path = root / 'build/ci-preparation/quality.json'
+    edit_json(path, lambda value: value['context']['pull_request'].update(number=stored_number))
+    # Dict equality alone conflates float/bool with int; validate the stored type.
+    assert ci.read_json(path)['context'] == context
+    with pytest.raises(ci.EvidenceError, match='Invalid pull request number'):
+        ci.pack(root, 'quality', context)
+
+
 def artifact(inputs, kind='reference'):
     return inputs / ci.artifact_name(kind, CONTEXT)
 

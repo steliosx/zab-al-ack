@@ -266,6 +266,7 @@ def pack(root: Path, kind: str, context: dict) -> Path:
     require(kind in KINDS, 'Unknown CI evidence kind')
     validate_context(context)
     preparation = read_json(root / 'build/ci-preparation' / f'{kind}.json')
+    validate_context(preparation.get('context'))
     require(preparation.get('context') == context and preparation.get('kind') == kind, 'CI preparation context mismatch')
     require(binding_error(preparation, root, 'Preparation') is None, 'Tree changed after CI preparation')
     names = validate_reports(root, root, kind)
