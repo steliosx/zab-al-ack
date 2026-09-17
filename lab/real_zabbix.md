@@ -104,12 +104,33 @@ checks both the restricted and optional witness token paths and file contents
 for leaks automatically; `--forbid TEXT` and `--forbid-file PATH` add further
 private material to reject. Missing or unreadable inputs fail before execution.
 Old public evidence is invalidated first. Fresh raw JUnit and console output
-stay in a private temporary directory, and sanitized XML is published only
+remain in a unique private `build/evidence-raw/real-zabbix-*/` attempt directory,
+and sanitized XML is published only
 after leak checks and tree/exit-status checks. The JSON record contains current
 counts and observed API versions from this execution; it inherits no previous
 claims or descriptions. Failed/skipped tests remain failed/skipped, and a
 nonzero pytest exit cannot become PASS. A NOT_RUN record exports only a fixed
 unavailability reason; the supplied private explanation is not retained.
+
+Each executed attempt retains `run.xml`, `console.log`, any staged `public.xml`
+and a private `manifest.json` with lifecycle times, the actual pytest command,
+exit status when available, before/after source and harness digests, and hashes
+of the available diagnostic files. Attempt directories are mode 0700 and files
+mode 0600 even with a permissive caller umask. Symlinked storage, traversal and
+linked diagnostic files are rejected; existing ancestor permissions are never
+changed. The public XML is a separate atomic 0644 copy, so publication cannot
+remove or broaden access to its private staging copy.
+
+Success, assertion failure, timeout, interruption and leak rejection all keep
+their raw records. An abruptly killed recorder or failed manifest write can
+leave a RUNNING manifest; that is unfinished, regardless of any passing XML.
+Public publication errors invalidate the current evidence while retaining the
+attempt. No attempt overwrites an earlier one. Back up these private directories
+before discarding a checkout, verify the archived bytes and retain failed and
+successful attempts separately. They can contain synthetic tokens, fixture paths
+and raw exceptions: never commit them or upload them to public GitHub records.
+Retained pytest output does not confirm service cleanup or close deployment
+gates; independently inspect the owned lab before any later execution.
 
 `tools/update_acceptance.py` maps the record only when its digests match the
 tree it is invoked on; edit a test, runner or lab file and the run must be
