@@ -140,6 +140,10 @@ def staged_context(destination):
     shutil.copy2(ROOT / "lab/zabbix_roles.py", destination / "lab/zabbix_roles.py")
     shutil.copytree(ROOT / "zabbix", destination / "zabbix")
     shutil.copytree(ROOT / "tests/deployment_e2e", destination / "tests/deployment_e2e", ignore=shutil.ignore_patterns("__pycache__"))
+    # copy2/copytree preserve source modes, which may be owner-only. Normalize
+    # only staged nonsecret inputs; Docker assigns their ownership to root.
+    for path in destination.rglob("*"):
+        path.chmod(0o755 if path.is_dir() else 0o644)
 
 
 def validate_result(private, exit_code):

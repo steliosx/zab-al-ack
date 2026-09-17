@@ -66,18 +66,23 @@ assert Path(zabbix_roles.__file__).resolve().is_relative_to(root)
 def test_staged_context_remains_traversable_under_private_umask(tmp_path, monkeypatch):
     source = tmp_path / "source"
     inputs = ["pyproject.toml", "README.md", "LICENSE", "NOTICE", "MANIFEST.in", "requirements.lock",
-              "src/product.py", "sql/migrate.py", "lab/deployment_e2e.Dockerfile",
+              "src/product.py", "src/package/nested/helper.py", "sql/migrate.py", "sql/install/nested/schema.sql",
+              "lab/deployment_e2e.Dockerfile",
               "lab/deployment_e2e_runtime.py", "lab/zabbix_roles.py", "zabbix/media.yaml",
-              "tests/deployment_e2e/test_service_path.py"]
+              "zabbix/templates/nested/media.yaml", "tests/deployment_e2e/test_service_path.py",
+              "tests/deployment_e2e/nested/test_helpers.py"]
     for name in inputs:
         path = source / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("synthetic source: " + name)
-        path.chmod(0o644)
+        path.chmod(0o600)
         for directory in (path.parent, *path.parent.parents):
             if not directory.is_relative_to(source):
                 break
-            directory.chmod(0o755)
+            directory.chmod(0o700)
+    source_modes = {path.relative_to(source): stat.S_IMODE(path.stat().st_mode)
+                    for path in (source, *source.rglob("*"))}
+    source_bytes = {name: (source / name).read_bytes() for name in inputs}
     monkeypatch.setattr(runner, "ROOT", source)
     private = tmp_path / "private"
     private.mkdir(mode=0o700)
@@ -90,12 +95,15 @@ def test_staged_context_remains_traversable_under_private_umask(tmp_path, monkey
     finally:
         os.umask(previous_umask)
 
-    # All copied source remains accessible after Docker gives it root ownership,
-    # including the implicit tests parent that copytree otherwise leaves 0700.
+    assert {path.relative_to(source): stat.S_IMODE(path.stat().st_mode)
+            for path in (source, *source.rglob("*"))} == source_modes
+    assert {name: (source / name).read_bytes() for name in inputs} == source_bytes
+    # Normalize every staged nonsecret file and nested directory, even when
+    # source modes and the host umask are private. Docker changes their owner.
     for directory in [destination, *[path for path in destination.rglob("*") if path.is_dir()]]:
         assert stat.S_IMODE(directory.stat().st_mode) == 0o755, directory.relative_to(destination)
     for name in inputs:
-        assert (destination / name).read_bytes() == (source / name).read_bytes()
+        assert (destination / name).read_bytes() == source_bytes[name]
         assert stat.S_IMODE((destination / name).stat().st_mode) == 0o644
     assert stat.S_IMODE(private.stat().st_mode) == 0o700
     assert stat.S_IMODE((private / "bootstrap.json").stat().st_mode) == 0o600
