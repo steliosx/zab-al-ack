@@ -1,13 +1,14 @@
 """Recorder failure regressions use a fake pytest process, never real services."""
 import json
+import hashlib
+import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'tools'))
 import evidence_utils
 import record_real_zabbix as recorder
 
@@ -63,14 +64,19 @@ def run_lab(tmp_path, monkeypatch):
             assert Path(probe.stdout.strip()) == root / 'src/zabalack/__init__.py'
         assert 'tests/real_zabbix' in command and 'pytest_asyncio.plugin' in command
         raw = Path(next(arg.split('=', 1)[1] for arg in command if arg.startswith('--junitxml=')))
-        assert not raw.exists() and raw.parent.stat().st_mode & 0o077 == 0
+        assert raw.is_file() and raw.read_bytes() == b''
+        if os.name == 'posix':
+            assert raw.parent.stat().st_mode & 0o077 == 0
+            assert stat.S_IMODE(raw.stat().st_mode) == 0o600
         state['calls'].append(command)
+        kwargs['stdout'].write(b'private synthetic console output\n')
+        kwargs['stdout'].flush()
+        if state['xml'] is not None:
+            raw.write_text(state['xml'])
         if state['callback']:
             state['callback']()
         if state['exception']:
             raise state['exception']
-        if state['xml'] is not None:
-            raw.write_text(state['xml'])
         return subprocess.CompletedProcess(command, state['returncode'])
 
     monkeypatch.setattr(recorder.subprocess, 'run', child)
@@ -221,3 +227,193 @@ def test_owned_child_imports_current_src_despite_foreign_pythonpath(run_lab, mon
     state['probe_import'] = True
     code, record = run()
     assert code == 0 and record['status'] == 'PASS'
+
+
+@pytest.mark.parametrize('outcome', ['pass', 'assertion-failure', 'timeout', 'interrupt', 'leak'])
+def test_raw_files_survive_owned_attempt(run_lab, outcome):
+    """Also a test-only baseline: old TemporaryDirectory loses these exact bytes."""
+    root, state, run, *_ = run_lab
+    if outcome == 'assertion-failure':
+        state['xml'] = PASS_XML.replace('</testcase>', '<failure>synthetic failure</failure></testcase>')
+        state['returncode'] = 1
+    elif outcome == 'timeout':
+        state['exception'] = subprocess.TimeoutExpired(['synthetic'], 300)
+    elif outcome == 'interrupt':
+        state['exception'] = KeyboardInterrupt()
+    elif outcome == 'leak':
+        state['xml'] = PASS_XML.replace('</testcase>', '<system-out>synthetic-main-token-value</system-out></testcase>')
+    code, public = run()
+    raw = Path(next(arg.split('=', 1)[1] for arg in state['calls'][0] if arg.startswith('--junitxml=')))
+    assert raw.exists(), 'owned raw JUnit was deleted after execution'
+    assert raw.read_text() == state['xml']
+    assert (raw.parent / 'console.log').read_bytes() == b'private synthetic console output\n'
+    manifest = json.loads((raw.parent / 'manifest.json').read_text())
+    assert manifest['status'] == public['status'] == ('PASS' if outcome == 'pass' else 'FAIL')
+    assert manifest['command'] == state['calls'][0]
+    assert manifest['pytest_exit_code'] == public.get('pytest_exit_code')
+    assert manifest['code_digests_before'] == manifest['code_digests_after'] == evidence_utils.code_digests(root)
+    published = outcome in {'pass', 'assertion-failure'}
+    assert manifest['published'] is published
+    assert [event['phase'] for event in manifest['events']] == [
+        'PREPARING', 'EXECUTING', 'FINISHED', *(['PUBLISHED'] if published else [])]
+    assert manifest['started_at'] <= manifest['finished_at']
+    for name, binding in manifest['files'].items():
+        data = (raw.parent / name).read_bytes()
+        assert binding == {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+    assert (code == 0) == (outcome == 'pass')
+    if outcome in {'timeout', 'interrupt', 'leak'}:
+        assert not (root / recorder.PUBLIC).exists()
+
+
+@pytest.mark.parametrize('mask', [0o000, 0o077])
+def test_attempts_are_unique_private_and_leave_existing_ancestors_unchanged(run_lab, mask):
+    root, state, run, *_ = run_lab
+    parent = root / 'build/evidence-raw'
+    parent.mkdir(parents=True)
+    parent.chmod(0o755)
+    old_modes = {path: path.stat().st_mode for path in (root, root / 'build', parent)}
+    previous = os.umask(mask)
+    try:
+        assert run()[0] == 0
+        first = next(parent.iterdir())
+        snapshot = {path.name: path.read_bytes() for path in first.iterdir()}
+        assert run()[0] == 0
+    finally:
+        os.umask(previous)
+    assert len(list(parent.iterdir())) == 2 and len(state['calls']) == 2
+    assert {path.name: path.read_bytes() for path in first.iterdir()} == snapshot
+    assert {path: path.stat().st_mode for path in old_modes} == old_modes
+    for attempt in parent.iterdir():
+        assert attempt.is_dir()
+        if os.name == 'posix':
+            assert stat.S_IMODE(attempt.stat().st_mode) == 0o700
+            assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in attempt.iterdir())
+    assert (first / 'public.xml').read_bytes() == (root / recorder.PUBLIC).read_bytes()
+    if os.name == 'posix':
+        assert stat.S_IMODE((root / recorder.PUBLIC).stat().st_mode) == 0o644
+
+
+@pytest.mark.parametrize('failure', ['retention', 'xml-publication', 'json-publication', 'publication-checkpoint'])
+def test_finalization_failure_retains_attempt_and_never_leaves_public_pass(run_lab, monkeypatch, failure):
+    root, state, run, *_ = run_lab
+    if failure in {'retention', 'publication-checkpoint'}:
+        original = recorder.PrivateAttempt.checkpoint
+
+        def checkpoint(attempt, phase):
+            if phase == ('FINISHED' if failure == 'retention' else 'PUBLISHED'):
+                raise OSError('private finalization failure')
+            original(attempt, phase)
+
+        monkeypatch.setattr(recorder.PrivateAttempt, 'checkpoint', checkpoint)
+    elif failure == 'xml-publication':
+        def publish(*args):
+            raise OSError('private publication failure')
+
+        monkeypatch.setattr(recorder, 'publish_xml', publish)
+    else:
+        original = recorder.write_record
+
+        def write(path, record):
+            if record['status'] == 'PASS':
+                raise OSError('private publication failure')
+            original(path, record)
+
+        monkeypatch.setattr(recorder, 'write_record', write)
+    code, public = run()
+    assert code == 1 and public['status'] == 'FAIL' and not (root / recorder.PUBLIC).exists()
+    attempt = next((root / 'build/evidence-raw').iterdir())
+    assert (attempt / 'run.xml').read_text() == state['xml']
+    assert (attempt / 'console.log').read_bytes() == b'private synthetic console output\n'
+    manifest = json.loads((attempt / 'manifest.json').read_text())
+    assert manifest['published'] is False
+    assert manifest['status'] == ('RUNNING' if failure == 'retention' else 'FAIL')
+    if failure == 'retention':
+        assert public['reason'] == 'private_retention_failed'
+
+
+@pytest.mark.parametrize('boundary', ['before-xml', 'before-json', 'after-json'])
+def test_interrupted_publication_is_not_recorded_as_published(run_lab, monkeypatch, boundary):
+    root, state, run, *_ = run_lab
+    if boundary == 'before-xml':
+        def publish(*args):
+            raise SystemExit(143)
+
+        monkeypatch.setattr(recorder, 'publish_xml', publish)
+    else:
+        original = recorder.write_record
+
+        def write(path, record):
+            if record['status'] == 'PASS' and boundary == 'before-json':
+                raise SystemExit(143)
+            original(path, record)
+            if record['status'] == 'PASS':
+                raise SystemExit(143)
+
+        monkeypatch.setattr(recorder, 'write_record', write)
+    with pytest.raises(SystemExit):
+        run()
+    attempt = next((root / 'build/evidence-raw').iterdir())
+    manifest = json.loads((attempt / 'manifest.json').read_text())
+    assert manifest['status'] == 'PASS' and manifest['published'] is False
+    assert manifest['events'][-1]['phase'] == 'FINISHED'
+    assert (attempt / 'run.xml').read_text() == state['xml']
+    public = json.loads((root / recorder.RECORD).read_text())
+    assert public['status'] == ('PASS' if boundary == 'after-json' else 'RUNNING')
+    assert (root / recorder.PUBLIC).exists() == (boundary != 'before-xml')
+
+
+def test_unfinished_attempt_is_preserved_without_inferring_pass_from_xml(run_lab, monkeypatch):
+    root, state, run, *_ = run_lab
+    # Simulate an unhandled termination after child output. Unlike SIGKILL this
+    # remains catchable by the test, without adding it to the recorder's handlers.
+    state['exception'] = SystemExit(143)
+    with pytest.raises(SystemExit):
+        run()
+    attempt = next((root / 'build/evidence-raw').iterdir())
+    assert (attempt / 'run.xml').read_text() == state['xml']
+    assert json.loads((attempt / 'manifest.json').read_text())['status'] == 'RUNNING'
+    assert json.loads((root / recorder.RECORD).read_text())['status'] == 'RUNNING'
+    assert not (root / recorder.PUBLIC).exists()
+
+
+@pytest.mark.parametrize('part', ['build', 'evidence-raw'])
+def test_symlink_ancestor_rejected_without_changing_external_permissions(run_lab, tmp_path, part):
+    root, state, run, *_ = run_lab
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    mode = outside.stat().st_mode
+    path = root / 'build'
+    if part == 'evidence-raw':
+        path.mkdir()
+        path = path / part
+    try:
+        path.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip('host cannot create directory symlinks')
+    code, record = run()
+    assert code == 1 and record['status'] == 'FAIL' and state['calls'] == []
+    assert list(outside.iterdir()) == [] and outside.stat().st_mode == mode
+    assert not (root / recorder.PUBLIC).exists()
+
+
+def test_private_root_traversal_rejected_without_creating_storage(tmp_path):
+    with pytest.raises(ValueError, match='private_path_traversal'):
+        recorder.PrivateAttempt(tmp_path / 'uncreated/../outside', {'source': 'synthetic'})
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_link_substitution_rejected_without_reading_or_chmod_external_file(run_lab, tmp_path):
+    root, state, run, *_ = run_lab
+    outside = tmp_path / 'outside.txt'
+    outside.write_text(PASS_XML)
+    mode = outside.stat().st_mode
+
+    def substitute():
+        raw = next((root / 'build/evidence-raw').glob('*/run.xml'))
+        raw.unlink()
+        os.link(outside, raw)
+
+    state['callback'] = substitute
+    code, record = run()
+    assert code == 1 and record['status'] == 'FAIL' and not (root / recorder.PUBLIC).exists()
+    assert outside.read_text() == PASS_XML and outside.stat().st_mode == mode
