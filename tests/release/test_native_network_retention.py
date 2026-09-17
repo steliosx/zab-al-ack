@@ -224,6 +224,7 @@ def test_preflight_refuses_unsafe_roots(tmp_path, monkeypatch, unsafe):
         store = tmp_path / '_work/private'
     elif unsafe == 'mode':
         store.mkdir(mode=0o755)
+        store.chmod(0o755)  # Deliberately unsafe even under the private controller umask.
     elif unsafe == 'link':
         store.symlink_to(root, target_is_directory=True)
     with pytest.raises(ValueError):
