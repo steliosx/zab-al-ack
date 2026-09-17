@@ -17,6 +17,7 @@ from mutation_fixtures import passing_mutation_record
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTEXT = {'repository': 'synthetic/zabalack', 'run_id': '123', 'run_attempt': '2', 'sha': 'a' * 40}
+PR_CONTEXT = dict(CONTEXT, pull_request={'number': 17, 'head_sha': 'b' * 40, 'base_sha': 'c' * 40})
 
 
 def write_record(root, name, value):
@@ -66,10 +67,11 @@ def create_reports(root, kind):
 
 
 @pytest.fixture
-def collection(tmp_path, monkeypatch):
+def collection(tmp_path, monkeypatch, request):
     # These transport fixtures model a PR; scheduled-profile behavior has its
     # own negative test and must not depend on the caller's pytest environment.
     monkeypatch.setenv('ACK_HYPOTHESIS_PROFILE', 'pr')
+    context = getattr(request, 'param', CONTEXT)
     root = tmp_path / 'source'
     (root / 'src/zabalack').mkdir(parents=True)
     (root / 'src/zabalack/synthetic.py').write_text('SYNTHETIC = True\n')
@@ -78,11 +80,138 @@ def collection(tmp_path, monkeypatch):
     inputs = tmp_path / 'downloads'
     inputs.mkdir()
     for kind in ci.KINDS:
-        ci.prepare(root, kind, CONTEXT)
+        ci.prepare(root, kind, context)
         create_reports(root, kind)
-        output = ci.pack(root, kind, CONTEXT)
-        shutil.copytree(output, inputs / ci.artifact_name(kind, CONTEXT))
+        output = ci.pack(root, kind, context)
+        shutil.copytree(output, inputs / ci.artifact_name(kind, context))
     return root, inputs
+
+
+@pytest.fixture
+def actions_event(tmp_path, monkeypatch):
+    event = {'number': 17, 'repository': {'full_name': CONTEXT['repository']}, 'pull_request': {
+        'number': 17, 'head': {'sha': 'b' * 40, 'repo': {'full_name': 'fork-owner/zabalack'}},
+        'base': {'sha': 'c' * 40, 'repo': {'full_name': CONTEXT['repository']}},
+        # The webhook field can lag the checkout and must not replace its SHA.
+        'merge_commit_sha': 'd' * 40, 'body': 'SYNTHETIC_PRIVATE_EVENT_BODY',
+    }}
+    path = tmp_path / 'event.json'
+    ci.write_json(path, event)
+    for key, value in CONTEXT.items():
+        monkeypatch.setenv('GITHUB_' + key.upper(), value)
+    monkeypatch.setenv('GITHUB_ACTIONS', 'true')
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'pull_request')
+    monkeypatch.setenv('GITHUB_EVENT_PATH', str(path))
+    monkeypatch.setattr(ci.subprocess, 'check_output', lambda *args, **kwargs: CONTEXT['sha'] + '\n')
+    return path
+
+
+def test_pr_event_retains_head_base_and_number_separately_from_tested_checkout(actions_event, tmp_path):
+    context = ci.environment_context(tmp_path)
+    assert context == PR_CONTEXT
+    assert context['sha'] != context['pull_request']['head_sha']
+    assert 'SYNTHETIC_PRIVATE_EVENT_BODY' not in json.dumps(context)
+
+
+@pytest.mark.parametrize('event_name', ['push', 'schedule', 'workflow_dispatch'])
+def test_non_pr_events_keep_the_existing_context_shape(actions_event, tmp_path, monkeypatch, event_name):
+    monkeypatch.setenv('GITHUB_EVENT_NAME', event_name)
+    actions_event.unlink()  # Non-PR runs do not require or export a PR payload.
+    assert ci.environment_context(tmp_path) == CONTEXT
+
+
+@pytest.mark.parametrize('change', ['not_actions', 'wrong_checkout', 'missing_event_name', 'invalid_event_name'])
+def test_environment_context_still_requires_actions_and_matching_checkout(actions_event, tmp_path, monkeypatch, change):
+    if change == 'not_actions':
+        monkeypatch.setenv('GITHUB_ACTIONS', 'false')
+    elif change == 'wrong_checkout':
+        monkeypatch.setattr(ci.subprocess, 'check_output', lambda *args, **kwargs: 'e' * 40)
+    elif change == 'missing_event_name':
+        monkeypatch.delenv('GITHUB_EVENT_NAME')
+    else:
+        monkeypatch.setenv('GITHUB_EVENT_NAME', 'SYNTHETIC_PRIVATE_EVENT_BODY\n')
+    with pytest.raises(ci.EvidenceError):
+        ci.environment_context(tmp_path)
+
+
+@pytest.mark.parametrize('change', ['missing_file', 'malformed', 'duplicate', 'no_pull', 'wrong_pull_type',
+    'missing_head', 'bad_sha', 'bool_number', 'string_number', 'zero_number', 'number_mismatch',
+    'foreign_event_repository', 'foreign_base_repository'])
+def test_pr_event_rejects_missing_or_ambiguous_metadata(actions_event, tmp_path, change):
+    if change == 'missing_file':
+        actions_event.unlink()
+    elif change in {'malformed', 'duplicate'}:
+        actions_event.write_text('{SYNTHETIC_PRIVATE_EVENT_BODY' if change == 'malformed' else
+                                 '{"number":17,"number":18}')
+    else:
+        event = json.loads(actions_event.read_text())
+        pull = event['pull_request']
+        if change == 'no_pull':
+            del event['pull_request']
+        elif change == 'wrong_pull_type':
+            event['pull_request'] = []
+        elif change == 'missing_head':
+            del pull['head']
+        elif change == 'bad_sha':
+            pull['base']['sha'] = 'SYNTHETIC_PRIVATE_EVENT_BODY'
+        elif change in {'bool_number', 'string_number', 'zero_number'}:
+            event['number'] = pull['number'] = {'bool_number': True, 'string_number': '17', 'zero_number': 0}[change]
+        elif change == 'number_mismatch':
+            event['number'] = 18
+        elif change == 'foreign_event_repository':
+            event['repository']['full_name'] = 'other/repository'
+        else:
+            pull['base']['repo']['full_name'] = 'other/repository'
+        ci.write_json(actions_event, event)
+    with pytest.raises(ci.EvidenceError) as error:
+        ci.environment_context(tmp_path)
+    assert 'SYNTHETIC_PRIVATE_EVENT_BODY' not in str(error.value)
+
+
+@pytest.mark.parametrize('pull', [None, {}, {'number': 17, 'head_sha': 'b' * 40, 'base_sha': 'c' * 40, 'extra': 1},
+    {'number': True, 'head_sha': 'b' * 40, 'base_sha': 'c' * 40},
+    {'number': 17, 'head_sha': 42, 'base_sha': 'c' * 40}])
+def test_context_rejects_invalid_pr_metadata(pull):
+    with pytest.raises(ci.EvidenceError):
+        ci.validate_context(dict(CONTEXT, pull_request=pull))
+
+
+@pytest.mark.parametrize('collection', [PR_CONTEXT], indirect=True)
+def test_pr_producers_and_collection_preserve_the_full_context(collection):
+    root, inputs = collection
+    for kind in ci.KINDS:
+        assert ci.read_json(root / f'build/ci-preparation/{kind}.json')['context'] == PR_CONTEXT
+        assert ci.read_json(artifact(inputs, kind) / 'manifest.json')['context'] == PR_CONTEXT
+    ci.collect(root, inputs, PR_CONTEXT)
+    assert ci.read_json(root / 'evidence/ci-collection.json')['context'] == PR_CONTEXT
+
+
+@pytest.mark.parametrize('collection', [PR_CONTEXT], indirect=True)
+@pytest.mark.parametrize('field', ['number', 'head_sha', 'base_sha', 'omit'])
+def test_pr_collection_rejects_mismatched_or_downgraded_producer_metadata(collection, field):
+    root, inputs = collection
+    def change(value):
+        if field == 'omit':
+            del value['context']['pull_request']
+        else:
+            value['context']['pull_request'][field] = 18 if field == 'number' else 'e' * 40
+    edit_json(artifact(inputs) / 'manifest.json', change)
+    with pytest.raises(ci.EvidenceError, match='Foreign CI'):
+        ci.collect(root, inputs, PR_CONTEXT)
+
+
+@pytest.mark.parametrize('field', ['number', 'head_sha', 'base_sha', 'omit'])
+def test_pack_rejects_pr_metadata_changed_after_preparation(collection, field):
+    root, _ = collection
+    ci.prepare(root, 'quality', PR_CONTEXT)
+    create_reports(root, 'quality')
+    context = deepcopy(PR_CONTEXT)
+    if field == 'omit':
+        del context['pull_request']
+    else:
+        context['pull_request'][field] = 18 if field == 'number' else 'e' * 40
+    with pytest.raises(ci.EvidenceError, match='prepar'):
+        ci.pack(root, 'quality', context)
 
 
 def artifact(inputs, kind='reference'):
