@@ -16,7 +16,6 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
-import sys
 from uuid import uuid4
 import xml.etree.ElementTree as ET
 
@@ -78,17 +77,51 @@ def write_json(path: Path, value: dict) -> None:
 
 
 def validate_context(context: object) -> dict:
-    require(isinstance(context, dict) and set(context) == CONTEXT_KEYS, 'Invalid CI context fields')
-    require(all(isinstance(value, str) for value in context.values()), 'Invalid CI context types')
+    # Four-field historical/non-PR contexts remain valid. Exact context equality
+    # still prevents them from satisfying a current PR run with PR metadata.
+    require(isinstance(context, dict) and set(context) in (CONTEXT_KEYS, CONTEXT_KEYS | {'pull_request'}),
+            'Invalid CI context fields')
+    require(all(isinstance(context[key], str) for key in CONTEXT_KEYS), 'Invalid CI context types')
     require(bool(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', context['repository'])), 'Invalid repository context')
     require(all(bool(re.fullmatch(r'[1-9][0-9]*', context[key])) for key in ('run_id', 'run_attempt')), 'Invalid run context')
     require(bool(re.fullmatch(r'[0-9a-f]{40}', context['sha'])), 'Invalid commit context')
+    if 'pull_request' in context:
+        pull = context['pull_request']
+        require(isinstance(pull, dict) and set(pull) == {'number', 'head_sha', 'base_sha'},
+                'Invalid pull request context fields')
+        require(type(pull['number']) is int and pull['number'] > 0, 'Invalid pull request number')
+        require(all(isinstance(pull[key], str) and bool(re.fullmatch(r'[0-9a-f]{40}', pull[key]))
+                    for key in ('head_sha', 'base_sha')), 'Invalid pull request commit context')
     return context
+
+
+def pull_request_context(repository: str) -> dict:
+    """Select only PR identities from the Actions webhook, never its raw body."""
+    path = Path(os.environ.get('GITHUB_EVENT_PATH', ''))
+    require(path.is_absolute(), 'Missing or invalid Actions event path')
+    event = read_json(path)
+    pull = event.get('pull_request')
+    event_repository = event.get('repository')
+    require(isinstance(pull, dict) and isinstance(event_repository, dict), 'Missing pull request event context')
+    require(event_repository.get('full_name') == repository, 'Foreign pull request event repository')
+    head, base = pull.get('head'), pull.get('base')
+    require(isinstance(head, dict) and isinstance(base, dict) and isinstance(base.get('repo'), dict),
+            'Missing pull request commit context')
+    require(base['repo'].get('full_name') == repository, 'Foreign pull request base repository')
+    number = event.get('number')
+    require(type(number) is int and number > 0 and type(pull.get('number')) is int
+            and pull['number'] == number, 'Invalid pull request event number')
+    return {'number': number, 'head_sha': head.get('sha'), 'base_sha': base.get('sha')}
 
 
 def environment_context(root: Path) -> dict:
     require(os.environ.get('GITHUB_ACTIONS') == 'true', 'This command requires GitHub Actions context')
     context = validate_context({key: os.environ.get('GITHUB_' + key.upper(), '') for key in CONTEXT_KEYS})
+    event_name = os.environ.get('GITHUB_EVENT_NAME', '')
+    require(bool(re.fullmatch(r'[a-z][a-z0-9_]*', event_name)), 'Missing or invalid Actions event name')
+    if event_name in ('pull_request', 'pull_request_target'):
+        context['pull_request'] = pull_request_context(context['repository'])
+        validate_context(context)
     actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True, timeout=10).strip()
     require(actual == context['sha'], 'Checkout commit does not match CI context')
     return context
@@ -233,6 +266,7 @@ def pack(root: Path, kind: str, context: dict) -> Path:
     require(kind in KINDS, 'Unknown CI evidence kind')
     validate_context(context)
     preparation = read_json(root / 'build/ci-preparation' / f'{kind}.json')
+    validate_context(preparation.get('context'))
     require(preparation.get('context') == context and preparation.get('kind') == kind, 'CI preparation context mismatch')
     require(binding_error(preparation, root, 'Preparation') is None, 'Tree changed after CI preparation')
     names = validate_reports(root, root, kind)

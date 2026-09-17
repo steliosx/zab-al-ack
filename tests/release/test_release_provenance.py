@@ -14,15 +14,16 @@ import zipfile
 import pytest
 import yaml
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 import collect_ci_evidence as ci
 from evidence_utils import code_digests
 from public_audit import public_files
 from agent_guidance import inspect as inspect_guidance, CONTEXT as GUIDANCE_CONTEXT, SKILLS
 import verify_attestation as signed
 import verify_release as release
-from tests.release.test_ci_collection import CONTEXT, create_reports
+from tests.release.test_ci_collection import CONTEXT, PR_CONTEXT, create_reports
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def write_zip(path, rows):
@@ -98,7 +99,8 @@ def edit_json(path, change):
 
 
 @pytest.fixture
-def candidate(tmp_path):
+def candidate(tmp_path, request):
+    context = getattr(request, 'param', CONTEXT)
     root = tmp_path / 'checkout'
     (root / 'src/zabalack').mkdir(parents=True)
     (root / 'src/zabalack/__init__.py').write_text('# Synthetic policy fixture\n')
@@ -115,10 +117,10 @@ def candidate(tmp_path):
         target.write_bytes((ROOT / name).read_bytes())
     inputs = tmp_path / 'ci-inputs'
     for kind in ci.KINDS:
-        ci.prepare(root, kind, CONTEXT)
+        ci.prepare(root, kind, context)
         create_reports(root, kind)
-        shutil.copytree(ci.pack(root, kind, CONTEXT), inputs / ci.artifact_name(kind, CONTEXT))
-    ci.collect(root, inputs, CONTEXT)
+        shutil.copytree(ci.pack(root, kind, context), inputs / ci.artifact_name(kind, context))
+    ci.collect(root, inputs, context)
     output = tmp_path / 'candidate'
     shutil.copytree(root / 'evidence', output / 'evidence')
     build_fixture(root, output)
@@ -136,6 +138,51 @@ def test_current_ci_subjects_are_consistent_but_remain_unsigned(candidate):
     (stage / 'unexpected').write_text('extra input')
     release.stage(root, output / 'dist', result)
     assert not (stage / 'unexpected').exists()
+
+
+@pytest.mark.parametrize('candidate', [PR_CONTEXT], indirect=True)
+def test_pr_metadata_survives_producers_collection_and_package_verification(candidate):
+    root, output = candidate
+    result = release.verify(root, output / 'dist', candidate=output, context=PR_CONTEXT)
+    assert result['ci_context'] == PR_CONTEXT
+    assert result['status'] == 'PASS' and result['signed_attestation'] is False
+
+
+@pytest.mark.parametrize('candidate', [PR_CONTEXT], indirect=True)
+@pytest.mark.parametrize('field', ['number', 'head_sha', 'base_sha', 'omit'])
+def test_package_verification_rejects_different_or_omitted_pr_identity(candidate, field):
+    root, output = candidate
+    context = json.loads(json.dumps(PR_CONTEXT))
+    if field == 'omit':
+        del context['pull_request']
+    else:
+        context['pull_request'][field] = 18 if field == 'number' else 'e' * 40
+    with pytest.raises(ci.EvidenceError, match='foreign'):
+        release.verify(root, output / 'dist', candidate=output, context=context)
+
+
+@pytest.mark.parametrize('candidate,stored_number', [
+    (PR_CONTEXT, 17.0),
+    (dict(PR_CONTEXT, pull_request=dict(PR_CONTEXT['pull_request'], number=1)), True),
+], indirect=['candidate'], ids=['float', 'boolean'])
+def test_package_rejects_equal_but_invalid_saved_pr_number(candidate, stored_number):
+    root, output = candidate
+    context = ci.read_json(output / 'evidence/ci-collection.json')['context']
+    for directory in (root, output):
+        edit_json(directory / 'evidence/ci-collection.json',
+                  lambda value: value['context']['pull_request'].update(number=stored_number))
+    # Keep source/candidate evidence and all archive checksums consistent, so the
+    # rejection proves stored-context validation rather than a stale checksum.
+    build_fixture(root, output)
+    assert ci.read_json(output / 'evidence/ci-collection.json')['context'] == context
+    with pytest.raises(ci.EvidenceError, match='Invalid pull request number'):
+        release.verify(root, output / 'dist', candidate=output, context=context)
+
+
+def test_historical_package_cannot_satisfy_a_current_pr_context(candidate):
+    root, output = candidate
+    with pytest.raises(ci.EvidenceError, match='foreign'):
+        release.verify(root, output / 'dist', candidate=output, context=PR_CONTEXT)
 
 
 @pytest.mark.parametrize('field,value', [('repository', 'other/repo'), ('sha', 'b' * 40),

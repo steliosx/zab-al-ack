@@ -97,8 +97,17 @@ Each producer first runs `collect_ci_evidence.py prepare`, which discards
 generated reports inherited from Git and records the source/harness digests and
 authentic Actions repository, run ID, attempt and commit. `GITHUB_SHA` must equal
 the checkout's `HEAD`; a PR run normally tests the synthetic merge commit.
-Retain its PR head, base and tested merge SHA separately in the private run
-record. Never invent `GITHUB_*` values for direct-local validation. After its required commands
+For PR events, the context also contains `pull_request.number`, `head_sha` and
+`base_sha` selected from the Actions `GITHUB_EVENT_PATH` payload. The event and
+base repository must match the run repository; a fork's head repository may
+differ. The payload's `merge_commit_sha` never replaces the tested checkout SHA.
+Only these identities are exported, not the raw event, PR body or branch names.
+All producer preparation records, artifact manifests, the collection and package
+verification must agree on the entire context. A changed or missing PR identity
+fails that comparison. Historical four-field contexts remain readable without
+invented head/base identities, but cannot satisfy a current PR context. Retain
+head, base and tested SHA alongside the authentic run in the private record too.
+Never invent `GITHUB_*` values for direct-local validation. After its required commands
 succeed, `pack` checks the unchanged digests, required phase set, JUnit outcomes,
 exact counts, native cleanup, required Ruff/mypy/pip checks and the complete
 selected mutation catalogue with behavioral assertion kills. Invalid mutants,
