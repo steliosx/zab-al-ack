@@ -24,6 +24,33 @@ CHECKS = {
 COMPONENTS = {'postgres', 'zabbix-db', 'zabbix-server', 'zabbix-web'}
 
 
+@pytest.mark.parametrize('flaw', ['none', 'missing_identity', 'missing_mode', 'digest', 'filename', 'integer_verified', 'not_run'])
+def test_supplied_artifact_evidence_is_explicit_and_fail_closed(candidate, flaw):
+    from deployment_evidence import validate_report
+    root, _ = candidate
+    value = passing(root)
+    value.update(artifact_mode='supplied_wheel', supplied_wheel={
+        'filename': 'zabalack-1.0-py3-none-any.whl', 'version': '1.0',
+        'sha256': 'a' * 64, 'installed_bytes_verified': True})
+    if flaw == 'missing_identity':
+        value.pop('supplied_wheel')
+    if flaw == 'missing_mode':
+        value.pop('artifact_mode')
+    if flaw == 'digest':
+        value['supplied_wheel']['sha256'] = 'not-a-hash'
+    if flaw == 'filename':
+        value['supplied_wheel']['filename'] = 'other.whl'
+    if flaw == 'integer_verified':
+        value['supplied_wheel']['installed_bytes_verified'] = 1
+    if flaw == 'not_run':
+        value = {'status': 'NOT_RUN', 'supplied_wheel': value['supplied_wheel']}
+    if flaw == 'none':
+        validate_report(value, root)
+    else:
+        with pytest.raises(ValueError):
+            validate_report(value, root)
+
+
 def passing(root, local=False):
     value = {
         'status': 'PASS', 'layer': 'native_deployment_e2e',

@@ -33,8 +33,30 @@ python tools/run_deployment_e2e.py --isolated-lab --plan
 python tools/run_deployment_e2e.py --isolated-lab
 ```
 
+To qualify a previously produced wheel without rebuilding it, supply both its
+path and independently obtained SHA-256:
+
+```bash
+python tools/run_deployment_e2e.py --isolated-lab \
+  --wheel /private/artifacts/zabalack-0.1.0a16-py3-none-any.whl \
+  --wheel-sha256 "$EXPECTED_WHEEL_SHA256"
+```
+
+This mode checks the archive hash, layout, project/version and complete package
+payload against this checkout before contacting Docker. The image contains no
+`src` directory and installs only that wheel, without dependency resolution or
+a fallback build. It verifies installed package files, metadata, entry-point
+targets, version and import origin both at image build and immediately before
+service tests. A PASS requires the matching installed-wheel receipt. The public
+record adds `artifact_mode: supplied_wheel` and the wheel filename, version,
+SHA-256 and installed-byte verification result; raw receipts stay private.
+Bind the artifact's producer revision/provenance separately from this runner's
+source/harness digests. A changed harness does not transfer old qualification
+results to its new revision. Legacy source-build/local records remain scoped
+to their original execution and do not imply this exact-artifact mode.
+
 The runner builds a Python 3.12.10 image from `requirements.lock` and a wheel from
-the current source. Services use PostgreSQL 18.3, PostgreSQL 16.4 for the source
+the current source by default. Services use PostgreSQL 18.3, PostgreSQL 16.4 for the source
 server, and Zabbix 7.0.10 server/web images. Version tags are explicit; a successful
 run records the actual Docker image IDs. Image pulls/build dependency downloads
 need ordinary registry access. The runtime network is a new internal Compose

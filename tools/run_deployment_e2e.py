@@ -16,6 +16,8 @@ import xml.etree.ElementTree as ET
 
 from evidence_utils import code_digests
 from deployment_evidence import CHECK_NAMES, REFERENCE_VERSIONS, validate_report
+from supplied_wheel import check_source
+from zipfile import BadZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGES = {
@@ -87,7 +89,7 @@ def certificates(private):
     (private / "server.crt").write_bytes(cert)
 
 
-def compose_spec(private, context, project):
+def compose_spec(private, context, project, *, supplied_wheel=False):
     """No ports, host network, Docker socket mounts, or shared production volumes."""
     # The bind-mounted inputs are owner-only. Use that same numeric identity
     # for protected reads and outputs the host must collect after the run.
@@ -118,11 +120,13 @@ def compose_spec(private, context, project):
                    "depends_on": {"postgres": {"condition": "service_healthy"}}}}
     for service in services.values():
         service["networks"] = ["isolated"]
+    if supplied_wheel:
+        services["runner"]["build"]["dockerfile"] = "lab/deployment_e2e_wheel.Dockerfile"
     return {"name": project, "services": services, "networks": {"isolated": {"internal": True}},
             "volumes": {"alerta-data": {}, "zabbix-data": {}}}
 
 
-def staged_context(destination):
+def staged_context(destination, wheel=None):
     # Docker COPY preserves these nonsecret directory modes while changing
     # ownership to root; the selected runner UID must still traverse them.
     destination.mkdir(mode=0o755)
@@ -132,7 +136,15 @@ def staged_context(destination):
         (destination / name).chmod(0o755)
     for name in ("pyproject.toml", "README.md", "LICENSE", "NOTICE", "MANIFEST.in", "requirements.lock"):
         shutil.copy2(ROOT / name, destination / name)
-    shutil.copytree(ROOT / "src", destination / "src", ignore=shutil.ignore_patterns("__pycache__", "*.egg-info", "*.pyc"))
+    if wheel is None:
+        shutil.copytree(ROOT / "src", destination / "src", ignore=shutil.ignore_patterns("__pycache__", "*.egg-info", "*.pyc"))
+    else:
+        data, identity = wheel
+        selected = destination / "qualified-wheel"
+        selected.mkdir(mode=0o755)
+        (selected / identity["filename"]).write_bytes(data)
+        (selected / "selection.json").write_text(json.dumps(identity))
+        shutil.copy2(ROOT / "tools/supplied_wheel.py", destination / "lab/supplied_wheel.py")
     shutil.copytree(ROOT / "sql", destination / "sql", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     for path in sorted((ROOT / "lab").glob("deployment_e2e*")):
         if path.is_file():
@@ -187,12 +199,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--isolated-lab", action="store_true", required=True)
     parser.add_argument("--plan", action="store_true")
+    parser.add_argument("--wheel", type=Path, help="Use this prebuilt artifact without rebuilding it")
+    parser.add_argument("--wheel-sha256", help="Required expected SHA-256 with --wheel")
     args = parser.parse_args(argv)
+    if bool(args.wheel) != bool(args.wheel_sha256):
+        parser.error("--wheel and --wheel-sha256 must be supplied together")
     if args.plan:
         print(json.dumps({"images": IMAGES, "application": "installed factory via Flask CLI HTTPS process",
             "worker": "installed zabalack CLI process", "auth": "real signup/login/customer/key API",
             "network": "fresh internal Compose network; no published ports", "source_writes": "fresh synthetic Zabbix only",
-            "shutdown": "stop only this generated project; retain volumes and private logs", "G1_G8": "MANUAL_GATE_PENDING"}, indent=2))
+            "shutdown": "stop only this generated project; retain volumes and private logs", "G1_G8": "MANUAL_GATE_PENDING",
+            "artifact_mode": "supplied_wheel" if args.wheel else "source_build"}, indent=2))
         return 0
     report_path = ROOT / "evidence/deployment-e2e-run.json"
     report_path.parent.mkdir(exist_ok=True)
@@ -201,6 +218,16 @@ def main(argv=None):
     def save():
         report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     save()  # invalidate any old PASS before Docker lookup or secret generation
+    wheel = None
+    if args.wheel is not None:
+        try:
+            wheel = check_source(args.wheel.absolute(), args.wheel_sha256, ROOT)
+        except (OSError, ValueError, KeyError, BadZipFile):
+            report.update(status="NOT_RUN", reason="supplied_wheel_preflight_failed", finished_at=stamp())
+            save()
+            print(json.dumps(report))
+            return 2
+        report["artifact_mode"] = "supplied_wheel"
     env = clean_environment()
     try:
         local_docker(env)
@@ -228,8 +255,11 @@ def main(argv=None):
         protected(private / "bootstrap.json", json.dumps({"isolated_lab": True, "project": project,
                   "passwords": {name: secrets.token_urlsafe(32) for name in ("alerta_app", "zabalack_worker", "zabalack_probe", "zabalack_operator", "migrator", "human", "ingest", "outside", "admin")}}))
         certificates(private)
-        staged_context(context)
-        protected(private / "compose.json", json.dumps(compose_spec(private, context, project)))
+        if wheel is None:
+            staged_context(context)
+        else:
+            staged_context(context, wheel)
+        protected(private / "compose.json", json.dumps(compose_spec(private, context, project, supplied_wheel=wheel is not None)))
         with (private / "compose.log").open("w") as log:
             def run(arguments, timeout):
                 return subprocess.run([*command, *arguments], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=timeout, check=True)
@@ -239,6 +269,11 @@ def main(argv=None):
             result = subprocess.run([*command, "run", "--rm", "--name", runner_name, "--use-aliases", "runner"], cwd=ROOT, env=env,
                                     stdout=log, stderr=subprocess.STDOUT, timeout=600)
             report.update(validate_result(private, result.returncode))
+            if wheel is not None:
+                installed = json.loads((private / "installed-wheel.json").read_text())
+                if installed != {**wheel[1], "installed_bytes_verified": True}:
+                    raise ValueError("installed_wheel_identity_mismatch")
+                report["supplied_wheel"] = installed
         report["image_ids"] = {}
         for name, image in IMAGES.items():
             ids = subprocess.check_output(["docker", "image", "inspect", "--format", "{{.Id}}", image], env=env, text=True, timeout=10).strip()

@@ -66,7 +66,7 @@ def validate_report(record: object, root: Path) -> None:
         # binding. It must not retain success from an earlier invocation.
         require(exact_counts(record.get('counts', EMPTY_COUNTS), EMPTY_COUNTS),
                 'NOT_RUN record contains test results')
-        require(not any(record.get(key) for key in ('checks', 'image_ids', 'components', 'junit')),
+        require(not any(record.get(key) for key in ('checks', 'image_ids', 'components', 'junit', 'supplied_wheel')),
                 'NOT_RUN record contains execution evidence')
         require(record.get('tree_unchanged') is not True,
                 'NOT_RUN record claims an executed unchanged tree')
@@ -86,6 +86,15 @@ def validate_report(record: object, root: Path) -> None:
             and all(value is True for value in checks.values()),
             'required service observations are incomplete')
     require(record.get('versions') == REFERENCE_VERSIONS, 'reference versions differ')
+    if 'artifact_mode' in record or 'supplied_wheel' in record:
+        require(record.get('artifact_mode') == 'supplied_wheel', 'invalid artifact mode')
+        wheel = record.get('supplied_wheel')
+        require(isinstance(wheel, dict) and set(wheel) == {'filename', 'sha256', 'version', 'installed_bytes_verified'},
+                'supplied wheel identity is incomplete')
+        require(isinstance(wheel['version'], str) and re.fullmatch(r'[0-9][A-Za-z0-9.!+_-]*', wheel['version'])
+                and wheel['filename'] == 'zabalack-' + wheel['version'] + '-py3-none-any.whl'
+                and isinstance(wheel['sha256'], str) and re.fullmatch(r'[0-9a-f]{64}', wheel['sha256'])
+                and wheel['installed_bytes_verified'] is True, 'supplied wheel identity is invalid')
     require(all(type(record.get(key)) is int and record[key] == 0
                 for key in ('runner_shutdown_exit_code', 'shutdown_exit_code')),
             'cleanup did not explicitly succeed')

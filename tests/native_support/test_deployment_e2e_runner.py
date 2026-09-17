@@ -329,7 +329,7 @@ def test_cleanup_refuses_other_project_even_if_name_matches(monkeypatch):
         runner.stop_runner("zabalack-e2e-0123456789ab", "zabalack-e2e-0123456789ab-runner", {})
 
 
-@pytest.mark.parametrize("outcome", ["pass", "source_changed", "timeout", "interrupt"])
+@pytest.mark.parametrize("outcome", ["pass", "source_changed", "timeout", "interrupt", "pass_wheel", "wrong_wheel", "missing_receipt"])
 def test_owned_execution_cleanup_and_source_binding(tmp_path, monkeypatch, outcome):
     from types import SimpleNamespace
     import subprocess
@@ -338,7 +338,10 @@ def test_owned_execution_cleanup_and_source_binding(tmp_path, monkeypatch, outco
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(runner, "local_docker", lambda *_: None)
     monkeypatch.setattr(runner, "certificates", lambda path: (path / "ca").mkdir())
-    monkeypatch.setattr(runner, "staged_context", lambda path: path.mkdir())
+    monkeypatch.setattr(runner, "staged_context", lambda path, *_: path.mkdir())
+    wheel_identity = {'filename': 'zabalack-1.0-py3-none-any.whl', 'version': '1.0', 'sha256': 'a' * 64}
+    wheel_mode = outcome in ('pass_wheel', 'wrong_wheel', 'missing_receipt')
+    monkeypatch.setattr(runner, 'check_source', lambda *_: (b'inert fixture', wheel_identity))
     seen = []
     active = {}
     def execute(command, **kwargs):
@@ -352,6 +355,11 @@ def test_owned_execution_cleanup_and_source_binding(tmp_path, monkeypatch, outco
             if outcome == "interrupt":
                 raise KeyboardInterrupt
             sample_result(private)
+            if wheel_mode and outcome != 'missing_receipt':
+                installed = {**wheel_identity, 'installed_bytes_verified': True}
+                if outcome == 'wrong_wheel':
+                    installed['sha256'] = 'b' * 64
+                (private / 'installed-wheel.json').write_text(json.dumps(installed))
             if outcome == "source_changed":
                 (tmp_path / "src/product.py").write_text("changed after execution\n")
         return SimpleNamespace(returncode=0)
@@ -364,10 +372,12 @@ def test_owned_execution_cleanup_and_source_binding(tmp_path, monkeypatch, outco
             "com.docker.compose.project": active["project"], "com.docker.compose.service": "runner"}}}])
     monkeypatch.setattr(runner.subprocess, "run", execute)
     monkeypatch.setattr(runner.subprocess, "check_output", read)
-    code = runner.main(["--isolated-lab"])
+    code = runner.main(["--isolated-lab"] + (["--wheel", "inert.whl", "--wheel-sha256", "a" * 64] if wheel_mode else []))
     report = json.loads((tmp_path / "evidence/deployment-e2e-run.json").read_text())
-    assert code == (0 if outcome == "pass" else 1)
-    assert report["status"] == ("PASS" if outcome == "pass" else "FAIL")
+    assert code == (0 if outcome in ("pass", "pass_wheel") else 1)
+    assert report["status"] == ("PASS" if outcome in ("pass", "pass_wheel") else "FAIL")
+    if outcome == 'pass_wheel':
+        assert report['supplied_wheel'] == {**wheel_identity, 'installed_bytes_verified': True}
     assert report["runner_shutdown_exit_code"] == 0 and report["shutdown_exit_code"] == 0
     assert ["docker", "stop", "--time", "10", "b" * 64] in seen
     assert any("compose" in command and "stop" in command for command in seen)
