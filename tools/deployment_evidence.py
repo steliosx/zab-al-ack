@@ -10,6 +10,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import re
+import tomllib
 
 from evidence_utils import binding_error
 
@@ -95,6 +96,12 @@ def validate_report(record: object, root: Path) -> None:
                 and wheel['filename'] == 'zabalack-' + wheel['version'] + '-py3-none-any.whl'
                 and isinstance(wheel['sha256'], str) and re.fullmatch(r'[0-9a-f]{64}', wheel['sha256'])
                 and wheel['installed_bytes_verified'] is True, 'supplied wheel identity is invalid')
+        try:
+            project = tomllib.loads((root / 'pyproject.toml').read_text())['project']
+        except (OSError, ValueError, KeyError) as error:
+            raise ValueError('Deployment E2E project identity is unavailable') from error
+        require(project.get('name') == 'zabalack' and project.get('version') == wheel['version'],
+                'supplied wheel project version differs')
     require(all(type(record.get(key)) is int and record[key] == 0
                 for key in ('runner_shutdown_exit_code', 'shutdown_exit_code')),
             'cleanup did not explicitly succeed')

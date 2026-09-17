@@ -335,6 +335,7 @@ def test_owned_execution_cleanup_and_source_binding(tmp_path, monkeypatch, outco
     import subprocess
     (tmp_path / "src").mkdir()
     (tmp_path / "src/product.py").write_text("baseline\n")
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="zabalack"\nversion="1.0"\n')
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(runner, "local_docker", lambda *_: None)
     monkeypatch.setattr(runner, "certificates", lambda path: (path / "ca").mkdir())
