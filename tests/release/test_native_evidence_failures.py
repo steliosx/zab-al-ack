@@ -19,6 +19,74 @@ from evidence_utils import code_digests
 PASS_XML = '<testsuites><testsuite><testcase classname="synthetic" name="test_T38_check"/></testsuite></testsuites>'
 
 
+@pytest.mark.parametrize('failure', [None, 'default', 'preflight', 'test', 'skip', 'empty',
+                                   'relay', 'stop', 'changed', 'capture', 'retire'])
+def test_opt_in_retirement_requires_complete_success(tmp_path, monkeypatch, relay_context, failure, capsys):
+    evidence, raw = seed_reports(tmp_path)
+    monkeypatch.setattr(native_ci, 'ROOT', tmp_path)
+    argv = ['native_ci.py', '--isolated-lab', '--phase', 'postgres']
+    if failure != 'default':
+        argv += ['--retire-empty-networks', '--network-evidence-root', str(tmp_path.parent / 'private')]
+    monkeypatch.setattr(sys, 'argv', argv)
+    events = []
+    def prepare(path, root):
+        events.append('preflight')
+        if failure == 'preflight':
+            raise ValueError('synthetic-private-preflight')
+        return path
+    def capture(*args):
+        events.append('capture')
+        if failure == 'capture':
+            raise AttributeError('synthetic-private-malformed')
+        return {'identity': 'captured-before-tests'}
+    def retire(root, store, identity, binding, diagnostics):
+        events.append('retire')
+        assert events.index('capture') < events.index('pytest') < events.index('stop') < events.index('retire')
+        assert identity == {'identity': 'captured-before-tests'}
+        assert binding['phase_result']['shutdown_exit_code'] == 0
+        assert all(p.is_file() for p in diagnostics)
+        if failure == 'retire':
+            raise TypeError('synthetic-private-malformed')
+        return {'status': 'RETIRED', 'manifest_sha256': 'a' * 64}
+    def child(command, **kwargs):
+        if 'up' in command:
+            events.append('up')
+        if '-m' in command and 'pytest' in command:
+            events.append('pytest')
+            xml = PASS_XML
+            if failure == 'skip':
+                xml = PASS_XML.replace('/>', '><skipped/></testcase>')
+            if failure == 'empty':
+                xml = '<testsuites/>'
+            (raw / 'native-postgres.xml').write_text(xml)
+            return subprocess.CompletedProcess(command, int(failure == 'test'))
+        if 'stop' in command:
+            events.append('stop')
+            return subprocess.CompletedProcess(command, int(failure == 'stop'))
+        return subprocess.CompletedProcess(command, 0)
+    if failure == 'relay':
+        relay_context.__exit__.side_effect = RuntimeError('synthetic-private-relay')
+    monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: events.append('ensure'))
+    monkeypatch.setattr(native_ci.network_retention, 'prepare_store', prepare)
+    monkeypatch.setattr(native_ci.network_retention, 'capture_identity', capture)
+    monkeypatch.setattr(native_ci.network_retention, 'retire_network', retire)
+    monkeypatch.setattr(native_ci.subprocess, 'run', child)
+    monkeypatch.setattr(native_ci, 'code_digests', lambda root: {'harness': 'changed' if failure == 'changed' and 'stop' in events else 'original'})
+    expected = 0 if failure in (None, 'default') else 2 if failure == 'preflight' else 1
+    assert native_ci.main() == expected
+    report = json.loads((evidence / 'native-run.json').read_text())
+    assert ('retire' in events) == (failure in (None, 'retire'))
+    if failure == 'default':
+        assert 'preflight' not in events and 'capture' not in events
+    elif failure == 'preflight':
+        assert events == ['preflight']
+    else:
+        assert events.index('preflight') < events.index('ensure') < events.index('up')
+    assert report['status'] == ('PASS' if expected == 0 else 'NOT_RUN' if expected == 2 else 'FAIL')
+    assert 'synthetic-private' not in capsys.readouterr().out
+    assert 'synthetic-private' not in json.dumps(report)
+
+
 @pytest.fixture(autouse=True)
 def relay_context(monkeypatch):
     relay = MagicMock()
