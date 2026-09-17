@@ -761,6 +761,67 @@ def test_T41_native_an_incomplete_installation_refuses_health_until_forward_reco
         assert project(lab, payload["action_id"]) == "projected"
 
 
+def test_T41_native_application_grant_before_installer_record_refuses_reseal_then_recovers(native, tmp_path):
+    """Following the first refusal's advice to run 12 still leaves 09 to complete.
+
+    The application grant records no installer topology. Resealing must name
+    that missing step and preserve the old readiness seal and captured work;
+    recording the installers and sealing then permits forward recovery.
+    """
+    with schema3_database(native, tmp_path) as (lab, migrator):
+        alert_id, event_id, _ = stage(lab, staged=False)
+        pending = intent_for(alert_id, event_id)
+        stage_pre_fence(lab, alert_id, pending)
+        fire_ack(lab, alert_id, pending)
+        reseal = (ROOT / "sql/install/13_reseal.sql").read_text()
+        with connect_role(lab, "zabalack_owner") as owner:
+            migrator.migrate(owner)
+            owner.execute((ROOT / "sql/install/12_application_grant.sql").read_text().replace(
+                ':"alert_app_role"', '"alerta_app"'))
+            assert owner.execute("SELECT installer_roles,application_role FROM zabalack.installation "
+                                 "WHERE singleton").fetchone() == (None, "alerta_app")
+
+        before = migration_state(lab)
+        attributes_before = attributes_of(lab, alert_id)
+        generations_before = fence(lab, alert_id)
+        assert before["readiness_manifest"] and len(before["captures"]) == len(before["outbox"]) == 1
+        assert before["outbox"][0][0]["state"] == "captured_unverified", "pending capture precondition"
+        assert [row[:2] for row in generations_before] == [(pending["action_id"], "migration")]
+        assert upgrade_health(lab, healthy=False)["zabalack_schema_version"] == 4
+        with connect_role(lab, "zabalack_owner") as owner:
+            with pytest.raises(psycopg.errors.RaiseException) as refused:
+                owner.execute(reseal)
+        assert "09_installer_roles.sql" in str(refused.value) and "before sealing" in str(refused.value)
+        assert migration_state(lab) == before, "refused reseal changed readiness, installation or pending work"
+        assert attributes_of(lab, alert_id) == attributes_before
+        assert fence(lab, alert_id) == generations_before
+        with connect_role(lab, "zabalack_owner") as owner:
+            assert owner.execute("SELECT installer_roles,application_role FROM zabalack.installation "
+                                 "WHERE singleton").fetchone() == (None, "alerta_app")
+        upgrade_health(lab, healthy=False)
+
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute((ROOT / "sql/install/09_installer_roles.sql").read_text().replace(
+                ":'installer_roles'", "''"))
+            assert owner.execute("SELECT installer_roles,application_role FROM zabalack.installation "
+                                 "WHERE singleton").fetchone() == ([], "alerta_app")
+        upgrade_health(lab, healthy=False)
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute(reseal)
+        assert upgrade_health(lab, healthy=True)["zabalack_schema_version"] == 4
+        recovered = migration_state(lab)
+        for table in ("captures", "outbox", "verification_leases", "actions", "effects"):
+            assert recovered[table] == before[table], f"forward recovery rewrote retained {table}"
+        assert fence(lab, alert_id) == generations_before
+        verify_through_worker_call(lab, pending)
+        assert project(lab, pending["action_id"]) == "projected", "the retained capture remains usable"
+
+        fresh_alert, _, fresh = stage(lab, issued=datetime.now(timezone.utc))
+        fire_ack(lab, fresh_alert, fresh)
+        verify_through_worker_call(lab, fresh)
+        assert project(lab, fresh["action_id"]) == "projected", "new application captures also work after recovery"
+
+
 def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(native, tmp_path):
     """A schema-3 database with work in flight, upgraded by `sql/migrate.py`.
 
