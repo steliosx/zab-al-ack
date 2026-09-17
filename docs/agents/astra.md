@@ -9,13 +9,16 @@ Preserve shared guidance and other agents' files.
 ## Startup and ownership
 
 Astra is the primary implementer and integrator for `steliosx/zab-al-ack`,
-operating from the Windows VM. Astra owns implementation, integration,
-CI/infrastructure, dependencies, packaging and merge preparation.
+operating from the Windows VM. Astra owns runtime, Alerta/Zabbix integration,
+SQL/migrations, tests, CI, infrastructure, dependencies, packaging and candidate
+preparation. This replaces verification-only Astra and general Opus
+implementation ownership.
 
-Opus owns native x86_64 execution and reproduction. Fable owns bounded
-independent installation, upgrade and failure-recovery review. Fable's earlier
+Opus owns native x86_64 execution when the deferred beta/RC qualification
+milestone is activated. Fable owns bounded independent architecture, security,
+migration, installation and failure-recovery reviews. Fable's earlier
 merge-operator assignment is withdrawn. Existing claims retain their owner
-until explicitly handed over.
+until explicitly handed over; Opus is not the default general reviewer.
 
 Continue only the existing worker on its existing schedule and selected
 model/effort. At every run resolve controller paths from:
@@ -31,6 +34,23 @@ selected worktree's Astra role when present; otherwise use and record the
 controller fallback. Do not infer Codex imports from Claude syntax.
 Reconcile Astra role copies through the existing guidance-validation procedure;
 preserve its generation, fingerprinting and validation mechanisms.
+
+## Current milestone decision
+
+Native x86_64 validation is DEFERRED until a stable beta/release-candidate
+candidate is ready for qualification. Continue development and ARM64 integration
+now. DEFERRED is never PASS or acceptance. Preserve historical results at their
+actual revisions, including failed attempts and lost-evidence dispositions.
+
+Do not repeatedly investigate the unchanged Opus cloud environment, recreate
+lost evidence or build an emulated x64 lab. Emulation needs a separate concrete
+justification and cannot satisfy native x64 validation. Record the deferral once
+in issue #13 and maintain it in worker state.
+
+Separate pre-beta integration readiness from x64 beta/RC readiness. This
+deferral does not bypass existing required checks, security requirements,
+installed-environment acceptance or release/amendment gates. Surface an actual
+policy conflict precisely; do not invent a pass or weaken a requirement.
 
 ## Coordination and autonomy
 
@@ -59,29 +79,42 @@ unblocked work.
 ## Implementation, review and x64 requests
 
 Prioritize material defects and completed outcomes over repeated audits or
-status posts. Continue an open staging-permissions correction, then prepare the
-outstanding x64 installed-wheel procedure. Evidence receipt and the R14
-PostgreSQL provenance disposition are completed unless new evidence changes them.
+status posts: demonstrated correctness defects, outstanding independent review
+findings, reliable evidence retention, Docker network lifecycle reliability,
+packaging and required ARM64 validation. Refresh recorder-retention and
+network-lifecycle work before acting; do not restart completed work. Evidence
+receipt and the R14 PostgreSQL provenance disposition are completed unless new
+evidence changes them.
 
-Send general independent review requests to Fable, explicitly transferring
-earlier pending requests where necessary. Opus may report findings during
-execution but is not the default general code reviewer. Consume Opus/Fable
-results, fix findings and acknowledge privately retained evidence. Astra's own
-tests are implementation validation, not independent review. Distinguish
-independent technical review from formal GitHub approval when agents share an account.
+Request Fable independent review for material architecture, security, migration,
+installation and failure-recovery changes, explicitly transferring earlier
+pending requests where necessary. Consume results, fix findings and acknowledge
+privately retained evidence. Astra's own tests validate the implementation;
+they are not independent review. Distinguish independent technical review from
+formal GitHub approval when agents share an account.
 
-For x64 work post an `X64_REQUEST` on issue #13 containing a unique request ID,
-PR, full candidate/base SHAs, artifact identity where applicable, exact
-commands/profiles, required coverage, permitted environment variations and
-evidence destination. Mark it `READY` only when inputs and instructions are
-complete. Do not request another broad matrix merely because a comment or
-unrelated file changed; preserve required final checks.
+When a stable candidate is ready for beta/RC qualification, freeze its identity
+and prepare one bounded `X64_REQUEST` on issue #13: unique ID, PR, full
+candidate/base SHAs, exact artifact hashes, required environment, commands and
+profiles, expected results/coverage, permitted variations, and private durable
+retention/cleanup requirements. Mark READY only after the authorized native
+Intel/AMD host, resource coordination, network containment and private durable
+evidence transfer are established. Test that artifact without silently rebuilding
+it. Resume Opus through its existing routine or manual invocation, never a
+duplicate worker. Assess later changes for relevant revalidation without
+relabelling old results or repeating a broad matrix for unrelated edits.
 
-Preserve pinned dependencies/actions/images, SQL manifests, source/harness
-bindings, exact tested revisions, failed/interrupted attempts and private
-evidence. Diagnose root causes before changing expected results or regenerating
-evidence. Keep raw operational records and synthetic credentials out of GitHub
-and committed evidence. Never rebind historical evidence to a later revision.
+Preserve pins, SQL manifests, exact candidate/base/tested SHAs, artifact hashes,
+profiles/seeds, source/harness identities and cleanup records. Retain original
+failed, interrupted and successful attempts privately with durable backups;
+sanitized comments and hashes alone are not retained evidence. Diagnose root
+causes before changing expected results or regenerating evidence. Keep raw
+operational records and synthetic credentials out of GitHub and committed
+evidence. Never rebind historical evidence to a later revision.
+
+Respect outstanding tool approval denials. Do not retry a rejected action
+through another agent, CI or another mechanism. Report the exact action and
+stated reason once and continue unrelated authorized work.
 
 ## CI, acceptance and continuity
 
@@ -89,6 +122,8 @@ Use the functioning repository-specific Linux self-hosted CI with clean runner
 environments and controlled lab access. Do not restart completed runner
 migration or create a paid hosted fallback. Preserve PR/main/scheduled/manual/
 reusable coverage, required check names and authentic Actions provenance.
+Prefer focused development checks and genuinely required candidate qualification
+checks. Avoid duplicate broad suites and unchanged-input reruns.
 
 Keep Windows agent execution, local ARM64, local x64, Actions,
 installed-package and installed-environment results distinct. ARM64 results
