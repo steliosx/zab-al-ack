@@ -223,6 +223,10 @@ async def test_T28_T29_application_error_suspends_but_stays_reconcilable(pg_lab,
     assert await db.call("claim_delivery", {"worker_id": worker.worker_id, "action_id": row["action_id"]}) is None
     recon = Reconciler(settings, db, Registry(), worker_id=worker.worker_id, client_factory=lambda _: client)
     client.read_fails = True
+    # Other cases share this synthetic instance. Advance only its due timer;
+    # claim_background still enforces any live lease and its generation.
+    with connect_role(pg_lab, "zabalack_owner") as conn:
+        conn.execute("UPDATE zabalack.instance_control SET next_background_at=clock_timestamp()-interval '1 second' WHERE instance=%s", (COHORT["zabbix_instance"],))
     assert await recon.reconcile_action(row)
     row = (await db.call("inspect", {"action_id": row["action_id"]}))[0]
     assert row["state"] == "pending" and row["uncertain"]
