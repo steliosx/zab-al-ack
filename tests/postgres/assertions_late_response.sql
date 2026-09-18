@@ -207,6 +207,31 @@ BEGIN
    IF observed->>'state'<>'failed' OR (observed->>'uncertain')::boolean THEN
     RAISE EXCEPTION 'a stale callback overwrote an explicit settlement';
    END IF;
+   -- Authorized recovery. The operator retries the settled action, which
+   -- legitimately returns it to a deliverable state, and only then does the old
+   -- callback arrive. Its evidence is about an attempt the operator has already
+   -- disposed of with fenced-and-settled no-effect confirmation; reopening the
+   -- circuit or reactivating the incident behind that decision would undo the
+   -- recovery the operator just authorised, on the strength of stale evidence.
+   SET ROLE zabalack_operator;
+   PERFORM zabalack.operator_call('retry',audit_payload);
+   SET ROLE zabalack_owner;
+   IF (SELECT circuit_open FROM zabalack.instance_control WHERE instance=target)
+      OR EXISTS(SELECT 1 FROM zabalack.incidents WHERE instance=target AND active) THEN
+    RAISE EXCEPTION 'retry precondition: the instance was not left recovered';
+   END IF;
+   SET ROLE zabalack_worker;
+   PERFORM zabalack.worker_call('complete',data||'{"state":"pending","reason":"api_application_error","uncertain":true}');
+   SET ROLE zabalack_owner;
+   SELECT circuit_open INTO circuit FROM zabalack.instance_control WHERE instance=target;
+   SELECT EXISTS(SELECT 1 FROM zabalack.incidents WHERE instance=target
+                 AND failure_class='api_application_error' AND active) INTO incident;
+   IF circuit THEN RAISE EXCEPTION 'a settled attempt re-suspended the instance after an authorised retry'; END IF;
+   IF incident THEN RAISE EXCEPTION 'a settled attempt reactivated its incident after an authorised retry'; END IF;
+   observed:=(SELECT jsonb_build_object('state',state,'uncertain',uncertain) FROM zabalack.actions WHERE action_id=aid);
+   IF observed->>'state'<>'pending' OR (observed->>'uncertain')::boolean THEN
+    RAISE EXCEPTION 'a settled attempt disturbed the retried action';
+   END IF;
   END IF;
  END LOOP;
  RESET ROLE;

@@ -791,8 +791,10 @@ Application/internal/unclassified errors suspend the affected instance and raise
 an incident; a sent write stays pending/uncertain and eligible for read-only
 reconciliation. Suspension does not depend on whether the
 reporting worker still holds its delivery lease: an ambiguous outcome reported
-after the lease expired suspends the instance too, bounded to an attributable
-attempt and an action still open (migration 011). Failed reconciliation reads keep it eligible. Successful evidence
+after the lease expired suspends the instance too (migration 011), bounded to an
+attributable attempt that is still unsettled (migration 012), so an operator's
+fenced-and-settled no-effect confirmation is not overruled by a replayed
+callback, including after an authorised retry reopens the action. Failed reconciliation reads keep it eligible. Successful evidence
 may settle the action, but does not reset its circuit. The worker health gate
 requires migration 010's `api_error_recovery_version=1` capability; a sealed
 schema-4 installation missing that correction is insufficient. No string parsing

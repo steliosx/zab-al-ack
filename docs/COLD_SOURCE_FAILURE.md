@@ -73,6 +73,18 @@ required, exactly as 010 requires. The worker capability gate is unchanged:
 011 strengthens behaviour 010 already advertises, so `api_error_recovery_version`
 stays 1 and the qualified worker runs against either.
 
+Forward migration 012 corrects 011's bound. 011 restricted the late suspension
+to an action still open, so that an operator's explicit settlement was not
+overruled; but an authorised retry legitimately returns a settled action to a
+deliverable state, and the old callback then re-suspended the instance and
+reactivated its incident behind that recovery. Whether the evidence is still
+live is a property of the attempt, which the action update in the same branch
+already reads through `attempt_unsettled()`; the instance decision now reads it
+the same way. A fenced-and-settled no-effect confirmation disposes of the
+attempt for good, so no later retry revives it. Schema stays 4, grants are
+unchanged, the digest is re-recorded, resealing is required and
+`api_error_recovery_version` stays 1.
+
 Install the forward migration and runtime together through the reviewed migration
 procedure with acknowledgement paths fenced and delivery disabled. Migration 010
 requires schema 4 and matching routine-body fingerprints, retains schema version

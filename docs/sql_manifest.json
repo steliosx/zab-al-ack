@@ -76,6 +76,10 @@
       "sha256": "47b4d98e1ec75cf1ddf32bf5985dab7ef6888489be6910bb09e0976b3c0de5be"
     },
     {
+      "path": "sql/migrations/012_settled_attempt_suspension.sql",
+      "sha256": "2b1ec1dc17ab71b7686ded37c34fcead07b9706fc03e37303067fde8ea417e45"
+    },
+    {
       "path": "sql/rollback/disable_trigger.sql",
       "sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
     },
