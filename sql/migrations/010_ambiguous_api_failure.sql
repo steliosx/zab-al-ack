@@ -300,7 +300,7 @@ BEGIN
   RETURN result;
  ELSIF op='project' THEN RETURN zabalack.project((p->>'action_id')::uuid);
  ELSIF op IN ('status','inspect','doctor','verifier_health') THEN
-  IF op='doctor' THEN RETURN zabalack.capture_health(); END IF;
+  IF op='doctor' THEN RETURN zabalack.capture_health()||jsonb_build_object('api_error_recovery_version',1); END IF;
   IF op='verifier_health' THEN SELECT coalesce(jsonb_agg(to_jsonb(v)),'[]') INTO result FROM zabalack.verifier_health v; RETURN result; END IF;
   IF op='inspect' THEN
    SELECT coalesce(jsonb_agg(zabalack.action_json(x)),'[]') INTO result FROM (SELECT * FROM zabalack.actions WHERE (p->>'state' IS NULL OR state=p->>'state') AND (p->>'action_id' IS NULL OR action_id=(p->>'action_id')::uuid) ORDER BY updated_at DESC LIMIT least(200,coalesce((p->>'limit')::int,50))) x; RETURN result;

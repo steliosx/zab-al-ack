@@ -18,6 +18,7 @@ def test_T28_T29_forward_application_error_migration_and_guards(pg_lab):
             conn.execute(old_body)
             conn.execute('SELECT zabalack.seal_installation()')
             assert conn.execute('SELECT zabalack.capture_health()').fetchone()[0]['functions_ok']
+            assert 'api_error_recovery_version' not in conn.execute("SELECT zabalack.worker_call('doctor','{}')").fetchone()[0]
             with pytest.raises(psycopg.Error, match='found schema 3'):
                 with conn.transaction():
                     conn.execute('UPDATE zabalack.installation SET schema_version=3 WHERE singleton')
@@ -27,6 +28,7 @@ def test_T28_T29_forward_application_error_migration_and_guards(pg_lab):
                     conn.execute("UPDATE zabalack.installation SET routine_bodies_md5='not-the-live-digest' WHERE singleton")
                     conn.execute(new)
             conn.execute(new)
+            assert conn.execute("SELECT zabalack.worker_call('doctor','{}')").fetchone()[0]['api_error_recovery_version'] == 1
             health = conn.execute('SELECT zabalack.capture_health()').fetchone()[0]
             assert health['zabalack_schema_version'] == 4
             assert health['functions_ok'] is False, 'upgrade must not silently reseal'

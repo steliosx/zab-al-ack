@@ -69,7 +69,7 @@
     },
     {
       "path": "sql/migrations/010_ambiguous_api_failure.sql",
-      "sha256": "2c6bdf6618dd9d98d234f1dbb52ab0fcc1bbaa9d2ce75e62faa600796b7e20e3"
+      "sha256": "557549c5a9abd30425303f23c49652562aaa5ad6ba3ee0f785f6154beab14258"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",

@@ -63,7 +63,10 @@ Install the forward migration and runtime together through the reviewed migratio
 procedure with acknowledgement paths fenced and delivery disabled. Migration 010
 requires schema 4 and matching routine-body fingerprints, retains schema version
 4 and existing grants, updates the shipped body digest and requires explicit
-resealing. Do not run the new worker against a database missing 010. Rollback is
+resealing. The worker health gate requires 010's recovery capability, including
+on an otherwise healthy sealed schema-4 database. See the source-backed
+[amendment A6](SPEC_AMENDMENTS.md#a6--ambiguous-zabbix-api-errors-preserve-uncertainty-and-suspend-writes).
+Rollback is
 a reviewed forward correction while delivery is disabled, never editing applied
 migrations or deleting ledger records.
 
