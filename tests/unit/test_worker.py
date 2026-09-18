@@ -208,6 +208,23 @@ async def test_T28_permission_error_terminal_no_repeat():
     assert db.outcomes()[-1]["state"] == "failed"
 
 
+@pytest.mark.parametrize("capability", [None, True, "1", 0, 2, 1])
+async def test_T28_health_requires_ambiguous_api_recovery_capability(capability):
+    settings = Settings(external_writes_enabled=True, database_name="lab-db",
+                        deployment_id="lab-deployment", config_revision="lab-revision")
+    health = {"in_recovery": False, "database_name": "lab-db", "deployment_id": "lab-deployment",
+              "config_revision": "lab-revision", "zabalack_schema_version": 4,
+              "trigger_ok": True, "functions_ok": True, "capture_disabled": False}
+    if capability is not None:
+        health["api_error_recovery_version"] = capability
+    class HealthDB(FakeDB):
+        async def call(self, op, payload=None):
+            assert op == "doctor"
+            return health
+    value = Worker(settings, HealthDB(), {}, client_factory=lambda _: Client())
+    assert await value.check_health() is (type(capability) is int and capability == 1)
+
+
 @pytest.mark.asyncio
 async def test_T29_response_lost_enters_unknown_then_reference_reconciles_no_write():
     from zabalack.rpc import neutral_comment

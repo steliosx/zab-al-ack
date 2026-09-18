@@ -774,3 +774,32 @@ pre-signing interval to be closed, which retirement alone does not achieve, and
 its native concurrency cases must execute natively — the WASM layer cannot
 establish them. A5 remains open until then. Stage one is a partial
 mitigation of the response boundary and must be described as such.
+
+## A6 — Ambiguous Zabbix API errors preserve uncertainty and suspend writes
+
+**Source and affected clauses:** the pinned Zabbix 7.0.10 source at
+`237358b56b2584b94b1f8358f479ade669693ba2`, inspected in
+[COLD_SOURCE_FAILURE.md](COLD_SOURCE_FAILURE.md), maps permission and internal
+exceptions to the same `-32500` code. The outer exception handler emits `-32603`.
+Neither code proves that an acknowledgement had no effect. This qualifies
+DESIGN section 6.3 and T28's literal `failed` disposition, while preserving
+their suspension requirement and T29/T31's unknown-outcome/no-replay invariant.
+The preserved baseline is unchanged.
+
+**Correction:** verified dispatch/validation rejection codes remain failed.
+Application/internal/unclassified errors suspend the affected instance and raise
+an incident; a sent write stays pending/uncertain and eligible for read-only
+reconciliation. Failed reconciliation reads keep it eligible. Successful evidence
+may settle the action, but does not reset its circuit. The worker health gate
+requires migration 010's `api_error_recovery_version=1` capability; a sealed
+schema-4 installation missing that correction is insufficient. No string parsing
+of upstream error text, automatic replay or broader credential is introduced.
+
+**Validation and gates:** focused RPC classification, native PostgreSQL recovery,
+forward migration and missing-capability tests must bind to the correction's
+revision. Installed-package error/recovery qualification and applicable G4/G5/G8
+remain required before readiness. The old cold failure, warmed success and exact
+qualified wheel remain bound to their original revisions. Historical failures
+are not retroactively relabelled; the installation's actual principals, events,
+settlement evidence and authorization still govern any manual recovery. A6 does
+not repair the upstream first-counter race or close cold-start acceptance.
