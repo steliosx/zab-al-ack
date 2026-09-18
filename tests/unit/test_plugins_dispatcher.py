@@ -12,7 +12,7 @@ import pytest
 from flask import Flask, g
 from alerta import settings as alerta_defaults
 from alerta.app import alarm_model, hooks, plugins
-from alerta.exceptions import AlertaException, InvalidAction, RejectException
+from alerta.exceptions import AlertaException, ApiError, InvalidAction, RejectException
 from alerta.models.alert import Alert
 from alerta.utils.api import process_action, process_status
 from alerta.utils.hooks import status_change_hook
@@ -448,3 +448,98 @@ def test_T41_an_acknowledgement_that_does_not_reach_ack_stages_nothing(context):
     assert alert.attributes["zabbix_ack_sync_reason"] == "skipped_no_ack_transition"
     assert "zabbix_ack_sync_intent" not in alert.attributes and "zabbix_ack_sync_action_id" not in alert.attributes
     assert context.updates and context.updates[-1]["zabbix_ack_sync_reason"] == "skipped_no_ack_transition"
+
+
+def _unguarded_builder():
+    """A fresh stand-in for what `QueryBuilder.init_app` leaves behind.
+
+    Built per call: installing the guard mutates the class, so a shared one
+    would silently arrive already guarded in a later case.
+    """
+
+    class Unguarded:
+        served: list = []
+
+        @staticmethod
+        def from_params(params, customers=None, query_time=None):
+            Unguarded.served.append(dict(params))
+            return "served-from-storage"
+
+    return Unguarded
+
+
+def _reader_route(app):
+    """A stand-in for the collection GET: it reaches storage through qb.alerts.
+
+    The real reader routes — the collection response, `/alerts/count`, the
+    aggregate endpoints and `/alerts/history` — all resolve their selector
+    through this one object, which is why the guard lives there.
+    """
+    from alerta.app import qb
+
+    def read():
+        return str(qb.alerts.from_params({"attributes.zabbix_ack_sync_intent": "~lab-b"}))
+
+    app.add_url_rule("/synthetic/alerts", endpoint="synthetic.read", view_func=read, methods=["GET"])
+    return app.test_client()
+
+
+def test_T40_a_rebound_builder_cannot_serve_reader_queries_over_staged_data(context, monkeypatch):
+    """The reader boundary, not just the acknowledgement path.
+
+    Staged intents already committed stay searchable through the reader routes,
+    and those routes never call `take_action`. A rebinding that discards the
+    guard must therefore be caught before a reader query reaches storage: the
+    control is put back and the selector refused, or the request is refused.
+    Serving the selector from an unguarded builder is the failure.
+    """
+    from alerta.app import qb
+    from zabalack import query_guard
+
+    unguarded = _unguarded_builder()
+    client = _reader_route(context.app)
+    assert query_guard.is_installed(qb.alerts), "precondition: the guard installed"
+
+    # Rebinding as init_app does, then a reader request — no acknowledgement.
+    monkeypatch.setattr(qb, "alerts", unguarded, raising=False)
+    assert not query_guard.is_installed(qb.alerts), "precondition: the guard was discarded"
+    # This synthetic app registers none of Alerta's error handlers, so a refusal
+    # surfaces as the exception the handlers would have turned into 4xx/503.
+    served = None
+    try:
+        served = client.get("/synthetic/alerts")
+    except (ApiError, AlertaException):
+        pass
+
+    assert unguarded.served == [], "a reader query reached an unguarded builder"
+    assert served is None or served.status_code >= 400, "the reader query was served"
+    assert served is None or b"served-from-storage" not in served.data
+
+
+def test_T40_reconfiguring_a_ready_app_reinstalls_the_discarded_guard(context, monkeypatch):
+    """`configure_app` must not trust its own readiness flag.
+
+    The flag stays set on an app whose builder has since been rebound, so an
+    early return would leave the reader restriction gone while readiness
+    reports installed.
+    """
+    from alerta.app import qb
+    from zabalack import query_guard
+
+    assert context.app.extensions.get("zabalack_privacy_ready") is True
+    monkeypatch.setattr(qb, "alerts", _unguarded_builder(), raising=False)
+    assert not query_guard.is_installed(qb.alerts)
+
+    configure_app(context.app)
+
+    assert query_guard.is_installed(qb.alerts), "a ready app returned over an absent control"
+
+
+def test_T40_rebinding_the_builder_reinstalls_the_guard_at_the_rebinding(context):
+    """The guard follows `qb.alerts` when Alerta replaces it."""
+    from alerta.app import qb
+    from zabalack import query_guard
+
+    qb.init_app(context.app)
+
+    assert query_guard.is_installed(qb.alerts), "a fresh builder was left unguarded"

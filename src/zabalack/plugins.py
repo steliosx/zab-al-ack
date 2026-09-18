@@ -122,6 +122,12 @@ def configure_app(app: Any) -> Any:
     redacts those channels. It does not hide proofs from committed history.
     """
     if app.extensions.get("zabalack_privacy_ready"):
+        # The flag records that this app was configured; it does not record
+        # that the control is still on the builder. `qb.init_app` rebinds
+        # `qb.alerts` to a fresh class, so returning on the flag alone would
+        # leave the reader restriction gone while readiness reports installed.
+        # Reinstalling is idempotent when the guard is already there.
+        restrict_intent_queries()
         return app
     redactor = CaptureLogRedactor()
     logger = app.logger
@@ -139,12 +145,63 @@ def configure_app(app: Any) -> Any:
                 response.set_data(app.json.dumps(_error_redact(body)))
         return response
 
+    @app.before_request
+    def require_reader_query_guard() -> None:
+        """Hold the reader boundary itself, not just the acknowledgement path.
+
+        `take_action` asks whether the guard is live, but that only covers new
+        acknowledgements. Every reader route — the collection GET, `/alerts/count`,
+        the aggregate endpoints and `/alerts/history` — reaches storage through
+        the same rebindable `qb.alerts`, and staged intents already committed
+        stay searchable through them if a rebinding discarded the wrapper. This
+        runs before any of those views, reinstalls the control when it can, and
+        refuses the request when it cannot: a reader query is never served over
+        an unguarded builder.
+        """
+        if _query_guard_live():
+            return
+        try:
+            restrict_intent_queries()
+        except Exception:  # pragma: no cover - reinstallation is best effort
+            pass
+        if not _query_guard_live():
+            raise AlertaException("zabalack_privacy_adapter_required", code=503)
+
     exclude_intent_from_responses()
     # Raises if the guard is absent or did not take, so the flag below is only
     # ever set over a control that installed.
     restrict_intent_queries()
+    _reinstall_guard_on_rebinding()
     app.extensions["zabalack_privacy_ready"] = True
     return app
+
+
+def _reinstall_guard_on_rebinding() -> None:
+    """Follow `qb.alerts` when Alerta replaces it.
+
+    `QueryBuilder.init_app` assigns a fresh `alerts` class per call, discarding
+    whatever wrapped the previous one. Wrapping `init_app` puts the guard back
+    on the new object at the moment of rebinding, so the window in which a
+    reader query could reach an unguarded builder does not open. The
+    `before_request` refusal above remains the backstop for any path this does
+    not observe.
+    """
+    from alerta.app import qb
+    original = getattr(qb, "init_app", None)
+    if original is None or getattr(original, "_zabalack_reinstalls", False):
+        return
+
+    @wraps(original)
+    def init_app(*args: Any, **kwargs: Any) -> Any:
+        result = original(*args, **kwargs)
+        try:
+            restrict_intent_queries()
+        except Exception:  # pragma: no cover - the request-time refusal still holds
+            pass
+        return result
+
+    init_app._zabalack_reinstalls = True  # type: ignore[attr-defined]
+    qb.init_app = init_app
 
 
 def _query_guard_live() -> bool:
