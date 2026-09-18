@@ -50,12 +50,24 @@ continues rejecting them; the constructor emits the existing UTC strings.
 
 ## Tool provenance and platform
 
-The lock was inspected on 2026-09-11 against wheel `METADATA` and the official
+The x86_64 lock was inspected on 2026-09-11 against wheel `METADATA` and the official
 PyPI release JSON. Each locked SHA256 was compared with both the downloaded
 artifact and PyPI's digest for that filename. This lock covers CPython 3.12 on
-Linux x86_64 with compatible manylinux wheels; another platform requires an
+Linux x86_64 and aarch64 with compatible manylinux wheels; another platform requires an
 explicitly inspected wheel/hash update. There are no source builds or optional
 tool extras in this lock.
+
+On 2026-09-16, the aarch64 wheels for the same pinned `ast-serialize`,
+`hypothesis`, `librt`, `mypy` and `ruff` versions were downloaded from official
+PyPI release URLs. Their bytes matched the published SHA256 values, and their
+wheel tags, `Requires-Python` and `Requires-Dist` metadata were inspected for
+CPython 3.12 on Linux ARM64. Existing x86_64 hashes and all versions remain in
+place. The scanner lock likewise adds aarch64 hashes for its pinned
+`charset-normalizer` and `msgpack`; its other wheels are platform-independent.
+Hash and metadata verification does not establish successful installation or
+execution. Validate each runner with fresh environments, hash-checked binary
+installs, `pip check` and the required checks; Linux ARM64 results do not
+establish x86_64 coverage.
 
 | Direct tool | Pin | Package Python requirement | Official release metadata |
 |---|---|---|---|

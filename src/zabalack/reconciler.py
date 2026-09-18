@@ -77,7 +77,8 @@ class Reconciler:
                 "instance": action["instance"], "worker_id": self.worker_id,
                 "background_generation": lease["lease_generation"],
                 "state": action["state"] if action["state"] in {"ok", "failed", "expired", "skipped"} else
-                    ("pending" if exc.transient or exc.reason == "event_missing_or_not_visible" else "failed"),
+                    ("pending" if action.get("uncertain") or exc.transient or
+                     exc.reason == "event_missing_or_not_visible" else "failed"),
                 "reason": "reconciliation_check_failed" if action["state"] in {"ok", "failed", "expired", "skipped"} else exc.reason,
                 "completion_evidence": action.get("completion_evidence"),
                 "check_failure": exc.reason, "preserve_delivery": action["state"] in {"ok", "failed", "expired", "skipped"},
@@ -154,8 +155,47 @@ class Reconciler:
         self._nightly_cursor = next_cursor if self._nightly_pending else None
         return {"read": processed, "cursor": self._nightly_cursor, "pending": self._nightly_pending}
 
+    async def retire_intents(self, *, report_remaining: bool = False) -> dict[str, Any]:
+        """Retire staged intents from live alert rows (A5 stage two, T41).
+
+        Deliberately not gated on verification or delivery health: the lifecycle
+        paths that most need retirement are the ones where neither ever
+        succeeds — capture bypass, a verification key unavailable, a stopped or
+        backlogged worker, a cohort absent from `zabalack.cohorts`, and staging
+        that failed before its history write. SQL bounds the batch and decides
+        eligibility; nothing here chooses which rows are swept, and nothing here
+        touches the generation fence.
+        """
+        payload: dict[str, Any] = {"limit": self.settings.fast_budget}
+        if report_remaining:
+            # The standalone drain asks what still carries the key once a pass
+            # leaves nothing due; the worker's periodic call does not, and pays
+            # no second scan for it.
+            payload["report_remaining"] = True
+        try:
+            result = await self.db.call("retire_intents", payload)
+        except Exception as exc:
+            # A sweep that fails — the unindexed scan of public.alerts outrunning
+            # its own statement budget (`retirement_timeout_seconds`) on a large
+            # table, or a transient error — is reported and retried next cycle.
+            # It must not take the rest of this cycle's sweeps, or the worker,
+            # down with it; the interval's claim rolled back with the
+            # transaction, so nothing is lost. A sweep that never fits its
+            # budget never retires anything: see the retirement paragraph of
+            # docs/deployment_acceptance.md (T41) for the index that bounds it.
+            log_event("retire_intents_failure", error_class=type(exc).__name__,
+                      reason=getattr(exc, "reason", None))
+            return {"error": type(exc).__name__}
+        # `{"skipped": "not_due"}` is the ordinary answer: another worker, or this
+        # one on an earlier cycle, already claimed this interval's slot.
+        return result if isinstance(result, dict) else {}
+
     async def scheduled_sweeps(self) -> None:
         now = time.monotonic()
+        # Asked every cycle; SQL decides whether it is due. The cadence is
+        # deployment state rather than this process's clock, so N workers do not
+        # each run their own unindexed scan of public.alerts per interval.
+        await self.retire_intents()
         # SQL's 15-minute due timestamp governs eligibility. Checking the indexed due
         # queue each fast cycle drains large cohorts without a 15-minute per-row delay.
         await self.host_inventory()

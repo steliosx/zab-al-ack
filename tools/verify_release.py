@@ -247,6 +247,7 @@ def verify(root: Path, dist: Path, *, candidate: Path | None = None,
         require(context is not None, 'Signing requires explicit current CI context')
         validate_context(context)
         collection = read_json(candidate / 'evidence/ci-collection.json')
+        validate_context(collection.get('context'))
         require(collection.get('status') == 'PASS' and collection.get('context') == context
                 and collection.get('code_digests') == code_digests(root)
                 and collection.get('kinds') == list(KINDS) and collection.get('signed_attestation') is False,

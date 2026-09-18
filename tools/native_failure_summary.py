@@ -2,6 +2,7 @@
 """Export bounded, allowlisted native failure facts; never upload raw lab files."""
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -11,9 +12,10 @@ import stat
 import xml.etree.ElementTree as ET
 
 from evidence_utils import binding_error, code_digests
+from native_ci import PHASES as NATIVE_PHASES
 
 ROOT = Path(__file__).resolve().parents[1]
-PHASES = {"postgres", "delivery_faults", "worker", "alerta", "performance"}
+PHASES = set(NATIVE_PHASES)
 STATES = {"captured_unverified", "authorised", "pending", "sending", "unknown", "ok",
           "failed", "expired", "skipped", "late_response", "verifier_hold"}
 REASONS = {"acknowledged", "already_acknowledged", "outcome_unknown", "lease_fenced",
@@ -31,6 +33,7 @@ CHECKPOINTS = {"ready", "done", "error"} | {
 MAX_FILE_BYTES = 1024 * 1024
 MAX_FILES = 256
 MAX_ITEMS = 128
+MAX_TEST_ID_CHARS = 256
 # Values originate here, never from exception messages or arbitrary SQLSTATEs.
 EXCEPTIONS = {
     "AssertionError": ("assertion", None), "Failed": ("pytest_failure", None),
@@ -106,6 +109,31 @@ def _failure_facts(element) -> dict:
     return result
 
 
+def _phase_modules(phase: str) -> dict[str, str]:
+    """Module name to fixed phase target. The JUnit names a module; this names the file."""
+    return {".".join(PurePosixPath(relative).with_suffix("").parts): relative
+            for relative in NATIVE_PHASES[phase]}
+
+
+def _source_tests(root: Path, relative: str) -> set[str]:
+    """Top-level test definitions of one fixed phase target, parsed without importing.
+
+    One file at a time, resolved from the module the JUnit names rather than
+    catalogued in advance: a single shared cap over every phase file silently
+    starves whichever files come last in the list as the first ones grow, and
+    the last file in a phase is exactly where a native-only failure lives. The
+    work stays bounded without it — at most one parse per module in the phase,
+    each file already capped at MAX_FILE_BYTES by _safe_bytes.
+    """
+    try:
+        document = ast.parse(_safe_bytes(root / relative, root))
+    except (OSError, ValueError, UnicodeError, SyntaxError, RecursionError):
+        return set()
+    return {node.name for node in document.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and re.fullmatch(r"test_[A-Za-z0-9_]+", node.name)}
+
+
 def _pytest_summary(root: Path, phase: str, expected_digest) -> dict:
     """Classify only this phase's JUnit; return no raw XML strings or paths."""
     raw = _safe_bytes(root / "build/evidence-raw" / ("native-" + phase + ".xml"), root)
@@ -121,18 +149,40 @@ def _pytest_summary(root: Path, phase: str, expected_digest) -> dict:
         raise ValueError("invalid JUnit root")
     result = {"status": "AVAILABLE", "counts": {"passed": 0, "failed": 0, "skipped": 0},
               "failures": [], "truncated": False}
+    modules = _phase_modules(phase)
+    parsed: dict[str, set[str]] = {}
     groups = {}
-    for index, case in enumerate(document.iter("testcase")):
-        if index >= MAX_ITEMS:
-            result["truncated"] = True
-            break
+    # Every case is counted and classified: the document is already bounded to
+    # MAX_FILE_BYTES before it is parsed, so reading all of it is bounded work,
+    # and a cap on cases read reports `failed: 0` for a phase whose failures
+    # come after it — which is the phase shape a long native run actually has.
+    # What is bounded here instead is the exported detail: distinct groups.
+    for case in document.iter("testcase"):
         failures = [child for child in case if child.tag in {"failure", "error"}]
         state = "failed" if failures else "skipped" if case.find("skipped") is not None else "passed"
         result["counts"][state] += 1
+        if not failures:
+            continue
+        name, bracket, parameters = case.get("name", "").partition("[")
+        classname = case.get("classname", "")
+        identity = None
+        relative = modules.get(classname)
+        if relative is not None and (not bracket or parameters.endswith("]")):
+            if classname not in parsed:
+                parsed[classname] = _source_tests(root, relative)
+            candidate = relative + "::" + name
+            if name in parsed[classname] and len(candidate) <= MAX_TEST_ID_CHARS:
+                identity = candidate
         for failure in failures[:2]:
             facts = _failure_facts(failure)
+            if identity is not None:
+                facts["source_test"] = identity
             key = tuple(sorted(facts.items()))
             if key not in groups:
+                if len(groups) >= MAX_ITEMS:
+                    # The counts above stay complete; only the detail is dropped.
+                    result["truncated"] = True
+                    continue
                 groups[key] = {**facts, "count": 0}
             groups[key]["count"] += 1
     result["failures"] = list(groups.values())

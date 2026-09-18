@@ -14,5 +14,13 @@ console.log(JSON.stringify({event:'isolated_wasm_socket_ready',host:'127.0.0.1',
   evidence_layer:'actual PostgreSQL18.3 WASM engine; sequential persisted Alerta supplemental tests only',
   limitations:['single backend','multiplexed connections','no native role authentication','no SSL','cancel ignored','no HA'],production_gates:'NOT_VERIFIED'}));
 let stopping = false;
-const stop = async () => {if(stopping)return;stopping=true;await server.stop();await db.close();process.exit(0);};
+const stop = async () => {
+  if(stopping)return;
+  stopping=true;
+  // Public adapter counters only, retained in the wrapper's private stdout.
+  console.log(JSON.stringify({event:'isolated_wasm_socket_stopping',...server.getStats()}));
+  await server.stop();
+  await db.close();
+  process.exit(0);
+};
 process.once('SIGINT',stop);process.once('SIGTERM',stop);

@@ -1,7 +1,10 @@
 """Mocked runner failures: no native service or deployment evidence is created."""
+import errno
 import hashlib
 import json
+import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
 from unittest.mock import MagicMock
@@ -16,10 +19,82 @@ from evidence_utils import code_digests
 PASS_XML = '<testsuites><testsuite><testcase classname="synthetic" name="test_T38_check"/></testsuite></testsuites>'
 
 
+@pytest.mark.parametrize('failure', [None, 'default', 'preflight', 'test', 'skip', 'empty',
+                                   'relay', 'stop', 'changed', 'capture', 'retire'])
+def test_opt_in_retirement_requires_complete_success(tmp_path, monkeypatch, relay_context, failure, capsys):
+    evidence, raw = seed_reports(tmp_path)
+    monkeypatch.setattr(native_ci, 'ROOT', tmp_path)
+    argv = ['native_ci.py', '--isolated-lab', '--phase', 'postgres']
+    if failure != 'default':
+        argv += ['--retire-empty-networks', '--network-evidence-root', str(tmp_path.parent / 'private')]
+    monkeypatch.setattr(sys, 'argv', argv)
+    events = []
+    def prepare(path, root):
+        events.append('preflight')
+        if failure == 'preflight':
+            raise ValueError('synthetic-private-preflight')
+        return path
+    def capture(*args):
+        events.append('capture')
+        if failure == 'capture':
+            raise AttributeError('synthetic-private-malformed')
+        return {'identity': 'captured-before-tests'}
+    def retire(root, store, identity, binding, diagnostics):
+        events.append('retire')
+        assert events.index('capture') < events.index('pytest') < events.index('stop') < events.index('retire')
+        assert identity == {'identity': 'captured-before-tests'}
+        assert binding['phase_result']['shutdown_exit_code'] == 0
+        assert all(p.is_file() for p in diagnostics)
+        if failure == 'retire':
+            raise subprocess.TimeoutExpired(['synthetic-docker'], 30, output=b'synthetic-private-partial-output')
+        return {'status': 'RETIRED', 'manifest_sha256': 'a' * 64}
+    def child(command, **kwargs):
+        if 'up' in command:
+            events.append('up')
+        if '-m' in command and 'pytest' in command:
+            events.append('pytest')
+            xml = PASS_XML
+            if failure == 'skip':
+                xml = PASS_XML.replace('/>', '><skipped/></testcase>')
+            if failure == 'empty':
+                xml = '<testsuites/>'
+            (raw / 'native-postgres.xml').write_text(xml)
+            return subprocess.CompletedProcess(command, int(failure == 'test'))
+        if 'stop' in command:
+            events.append('stop')
+            return subprocess.CompletedProcess(command, int(failure == 'stop'))
+        return subprocess.CompletedProcess(command, 0)
+    if failure == 'relay':
+        relay_context.__exit__.side_effect = RuntimeError('synthetic-private-relay')
+    monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: events.append('ensure'))
+    monkeypatch.setattr(native_ci.network_retention, 'prepare_store', prepare)
+    monkeypatch.setattr(native_ci.network_retention, 'capture_identity', capture)
+    monkeypatch.setattr(native_ci.network_retention, 'retire_network', retire)
+    monkeypatch.setattr(native_ci.subprocess, 'run', child)
+    monkeypatch.setattr(native_ci, 'code_digests', lambda root: {'harness': 'changed' if failure == 'changed' and 'stop' in events else 'original'})
+    expected = 0 if failure in (None, 'default') else 2 if failure == 'preflight' else 1
+    assert native_ci.main() == expected
+    report = json.loads((evidence / 'native-run.json').read_text())
+    assert ('retire' in events) == (failure in (None, 'retire'))
+    if failure == 'default':
+        assert 'preflight' not in events and 'capture' not in events
+    elif failure == 'preflight':
+        assert events == ['preflight']
+    else:
+        assert events.index('preflight') < events.index('ensure') < events.index('up')
+    assert report['status'] == ('PASS' if expected == 0 else 'NOT_RUN' if expected == 2 else 'FAIL')
+    assert 'synthetic-private' not in capsys.readouterr().out
+    assert 'synthetic-private' not in json.dumps(report)
+    if failure == 'retire':
+        diagnostic, = raw.glob('*exception.log')
+        assert 'synthetic-private-partial-output' in diagnostic.read_text()
+
+
 @pytest.fixture(autouse=True)
 def relay_context(monkeypatch):
     relay = MagicMock()
     relay.__enter__.return_value = relay
+    relay.ports = {'postgres': 43123, 'pgbouncer': 43124}
     monkeypatch.setattr(native_ci, 'DockerLabRelays', lambda: relay)
     return relay
 
@@ -36,6 +111,38 @@ def seed_reports(tmp_path):
              'junit': 'evidence/native-postgres.xml'}]}
     (evidence / 'native-run.json').write_text(json.dumps(prior))
     return evidence, raw
+
+
+@pytest.mark.parametrize('context', [
+    '', 'null', '{}', '[]', '[null]', '[{}]',
+    '[{"Endpoints": null}]', '[{"Endpoints": {}}]',
+    '[{"Endpoints": {"docker": null}}]',
+    '[{"Endpoints": {"docker": {}}}]',
+])
+def test_native_runner_classifies_malformed_docker_context_as_unavailable(monkeypatch, context):
+    monkeypatch.setattr(native_ci.sys, 'platform', 'linux')
+    monkeypatch.setattr(native_ci.shutil, 'which', lambda name: '/synthetic/docker')
+    monkeypatch.delenv('DOCKER_HOST', raising=False)
+    monkeypatch.delenv('DOCKER_CONTEXT', raising=False)
+    monkeypatch.setattr(native_ci.subprocess, 'check_output', lambda *args, **kwargs: context)
+    monkeypatch.setattr(native_ci.subprocess, 'run',
+                        lambda *args, **kwargs: pytest.fail('Malformed context reached Docker Compose'))
+    with pytest.raises(RuntimeError, match='context inspection was malformed'):
+        native_ci.ensure_local_docker()
+
+
+@pytest.mark.parametrize('host', [None, False, 42, [], {}, 'tcp://remote.invalid:2376'])
+def test_native_runner_rejects_nonlocal_context_hosts(monkeypatch, host):
+    monkeypatch.setattr(native_ci.sys, 'platform', 'linux')
+    monkeypatch.setattr(native_ci.shutil, 'which', lambda name: '/synthetic/docker')
+    monkeypatch.delenv('DOCKER_HOST', raising=False)
+    monkeypatch.delenv('DOCKER_CONTEXT', raising=False)
+    document = json.dumps([{'Endpoints': {'docker': {'Host': host}}}])
+    monkeypatch.setattr(native_ci.subprocess, 'check_output', lambda *args, **kwargs: document)
+    monkeypatch.setattr(native_ci.subprocess, 'run',
+                        lambda *args, **kwargs: pytest.fail('Nonlocal context reached Docker Compose'))
+    with pytest.raises(RuntimeError, match='Remote Docker context refused'):
+        native_ci.ensure_local_docker()
 
 
 @pytest.mark.parametrize('failure', ['docker-unavailable', 'startup', 'startup-cleanup-timeout',
@@ -78,14 +185,25 @@ def test_native_attempt_replaces_previous_evidence_before_service_operations(tmp
         assert report['phases'][0]['shutdown_reason'] == 'TimeoutExpired'
 
 
-def test_native_success_records_only_fresh_selected_reports(tmp_path, monkeypatch):
+def test_native_success_records_only_fresh_selected_reports(tmp_path, monkeypatch, relay_context):
     evidence, _ = seed_reports(tmp_path)
     monkeypatch.setattr(native_ci, 'ROOT', tmp_path)
     monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: None)
     monkeypatch.setattr(sys, 'argv', ['native_ci.py', '--isolated-lab', '--phase', 'postgres'])
+    monkeypatch.setenv('ACK_TEST_ADMIN_DSN', 'inherited-admin-must-be-replaced')
+    monkeypatch.setenv('ACK_TEST_PGBOUNCER_DSN', 'inherited-pool-must-be-replaced')
+    monkeypatch.setenv('ACK_TEST_PGBOUNCER_EXPECTED_PORT', '56432')
+    monkeypatch.setenv('ACK_TEST_UNRELATED', 'must-be-removed')
 
     def child(command, **kwargs):
         if '-m' in command and 'pytest' in command:
+            relay_context.activate.assert_called_once()
+            env = kwargs['env']
+            assert env['ACK_TEST_ADMIN_DSN'] == 'postgresql://lab_admin@127.0.0.1:43123/alerta'
+            assert env['ACK_TEST_PGBOUNCER_DSN'] == 'postgresql://zabalack_probe@127.0.0.1:43124/alerta'
+            assert env['ACK_TEST_PGBOUNCER_EXPECTED_PORT'] == '43124'
+            assert env['ACK_TEST_DESTRUCTIVE_LAB'] == 'YES_ISOLATED_LAB'
+            assert 'ACK_TEST_UNRELATED' not in env
             output = Path(next(value.split('=', 1)[1] for value in command if value.startswith('--junitxml=')))
             output.write_text(PASS_XML)
         return subprocess.CompletedProcess(command, 0)
@@ -123,6 +241,72 @@ def test_native_relay_failure_fails_phase_and_still_stops_owned_compose(tmp_path
     assert commands[-1][-3:] == ['stop', '--timeout', '10']
     if failure == 'activate':
         assert not any('pytest' in command for command in commands)
+
+
+@pytest.mark.parametrize('stage', ['relay-reservation', 'compose-startup', 'relay-activation'])
+def test_native_startup_exception_details_are_private_and_cleanup_still_runs(
+        tmp_path, monkeypatch, relay_context, capsys, stage):
+    evidence, raw = seed_reports(tmp_path)
+    monkeypatch.setattr(native_ci, 'ROOT', tmp_path)
+    monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: None)
+    monkeypatch.setattr(sys, 'argv', ['native_ci.py', '--isolated-lab', '--phase', 'postgres'])
+    private_message = 'synthetic-private-startup-detail'
+    private_path = str(tmp_path / 'private-endpoint.sock')
+    error = OSError(errno.EADDRINUSE, private_message, private_path)
+    if stage == 'relay-reservation':
+        relay_context.__enter__.side_effect = error
+    elif stage == 'relay-activation':
+        relay_context.activate.side_effect = error
+    commands = []
+    def child(command, **kwargs):
+        commands.append(command)
+        if 'up' in command and stage == 'compose-startup':
+            raise error
+        return subprocess.CompletedProcess(command, 0)
+    monkeypatch.setattr(native_ci.subprocess, 'run', child)
+    assert native_ci.main() == 1
+    report = json.loads((evidence / 'native-run.json').read_text())
+    phase = report['phases'][0]
+    assert report['status'] == 'FAIL' and phase['reason'] == 'OSError'
+    assert phase['shutdown_exit_code'] == 0
+    assert commands[-1][-3:] == ['stop', '--timeout', '10']
+    assert not any('pytest' in command for command in commands)
+    diagnostic, = raw.glob('native-postgres-*-exception.log')
+    details = diagnostic.read_text()
+    assert f'stage: {stage}' in details
+    assert 'Traceback (most recent call last)' in details
+    assert f'[Errno {errno.EADDRINUSE}]' in details
+    assert private_message in details and private_path in details
+    assert diagnostic.parent == raw and diagnostic.parent != tmp_path / phase['diagnostic_dir']
+    if os.name == 'posix':
+        assert stat.S_IMODE(diagnostic.stat().st_mode) == 0o600
+    public = capsys.readouterr()
+    for value in (private_message, private_path, f'[Errno {errno.EADDRINUSE}]'):
+        assert value not in public.out + public.err + json.dumps(report)
+
+
+def test_private_diagnostic_write_failure_preserves_original_reason_and_owned_cleanup(
+        tmp_path, monkeypatch, relay_context, capsys):
+    evidence, _ = seed_reports(tmp_path)
+    monkeypatch.setattr(native_ci, 'ROOT', tmp_path)
+    monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: None)
+    monkeypatch.setattr(sys, 'argv', ['native_ci.py', '--isolated-lab', '--phase', 'postgres'])
+    relay_context.__enter__.side_effect = OSError(errno.EADDRINUSE, 'synthetic-private-startup')
+    def unavailable(*args, **kwargs):
+        raise PermissionError('synthetic-private-retention-error')
+    monkeypatch.setattr(native_ci.os, 'open', unavailable)
+    commands = []
+    def child(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0)
+    monkeypatch.setattr(native_ci.subprocess, 'run', child)
+    assert native_ci.main() == 1
+    phase = json.loads((evidence / 'native-run.json').read_text())['phases'][0]
+    assert phase['reason'] == 'OSError' and phase['shutdown_exit_code'] == 0
+    assert len(commands) == 1 and commands[0][-3:] == ['stop', '--timeout', '10']
+    public = capsys.readouterr()
+    assert 'could not be retained' in public.err
+    assert 'synthetic-private' not in public.out + public.err
 
 
 @pytest.mark.parametrize('problem', ['failed-run', 'running-run', 'empty-pass', 'malformed-phases',

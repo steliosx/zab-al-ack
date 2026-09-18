@@ -42,7 +42,7 @@ zabalack --config /reviewed/config.json reconcile --read-only --once
 zabalack --config /reviewed/config.json reconcile --read-only --nightly
 ```
 
-Reconciliation is source-read-only but records DB outcomes and may repair projections. It uses bounded due work; an empty queue must cause no Zabbix read. The worker normally schedules the 60-second fast cycle, bounded nightly sweep and 15-minute approved-host inventory. The standalone reconciliation unit is one-shot; the supplied timer is optional and is never installed or started automatically.
+Reconciliation is source-read-only but records DB outcomes and may repair projections. It uses bounded due work; an empty queue must cause no Zabbix read. Every reconciliation cycle, the worker's and the standalone command's alike, also asks the database to retire staged intents (`retire_intents`, A5 stage two), a local operation that sends no source write; with the worker stopped, the standalone unit is what keeps abandoned intents from staying on live rows. The standalone command drains page by page, up to ten pages of `fast_budget` rows per run, and reports `retirement.complete: true` only when a sweep ran, left nothing due behind it, and no row still carries the key (`remaining: 0`) — a staging inside its window and grace is left to a later pass, and the adapter must outlive it; a run that stops with work remaining, or whose sweep fails, exits non-zero rather than reporting the cycle complete. The worker normally schedules the 60-second fast cycle, bounded nightly sweep and 15-minute approved-host inventory. The standalone reconciliation unit is one-shot; the supplied timer is optional and is never installed or started automatically.
 
 Examples for a **later authorised** operational change:
 
@@ -70,6 +70,7 @@ An unresolved remote attempt cannot be retried merely because a reference is abs
 | Source deliberately unacknowledged after delivery | Record drift; do not automatically re-acknowledge |
 | Source event no longer visible | Quarantine and investigate. Inaccessibility does not independently prove deletion/housekeeping |
 | Projection lag / absent target | Repair from ledger through its restricted function. Never replay the source side effect to repair UI state |
+| Acknowledgement failed after its staging committed (signer or capture 503 with `zabbix_ack_sync=pending`, `awaiting_capture`) | The staging's generation is recorded and permanent; the earlier action's re-projection is refused (`projection_action_generation_mismatch`) until an acknowledgement goes through the protected operation again. Fix the cause, then acknowledge again; the sweep retires the stale intent. Never edit the fence |
 | Site failover | Fence old side-effecting consumers before activating the replacement; retain unknown attempts and account for replication RPO |
 
 During an urgent source outage, the NOC may acknowledge the **exact verified event** directly in Zabbix under its existing authority and record the action. Reconciliation can observe acknowledgement without attribution. Never send engineer notes, actor names, internal alert/action IDs or proof markers into the customer-visible neutral comment.
@@ -80,4 +81,4 @@ Use existing monitoring with worker structured logs, status snapshots and the de
 
 Run authenticated synthetic `event.get` canaries and separately authorised synthetic acknowledgements after deployment, rotation and on the approved schedule. Do not use anonymous API version lookup as authentication evidence. Keep canaries under the separate background-read budget and approved destinations. Token policy starts with 90-day expiry/rotation before day 60; the actual token record and owner are deployment inputs.
 
-For failure/HA/batch/notification acceptance use `deployment_acceptance.md` and T1–T39/T11a/T11b mapping in `acceptance_matrix.csv`. For emergency capture bypass and rollback use `rollback.md`. Retention/deletion remains disabled until G8 approves the policy; do not clean up captures or identity mappings merely to make storage graphs look healthy.
+For failure/HA/batch/notification acceptance use `deployment_acceptance.md` and T1–T41/T11a/T11b mapping in `acceptance_matrix.csv`. For emergency capture bypass and rollback use `rollback.md`. Retention/deletion remains disabled until G8 approves the policy; do not clean up captures or identity mappings merely to make storage graphs look healthy.

@@ -59,13 +59,20 @@ def guidance(tmp_path):
     return tmp_path
 
 
-def test_guidance_hash_detects_prose_without_rebinding_code(guidance):
+@pytest.mark.parametrize('document', ['docs/agent-workflows.md', 'docs/agents/astra.md'])
+def test_guidance_hash_detects_prose_without_rebinding_code(guidance, document):
     before = inspect(guidance)
     code = code_digests(guidance)
-    path = guidance / 'docs/agent-workflows.md'
+    path = guidance / document
     path.write_text(path.read_text() + '\nAdditional guidance.\n')
     assert inspect(guidance)['sha256'] != before['sha256']
     assert code_digests(guidance) == code
+
+
+def test_guidance_validation_requires_astra_role_file(guidance):
+    (guidance / 'docs/agents/astra.md').unlink()
+    with pytest.raises(ValueError, match='agent_guidance_file_invalid'):
+        inspect(guidance)
 
 
 def test_source_zip_contains_exact_validated_guidance(guidance, tmp_path):

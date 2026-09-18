@@ -149,9 +149,15 @@ class ZabbixClient:
                 raise RPCError("jsonrpc_binding_invalid", uncertain=write)
             if "error" in data:
                 # Never log an upstream message/data string: it may contain user input.
-                if "result" in data or not isinstance(data["error"], dict) or not isinstance(data["error"].get("code"), int):
+                if "result" in data or not isinstance(data["error"], dict) or type(data["error"].get("code")) is not int:
                     raise RPCError("jsonrpc_error_invalid", uncertain=write)
-                raise RPCError("api_permission_or_request_rejected")
+                if data["error"]["code"] in {-32600, -32601, -32602}:
+                    raise RPCError("api_permission_or_request_rejected")
+                # Zabbix 7.0 maps both permission and internal exceptions to
+                # -32500, and its outer Throwable handler returns -32603.
+                # Neither nor an unfamiliar code proves a sent write had no
+                # effect. Suspend delivery in SQL, retaining read-only recovery.
+                raise RPCError("api_application_error", uncertain=write)
             if "result" not in data:
                 raise RPCError("jsonrpc_result_missing", uncertain=write)
             return data["result"]

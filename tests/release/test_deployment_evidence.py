@@ -4,6 +4,7 @@ Synthetic evidence only: these tests do not execute Docker or Zabbix.
 """
 import copy
 import json
+import tomllib
 
 import pytest
 
@@ -22,6 +23,34 @@ CHECKS = {
     'worker_denied_table_update',
 }
 COMPONENTS = {'postgres', 'zabbix-db', 'zabbix-server', 'zabbix-web'}
+
+
+@pytest.mark.parametrize('flaw', ['none', 'missing_identity', 'missing_mode', 'digest', 'filename', 'integer_verified', 'not_run'])
+def test_supplied_artifact_evidence_is_explicit_and_fail_closed(candidate, flaw):
+    from deployment_evidence import validate_report
+    root, _ = candidate
+    value = passing(root)
+    version = tomllib.loads((root / 'pyproject.toml').read_text())['project']['version']
+    value.update(artifact_mode='supplied_wheel', supplied_wheel={
+        'filename': 'zabalack-' + version + '-py3-none-any.whl', 'version': version,
+        'sha256': 'a' * 64, 'installed_bytes_verified': True})
+    if flaw == 'missing_identity':
+        value.pop('supplied_wheel')
+    if flaw == 'missing_mode':
+        value.pop('artifact_mode')
+    if flaw == 'digest':
+        value['supplied_wheel']['sha256'] = 'not-a-hash'
+    if flaw == 'filename':
+        value['supplied_wheel']['filename'] = 'other.whl'
+    if flaw == 'integer_verified':
+        value['supplied_wheel']['installed_bytes_verified'] = 1
+    if flaw == 'not_run':
+        value = {'status': 'NOT_RUN', 'supplied_wheel': value['supplied_wheel']}
+    if flaw == 'none':
+        validate_report(value, root)
+    else:
+        with pytest.raises(ValueError):
+            validate_report(value, root)
 
 
 def passing(root, local=False):
@@ -49,12 +78,17 @@ FLAWS = [
     'wrong_versions', 'wrong_layer', 'gates_closed', 'reversed_clock',
     'naive_clock', 'missing_images', 'wrong_image_hash', 'mixed_runtime',
     'string_runtime_flag', 'local_components_missing', 'local_runner_missing',
-    'status_and_digests_only', 'not_run_with_passes',
+    'status_and_digests_only', 'not_run_with_passes', 'supplied_wheel_version',
 ]
 
 
 def broken(root, flaw):
     report = passing(root, local=flaw.startswith('local_'))
+    if flaw == 'supplied_wheel_version':
+        report.update(artifact_mode='supplied_wheel', supplied_wheel={
+            'filename': 'zabalack-1.0-py3-none-any.whl', 'version': '1.0',
+            'sha256': 'a' * 64, 'installed_bytes_verified': True})
+        return report
     if flaw == 'all_false': report['checks'] = {key: False for key in CHECKS}
     elif flaw == 'missing_check': report['checks'].pop('exactly_one_effect')
     elif flaw == 'integer_check': report['checks']['exactly_one_effect'] = 1

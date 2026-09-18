@@ -1,6 +1,6 @@
 # Preparing and publishing the alpha
 
-The delivered candidate is 0.1.0a16. Creating its source archive/wheel does not
+The candidate under qualification is 0.1.0a17. Creating its source archive/wheel does not
 publish it, assign a public namespace or authorize production changes. No
 publication workflow is active: `release/publish.yml.example` is a template.
 
@@ -44,7 +44,11 @@ owns pytest execution, redacts both report formats and checks tree stability;
 importing an arbitrary historical JUnit is refused. Run native checks on a
 supported lab host before mapping; an unavailable native runner writes
 `NOT_RUN` and returns 2. Local alpha builds may retain this explicit limitation;
-the hosted packaging job requires native success. See `docs/ci-evidence.md`.
+the Actions packaging job requires native success. Active workflows select the
+dedicated Linux ARM64 self-hosted runner with no paid-hosted fallback; see
+`docs/ci-evidence.md`. Review that execution-policy change with Opus and retain
+actual Actions allocation, same-run producer/package artifacts and exact tested
+SHA before marking CI validated. Local wrapper runs remain local evidence.
 
 The builder performs two wheel/sdist builds, normalises sdist archive metadata,
 compares their SHA-256 hashes, and creates a source ZIP from an explicit public
@@ -69,8 +73,12 @@ names/versions go to advisory services. Source/history scans stay local and
 raw findings are excluded from release artifacts. Exit 2 means a required
 scanner did not run, and is never a clean scan. The source export check is a
 separate targeted check. Current availability and results are in
-`evidence/security-scans.json`. Hosted security CI is supplied but unexecuted
-here. Run `npm audit --prefix lab --legacy-peer-deps --json` for Node lab dependencies. Review all findings; do not add broad path exclusions for test fixtures.
+`evidence/security-scans.json`. The active security workflow uses the dedicated
+self-hosted runner and verifies the pinned Linux ARM64 Gitleaks release archive;
+workflow configuration alone is not a scan result. Its three-day Actions
+artifacts supplement durable private attempt copies on the runner host. Run
+`npm audit --prefix lab --legacy-peer-deps --json` for Node lab dependencies.
+Review all findings; do not add broad path exclusions for test fixtures.
 
 ## Before the first public upload
 
@@ -89,7 +97,7 @@ Complete the single publication register, `config/publication.pending.json`:
 5. Run `python tools/public_audit.py --publication`. It returns 2 until required
    publication inputs are recorded, and 1 for a public-export check failure.
 
-Create a reviewed tag `v0.1.0a16` only after those edits and final reruns. Review
+Create a reviewed tag `v0.1.0a17` only after those edits and final reruns. Review
 the exact GitHub Actions run for that commit and clearly disclose unavailable
 native/real-source checks in the prerelease notes. Source-only alpha evaluation
 is possible while such gaps remain, but stable production support is not claimed.

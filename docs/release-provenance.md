@@ -34,6 +34,17 @@ R12 scope and do not prove Docker or packaged-wheel service execution.
 
 ## Deliberate hosted issuance
 
+Routine CI now targets the dedicated Linux ARM64 self-hosted runner, with no
+hosted fallback; see [ci-evidence.md](ci-evidence.md). This changes the execution
+policy for unsigned candidate validation and requires Opus review. It does not
+change the optional signed-attestation consumer policy below. The inactive
+attestation/publication templates still contain hosted jobs and remain disabled.
+Before enabling either, the owner must separately review runner routing and the
+signing trust boundary. The existing verifier continues to reject self-hosted
+signers with `--deny-self-hosted-runners`; do not remove that check merely to
+make a self-hosted attestation pass. Unsigned self-hosted Actions packaging can
+be validated while this optional signing-policy decision remains pending.
+
 `release/attest.yml.example` is an **inactive template**, outside live workflows.
 It creates no attestation until an owner deliberately installs it as
 `.github/workflows/attest.yml`, configures the repository and enables it. No
@@ -77,9 +88,9 @@ itself. It never accepts a caller-supplied JSON report as evidence.
 ```bash
 export ZABALACK_RELEASE_REPOSITORY='<approved-owner>/<approved-repository>'
 export ZABALACK_RELEASE_COMMIT='<reviewed-40-hex-commit>'
-python tools/verify_attestation.py dist/pypi/zabalack-0.1.0a16-py3-none-any.whl \
+python tools/verify_attestation.py dist/pypi/zabalack-0.1.0a17-py3-none-any.whl \
   --repo "$ZABALACK_RELEASE_REPOSITORY" \
-  --source-ref refs/tags/v0.1.0a16 \
+  --source-ref refs/tags/v0.1.0a17 \
   --source-digest "$ZABALACK_RELEASE_COMMIT"
 ```
 

@@ -895,3 +895,25 @@ Nothing in the review's own environment is restated as this project's evidence,
 and no historical artifact was patched in place: the corrections are made in this
 candidate, whose checksums and artifacts are regenerated, exactly as the review
 instructed.
+
+
+## R22 — 0.1.0a17: explicit integrated recovery candidate identity
+
+The integrated PR25 correction changes how ambiguous remote write errors remain
+uncertain, suspends delivery while permitting read-only reconciliation, and couples
+the runtime to migration 010's recovery capability (A6). Its preceding a16-labelled
+Actions snapshot remains distinct from the earlier qualified PR24 a16 wheel.
+The new candidate therefore receives version a17 before artifact qualification.
+
+This version/export metadata update adds no runtime feature and changes no SQL
+body or dependency pin. It deliberately changes source/harness identities; old
+evidence stays historical and cannot satisfy the new builder by relabelling.
+Obtain final-input required Actions and authentic producer/package evidence, then
+qualify that exact wheel's affected installed recovery behavior. Preserve original
+failures and skipped/unavailable layers. A reviewed implementation is not formal
+GitHub approval, and local service results do not close deployment gates.
+
+The a16 narrative and qualified artifacts are retained. Native x64 remains deferred;
+installed-account permissions, current security review, owner publication inputs
+and all applicable beta, amendment and deployment requirements remain open.
+No tag, upload, merge, release or deployment is authorized by this amendment.

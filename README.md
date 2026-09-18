@@ -1,6 +1,6 @@
 # Zab-al-ack
 
-**0.1.0a16 · public alpha candidate · development and isolated evaluation**
+**0.1.0a17 · public alpha candidate · development and isolated evaluation**
 
 Formerly **Ackline**. 0.1.0a9 renamed the package, CLI, Alerta entry points,
 configuration, services, database namespace and signing domain to `zabalack`;
@@ -13,7 +13,7 @@ the installed wheel) and supplies the non-Docker runners it used (R14). See the
 **Fresh installation namespace:** this is not an in-place Ackline upgrade.
 Installation refuses an existing `ackline` schema; old ledgers and proofs must
 be retained unchanged. New signatures cannot validate old proofs. Migrations
-001–007 form the new `zabalack` baseline, schema version 3; archived Ackline
+001–008 form the new `zabalack` baseline, schema version 4; archived Ackline
 migration history remains immutable. Original a8 artifacts and evidence are
 preserved separately in the complete handoff.
 

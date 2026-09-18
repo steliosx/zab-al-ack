@@ -1,9 +1,12 @@
 """Offline runner checks; these are not native service evidence."""
 import importlib.util
 import json
+import os
 from pathlib import Path
+import stat
 import subprocess
 import sys
+from types import SimpleNamespace
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -57,6 +60,55 @@ assert Path(zabbix_roles.__file__).resolve().is_relative_to(root)
 """
     subprocess.run([sys.executable, "-I", "-c", probe, str(destination)],
                    cwd=destination, check=True, capture_output=True, timeout=30)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Build-context permission modes require POSIX")
+def test_staged_context_remains_traversable_under_private_umask(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    inputs = ["pyproject.toml", "README.md", "LICENSE", "NOTICE", "MANIFEST.in", "requirements.lock",
+              "src/product.py", "src/package/nested/helper.py", "sql/migrate.py", "sql/install/nested/schema.sql",
+              "lab/deployment_e2e.Dockerfile",
+              "lab/deployment_e2e_runtime.py", "lab/zabbix_roles.py", "zabbix/media.yaml",
+              "zabbix/templates/nested/media.yaml", "tests/deployment_e2e/test_service_path.py",
+              "tests/deployment_e2e/nested/test_helpers.py"]
+    for name in inputs:
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("synthetic source: " + name)
+        path.chmod(0o600)
+        for directory in (path.parent, *path.parent.parents):
+            if not directory.is_relative_to(source):
+                break
+            directory.chmod(0o700)
+    source_modes = {path.relative_to(source): stat.S_IMODE(path.stat().st_mode)
+                    for path in (source, *source.rglob("*"))}
+    source_bytes = {name: (source / name).read_bytes() for name in inputs}
+    monkeypatch.setattr(runner, "ROOT", source)
+    private = tmp_path / "private"
+    private.mkdir(mode=0o700)
+    private.chmod(0o700)
+    runner.protected(private / "bootstrap.json", "synthetic-private-input")
+    destination = private / "context"
+    previous_umask = os.umask(0o077)
+    try:
+        runner.staged_context(destination)
+    finally:
+        os.umask(previous_umask)
+
+    assert {path.relative_to(source): stat.S_IMODE(path.stat().st_mode)
+            for path in (source, *source.rglob("*"))} == source_modes
+    assert {name: (source / name).read_bytes() for name in inputs} == source_bytes
+    # Normalize every staged nonsecret file and nested directory, even when
+    # source modes and the host umask are private. Docker changes their owner.
+    for directory in [destination, *[path for path in destination.rglob("*") if path.is_dir()]]:
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o755, directory.relative_to(destination)
+    for name in inputs:
+        assert (destination / name).read_bytes() == source_bytes[name]
+        assert stat.S_IMODE((destination / name).stat().st_mode) == 0o644
+    assert stat.S_IMODE(private.stat().st_mode) == 0o700
+    assert stat.S_IMODE((private / "bootstrap.json").stat().st_mode) == 0o600
+    assert (private / "bootstrap.json").read_text() == "synthetic-private-input"
+    assert not (destination / "bootstrap.json").exists()
 
 
 def test_opt_in_required_before_docker(monkeypatch):
@@ -116,6 +168,86 @@ def test_compose_can_only_reach_fresh_project_services(tmp_path):
                 assert Path(mount["source"]).is_relative_to(tmp_path)
                 assert "docker.sock" not in mount["source"]
     assert spec["services"]["postgres"]["environment"]["POSTGRES_HOST_AUTH_METHOD"] == "scram-sha-256"
+
+
+def test_runner_identity_uses_private_owner_without_posix_process_queries(tmp_path, monkeypatch):
+    original_stat = Path.stat
+
+    def private_owner(path, **kwargs):
+        if path == tmp_path:
+            return SimpleNamespace(st_uid=1234, st_gid=5678)
+        return original_stat(path, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", private_owner)
+    # Compose construction also runs in offline Windows checks where these
+    # process APIs do not exist. The generated directory supplies both IDs.
+    monkeypatch.delattr(os, "geteuid", raising=False)
+    monkeypatch.delattr(os, "getegid", raising=False)
+    spec = runner.compose_spec(tmp_path, tmp_path / "context", "zabalack-e2e-0123456789ab")
+    assert spec["services"]["runner"]["user"] == "1234:5678"
+    assert all("user" not in service for name, service in spec["services"].items() if name != "runner")
+
+
+def generated_bootstrap(private):
+    private.mkdir(mode=0o700)
+    runner.protected(private / "bootstrap.json", json.dumps({
+        "isolated_lab": True, "project": "zabalack-e2e-0123456789ab",
+        "passwords": dict.fromkeys(("alerta_app", "zabalack_worker", "zabalack_probe", "zabalack_operator",
+                                    "migrator", "human", "ingest", "outside", "admin"), "synthetic-password"),
+    }))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Numeric child identity requires POSIX")
+def test_compose_identity_can_read_bootstrap_and_write_host_readable_private_output(tmp_path):
+    """Exercise real child credentials and unchanged protected-file checks, without Docker."""
+    private = tmp_path / "private"
+    generated_bootstrap(private)
+    spec = runner.compose_spec(private, private / "context", "zabalack-e2e-0123456789ab")
+    uid, gid = map(int, spec["services"]["runner"].get("user", "0:0").split(":"))
+    probe = """import json, os, stat, sys
+from pathlib import Path
+root, private = map(Path, sys.argv[1:])
+sys.path[:0] = [str(root), str(root / 'src')]
+from lab import deployment_e2e_runtime as runtime
+from zabalack.config import read_protected_file
+runtime.PRIVATE = private
+os.environ['ACK_DEPLOYMENT_E2E'] = 'GENERATED_ISOLATED_PROJECT'
+assert runtime.require_generated_lab()['isolated_lab'] is True
+output = Path(runtime.secret('observations.json', json.dumps({'verified': True})))
+assert json.loads(read_protected_file(str(output))) == {'verified': True}
+assert output.stat().st_uid == os.geteuid()
+assert output.stat().st_gid == os.getegid()
+assert stat.S_IMODE(output.stat().st_mode) == 0o600
+"""
+    subprocess.run([sys.executable, "-I", "-c", probe, str(ROOT), str(private)],
+                   user=uid, group=gid, check=True, capture_output=True, timeout=30)
+    output = private / "observations.json"
+    assert json.loads(output.read_text()) == {"verified": True}
+    assert output.stat().st_uid == (private / "bootstrap.json").stat().st_uid == uid
+    assert output.stat().st_gid == (private / "bootstrap.json").stat().st_gid == gid
+    assert stat.S_IMODE(output.stat().st_mode) == stat.S_IMODE((private / "bootstrap.json").stat().st_mode) == 0o600
+    assert stat.S_IMODE(private.stat().st_mode) == 0o700
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Protected-file ownership checks require POSIX")
+def test_generated_bootstrap_rejects_mismatched_effective_owner(tmp_path, monkeypatch):
+    from lab import deployment_e2e_runtime as runtime
+    from zabalack.config import ConfigError
+
+    private = tmp_path / "private"
+    generated_bootstrap(private)
+    if private.stat().st_uid == 0:
+        pytest.skip("Root-owned secrets are intentionally accepted by the protected-file contract")
+    monkeypatch.setattr(runtime, "PRIVATE", private)
+    monkeypatch.setenv("ACK_DEPLOYMENT_E2E", "GENERATED_ISOLATED_PROJECT")
+    # Keep a real non-root-owned 0600 file/open; model the image's former root
+    # effective identity only at the runtime's ownership check.
+    with monkeypatch.context() as identity:
+        identity.setattr(os, "geteuid", lambda: 0)
+        with pytest.raises(ConfigError, match="secret_file_permissions"):
+            runtime.require_generated_lab()
+    assert runtime.require_generated_lab()["isolated_lab"] is True
+    assert stat.S_IMODE((private / "bootstrap.json").stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize("exit_code,failed,skipped", [(1, False, False), (0, True, False), (0, False, True)])
@@ -197,16 +329,20 @@ def test_cleanup_refuses_other_project_even_if_name_matches(monkeypatch):
         runner.stop_runner("zabalack-e2e-0123456789ab", "zabalack-e2e-0123456789ab-runner", {})
 
 
-@pytest.mark.parametrize("outcome", ["pass", "source_changed", "timeout", "interrupt"])
+@pytest.mark.parametrize("outcome", ["pass", "source_changed", "timeout", "interrupt", "pass_wheel", "wrong_wheel", "missing_receipt"])
 def test_owned_execution_cleanup_and_source_binding(tmp_path, monkeypatch, outcome):
     from types import SimpleNamespace
     import subprocess
     (tmp_path / "src").mkdir()
     (tmp_path / "src/product.py").write_text("baseline\n")
+    (tmp_path / 'pyproject.toml').write_text('[project]\nname="zabalack"\nversion="1.0"\n')
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(runner, "local_docker", lambda *_: None)
     monkeypatch.setattr(runner, "certificates", lambda path: (path / "ca").mkdir())
-    monkeypatch.setattr(runner, "staged_context", lambda path: path.mkdir())
+    monkeypatch.setattr(runner, "staged_context", lambda path, *_: path.mkdir())
+    wheel_identity = {'filename': 'zabalack-1.0-py3-none-any.whl', 'version': '1.0', 'sha256': 'a' * 64}
+    wheel_mode = outcome in ('pass_wheel', 'wrong_wheel', 'missing_receipt')
+    monkeypatch.setattr(runner, 'check_source', lambda *_: (b'inert fixture', wheel_identity))
     seen = []
     active = {}
     def execute(command, **kwargs):
@@ -220,6 +356,11 @@ def test_owned_execution_cleanup_and_source_binding(tmp_path, monkeypatch, outco
             if outcome == "interrupt":
                 raise KeyboardInterrupt
             sample_result(private)
+            if wheel_mode and outcome != 'missing_receipt':
+                installed = {**wheel_identity, 'installed_bytes_verified': True}
+                if outcome == 'wrong_wheel':
+                    installed['sha256'] = 'b' * 64
+                (private / 'installed-wheel.json').write_text(json.dumps(installed))
             if outcome == "source_changed":
                 (tmp_path / "src/product.py").write_text("changed after execution\n")
         return SimpleNamespace(returncode=0)
@@ -232,10 +373,12 @@ def test_owned_execution_cleanup_and_source_binding(tmp_path, monkeypatch, outco
             "com.docker.compose.project": active["project"], "com.docker.compose.service": "runner"}}}])
     monkeypatch.setattr(runner.subprocess, "run", execute)
     monkeypatch.setattr(runner.subprocess, "check_output", read)
-    code = runner.main(["--isolated-lab"])
+    code = runner.main(["--isolated-lab"] + (["--wheel", "inert.whl", "--wheel-sha256", "a" * 64] if wheel_mode else []))
     report = json.loads((tmp_path / "evidence/deployment-e2e-run.json").read_text())
-    assert code == (0 if outcome == "pass" else 1)
-    assert report["status"] == ("PASS" if outcome == "pass" else "FAIL")
+    assert code == (0 if outcome in ("pass", "pass_wheel") else 1)
+    assert report["status"] == ("PASS" if outcome in ("pass", "pass_wheel") else "FAIL")
+    if outcome == 'pass_wheel':
+        assert report['supplied_wheel'] == {**wheel_identity, 'installed_bytes_verified': True}
     assert report["runner_shutdown_exit_code"] == 0 and report["shutdown_exit_code"] == 0
     assert ["docker", "stop", "--time", "10", "b" * 64] in seen
     assert any("compose" in command and "stop" in command for command in seen)

@@ -1,22 +1,35 @@
-# Quality-only wheels inspected on 2026-09-11; CPython 3.12, Linux x86_64.
+# Quality-only wheels: CPython 3.12, Linux x86_64 and aarch64.
+# x86_64 inspected 2026-09-11; aarch64 added and byte-verified 2026-09-16.
 # Each SHA256 was checked against the matching official PyPI release JSON.
 # See requirements-quality.in and docs/quality-checks.md for scope/update steps.
 
 # https://pypi.org/pypi/ast_serialize/0.11.1/json
 # ast_serialize-0.11.1-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-ast-serialize==0.11.1 --hash=sha256:3eebd3dd25a81839ac7d25b5f3fb3527f6141b35eca29f63d2613fe6254307fd
+# ast_serialize-0.11.1-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+ast-serialize==0.11.1 \
+    --hash=sha256:3eebd3dd25a81839ac7d25b5f3fb3527f6141b35eca29f63d2613fe6254307fd \
+    --hash=sha256:8945557ed3015173dbf8d44184da9621add9162720acbc0ac4832b5a091b4e8a
 
 # https://pypi.org/pypi/hypothesis/6.168.0/json
 # hypothesis-6.168.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-hypothesis==6.168.0 --hash=sha256:5920d267f7d8cfd376672f2bde5905cdf284d47519582e41ce7c142d48ee46c4
+# hypothesis-6.168.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+hypothesis==6.168.0 \
+    --hash=sha256:5920d267f7d8cfd376672f2bde5905cdf284d47519582e41ce7c142d48ee46c4 \
+    --hash=sha256:76d4d36ed2fd62de11382f1d608169c1ffa9a49d3b9351146d8ff87cb81a66f7
 
 # https://pypi.org/pypi/librt/0.15.0/json
 # librt-0.15.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
-librt==0.15.0 --hash=sha256:89cc46cfd15022e35084355478c9ac809d90b1152222706ac9a7655ec21df6fa
+# librt-0.15.0-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
+librt==0.15.0 \
+    --hash=sha256:89cc46cfd15022e35084355478c9ac809d90b1152222706ac9a7655ec21df6fa \
+    --hash=sha256:c802434092b769b1d613ed2e13fac15fbfce1934a74bd10283b03c0fae231cd1
 
 # https://pypi.org/pypi/mypy/2.3.1/json
 # mypy-2.3.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
-mypy==2.3.1 --hash=sha256:858fc57d3d91fa728e33e7ad71def60fc6272694607b306cd3292db53ae39080
+# mypy-2.3.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
+mypy==2.3.1 \
+    --hash=sha256:858fc57d3d91fa728e33e7ad71def60fc6272694607b306cd3292db53ae39080 \
+    --hash=sha256:ff715e45b2231a8e85de1d163d1b42791e4d7aab8f5145f85fee1b710b735aff
 
 # https://pypi.org/pypi/mypy_extensions/1.1.0/json
 # mypy_extensions-1.1.0-py3-none-any.whl
@@ -28,7 +41,10 @@ pathspec==1.1.1 --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bb
 
 # https://pypi.org/pypi/ruff/0.16.7/json
 # ruff-0.16.7-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-ruff==0.16.7 --hash=sha256:9ce7f8f22df67c93ed96c717f9128eadb797144ac2bad475cf536f31d6100c55
+# ruff-0.16.7-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+ruff==0.16.7 \
+    --hash=sha256:9ce7f8f22df67c93ed96c717f9128eadb797144ac2bad475cf536f31d6100c55 \
+    --hash=sha256:4c196c968874fc8019da8e7163de7a1a370f111e2309b4b7dfea0fce950198d0
 
 # https://pypi.org/pypi/sortedcontainers/2.4.0/json
 # sortedcontainers-2.4.0-py2.py3-none-any.whl

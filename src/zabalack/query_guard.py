@@ -1,0 +1,246 @@
+"""Refuse reader queries that can inspect restricted staging (A5, T40).
+
+Excluding the intent from response bodies closes what a reader is *handed*, not
+what a reader can *ask*. Alerta's alert query builder compiles several forms that
+read the stored attribute without returning it:
+
+* `attributes.<key>:<term>` and its `_.<key>` alias compile to
+  `"attributes"::jsonb ->>%(key)s ILIKE %(term)s`, and `->>` on a JSON object
+  yields the object's whole serialised text, so the predicate matches a substring
+  anywhere inside the intent. The phrase and sub-expression forms compile to the
+  same shape.
+* `_exists_:<key>` compiles to `"attributes"::jsonb ? %(key)s`.
+* `?attributes.<key>=<value>` is a direct filter compiling to
+  `attributes @> %(attr_<key>)s`; `attributes` is absent from the builder's
+  `EXCLUDE_FROM_QUERY`, so it reaches that branch.
+* `sort-by=attributes.<key>` orders by the extracted value.
+* `group-by=attributes` makes the aggregate endpoints select and return the whole
+  attributes object as a plain dictionary, bypassing serialisation entirely.
+* `q.df=attributes` turns a bare term into a whole-column `ILIKE`.
+
+The guard installs at the shared alert query-builder boundary, before SQL is
+generated, so the list, history, count and aggregate endpoints are covered by one
+control rather than each view separately. It validates *resolved* fields — the
+query string is parsed and the produced SQL and bound parameters are inspected —
+because a substring blacklist over the raw text cannot see through aliases,
+nesting or the default field.
+
+Ordinary keyed attribute searches, sorting and grouping are preserved. Only the
+restricted key and whole-`attributes` operations are refused, with a stable
+`400` that does not depend on whether any alert or intent exists, so the refusal
+itself is not an oracle. It applies to every API reader including administrators,
+and remains after retirement ships: it is what protects the interval in which a
+staged intent is committed but the acknowledgement has not finished.
+"""
+from __future__ import annotations
+
+import re
+from typing import Any, Callable, Iterable
+
+from .crypto import INTENT_ATTRIBUTE
+
+RESTRICTED_ATTRIBUTES = frozenset({INTENT_ATTRIBUTE})
+# Reserved request parameters upstream never treats as direct filters.
+_NON_FILTER_PARAMS = frozenset({'q', 'q.df', 'sort-by', 'group-by', 'callback', 'id',
+                               'from-date', 'to-date', 'page', 'page-size', 'limit',
+                               'show-raw-data', 'show-history', '_', 'token', 'api-key'})
+ATTRIBUTE_COLUMN = "attributes"
+# A stable, content-free refusal. It must not reveal whether the selector matched
+# anything, or the refusal becomes the oracle it is meant to remove.
+REFUSAL = "Query selector is not permitted on restricted attributes"
+
+# `"attributes"::jsonb ->>%(p)s` and `"attributes"::jsonb ? %(p)s`, the two
+# keyed forms the parser emits for attribute access.
+_KEYED = re.compile(r'"attributes"::jsonb\s*(?:->>|\?)\s*%\((\w+)\)s')
+# Quoted or bare, in any casing: a substituted default field can inject
+# `attributes::text` with no quotes at all.
+_ATTRIBUTE_MENTION = re.compile(r'\battributes\b', re.IGNORECASE)
+# Upstream interpolates a sort key raw into `attributes->'{key}'` and a grouping
+# token raw into SELECT and GROUP BY, so anything that is not a plain name is
+# unsupported syntax and is refused rather than passed through.
+_SAFE_ATTRIBUTE_KEY = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')
+
+
+def _restricted(name: Any) -> bool:
+    return isinstance(name, str) and name in RESTRICTED_ATTRIBUTES
+
+
+def _components(field: str) -> list[str] | None:
+    """Split a selector, or return None if a `!` appears somewhere unsupported.
+
+    `filter_query` handles `!` in two different ways, and neither is the naive
+    one. Its column lookup strips *every* `!` before resolving the field, and its
+    negation test is `field.endswith('!')` — but that test is only reached for
+    non-attribute columns. `severity!` really does compile to
+    `"severity"!=%(not_severity)s`, while an attribute selector takes the earlier
+    `field.startswith('attributes.')` branch, where the key is built by
+    `field.replace('attributes.', '')`. So a trailing `!` on an attribute
+    selector is **not negation**: `attributes.runbook_url!` compiles to
+    `attributes @> {"runbook_url!": …}`, containment on a literal JSON key that
+    does not exist, matching nothing.
+
+    `attributes!.runbook_url` is different again — `startswith('attributes.')`
+    is false, so upstream reads it as a *whole-object* comparison on
+    `attributes`, even though stripping the marker globally makes it look like a
+    permitted keyed selector. Interpreting an input differently from upstream is
+    how a guard gets bypassed, so an unsupported placement is refused rather than
+    normalised. A trailing `!` is accepted and stripped before the key is
+    compared, which is conservative: `attributes.<restricted>!` is refused even
+    though upstream would have matched nothing.
+    """
+    if "!" in field.rstrip("!") or field.endswith("!!"):
+        return None
+    return field.rstrip("!").split(".")
+
+
+def _canonical_column(token: str) -> str:
+    """Resolve a column token the way PostgreSQL resolves an identifier.
+
+    An unquoted identifier folds to lower case, and a double-quoted one names the
+    column literally, so `ATTRIBUTES`, `Attributes` and `"attributes"` all reach
+    the same column. Comparing the raw spelling would miss every variant but one.
+    """
+    bare = token.strip()
+    if len(bare) >= 2 and bare[0] == '"' and bare[-1] == '"':
+        bare = bare[1:-1]
+    return bare.casefold()
+
+
+def _attribute_selector_refusal(components: list[str]) -> str | None:
+    """Apply the contract to one resolved `attributes[...]` selector.
+
+    Upstream keeps only the second component (`sort_by.split('.')[1]`) and
+    silently discards anything further, so `attributes.<restricted>.ignored`
+    would otherwise reach the restricted key through a spelling the guard did not
+    recognise. Unsupported forms are refused rather than normalised, and a bare
+    `attributes` is a whole-object operation.
+    """
+    if not components or _canonical_column(components[0]) != ATTRIBUTE_COLUMN:
+        return None
+    if len(components) == 1:
+        return REFUSAL  # whole-object selector
+    if len(components) > 2:
+        return REFUSAL  # unsupported syntax; upstream would discard the excess
+    key = components[1]
+    if not _SAFE_ATTRIBUTE_KEY.match(key):
+        # `sort_by_columns` interpolates the key straight into
+        # `attributes->'{key}'`, so a quote or operator escapes the literal.
+        return REFUSAL
+    return REFUSAL if _restricted(key) else None
+
+
+def selector_refusal(params: Any, parse: Callable[..., tuple[str, dict[str, Any]]] | None = None,
+                     supported_fields: Iterable[str] = ()) -> str | None:
+    """Return the refusal reason if these request parameters reach restricted staging."""
+    permitted_fields = {name for name in supported_fields
+                        if _canonical_column(name) != ATTRIBUTE_COLUMN}
+
+    for field in _keys(params):
+        if field in _NON_FILTER_PARAMS:
+            continue
+        components = _components(field)
+        if components is None:
+            return REFUSAL
+        refusal = _attribute_selector_refusal(components)
+        if refusal:
+            return refusal
+
+    for sort_by in _listed(params, "sort-by"):
+        components = _components(sort_by.lstrip("-"))
+        if components is None:
+            return REFUSAL
+        refusal = _attribute_selector_refusal(components)
+        if refusal:
+            return refusal
+
+    for group_by in _listed(params, "group-by"):
+        # The grouping token is interpolated into SELECT and GROUP BY with no
+        # upstream validation, and PostgreSQL reads a table-name reference as the
+        # whole row — `GROUP BY alerts` would select every column, attributes
+        # included. A plain identifier is therefore not a sufficient test; only
+        # an explicitly supported alert field is allowed through.
+        if group_by.strip() not in permitted_fields:
+            return REFUSAL
+
+    default_field = params.get("q.df")
+    if default_field is not None:
+        # `QueryParser.parse` substitutes this into the SQL *inside* the quotes of
+        # `"__default_field__"`, unquoted, so an arbitrary string becomes a raw
+        # expression. Only a supported field name is accepted, and never the
+        # attributes column itself.
+        if not isinstance(default_field, str) or default_field not in permitted_fields:
+            return REFUSAL
+
+    query = params.get("q", None)
+    if query and parse is not None:
+        try:
+            sql, variables = parse(query=query, default_field=params.get("q.df"))
+        except Exception:
+            # Malformed queries are the builder's own 400 to raise, not ours.
+            return None
+        return _sql_refusal(sql, variables)
+    return None
+
+
+def _sql_refusal(sql: str, variables: dict[str, Any]) -> str | None:
+    """Inspect generated SQL and its bound parameters for restricted access."""
+    for parameter in _KEYED.findall(sql):
+        if _restricted(variables.get(parameter)):
+            return REFUSAL
+    remainder = _KEYED.sub("", sql)
+    # Anything still naming the column operates on the whole object. The match is
+    # deliberately quote-insensitive: a substituted default field can introduce an
+    # unquoted `attributes::text`, which a quoted-spelling check would miss.
+    if _ATTRIBUTE_MENTION.search(remainder):
+        return REFUSAL
+    return None
+
+
+def _keys(params: Any) -> Iterable[str]:
+    try:
+        return list(params.keys())
+    except Exception:
+        return []
+
+
+def _listed(params: Any, name: str) -> Iterable[str]:
+    getlist = getattr(params, "getlist", None)
+    if getlist is not None:
+        try:
+            return [value for value in getlist(name) if isinstance(value, str)]
+        except Exception:
+            return []
+    value = params.get(name)
+    return [value] if isinstance(value, str) else []
+
+
+def is_installed(builder: Any) -> bool:
+    """Whether this builder's `from_params` is currently the guarded one.
+
+    Asked at the point of use rather than trusted from a flag set at start-up:
+    Alerta's `QueryBuilder.init_app` rebinds `qb.alerts` to a fresh class on
+    every call, so a second `create_app()` in one process replaces the object
+    this wrapped.
+    """
+    declared = builder.__dict__.get("from_params")
+    original = declared.__func__ if isinstance(declared, staticmethod) else getattr(builder, "from_params", None)
+    return bool(getattr(original, "_zabalack_guarded", False))
+
+
+def install(builder: Any, parser_factory: Callable[[], Any], api_error: Callable[..., Exception]) -> None:
+    """Wrap one alert query builder's `from_params` with the guard."""
+    declared = builder.__dict__.get("from_params")
+    original = declared.__func__ if isinstance(declared, staticmethod) else builder.from_params
+    if getattr(original, "_zabalack_guarded", False):
+        return
+
+    supported = tuple(getattr(builder, "VALID_PARAMS", {}) or ())
+
+    def from_params(params: Any, customers: Any = None, query_time: Any = None) -> Any:
+        reason = selector_refusal(params, parse=parser_factory().parse, supported_fields=supported)
+        if reason:
+            raise api_error(reason, 400)
+        return original(params, customers=customers, query_time=query_time)
+
+    from_params._zabalack_guarded = True  # type: ignore[attr-defined]
+    builder.from_params = staticmethod(from_params)

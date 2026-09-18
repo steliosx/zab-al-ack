@@ -11,7 +11,8 @@ import subprocess
 import threading
 import time
 
-SERVICES = {"postgres": (55432, 5432), "pgbouncer": (56432, 6432)}
+# Let the kernel select unused host ports; bridge service ports remain fixed.
+SERVICES = {"postgres": (0, 5432), "pgbouncer": (0, 6432)}
 MAX_CONNECTIONS = 128
 MAX_BUFFER = 1024 * 1024
 
@@ -89,7 +90,8 @@ class LoopbackRelay:
 
     def __init__(self, port: int):
         self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # On Linux, before listen(), two reuse-enabled sockets may bind the
+        # same address. Keep reuse disabled throughout this held reservation.
         try:
             self.listener.bind(("127.0.0.1", port))
         except BaseException:
@@ -210,6 +212,11 @@ class DockerLabRelays:
             self.__exit__(None, None, None)
             raise
         return self
+
+    @property
+    def ports(self):
+        """Actual host ports remain reserved by these same open sockets."""
+        return {service: relay.port for service, relay in self.relays.items()}
 
     def activate(self, compose, project, root):
         endpoints = owned_endpoints(compose, project, root)

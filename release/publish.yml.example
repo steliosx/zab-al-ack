@@ -15,7 +15,7 @@ env:
   TZ: UTC
 jobs:
   build:
-    if: github.ref == 'refs/tags/v0.1.0a16' && inputs.confirm_version == '0.1.0a16'
+    if: github.ref == 'refs/tags/v0.1.0a17' && inputs.confirm_version == '0.1.0a17'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read

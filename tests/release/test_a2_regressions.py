@@ -2,7 +2,6 @@
 import importlib.util
 import json
 from pathlib import Path
-import shlex
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -107,6 +106,7 @@ def test_native_runner_never_reuses_previous_junit(tmp_path, monkeypatch):
     import native_ci
     relay = MagicMock()
     relay.__enter__.return_value = relay
+    relay.ports = {'postgres': 43123, 'pgbouncer': 43124}
     monkeypatch.setattr(native_ci, 'DockerLabRelays', lambda: relay)
     raw = tmp_path / 'build/evidence-raw'
     public = tmp_path / 'evidence'
@@ -142,15 +142,23 @@ def test_utc_evidence_timestamp(source, expected):
     assert utc_timestamp(source) == expected
 
 
-def test_gitleaks_build_uses_inspected_upstream_version_symbol():
-    """Static workflow/manifest check; this does not run the Go compiler/scanner."""
+def test_gitleaks_arm64_binary_is_hash_verified_before_extraction_and_scanning():
+    """Static release-pin check; this does not claim a scanner execution."""
     data = yaml.safe_load((ROOT / '.github/workflows/security.yml').read_text())
     scripts = [step['run'] for step in data['jobs']['scan']['steps'] if 'run' in step]
-    command = next(shlex.split(script) for script in scripts if script.startswith('go install'))
     manifest = json.loads((ROOT / 'docs/gitleaks_reference_manifest.json').read_text())
-    assert command[-1] == manifest['module'] + '@' + manifest['commit']
-    assert '-ldflags=-X=' + manifest['module'] + '/cmd.Version=' + manifest['tag'][1:] in command
+    install = next(script for script in scripts if 'curl --fail' in script)
+    version = manifest['tag'][1:]
+    assert f'https://github.com/{manifest["repository"]}/releases/download/{manifest["tag"]}/gitleaks_{version}_linux_arm64.tar.gz' in install
+    assert 'test "$(uname -m)" = aarch64' in install
+    assert '5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07' in install
+    assert install.index('sha256sum --check --strict') < install.index('tar --extract')
+    assert install.rstrip().endswith('--no-same-owner gitleaks')
+    assert not any('go install' in script for script in scripts)
     assert any('version | grep -x ' + manifest['tag'][1:] in script for script in scripts)
+    scan = next(script for script in scripts if 'tools/security_scan.py' in script)
+    assert '--gitleaks "$RUNNER_TEMP/gitleaks/gitleaks"' in scan
+    assert scripts.index(install) < scripts.index(scan)
 
 
 @pytest.mark.parametrize('root_user,existing', [(False, False), (True, False), (False, True)],

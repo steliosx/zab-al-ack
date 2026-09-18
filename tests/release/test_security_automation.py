@@ -27,7 +27,7 @@ def test_codeql_upload_permission_is_only_in_the_analysis_job():
     assert set(value['jobs']) == {'analyze'}
     job = value['jobs']['analyze']
     assert job['permissions'] == {'contents': 'read', 'security-events': 'write'}
-    assert job['runs-on'] == 'ubuntu-24.04'
+    assert job['runs-on'] == ['self-hosted', 'Linux', 'ARM64', 'zabalack']
     assert 1 <= int(job['timeout-minutes']) <= 30
 
 
@@ -44,9 +44,12 @@ def test_codeql_pins_interpreted_languages_and_engine_without_building_project()
         'tools': 'linked', 'queries': 'security-extended', 'debug': 'false',
     }
     run_steps = [step for step in steps if 'run' in step]
-    assert len(run_steps) == 1
-    assert run_steps[0]['run'] == 'test "$CODEQL_VERSION" = \'2.27.0\''
-    assert run_steps[0]['env'] == {'CODEQL_VERSION': '${{ steps.codeql.outputs.codeql-version }}'}
+    # The persistent-runner trust gate, then the version check: still nothing
+    # that builds or executes the analysed project.
+    assert len(run_steps) == 2
+    assert 'test "$EVENT" != pull_request' in run_steps[0]['run']
+    assert run_steps[1]['run'] == 'test "$CODEQL_VERSION" = \'2.27.0\''
+    assert run_steps[1]['env'] == {'CODEQL_VERSION': '${{ steps.codeql.outputs.codeql-version }}'}
     assert all('continue-on-error' not in step for step in steps)
 
 

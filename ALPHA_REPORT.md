@@ -1,3 +1,27 @@
+# Zab-al-ack 0.1.0a17 — integrated recovery candidate
+
+This is an unpublished candidate under qualification, not beta acceptance.
+It assigns a new version to PR25's integrated correction so that the previously
+qualified a16 wheel is never silently replaced. The runtime/SQL correction and
+its source-backed rationale are in [COLD_SOURCE_FAILURE](docs/COLD_SOURCE_FAILURE.md).
+Forward migration 010 requires explicit resealing and the runtime health gate;
+schema 4, prior migration bytes, grants and dependency pins remain unchanged.
+
+The preceding PR25 head `1f23cc25a0c4b386f4799a7cc71bd3f1c6451e21`
+passed Actions35300274553/1 (native311, reference1465/47 skipped, mutation12,
+quality/package) with privately retained producer-to-package proof. Those
+results establish that revision only. Version/export metadata changes affect
+source and harness digests, so a17 needs its own required producer/package run
+and affected supplied-wheel recovery qualification; no historical report is
+relabeled. Current status and owner decisions are in [BETA_READINESS](docs/BETA_READINESS.md).
+
+CodeQL was skipped; a separate current whole-repository security report is
+unavailable. Independent technical review is distinct from GitHub approval.
+Native x64 remains deferred. Installed-account A4/G5, A2, T30/G1–G8 and
+publication/independent-review requirements remain open as applicable.
+
+## Historical a16 report (retained verbatim below)
+
 # Zab-al-ack 0.1.0a16 — the a15 review verified and adopted
 
 This candidate takes the independent review of a15, reproduces each of its

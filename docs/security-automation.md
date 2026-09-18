@@ -46,6 +46,15 @@ disabled. SARIF may contain source locations or code; apply the repository's
 source visibility policy before enabling uploads. Keep private inventories,
 raw operational logs and runtime secrets out of every checkout.
 
+Active CodeQL and dependency/secret jobs now select the dedicated repository
+Linux ARM64 self-hosted runner with no paid-hosted fallback. This execution
+policy needs Opus review alongside the CI migration. Existing CodeQL enablement,
+permissions, query scope and ingestion requirements are unchanged; routing a
+skipped job does not establish a clean scan. The pinned CLI 2.27.0/action support
+native Linux ARM64. Validate host capacity and actual allocation before claiming
+execution, and preserve private failed/interrupted attempts through the trusted
+host hooks described in [self-hosted-runner.md](self-hosted-runner.md).
+
 Action `v4.38.0` is pinned to its full commit. `tools: linked` selects CLI
 `2.27.0` and its bundled queries from that commit's defaults; an explicit version
 check rejects a different CLI. This does not independently hash-verify the
@@ -67,9 +76,10 @@ or Zabbix JSON-RPC constraint. Native role tests, isolated end-to-end tests and
 G1–G8 remain necessary. A successful workflow means analysis completed; it does
 not by itself mean zero alerts or a passed merge-protection policy.
 
-For this candidate, workflow contract tests ran locally. Hosted CodeQL analysis,
-SARIF ingestion, repository rulesets and alert triage are **NOT_RUN**. No scan
-result from another checkout is adopted as a result for this one.
+Historical workflow contract tests were local; the self-hosted routing change
+does not establish CodeQL execution, SARIF ingestion, repository ruleset
+enforcement or alert triage. Record each actual final-candidate run separately.
+No scan result from another checkout is adopted as a result for this one.
 
 References: [GitHub's advanced setup guidance](https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/customizing-your-advanced-setup-for-code-scanning),
 [pinned action interfaces](https://github.com/github/codeql-action/tree/b96794f015dfd88f77b49b1c93e0fa7110f94c63).

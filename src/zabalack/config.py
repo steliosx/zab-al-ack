@@ -47,6 +47,11 @@ class Settings:
     background_overall_timeout_seconds: float = 20
     fast_cycle_seconds: int = 60
     fast_budget: int = 200
+    # The retirement sweep's own statement budget: its scan of public.alerts
+    # is bounded by the installed table, not by an index (see
+    # docs/deployment_acceptance.md, T41). Seconds; the worker's other calls
+    # keep their 3-second statement timeout.
+    retirement_timeout_seconds: int = 30
     nightly_cycle_seconds: int = 86400
     recent_terminal_seconds: int = 86400
     host_inventory_seconds: int = 900
@@ -125,6 +130,9 @@ def validate_settings(settings: Settings) -> Settings:
         raise ConfigError("coordination_profile_change_requires_reviewed_SQL_migration")
     if not 1 <= settings.verifier_slots <= 32 or not 1 <= settings.fast_budget <= 200:
         raise ConfigError("invalid_capacity")
+    if (isinstance(settings.retirement_timeout_seconds, bool) or not isinstance(settings.retirement_timeout_seconds, int)
+            or not 3 <= settings.retirement_timeout_seconds <= 900):
+        raise ConfigError("retirement_timeout_bound")
     if not 0 < settings.health_cache_seconds <= 5:
         raise ConfigError("health_cache_bound")
     for name in ("connect_timeout_seconds", "read_timeout_seconds", "overall_timeout_seconds",
