@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package": "zabalack",
-  "package_version": "0.1.0a16",
+  "package_version": "0.1.0a17",
   "files": [
     {
       "path": "sql/install/00_roles.sql",

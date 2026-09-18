@@ -1,6 +1,6 @@
 # Beta readiness
 
-The current candidate is 0.1.0a16. A beta requires the intended automation to
+The candidate under qualification is 0.1.0a17. A beta requires the intended automation to
 execute successfully on its exact commit in supported environments, plus the
 publication-owner inputs. See `ALPHA_REPORT.md` for current executed results.
 The original a16 release narrative below is historical. Its reference, mutation,
@@ -70,7 +70,26 @@ native 42 passed (walkthrough case added to the native `alerta` phase), real
 Zabbix 5 passed, deployment lab 4 passed from the installed a12 wheel; browser
 captures added, including a real Zabbix frontend screenshot of the lab event.
 
-## Current ARM64 qualification assessment (18 September 2026)
+## a17 revalidation decision (18 September 2026)
+
+PR25 assigns version `0.1.0a17` to the integrated correction. This version change
+does not change SQL, dependency pins or recovery behavior relative to head
+`1f23cc25a0c4b386f4799a7cc71bd3f1c6451e21`, but it changes the source/harness
+identities used by export validation. Freeze these inputs before the new required
+Actions producer/package run; do not rebind the completed a16-labelled run.
+Keep both a16 artifacts and all failed/interrupted attempts at their actual hashes.
+
+Remaining technical qualification for a17: authentic final-input Actions and
+producer/package proof, one exact supplied-wheel installed path, bounded cold-source
+and conservative API-error recovery observations, and applicable final local gates.
+Test the retained wheel without silently rebuilding it. A naturally successful
+cold pair is not proof that the upstream allocator race is fixed; an unobserved
+failure path remains unobserved unless separately exercised and labelled.
+Do not repeat the historical 500-case warmed batch or unchanged scanner scopes
+merely because the candidate version changed. Required check names and evidence
+binding rules remain intact. The owner decisions and release sequence below apply.
+
+## Historical PR24 ARM64 qualification assessment (18 September 2026)
 
 The frozen candidate is PR #24 head
 `7ae972e8488ab9602c60a4895a98e1204d534207`, base

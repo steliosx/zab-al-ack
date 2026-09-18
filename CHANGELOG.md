@@ -1,5 +1,21 @@
 # Zab-al-ack changelog
 
+## 0.1.0a17 — 2026-09-18 (qualification candidate, unpublished)
+
+- Give the integrated recovery correction an explicit new artifact identity;
+  preserve the previously qualified a16 wheel and every historical run unchanged.
+- Retain uncertain writes after ambiguous Zabbix API errors, suspend delivery,
+  allow read-only reconciliation and require forward migration 010's capability.
+  Earlier migrations, grants, explicit resealing and dependency pins remain fixed.
+- Include the integrated reconciliation, diagnostics, private evidence retention,
+  isolated network lifecycle, Actions provenance and supplied-wheel qualification
+  changes documented in their reviewed PRs. No new product feature is added here.
+- Capture private WASM socket diagnostics and execute the missing forward-migration
+  WASM regression. The earlier intermittent connection-refusal cause is unresolved.
+- Required checks and affected installed-wheel/cold-source qualification must bind
+  to a17 inputs. The successful PR25 a16-labelled CI snapshot is historical; its
+  reports are not rewritten into a17 passes. See amendment R22 and the beta checklist.
+
 ## 0.1.0a16 — 2026-09-13
 
 Sixteenth alpha candidate, prepared locally and not published. Base: a15
