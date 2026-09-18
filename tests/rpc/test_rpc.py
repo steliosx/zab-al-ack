@@ -122,3 +122,45 @@ async def test_no_multiple_event_write_or_other_methods(endpoint):
         await client.call("event.acknowledge", {"eventids": ["12001", "12002"], "action": 6})
     with pytest.raises(RPCError, match="method_not_allowed"):
         await client.call("script.execute", {})
+
+
+@pytest.mark.parametrize("code", [-32500, -32603, -32400, -32300, -32700, 12345])
+@pytest.mark.parametrize("method", ["event.acknowledge", "event.get"])
+async def test_application_errors_never_establish_no_write_effect(endpoint, code, method):
+    requests = []
+    def handler(request):
+        data = json.loads(request.content)
+        requests.append(data)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": data["id"],
+            "error": {"code": code, "message": "private-upstream-text", "data": "private-data"}})
+    client = ZabbixClient(endpoint, transport=httpx.MockTransport(handler))
+    with pytest.raises(RPCError) as error:
+        await client.call(method, {"eventids": ["12001"], "action": 2})
+    assert error.value.reason == "api_application_error"
+    assert error.value.uncertain is (method == "event.acknowledge")
+    assert not error.value.transient
+    assert "private" not in str(error.value)
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("code", [-32600, -32601, -32602])
+async def test_verified_dispatch_rejections_are_settled(endpoint, code):
+    def handler(request):
+        data = json.loads(request.content)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": data["id"],
+            "error": {"code": code, "message": "private"}})
+    client = ZabbixClient(endpoint, transport=httpx.MockTransport(handler))
+    with pytest.raises(RPCError) as error:
+        await client.call("event.acknowledge", {"eventids": ["12001"], "action": 2})
+    assert error.value.reason == "api_permission_or_request_rejected"
+    assert not error.value.uncertain and not error.value.transient
+
+
+async def test_boolean_error_code_is_not_an_integer_rejection(endpoint):
+    def handler(request):
+        data = json.loads(request.content)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": data["id"], "error": {"code": True}})
+    client = ZabbixClient(endpoint, transport=httpx.MockTransport(handler))
+    with pytest.raises(RPCError, match="jsonrpc_error_invalid") as error:
+        await client.call("event.acknowledge", {"eventids": ["12001"], "action": 2})
+    assert error.value.uncertain

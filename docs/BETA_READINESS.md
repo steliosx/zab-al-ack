@@ -113,7 +113,11 @@ New documentation is not retroactively included in the qualified artifact.
   500 `ok`, 250 fresh writes/comments, 250 already-acknowledged no-write cases,
   with native service/database observations and separately retained failures.
   The warmed pass does not close the disclosed upstream cold-start ID-counter
-  race; its installed-source disposition remains open.
+  race. The [source-backed disposition and recovery correction](COLD_SOURCE_FAILURE.md)
+  identifies an additional product API-error classification defect. The frozen
+  wheel lacks that correction; a new candidate needs its own focused recovery,
+  migration, required Actions and installed-package qualification. Installed-source
+  cold-start acceptance remains open.
 - Completed bounded [ledger plan assessment](RETAINED_LEDGER_ASSESSMENT.md)
   on the 500-row same-run dataset. Production-like retained volume, state/age
   distribution, arrival/concurrency targets and SLOs remain owner inputs.

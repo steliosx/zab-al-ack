@@ -77,7 +77,8 @@ class Reconciler:
                 "instance": action["instance"], "worker_id": self.worker_id,
                 "background_generation": lease["lease_generation"],
                 "state": action["state"] if action["state"] in {"ok", "failed", "expired", "skipped"} else
-                    ("pending" if exc.transient or exc.reason == "event_missing_or_not_visible" else "failed"),
+                    ("pending" if action.get("uncertain") or exc.transient or
+                     exc.reason == "event_missing_or_not_visible" else "failed"),
                 "reason": "reconciliation_check_failed" if action["state"] in {"ok", "failed", "expired", "skipped"} else exc.reason,
                 "completion_evidence": action.get("completion_evidence"),
                 "check_failure": exc.reason, "preserve_delivery": action["state"] in {"ok", "failed", "expired", "skipped"},

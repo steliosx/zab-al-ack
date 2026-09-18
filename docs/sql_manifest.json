@@ -68,6 +68,10 @@
       "sha256": "b30a846b0291419dcb71b55b1285fa163b362394b8ed4f4bcc025fd56f709a29"
     },
     {
+      "path": "sql/migrations/010_ambiguous_api_failure.sql",
+      "sha256": "2c6bdf6618dd9d98d234f1dbb52ab0fcc1bbaa9d2ce75e62faa600796b7e20e3"
+    },
+    {
       "path": "sql/rollback/disable_trigger.sql",
       "sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
     },

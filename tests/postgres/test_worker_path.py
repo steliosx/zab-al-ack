@@ -185,6 +185,66 @@ async def test_T31_explicit_unknown_settlement_requires_evidence_then_separate_r
     assert row["state"] == "ok" and row["attempts"] == 2
 
 
+@pytest.mark.parametrize("source_effect", [False, True])
+@pytest.mark.asyncio
+async def test_T28_T29_application_error_suspends_but_stays_reconcilable(pg_lab, source_effect):
+    intent = seed(pg_lab, "81420" if source_effect else "81421")
+    db = RoleSelectedLabPostgres(pg_lab["admin_dsn"])
+    audit = {"actor_ref": "lab-operator", "change_ref": "LAB-API-ERROR", "instance": COHORT["zabbix_instance"]}
+    await db.operator("reset_circuit", audit)
+    class ApplicationFailure(SourceClient):
+        read_fails = False
+        async def acknowledge(self, event_id, **kwargs):
+            if source_effect:
+                await super().acknowledge(event_id, **kwargs)
+            else:
+                self.writes.append(event_id)
+            raise RPCError("api_application_error", uncertain=True)
+        async def event_get(self, event_id, cohort, **kwargs):
+            if self.read_fails:
+                raise RPCError("api_application_error")
+            return await super().event_get(event_id, cohort, **kwargs)
+    client = ApplicationFailure()
+    settings = Settings(external_writes_enabled=True, cohorts=(COHORT,))
+    worker = Worker(settings, db, {"lab": KEY}, registry=Registry(), client_factory=lambda _: client)
+    for _ in range(200):
+        if await db.call("inspect", {"action_id": intent["action_id"]}):
+            break
+        assert await worker.verify_once()
+    assert await worker.delivery_once()
+    row = (await db.call("inspect", {"action_id": intent["action_id"]}))[0]
+    assert row["state"] == "pending" and row["uncertain"]
+    with connect_role(pg_lab, "zabalack_owner") as conn:
+        assert conn.execute("SELECT circuit_open FROM zabalack.instance_control WHERE instance=%s", (COHORT["zabbix_instance"],)).fetchone()[0]
+        assert conn.execute("SELECT active FROM zabalack.incidents WHERE instance=%s AND failure_class='api_application_error'", (COHORT["zabbix_instance"],)).fetchone()[0]
+    # Retry and circuit reset do not establish remote settlement or enable replay.
+    await db.operator("retry", audit | {"action_id": row["action_id"]})
+    await db.operator("reset_circuit", audit)
+    assert await db.call("claim_delivery", {"worker_id": worker.worker_id, "action_id": row["action_id"]}) is None
+    recon = Reconciler(settings, db, Registry(), worker_id=worker.worker_id, client_factory=lambda _: client)
+    client.read_fails = True
+    assert await recon.reconcile_action(row)
+    row = (await db.call("inspect", {"action_id": row["action_id"]}))[0]
+    assert row["state"] == "pending" and row["uncertain"]
+    with connect_role(pg_lab, "zabalack_owner") as conn:
+        conn.execute("UPDATE zabalack.actions SET next_due=clock_timestamp()-interval '1 second',execute_before=clock_timestamp()-interval '1 second' WHERE action_id=%s", (row["action_id"],))
+        conn.execute("UPDATE zabalack.instance_control SET next_background_at=clock_timestamp()-interval '1 second',circuit_open=true WHERE instance=%s", (COHORT["zabbix_instance"],))
+    due = await db.call("reconcile_due", {"limit": 200})
+    row = next(x for x in due if x["action_id"] == row["action_id"])
+    assert row["uncertain"] and row["state"] == "pending"
+    client.read_fails = False
+    assert await recon.reconcile_action(row)
+    row = (await db.call("inspect", {"action_id": row["action_id"]}))[0]
+    assert len(client.writes) == 1
+    assert row["uncertain"] is (not source_effect)
+    assert row["state"] == ("ok" if source_effect else "pending")
+    if source_effect:
+        assert row["completion_evidence"] == "reference_observed"
+    with connect_role(pg_lab, "zabalack_owner") as conn:
+        assert conn.execute("SELECT circuit_open FROM zabalack.instance_control WHERE instance=%s", (COHORT["zabbix_instance"],)).fetchone()[0]
+    await db.operator("reset_circuit", audit)
+
+
 @pytest.mark.asyncio
 async def test_T9_expired_never_sent_effect_allows_later_explicit_action(pg_lab):
     intent = seed(pg_lab, "81404")
