@@ -917,3 +917,31 @@ The a16 narrative and qualified artifacts are retained. Native x64 remains defer
 installed-account permissions, current security review, owner publication inputs
 and all applicable beta, amendment and deployment requirements remain open.
 No tag, upload, merge, release or deployment is authorized by this amendment.
+
+## R23 — Coherent wheel build-tool correction
+
+The build requirement and installed development lock now both pin `wheel==0.48.0`.
+PR #2 changed only the former, leaving `requirements.lock` at 0.46.2. The
+[upstream release notes](https://wheel.readthedocs.io/en/stable/news.html)
+identify the fix for `wheel convert` output-path traversal (GHSA-vgq5-9859-3mmw).
+The repository builds its own source with setuptools and does not invoke that
+conversion command; this correction does not establish a runtime exploit path.
+
+The new PyPI wheel's actual bytes and metadata were inspected and hashed; its
+dated entry is appended to `tooling_reference_manifest.json`. Its Python >=3.9
+and packaging >=24 requirements are compatible with the existing Python 3.12
+target and packaging 26.3 pin. Other pins and the runtime, quality and scanner
+hash locks are unchanged. `requirements.lock` remains an exact-version lock
+without hashes; adding one isolated hash would enable pip's hash enforcement
+without supplying the other required hashes. Historical R1 and compatibility
+observations retain their original versions.
+
+This changes the harness binding, not the application or SQL bytes. Preserve the
+merged-main and retained e5c9e212 wheel results at their original identities.
+Before freezing a replacement candidate, obtain the required ARM64 Actions jobs
+and dependency/secret checks at the new revision, retain authentic producer and
+package records, and rebuild reproducibly with the corrected toolchain. Qualify
+the exact retained output non-editably with the installed migrations and reseal
+procedure, including affected recovery and reader cases. A Windows build smoke
+check is not ARM64, installed-environment or beta acceptance evidence. No old
+evidence is relabelled and no acceptance or publication gate is waived.
