@@ -485,8 +485,10 @@ def test_ci_package_waits_for_same_run_required_jobs_and_rebuilds_mapping():
         steps = workflow['jobs'][kind]['steps']
         commands = [step['run'] for step in steps if 'run' in step]
         prepare_index = commands.index(f'python tools/collect_ci_evidence.py prepare --kind {kind}')
-        assert prepare_index == 1  # Only fresh-venv setup precedes invalidation.
-        assert 'python -m venv "$RUNNER_TEMP/venv"' in commands[0]
+        # Only the trust gate and the fresh-venv setup precede invalidation.
+        assert prepare_index == 2
+        assert 'test "$EVENT" != pull_request' in commands[0]
+        assert 'python -m venv "$RUNNER_TEMP/venv"' in commands[1]
         assert 'python -m pip install --require-hashes -r requirements-quality.lock' in commands
         assert f'python tools/collect_ci_evidence.py pack --kind {kind}' in commands
         uploads = [step for step in steps if step.get('uses', '').startswith('actions/upload-artifact@')]
@@ -580,3 +582,42 @@ def test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner
         assert invocations == ['flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
                                f'python {runner} --isolated-lab' + retirement]
         assert not any('docker system prune' in script or 'down --volumes' in script for script in scripts)
+
+
+def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():
+    """Every privileged job stops an outside revision before it runs anything.
+
+    The jobs run on a persistent self-hosted runner whose account has
+    root-equivalent Docker access and owns the retained private attempts, so a
+    pull request from outside this repository must not reach a checkout. This
+    gate is defence in depth and not the trust boundary — a pull request can
+    edit this file — so `docs/self-hosted-runner.md` carries the boundary it
+    supplements. What is asserted here is that the gate exists, is first, and
+    is checked before any repository code is fetched or executed.
+    """
+    guarded = 0
+    for path in sorted((ROOT / '.github/workflows').glob('*.yml')):
+        workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+        for name, job in workflow['jobs'].items():
+            if job.get('runs-on') != ['self-hosted', 'Linux', 'ARM64', 'zabalack']:
+                continue  # Nothing else may use this runner; see the assertion below.
+            guarded += 1
+            name = f'{path.name}/{name}'
+            gate = job['steps'][0]
+            assert 'uses' not in gate, f'{name}: an action runs before the trust gate'
+            assert gate['env'] == {
+                'EVENT': '${{ github.event_name }}',
+                'HEAD_REPO': '${{ github.event.pull_request.head.repo.full_name }}',
+                'THIS_REPO': '${{ github.repository }}',
+            }, name
+            # Compared in the shell from the environment, never interpolated into
+            # the script, so a repository name cannot become part of the command.
+            assert 'test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"' in gate['run'], name
+            assert '${{' not in gate['run'], f'{name}: the gate interpolates into its own script'
+            checkout = next(index for index, step in enumerate(job['steps'])
+                            if step.get('uses', '').startswith('actions/checkout@'))
+            assert checkout > 0, f'{name}: checkout precedes the trust gate'
+    # Every job on the persistent runner, not only this workflow's: leaving one
+    # ungated would leave the exposure open through that workflow instead.
+    assert guarded == 8, guarded
+

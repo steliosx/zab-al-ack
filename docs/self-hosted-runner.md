@@ -22,7 +22,40 @@ architecture, artifact results and Opus technical review retained together.
 Install only the workflow dependencies and verified runner distribution.
 The service account's authorized Docker group membership permits synthetic
 local Docker labs; it is a host-privileged capability, not an isolation boundary
-against hostile repository code. Keep this repository's runner separate from
+against hostile repository code.
+
+## Which revisions may execute here
+
+Because that capability is not an isolation boundary, the control has to be on
+*which revisions reach the runner at all*, and it has to sit somewhere a pull
+request cannot edit.
+
+**The boundary is repository access.** This is a private repository; a fork of
+one requires read access, and a pull request can only come from a principal who
+already has it. Verified 2026-09-18: the repository has exactly one
+collaborator, `steliosx`, with the `admin` role. No other principal can open a
+pull request, so no untrusted revision can currently be proposed.
+
+**Before that changes**, and before granting anyone repository access, set
+Settings → Actions → General → *Fork pull request workflows from outside
+collaborators* to **Require approval for all outside collaborators**, and
+restrict the runner group so this runner is offered only to this repository's
+reviewed workflows. Both are repository settings; neither is in a file a pull
+request can rewrite. Treat adding a collaborator without them as granting that
+person the runner account's root-equivalent Docker access, its retained private
+attempts and its installed hooks.
+
+`.github/workflows/ci.yml` also refuses, as the first step of every job and
+before any checkout, a `pull_request` event whose head repository is not this
+one. That is **defence in depth and not the boundary**: the workflow file is
+part of the pull request, so a hostile revision could delete the step. It is
+worth keeping because it stops an unmodified outside pull request immediately
+and makes the requirement visible at the point of use, and
+`tests/release/test_ci_collection.py` fails if it is removed or reordered behind
+a checkout.
+
+There is still no GitHub-hosted fallback. Untrusted revisions are refused, not
+diverted to a paid hosted runner. Keep this repository's runner separate from
 other repositories, personal credentials, controller files and direct-agent
 editable environments. Do not copy personal GitHub or Codex credentials into
 the VM. Use the approved runner enrollment mechanism and retain only the

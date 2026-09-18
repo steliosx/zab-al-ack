@@ -21,6 +21,20 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, zabalack]
     timeout-minutes: 15
     steps:
+      - name: Refuse an untrusted revision on the persistent runner
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          # Defence in depth, not the trust boundary: a pull request can edit
+          # this file, so this cannot be the whole control. The boundary is
+          # repository access, recorded in docs/self-hosted-runner.md. What this
+          # does add is that an unmodified pull request from outside this
+          # repository stops here, before any checkout, and so never reaches the
+          # runner account's root-equivalent Docker access, its retained private
+          # attempts or its installed hooks.
+          test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
@@ -49,6 +63,20 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, zabalack]
     timeout-minutes: 15
     steps:
+      - name: Refuse an untrusted revision on the persistent runner
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          # Defence in depth, not the trust boundary: a pull request can edit
+          # this file, so this cannot be the whole control. The boundary is
+          # repository access, recorded in docs/self-hosted-runner.md. What this
+          # does add is that an unmodified pull request from outside this
+          # repository stops here, before any checkout, and so never reaches the
+          # runner account's root-equivalent Docker access, its retained private
+          # attempts or its installed hooks.
+          test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
@@ -77,6 +105,20 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, zabalack]
     timeout-minutes: 30
     steps:
+      - name: Refuse an untrusted revision on the persistent runner
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          # Defence in depth, not the trust boundary: a pull request can edit
+          # this file, so this cannot be the whole control. The boundary is
+          # repository access, recorded in docs/self-hosted-runner.md. What this
+          # does add is that an unmodified pull request from outside this
+          # repository stops here, before any checkout, and so never reaches the
+          # runner account's root-equivalent Docker access, its retained private
+          # attempts or its installed hooks.
+          test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
@@ -111,6 +153,20 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, zabalack]
     timeout-minutes: 60
     steps:
+      - name: Refuse an untrusted revision on the persistent runner
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          # Defence in depth, not the trust boundary: a pull request can edit
+          # this file, so this cannot be the whole control. The boundary is
+          # repository access, recorded in docs/self-hosted-runner.md. What this
+          # does add is that an unmodified pull request from outside this
+          # repository stops here, before any checkout, and so never reaches the
+          # runner account's root-equivalent Docker access, its retained private
+          # attempts or its installed hooks.
+          test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
@@ -149,6 +205,20 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64, zabalack]
     timeout-minutes: 15
     steps:
+      - name: Refuse an untrusted revision on the persistent runner
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          # Defence in depth, not the trust boundary: a pull request can edit
+          # this file, so this cannot be the whole control. The boundary is
+          # repository access, recorded in docs/self-hosted-runner.md. What this
+          # does add is that an unmodified pull request from outside this
+          # repository stops here, before any checkout, and so never reaches the
+          # runner account's root-equivalent Docker access, its retained private
+          # attempts or its installed hooks.
+          test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
