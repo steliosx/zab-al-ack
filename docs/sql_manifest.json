@@ -72,6 +72,10 @@
       "sha256": "557549c5a9abd30425303f23c49652562aaa5ad6ba3ee0f785f6154beab14258"
     },
     {
+      "path": "sql/migrations/011_late_ambiguous_suspension.sql",
+      "sha256": "47b4d98e1ec75cf1ddf32bf5985dab7ef6888489be6910bb09e0976b3c0de5be"
+    },
+    {
       "path": "sql/rollback/disable_trigger.sql",
       "sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
     },

@@ -59,6 +59,20 @@ An exact observed effect can settle the action without resetting the circuit.
 Ordinary retry, circuit reset, elapsed time and expiry cannot establish no effect.
 No direct grants, target expansion or retry middleware are introduced.
 
+Forward migration 011 preserves 001–010 and changes one branch of the same
+function. 010 suspends the instance where the reporting worker still holds its
+delivery lease; a report arriving after that lease expired returned from the
+late-response branch before the suspension and incident statements, so the
+action was fenced and the instance was not, and the next action on it wrote
+into a remote state nobody had established. 011 applies the same suspension and
+incident there, bounded to an attempt bound to that worker and generation and
+to an action still open, so an operator's explicit settlement and circuit reset
+are not overruled by a stale callback about the same attempt. Schema stays 4,
+grants are unchanged, the shipped body digest is updated and resealing is
+required, exactly as 010 requires. The worker capability gate is unchanged:
+011 strengthens behaviour 010 already advertises, so `api_error_recovery_version`
+stays 1 and the qualified worker runs against either.
+
 Install the forward migration and runtime together through the reviewed migration
 procedure with acknowledgement paths fenced and delivery disabled. Migration 010
 requires schema 4 and matching routine-body fingerprints, retains schema version
