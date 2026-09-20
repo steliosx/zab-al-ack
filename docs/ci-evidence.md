@@ -204,8 +204,12 @@ cross-run or cross-repository downloads.
 | `README.md` | `c088294825e648f9f1baf71deefd0a401984d97f0fc43d5c5be9a4ed64211639` |
 
 `tests/release/test_ci_collection.py` exercises synthetic artifacts and checks
-the workflow dependency/collection order. These are unit tests of the evidence
-boundary, not evidence that an Actions workflow, native lab or real Zabbix ran.
+the workflow dependency/collection order. `tests/release/test_pin_consistency.py`
+fails when any workflow or release-template action commit differs from the
+inspected commit in `ci_reference_manifest.json`, `upstream-codeql-manifest.json`
+or `upstream-attestation-manifest.json`, so a pin bump must carry a fresh
+inspection record. These are unit tests of the evidence boundary, not evidence
+that an Actions workflow, native lab or real Zabbix ran.
 
 The workflow can also be called by the deliberately inactive attestation template.
 That template uses the same required jobs and current-run evidence; see
