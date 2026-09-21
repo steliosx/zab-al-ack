@@ -56,6 +56,15 @@ BEGIN
  bg:=zabalack.worker_call('claim_background','{"instance":"lab-zabbix","worker_id":"reconciler"}');
  IF NOT (bg->>'allowed')::boolean THEN RAISE EXCEPTION 'background claim denied'; END IF;
  IF (zabalack.worker_call('claim_background','{"instance":"lab-zabbix","worker_id":"another"}')->>'allowed')::boolean THEN RAISE EXCEPTION 'background concurrency not bounded'; END IF;
+ -- 013: a reconciliation 'ok' with no completion_evidence key is refused like one with the wrong evidence.
+ BEGIN
+  PERFORM zabalack.worker_call('record_reconciliation',jsonb_build_object('action_id',d->>'action_id','instance','lab-zabbix','worker_id','reconciler','background_generation',bg->'lease_generation','state','ok','reason','no_evidence_supplied'));
+  RAISE EXCEPTION 'T29 reconciliation ok accepted without completion_evidence';
+ EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM<>'invalid reconciliation evidence' THEN RAISE; END IF;
+ END;
+ result:=zabalack.worker_call('inspect',jsonb_build_object('action_id',d->>'action_id'));
+ IF result->0->>'state'='ok' THEN RAISE EXCEPTION 'T29 evidence-free reconciliation became durable'; END IF;
  PERFORM zabalack.worker_call('record_reconciliation',jsonb_build_object('action_id',d->>'action_id','instance','lab-zabbix','worker_id','reconciler','background_generation',bg->'lease_generation','state','ok','reason','reference_observed','completion_evidence','reference_observed','uncertain',false));
  PERFORM zabalack.worker_call('record_reconciliation',jsonb_build_object('action_id',d->>'action_id','instance','lab-zabbix','worker_id','reconciler','background_generation',bg->'lease_generation','preserve_delivery',true,'check_failure','tls_failure'));
  result:=zabalack.worker_call('inspect',jsonb_build_object('action_id',d->>'action_id'));
@@ -64,6 +73,35 @@ BEGIN
  PERFORM zabalack.worker_call('record_host_inventory',jsonb_build_object('instance','lab-zabbix','worker_id','reconciler','background_generation',bg->'lease_generation','customer','Synthetic A','trigger_id','100','cohort_revision','lab-v1','reason','cohort_host_missing_or_not_visible','missing_ids',jsonb_build_array('10'),'next_cursor',0));
  PERFORM zabalack.worker_call('record_host_inventory',jsonb_build_object('instance','lab-zabbix','worker_id','reconciler','background_generation',bg->'lease_generation','customer','Synthetic A','trigger_id','100','cohort_revision','lab-v1','reason','host_inventory_ok','missing_ids','[]'::jsonb,'next_cursor',0));
  PERFORM zabalack.worker_call('finish_background',jsonb_build_object('instance','lab-zabbix','worker_id','reconciler','lease_generation',bg->'lease_generation'));
+ -- 013: with the lease released, a payload that names no worker cannot pass the
+ -- background fence: the three leased operations require worker_id, and an
+ -- absent lease is refused rather than compared NULL-for-NULL.
+ BEGIN
+  PERFORM zabalack.worker_call('record_reconciliation',jsonb_build_object('action_id',d->>'action_id','instance','lab-zabbix','background_generation',bg->'lease_generation','state','failed','reason','anonymous_caller'));
+  RAISE EXCEPTION 'T29 anonymous reconciliation passed the background fence';
+ EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM<>'worker_id required' THEN RAISE; END IF;
+ END;
+ BEGIN
+  PERFORM zabalack.worker_call('record_host_inventory',jsonb_build_object('instance','lab-zabbix','background_generation',bg->'lease_generation','customer','Synthetic A','trigger_id','100','cohort_revision','lab-v1','reason','host_inventory_ok','missing_ids','[]'::jsonb,'next_cursor',7));
+  RAISE EXCEPTION 'T29 anonymous host inventory passed the background fence';
+ EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM<>'worker_id required' THEN RAISE; END IF;
+ END;
+ BEGIN
+  PERFORM zabalack.worker_call('record_host_check',jsonb_build_object('instance','lab-zabbix','background_generation',bg->'lease_generation','customer','Synthetic A','trigger_id','100','cohort_revision','lab-v1','reason','host_check_ok','next_cursor',7));
+  RAISE EXCEPTION 'T29 anonymous host check passed the background fence';
+ EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM<>'worker_id required' THEN RAISE; END IF;
+ END;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(zabalack.worker_call('host_cohorts','{"instance":"lab-zabbix"}')) cohort WHERE cohort->>'customer'='Synthetic A' AND cohort->>'trigger_id'='100' AND (cohort->>'host_cursor')::int=7) THEN RAISE EXCEPTION 'T29 anonymous host inventory moved the cohort cursor'; END IF;
+ -- 013: with the lease released, the fence refuses the former holder too; NULL is not a held lease.
+ BEGIN
+  PERFORM zabalack.worker_call('record_reconciliation',jsonb_build_object('action_id',d->>'action_id','instance','lab-zabbix','worker_id','reconciler','background_generation',bg->'lease_generation','state','failed','reason','after_release'));
+  RAISE EXCEPTION 'T29 released lease still admitted its former holder';
+ EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM<>'background lease lost' THEN RAISE; END IF;
+ END;
  PERFORM zabalack.worker_call('host_inventory_due','{}');
  PERFORM zabalack.worker_call('nightly_due','{"limit":200}');
  PERFORM zabalack.worker_call('worker_stopped','{"worker_id":"delivery-c"}');

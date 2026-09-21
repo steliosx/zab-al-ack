@@ -1,5 +1,18 @@
 # Zab-al-ack changelog
 
+## Unreleased
+
+- Forward migration 013 closes two NULL gaps in `worker_call` found by an
+  independent SQL review of a17: `record_reconciliation`, `record_host_check`
+  and `record_host_inventory` now require `worker_id`, an instance holding no
+  background lease refuses them instead of comparing a NULL owner to a NULL
+  caller, and a reconciliation `ok` with no `completion_evidence` key is refused
+  like one with the wrong evidence. 012's body is otherwise unchanged; the
+  routine digest is re-recorded and explicit resealing remains required.
+- The reference job fails when a `pyproject.toml` pin is not repeated in the
+  locks or a workflow or release-template action commit is not the inspected
+  one; `pip check` never saw that drift.
+
 ## 0.1.0a17 — 2026-09-18 (qualification candidate, unpublished)
 
 - Give the integrated recovery correction an explicit new artifact identity;
