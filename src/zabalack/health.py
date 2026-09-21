@@ -57,6 +57,10 @@ class CaptureHealthProbe:
         self._clock = clock
         self._pid: int | None = None
         self._lock = threading.Lock()
+        # Guards fork detection, which replaces `_lock`. `check` never replaces
+        # this one, so two threads that both observe the stale pid cannot end up
+        # holding different mutexes inside the mutually exclusive section.
+        self._state_lock = threading.Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._connection: Any = None
         self._healthy_at: float | None = None
@@ -66,13 +70,21 @@ class CaptureHealthProbe:
         if hasattr(os, "register_at_fork"):
             os.register_at_fork(after_in_child=self._after_fork)
 
-    def _after_fork(self) -> None:
+    def _reset_process_state(self) -> None:
+        """Drop everything tied to the previous process; `_state_lock` is held."""
         self._pid = None
         self._lock = threading.Lock()
         self._loop = None
         self._connection = None
         self._healthy_at = None
         self._result = None
+
+    def _after_fork(self) -> None:
+        # Runs single-threaded in the child, which is the only place the
+        # fork-detection lock can safely be replaced: a lock duplicated while
+        # another thread held it in the parent stays held forever here.
+        self._state_lock = threading.Lock()
+        self._reset_process_state()
 
     def invalidate(self) -> None:
         """Call when routing/configuration changes or before migration fencing."""
@@ -136,10 +148,22 @@ class CaptureHealthProbe:
 
     def check(self, *, force: bool = False) -> dict[str, Any]:
         pid = os.getpid()
-        if self._pid != pid:
-            self._after_fork()
-            self._pid = pid
-        if not self._lock.acquire(timeout=self.config.acquisition_timeout):
+        # Fork detection runs under a lock this method never replaces, and the
+        # working lock is then bound to a local: acquiring one object and
+        # releasing whatever `self._lock` happens to name afterwards is how a
+        # thread comes to release a lock it never held.
+        state_lock = self._state_lock
+        if not state_lock.acquire(timeout=self.config.acquisition_timeout):
+            self.invalidate()
+            raise CaptureUnhealthy("capture_health_acquisition_timeout")
+        try:
+            if self._pid != pid:
+                self._reset_process_state()
+                self._pid = pid
+            lock = self._lock
+        finally:
+            state_lock.release()
+        if not lock.acquire(timeout=self.config.acquisition_timeout):
             self.invalidate()
             raise CaptureUnhealthy("capture_health_acquisition_timeout")
         try:
@@ -161,11 +185,12 @@ class CaptureHealthProbe:
             self._result = result
             return dict(result)
         finally:
-            self._lock.release()
+            lock.release()
 
     def close(self) -> None:
         """Serving-process teardown; never called by a read-only inventory."""
-        if not self._lock.acquire(timeout=self.config.acquisition_timeout):
+        lock = self._lock
+        if not lock.acquire(timeout=self.config.acquisition_timeout):
             self.invalidate()
             raise CaptureUnhealthy("capture_health_acquisition_timeout")
         try:
@@ -175,7 +200,7 @@ class CaptureHealthProbe:
                 self._loop.close()
                 self._loop = None
         finally:
-            self._lock.release()
+            lock.release()
 
 
 _registry_lock = threading.Lock()

@@ -379,6 +379,24 @@ def test_T40_whole_object_direct_filter_is_refused(search_api, field):
                                   headers={"Authorization": lab.reader}))
 
 
+@pytest.mark.parametrize("field", [
+    pytest.param(f"attributes.{INTENT_ATTRIBUTE}\n", id="trailing-newline-in-key"),
+    pytest.param("attributes.x\ny", id="interior-newline-in-key"),
+])
+def test_T40_direct_filter_key_with_a_newline_is_refused(search_api, field):
+    """`?attributes.<key>%0A=` compiles to `attributes @> %(attr_<key>\n)s`.
+
+    The key is not a plain name, so it is unsupported syntax and is refused
+    rather than normalised through to a containment test upstream reads
+    differently from the guard.
+    """
+    lab = search_api
+    identity, event_id = acknowledge(lab)
+    assert_capture_evidence(lab, identity)
+    assert_refused(lab.client.get("/alerts/count", query_string={field: UNDISCLOSED_CUSTOMER},
+                                  headers={"Authorization": lab.reader}))
+
+
 @pytest.mark.parametrize("field", [f"attributes.{INTENT_ATTRIBUTE}.ignored"])
 def test_T40_direct_filter_with_extra_components_is_refused(search_api, field):
     lab = search_api
@@ -414,12 +432,16 @@ def test_T40_grouping_column_variants_are_refused(search_api, group_by):
     pytest.param("attributes.x'||attributes::text||'y", id="quote-in-key"),
     pytest.param('attributes.x"y', id="double-quote-in-key"),
     pytest.param("attributes.x y", id="space-in-key"),
+    pytest.param(f"attributes.{INTENT_ATTRIBUTE}\n", id="trailing-newline-in-key"),
+    pytest.param("attributes.x\ny", id="interior-newline-in-key"),
 ])
 def test_T40_sort_key_variants_are_refused(search_api, sort_by):
     """`sort_by_columns` interpolates the key raw into `attributes->'{key}'`.
 
     A quote in the key escapes the literal, so any key that is not a plain name
-    is unsupported syntax regardless of whether it names the restricted key.
+    is unsupported syntax regardless of whether it names the restricted key. A
+    *trailing* newline is the same unsupported form as an interior one: it is
+    only `$`-anchored matching that would have read it as a plain name.
     """
     lab = search_api
     acknowledge(lab)

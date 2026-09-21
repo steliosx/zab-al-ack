@@ -543,3 +543,30 @@ def test_T40_rebinding_the_builder_reinstalls_the_guard_at_the_rebinding(context
     qb.init_app(context.app)
 
     assert query_guard.is_installed(qb.alerts), "a fresh builder was left unguarded"
+
+
+@pytest.mark.parametrize("key", [
+    pytest.param("zabbix_ack_sync_intent\n", id="restricted-trailing-newline"),
+    pytest.param("runbook_url\n", id="permitted-trailing-newline"),
+    pytest.param("foo\nbar", id="interior-newline"),
+])
+@pytest.mark.parametrize("shape", ["direct-filter", "sort-by"])
+def test_T40_attribute_key_with_a_newline_is_refused_not_normalised(key, shape):
+    """A key upstream would interpolate raw is unsupported syntax, newline included.
+
+    `$` matches at end-of-string *or* immediately before a trailing newline, so
+    an anchored-with-`$` key regex accepted `attributes.<key>\\n` as a plain
+    name and let it through to `attributes @> %(attr_<key>\\n)s` and
+    `attributes->'<key>\\n'`. The guard's contract is that an unsupported form
+    is refused rather than normalised into a spelling upstream reads
+    differently, so a trailing newline must be refused exactly as an interior
+    one already is.
+    """
+    from werkzeug.datastructures import MultiDict
+    from zabalack import query_guard
+
+    field = f"attributes.{key}"
+    params = (MultiDict([(field, "x")]) if shape == "direct-filter"
+              else MultiDict([("sort-by", field)]))
+
+    assert query_guard.selector_refusal(params) == query_guard.REFUSAL
