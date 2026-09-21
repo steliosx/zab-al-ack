@@ -28,7 +28,7 @@ Configure the existing Web UI's attribute columns to display `zabbix_ack_sync` a
 
 ## Commands and least privilege
 
-Always select the reviewed JSON config explicitly. `config-check` is offline and redacted. `status`, `doctor`, `verifier-health`, and `inspect` use the configured worker DB identity; their intent is inspection, not policy changes. Dedicated inventory tools remain separate. Operator commands require `operator_dsn_file`, complete target selection, owner reference and change reference; worker/probe identities do not acquire those rights.
+Always select the reviewed JSON config explicitly. `config-check` is offline and redacted, and it refuses an `endpoint_registry` entry that omits `logical_instance` or sets it to anything but its own key, because delivery resolves only an entry whose `logical_instance` matches. `status`, `doctor`, `verifier-health`, and `inspect` use the configured worker DB identity; their intent is inspection, not policy changes. Dedicated inventory tools remain separate. Operator commands require `operator_dsn_file`, complete target selection, owner reference and change reference; worker/probe identities do not acquire those rights.
 
 ```sh
 zabalack --config /reviewed/config.json config-check

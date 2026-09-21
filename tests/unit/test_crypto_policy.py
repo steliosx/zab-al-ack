@@ -152,3 +152,53 @@ def test_T19_rename_does_not_wrap_legacy_proof_in_new_signature(packet, prefix):
     capture, _ = packet
     with pytest.raises(BindingError, match='reserved_marker_in_note'):
         append_marker(prefix + 'synthetic-private-note]', capture['marker'])
+
+
+ENDPOINT_ENTRY = {"url": "https://zabbix.invalid/api_jsonrpc.php",
+                  "token_file": "/synthetic/never-read/token", "ca_file": "/synthetic/never-read/ca.pem",
+                  "api_version": "7.0.0"}
+
+
+def _registry_settings(registry):
+    return Settings(config_revision="synthetic-1", deployment_id="synthetic-lab",
+                    endpoint_registry=registry)
+
+
+def test_endpoint_without_logical_instance_is_refused_by_config_check():
+    """Configuration validation must not accept what delivery can never resolve.
+
+    `EndpointRegistry.resolve` requires `logical_instance` to be present and to
+    equal the registry key. Defaulting it to the key during validation reported
+    such an entry valid, and every acknowledgement for that instance then failed
+    terminally with `logical_instance_mismatch` on the delivery path.
+    """
+    from zabalack.config import validate_settings
+    with pytest.raises(ConfigError, match="endpoint_logical_instance_mismatch"):
+        validate_settings(_registry_settings({"site-a": dict(ENDPOINT_ENTRY)}))
+
+
+@pytest.mark.parametrize("registry", [
+    pytest.param({"site-a": dict(ENDPOINT_ENTRY, logical_instance="site-a")}, id="single"),
+    pytest.param({"site-a": dict(ENDPOINT_ENTRY, logical_instance="site-a"),
+                  "site-b": dict(ENDPOINT_ENTRY, logical_instance="site-b")}, id="several"),
+    pytest.param({"site-a": dict(ENDPOINT_ENTRY)}, id="logical-instance-absent"),
+    pytest.param({"site-a": dict(ENDPOINT_ENTRY, logical_instance="site-b")}, id="logical-instance-other"),
+])
+def test_endpoint_accepted_by_config_is_resolvable(registry):
+    """Every entry validation accepts must resolve; the two checks stay in step.
+
+    An entry validation refuses never reaches delivery, so the property is the
+    implication: accepted implies resolvable. An entry accepted here but refused
+    by `resolve` is the configuration that reports valid and then loses every
+    acknowledgement for that instance to a terminal `failed`.
+    """
+    from zabalack.config import validate_settings
+    from zabalack.rpc import EndpointRegistry
+    try:
+        settings = validate_settings(_registry_settings(registry))
+    except ConfigError:
+        return
+    resolver = EndpointRegistry(settings.endpoint_registry, lab=settings.lab_mode,
+                                approved_versions=settings.approved_versions)
+    for instance in settings.endpoint_registry:
+        assert resolver.resolve(instance).instance == instance
