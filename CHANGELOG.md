@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Access-log routes documented and tested: Alerta's own after-request line
+  formats the request path and never a query string, the development server's
+  request line is held at WARNING, and a WSGI-server or reverse-proxy access log
+  needs a path-only format at that originating logger; no log message is rewritten.
 - The mandatory adapter's log redactor blanks Alerta's `ContextFilter` extras
   `data` and `reqargs` and drops the query string from `url` on every record, so
   `LOG_FORMAT=json` emits neither the operator's note nor a reader search's staged
