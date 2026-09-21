@@ -621,3 +621,22 @@ def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():
     # ungated would leave the exposure open through that workflow instead.
     assert guarded == 8, guarded
 
+
+
+def test_scheduled_runs_keep_their_own_concurrency_lane_and_only_pull_request_pushes_cancel():
+    """A push to main must not cancel the nightly, nor the nightly a main push.
+
+    The schedule is the only event that selects the nightly Hypothesis profile
+    and the nightly mutation catalogue, and a cancelled run blocks nothing,
+    produces no artifact and is not retried until the next day. With one group
+    per ref and cancel-in-progress unconditional, `schedule` and `push` on
+    `main` share a group, so the deepest coverage the repository has could be
+    suppressed by any push to `main` and never show as a failure. Only a
+    superseded pull-request push is worth cancelling.
+    """
+    for name in ('ci.yml', 'codeql.yml'):
+        workflow = yaml.load((ROOT / '.github/workflows' / name).read_text(), Loader=yaml.BaseLoader)
+        concurrency = workflow['concurrency']
+        assert '${{ github.ref }}' in concurrency['group'], name
+        assert "github.event_name == 'schedule'" in concurrency['group'], f'{name}: the schedule shares a group with pushes'
+        assert concurrency['cancel-in-progress'] == "${{ github.event_name == 'pull_request' }}", f'{name}: cancels main or scheduled runs'

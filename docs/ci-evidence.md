@@ -176,7 +176,10 @@ reference/WASM jobs.
 
 Pull requests, main/tag pushes and manual runs select the bounded `pr` Hypothesis
 profile. A daily 03:23 UTC schedule selects `nightly`, with larger bounded
-generated sequences. Failed examples are minimized by Hypothesis and retained
+generated sequences. Scheduled runs use their own concurrency lane and only a
+superseded pull-request push is cancelled, so a push to `main` cannot cancel a
+running nightly and the nightly cannot cancel a `main` or tag run
+(`tests/release/test_ci_collection.py` asserts both). Failed examples are minimized by Hypothesis and retained
 under the private build directory and the host's durable attempt copy for replay.
 Changing workflow routing does not execute a schedule or establish a passing
 run. Completion requires a real allocated Actions producer-to-package run on

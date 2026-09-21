@@ -13,9 +13,11 @@ permissions:
 env:
   TZ: UTC
 
+# The Monday schedule keeps its own lane for the reason ci.yml gives; only a
+# superseded pull-request push is cancelled.
 concurrency:
-  group: codeql-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: codeql-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' && 'schedule' || 'ref' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   analyze:

@@ -13,9 +13,12 @@ permissions:
 env:
   TZ: UTC
   ACK_HYPOTHESIS_PROFILE: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
+# The schedule is the only event that selects the nightly profile, so it keeps
+# its own lane: a push to main must not cancel a running nightly, nor the
+# nightly a main push. Only a superseded pull-request push is cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' && 'schedule' || 'ref' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   quality:
     runs-on: [self-hosted, Linux, ARM64, zabalack]
