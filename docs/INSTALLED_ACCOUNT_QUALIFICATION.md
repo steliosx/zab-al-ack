@@ -10,7 +10,12 @@ The qualification baseline is version `0.1.0a16`, PR #24 at
 `013fbc6f99c171cc484cbbaafcec4de418b4dfe7`. Its qualified wheel SHA-256 is
 `1f072f0443a2499cecb27d45ffcee7401c3d5c22b5dd7c3ae5be627ff8463774`.
 Refresh the actual candidate before execution and record the installed artifact;
-do not rebuild or silently substitute it. A changed implementation, dependency,
+do not rebuild or silently substitute it. At 21 September 2026 the candidate is
+`0.1.0a17`, PR #26 head `3ac7829d0ae9c21d23d4f3cf7d522722ab3fc590` on
+`a3317dc41890ef56411e7597b32c44c70b878416`, wheel
+`e5c9e2127501f8c6fe9d0d534bbcd27a7e7d7744acf706f342829906b4a229f4`
+([snapshot](beta_readiness_snapshot_2026-09-21.md)); the a16 baseline above is
+retained as the procedure's history. A changed implementation, dependency,
 SQL or executable harness needs a documented affected-evidence revalidation
 decision. This procedure changes no version or artifact.
 
