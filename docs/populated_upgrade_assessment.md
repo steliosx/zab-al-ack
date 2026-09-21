@@ -16,6 +16,8 @@ qualify a release artifact. G1–G8 and the deployment gates are unaffected.
 | Base | `main a3317dc41890ef56411e7597b32c44c70b878416` |
 | `sql/` tree | `530693850eb79fa17a623e7b6745d9ac77db5fa8` — identical at both revisions |
 | `src/` tree | `2c370954229be83a934c15da3fb52a366d795630` — identical at both revisions |
+| `tests/` tree | `1ed3d0e9ad24559d1e9a63d8d6af83be9046d148` at both revisions, before this branch adds to it |
+| This work | PR #28, branch `claude/magical-fermi-feobf7` |
 
 PR #26 changes only `docs/RELEASE_AMENDMENTS.md`, `docs/tooling_reference_manifest.json`,
 `pyproject.toml` and `requirements.lock`. Migration and re-seal behaviour is therefore
@@ -30,6 +32,11 @@ Schema **3** (migrations `001`–`007`), built by `sql/migrate.py` against a sta
 tree containing only those files, then populated through the shipped schema-3
 `worker_call` and `operator_call` entry points. No ledger row is written directly,
 so the upgrade sees states a real earlier installation could actually hold.
+
+Every state is reached through a real caller, with one named exception:
+`expire_lease` ages `delivery_leases` and `delivery_slots` as the owner, because
+no caller can make wall-clock time pass. Nothing else writes a ledger row
+directly.
 
 Recorded migration checksums, as applied by the runner:
 
@@ -52,7 +59,7 @@ upgrade runs:
 | Seeded | Baseline state | How it was reached |
 |---|---|---|
 | pending | `authorised`, attempts 0 | verified acknowledgement, never claimed |
-| leased/abandoned | `unknown`, uncertain, `abandoned_attempt` | claim, send, lease expired with no outcome |
+| leased/abandoned | `unknown`, uncertain, `abandoned_attempt` | claim, send, lease expired with no outcome, then `reconcile_due` **in its own seed block** so the state does not depend on a later block's sweep |
 | uncertain | `unknown`, uncertain, `synthetic_response` | claim, send, unknown outcome while leased |
 | delivered | `ok`, evidence `write_response`, effect closed | claim, send, ok outcome |
 | operator-settled | `failed`, `operator_no_effect_confirmed` | uncertain, reconciled, then `settle_unknown` |
@@ -116,7 +123,8 @@ All ten regressions pass at the candidate tree. No product defect was found.
    been removed.
    Note that `before_write` still answers `allowed` in that window — it is a
    lease-level permission answer, and the seal gate sits above it in the capture
-   and worker paths. That is the shipped contract, not a defect.
+   and worker paths. That is the shipped contract, not a defect, and it is now
+   **asserted by the test** rather than reported here as an unchecked remark.
 5. **Re-seal refuses a prohibited grant on a populated tree**, and refuses rather
    than repairing: the grant is left in place and the ledger untouched.
 6. **Role callers behave as themselves.** Six caller/routine denials are exercised
@@ -138,15 +146,29 @@ All ten regressions pass at the candidate tree. No product defect was found.
 The assertions were checked against trees that lack the behaviour, not assumed to
 discriminate:
 
+Counts are at the current head (nine cases). The reviewed head `12d5a9b` had ten;
+its results are kept as history in the run record, not restated here as current.
+
 | Control | Result |
 |---|---|
-| 009–012 removed | `test_an_api_error_on_a_carried_over_attempt_suspends_only_while_it_is_live` fails — *"an ambiguous API error on a live carried-over attempt did not suspend the instance"*; the unsealed-state case also fails |
-| 011 present, **012 removed** | the same test fails at the second leg — *"a replayed API error re-suspended the instance behind the operator's disposal and retry"* |
+| 009–012 removed — **2 failed / 7 passed** | `test_an_api_error_on_a_carried_over_attempt_suspends_only_while_it_is_live` fails — *"an ambiguous API error on a live carried-over attempt did not suspend the instance"*; the unsealed-state case also fails |
+| 011 present, **012 removed** — **1 failed / 8 passed** | the same test fails at the second leg — *"a replayed API error re-suspended the instance behind the operator's disposal and retry"* |
+| 009–012 removed (second failure) | the unsealed-state case also fails, but **not because seal behaviour discriminates**: `Worker.check_health()` requires `api_error_recovery_version == 1`, which only 010 emits, so the gate is false for an unrelated reason. It is not evidence about 009–012 either |
 | `functions_ok` term deleted from the production gate in `src/zabalack/worker.py` | the unsealed-state test fails — *"Worker.check_health() accepted a migrated but unsealed tree"*. `src/` was restored to digest `ae031554c2af1cbeaa885a0e751177158f9a6d34d39e47881ab007915043edfc` afterwards |
 
 The second control is the one that separates 012 from 011.
 
-**Stated plainly:** the other eight regressions still pass with 009–012 removed.
+**What these controls do not cover, named rather than left to inference.** The
+discrimination removes 009–012 as a block, so **009 is never isolated**: the
+`abandoned` seed (claimed, sent, lease expired, attempt unsettled) is the case
+006's sweep already catches, and nothing here asserts 009's widened sweep
+predicate on its own. **011's own positive case** — a late ambiguous report on an
+attempt that is still unsettled — is likewise not asserted; the ambiguous-API
+case exercises 010's live leg and 012's replayed leg. For that reason this file
+claims `A6, T41` and not `A5` or `T42`; T42 is 009's id
+(`tests/postgres/assertions_abandoned_attempt.sql`) and is not earned here.
+
+**Stated plainly:** the other seven regressions still pass with 009–012 removed.
 The properties they assert — uncertainty fencing, stale-callback handling, record
 preservation, role denials, interrupted-upgrade safety — are supplied by 006/007
 and are not specific to 009–012. They are worth keeping as populated-upgrade
@@ -176,10 +198,11 @@ an explicit `13_reseal.sql`, in the runbook's order.
   the earlier wording here was wrong: the database-level external-writes policy
   is **enabled** in the lab (`operator_call('set_external_writes', enabled=true)`),
   because the seeded states cannot be reached through the real entry points
-  without it. What does not happen is any **external Zabbix API call** -- no
-  `ZabbixClient` is constructed and no HTTP request leaves the process in this
-  file. Delivery is exercised only as far as the ledger: claim, attempt,
-  outcome. The real transport remains untested here.
+  without it. What does not happen is any **external Zabbix API call**: no worker
+  process runs, no endpoint is configured, no `ZabbixClient` is constructed and
+  no HTTP request leaves the process in this file. Delivery is exercised only as
+  far as the ledger: claim, attempt, outcome. The real transport remains
+  untested here.
 
 ## Retention
 

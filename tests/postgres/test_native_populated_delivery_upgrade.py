@@ -1,4 +1,4 @@
-"""Populated **delivery ledger** upgraded through 008-012 (A5/A6, T41-T42).
+"""Populated **delivery ledger** upgraded through 008-012 (A6, T41).
 
 `test_native_generation_fence.py` already walks a populated schema-3 database
 through `sql/migrate.py`, the installer record, the application grant and the
@@ -115,9 +115,12 @@ def expire_lease(lab, action_id):
 def seed_delivery_ledger(lab):
     """Five representative in-flight states, all through real callers at schema 3.
 
-    Returns the action ids. Nothing here writes a ledger row directly: each state
-    is the one the shipped schema-3 `worker_call`/`operator_call` actually leaves
-    behind, so the upgrade sees what a real earlier installation would hold.
+    Returns the action ids. Every state is the one the shipped schema-3
+    `worker_call`/`operator_call` actually leaves behind, so the upgrade sees
+    what a real earlier installation would hold. One exception, named because
+    the claim would otherwise be wrong: `expire_lease` below ages
+    `delivery_leases` and `delivery_slots` as the owner, because no caller can
+    make wall-clock time pass. Nothing else writes a ledger row directly.
     """
     enable_delivery(lab)
     seeded = {}
@@ -129,6 +132,11 @@ def seed_delivery_ledger(lab):
     abandoned = new_delivery_action(lab)
     claim_and_send(lab, abandoned)
     expire_lease(lab, abandoned)
+    # The sweep that turns an expired lease into `abandoned_attempt` is called
+    # here rather than relied on from a later block: without it this state is
+    # fenced only by the `reconcile_due` inside the settled seed, so reordering
+    # the seeds would change this baseline silently.
+    worker(lab, "reconcile_due")
     seeded["abandoned"] = abandoned
 
     # uncertain: an unknown outcome reported while the lease was live.
@@ -304,7 +312,7 @@ def test_the_upgrade_does_not_convert_uncertainty_into_permission_to_retry(nativ
         assert claim["uncertain"] is False, "the re-authorised send still reports an unresolved attempt"
 
 
-def test_the_upgrade_does_not_reopen_delivered_or_settled_work(native, tmp_path):
+def test_a_stale_callback_after_the_upgrade_does_not_reopen_settled_work(native, tmp_path):
     """Delivered and operator-settled work is closed before and after, and a
     callback replayed from the pre-upgrade attempt does not reopen it.
 
@@ -343,9 +351,10 @@ def test_the_upgrade_does_not_reopen_delivered_or_settled_work(native, tmp_path)
             for appended in after[name]["outcomes"][len(before[name]["outcomes"]):]:
                 assert appended["state"] == "late_response", \
                     (name, "a stale callback landed as a live outcome", appended)
-        assert {n: after[n]["action"] for n in ("pending", "abandoned", "uncertain")} == \
-               {n: before[n]["action"] for n in ("pending", "abandoned", "uncertain")}, \
-            "a stale callback for one action disturbed another"
+        untouched = [n for n in ledger_actions(seeded) if n not in ("delivered", "settled")]
+        assert untouched, "precondition: there are other actions to be disturbed"
+        assert {n: after[n] for n in untouched} == {n: before[n] for n in untouched}, \
+            ("a stale callback for one action disturbed another", untouched)
         with connect_role(lab, "zabalack_owner") as owner:
             circuit = owner.execute("SELECT circuit_open FROM zabalack.instance_control "
                                     "WHERE instance=%s", (INSTANCE,)).fetchone()
@@ -422,6 +431,17 @@ def test_required_checks_refuse_the_unsealed_intermediate_state(native, tmp_path
         assert real_worker_health(lab, doctor) is False, \
             "Worker.check_health() accepted a migrated but unsealed tree"
 
+        # The assessment reports that `before_write` still answers `allowed` in
+        # this window; assert it rather than leaving it an unchecked remark. It
+        # is a lease-level answer with the seal gate above it, so this records
+        # the shipped division of responsibility, not an approval to write.
+        claim = worker(lab, "claim_delivery", worker_id="unsealed-probe", action_id=seeded["pending"])
+        if claim is not None:
+            permitted = worker(lab, "before_write", worker_id="unsealed-probe",
+                               action_id=seeded["pending"], lease_generation=claim["lease_generation"])
+            assert permitted["allowed"] is True, \
+                ("before_write is a lease-level answer and does not consult the seal", permitted)
+
         probe_obj = CaptureHealthProbe(ProbeConfig(lab["admin_dsn"], initial["database_name"],
                                        initial["deployment_id"], initial["config_revision"]), connector=connect)
         try:
@@ -467,6 +487,7 @@ def test_role_callers_keep_their_own_permissions_after_a_populated_upgrade(nativ
     """
     with schema3_database(native, tmp_path) as (lab, migrator):
         seeded = seed_delivery_ledger(lab)
+        assert_baseline(lab, seeded)
         upgrade(lab, migrator)
 
         for role, routine, operation in CALLER_DENIALS:
@@ -527,6 +548,7 @@ def test_an_interrupted_upgrade_keeps_the_ledger_and_its_checksums(native, tmp_p
     """
     with schema3_database(native, tmp_path) as (lab, migrator):
         seeded = seed_delivery_ledger(lab)
+        assert_baseline(lab, seeded)
         before = ledger_snapshot(lab, seeded)
         with connect_role(lab, "zabalack_owner") as owner:
             checksums_before = owner.execute(
@@ -561,6 +583,7 @@ def test_negative_controls_the_assertions_detect_the_wrong_behaviour(native, tmp
     """
     with schema3_database(native, tmp_path) as (lab, migrator):
         seeded = seed_delivery_ledger(lab)
+        assert_baseline(lab, seeded)
         upgrade(lab, migrator)
         baseline = ledger_snapshot(lab, seeded)
 
@@ -590,6 +613,10 @@ def test_negative_controls_the_assertions_detect_the_wrong_behaviour(native, tmp
                           "(SELECT effect_id FROM zabalack.actions WHERE action_id=%s)", (seeded["delivered"],))
         assert ledger_snapshot(lab, seeded)["delivered"]["effect"]["state"] != "ok", \
             "the reopened-effect assertion reads a field that cannot change"
+        with connect_role(lab, "zabalack_owner") as owner:
+            owner.execute("UPDATE zabalack.effects SET state='ok' WHERE effect_id="
+                          "(SELECT effect_id FROM zabalack.actions WHERE action_id=%s)", (seeded["delivered"],))
+        assert ledger_snapshot(lab, seeded) == baseline, "control 3 did not restore the ledger"
 
 
 def instance_state(lab):
