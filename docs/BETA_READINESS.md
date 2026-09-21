@@ -70,6 +70,21 @@ native 42 passed (walkthrough case added to the native `alerta` phase), real
 Zabbix 5 passed, deployment lab 4 passed from the installed a12 wheel; browser
 captures added, including a real Zabbix frontend screenshot of the lab event.
 
+## Current state (21 September 2026)
+
+`main` is `a3317dc41890ef56411e7597b32c44c70b878416` (PR #25 merged 2026-09-18) and
+the candidate under qualification is the open draft PR #26 at
+`3ac7829d0ae9c21d23d4f3cf7d522722ab3fc590`, wheel `e5c9e212…`. The dated
+[beta-readiness snapshot](beta_readiness_snapshot_2026-09-21.md) carries the
+requirement-to-evidence table, the Actions state, the classification of what
+remains and the smallest remaining execution sequence; the
+[owner decision worksheet](owner_decision_worksheet_2026-09-21.md) lists the
+unresolved inputs. The revalidation decision below is retained as written; it
+predates the merge, and the merged a17 additionally carries migrations 011 and
+012 and the reader-guard rebinding correction, each of which requires explicit
+resealing. PR #26 evidence is evidence at that head, not evidence that PR #26 has
+merged.
+
 ## a17 revalidation decision (18 September 2026)
 
 PR25 assigns version `0.1.0a17` to the integrated correction. This version change
