@@ -153,8 +153,8 @@ PR #28), 6, 7 (lab scope), 10. Items whose evidence is a receipt only: 2, 3, 4, 
 
 **Software verification an agent can perform now** (no authorised access needed):
 
-- Row 5 is performed (PR #28, re-run here); only the draft's disposition remains,
-  an owner decision (worksheet A7).
+- Row 5 is performed (PR #28, re-run here); the draft's technical-review
+  corrections (Opus) and its disposition (owner, worksheet A7) remain.
 - Row 9: strict read-only verification of the retained PR #26 package against the
   private copy and hash; quickstart at `3ac7829` (Astra's claim; needs Astra's stores).
 - Row 20: dependency corrections for #1, #3–#8 as reviewed, if the owner wants them
