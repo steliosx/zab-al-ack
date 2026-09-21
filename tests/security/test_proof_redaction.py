@@ -160,7 +160,8 @@ def test_T19_query_string_never_reaches_the_json_log(json_log_chain):
     value in the query string, not the body. `ContextFilter` attaches
     `request.url` whole, `JSONFormatter` emits it, and Alerta's default
     `LOG_METHODS` logs GET requests, so blanking `data` and `reqargs` alone
-    leaves the value in the log channel. The path stays; the query goes.
+    leaves the value in the log channel. The path stays; the query goes. The
+    whole emitted record is inspected, not one field of it.
     """
     stream, app = json_log_chain
     route = f'/alerts?attributes.{INTENT_ATTRIBUTE}={PRIVATE_TOKEN}&status=open'
@@ -173,9 +174,54 @@ def test_T19_query_string_never_reaches_the_json_log(json_log_chain):
 
     emitted = stream.getvalue()
     assert PRIVATE_TOKEN not in emitted, 'the query string reached the log channel'
-    record = json.loads(emitted)
+    records = [json.loads(line) for line in emitted.splitlines() if line.strip()]
+    assert len(records) == 1, emitted
+    record = records[0]
+    # Every emitted field, by value: nothing carries the intent value or the
+    # query string in any form.
+    for key, value in record.items():
+        assert PRIVATE_TOKEN not in str(value), (key, value)
+        assert 'status=open' not in str(value), (key, value)
+    # The useful context is kept: path, method, endpoint, request id, logger,
+    # level and the message itself.
     assert record['url'] == 'http://localhost/alerts'
-    assert record['reqargs'] == '-'
     assert record['method'] == 'GET'
-    assert record['message'] == 'reader search served'
     assert record['request_id'] == 'synthetic-request-3'
+    assert record['name'] == 'alerta.api'
+    assert record['levelname'] == 'INFO'
+    assert record['message'] == 'reader search served'
+    assert {'endpoint', 'remote_addr', 'pathname', 'lineno', 'created'} <= set(record)
+    assert record['data'] == '-'
+    assert record['reqargs'] == '-'
+
+
+def test_T19_url_redaction_keeps_every_record_and_its_path(json_log_chain):
+    """The control for the case above: the redactor drops the query, not the
+    records. Three records inside a GET reader search with a query string, one
+    on a query-free URL and one outside any request context are all emitted,
+    each with its own message, and a query-free URL is left exactly as it was.
+    """
+    stream, app = json_log_chain
+    with app.test_request_context(f'/alerts/count?attributes.{INTENT_ATTRIBUTE}={PRIVATE_TOKEN}',
+                                  method='GET'):
+        g.request_id = 'synthetic-request-4'
+        for level, text in ((logging.DEBUG, 'count requested'), (logging.INFO, 'count served'),
+                            (logging.WARNING, 'count slow')):
+            logging.getLogger('alerta.api').log(level, text)
+    with app.test_request_context('/alerts/91000000-0000-4000-8000-000000000003', method='GET'):
+        g.request_id = 'synthetic-request-5'
+        logging.getLogger('alerta.api').info('alert read')
+    logging.getLogger('alerta.database').warning('pool warmed outside any request')
+
+    emitted = stream.getvalue()
+    assert PRIVATE_TOKEN not in emitted
+    records = [json.loads(line) for line in emitted.splitlines() if line.strip()]
+    assert [r['message'] for r in records] == [
+        'count requested', 'count served', 'count slow', 'alert read',
+        'pool warmed outside any request'], emitted
+    assert [r['levelname'] for r in records] == ['DEBUG', 'INFO', 'WARNING', 'INFO', 'WARNING']
+    assert [r['url'] for r in records[:3]] == ['http://localhost/alerts/count'] * 3
+    assert [r['request_id'] for r in records[:3]] == ['synthetic-request-4'] * 3
+    assert records[3]['url'] == 'http://localhost/alerts/91000000-0000-4000-8000-000000000003'
+    assert records[3]['request_id'] == 'synthetic-request-5'
+    assert records[4]['url'] == '-' and records[4]['reqargs'] == '-' and records[4]['data'] == '-'
