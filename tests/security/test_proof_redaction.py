@@ -2,6 +2,7 @@
 import json
 import logging
 
+from zabalack.crypto import INTENT_ATTRIBUTE
 from zabalack.plugins import CaptureLogRedactor, _error_redact
 
 
@@ -68,7 +69,10 @@ def json_log_chain():
 
     `Logger.setup_logging` installs the `context` and `requests` filters on the
     handler before the mandatory adapter appends its redactor, so the record the
-    redactor sees already carries `ContextFilter`'s extras. Reproducing that
+    redactor sees already carries `ContextFilter`'s extras. The request filter
+    takes Alerta's default `LOG_METHODS`, every method including GET, because a
+    narrower list would drop the reader-search records the query-string case
+    is about. Reproducing that
     order is the whole point: a redactor tested on a bare `LogRecord` never sees
     them. Every logger the `dictConfig` call touches is restored afterwards so
     this module does not reconfigure logging for the rest of the session.
@@ -83,7 +87,8 @@ def json_log_chain():
         dictConfig({
             'version': 1, 'disable_existing_loggers': True,
             'formatters': {'json': {'()': 'alerta.utils.logging.JSONFormatter'}},
-            'filters': {'requests': {'()': 'alerta.utils.logging.RequestFilter', 'methods': ['PUT']},
+            'filters': {'requests': {'()': 'alerta.utils.logging.RequestFilter',
+                                     'methods': list(alerta_defaults.LOG_METHODS)},
                         'context': {'()': 'alerta.utils.logging.ContextFilter'}},
             'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'json',
                                      'level': 'DEBUG', 'filters': ['context', 'requests'],
@@ -148,3 +153,29 @@ def test_T19_restricted_evidence_is_still_redacted_in_the_json_log(json_log_chai
     assert 'synthetic-private-proof' not in emitted
     assert '[zabalack:' not in emitted
     assert json.loads(emitted)['message'] == 'zabalack_restricted_diagnostic_redacted'
+
+
+def test_T19_query_string_never_reaches_the_json_log(json_log_chain):
+    """A reader search filtering on the staged intent attribute carries the intent
+    value in the query string, not the body. `ContextFilter` attaches
+    `request.url` whole, `JSONFormatter` emits it, and Alerta's default
+    `LOG_METHODS` logs GET requests, so blanking `data` and `reqargs` alone
+    leaves the value in the log channel. The path stays; the query goes.
+    """
+    stream, app = json_log_chain
+    route = f'/alerts?attributes.{INTENT_ATTRIBUTE}={PRIVATE_TOKEN}&status=open'
+    with app.test_request_context(route, method='GET'):
+        g.request_id = 'synthetic-request-3'
+        # A logger under `alerta`, as the reader endpoints use: the Flask app's own
+        # logger already exists from an earlier fixture instance and `dictConfig`
+        # disables existing loggers it does not name.
+        logging.getLogger('alerta.api').info('reader search served')
+
+    emitted = stream.getvalue()
+    assert PRIVATE_TOKEN not in emitted, 'the query string reached the log channel'
+    record = json.loads(emitted)
+    assert record['url'] == 'http://localhost/alerts'
+    assert record['reqargs'] == '-'
+    assert record['method'] == 'GET'
+    assert record['message'] == 'reader search served'
+    assert record['request_id'] == 'synthetic-request-3'

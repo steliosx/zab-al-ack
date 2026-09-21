@@ -40,6 +40,13 @@ class CaptureLogRedactor(logging.Filter):
         for attribute in ("data", "reqargs"):
             if hasattr(record, attribute):
                 setattr(record, attribute, "-")
+        # `ContextFilter` also attaches `request.url` whole. A reader search that
+        # filters on the staged intent attribute carries the intent value in the
+        # query string, not the body, and Alerta's default `LOG_METHODS` logs
+        # GET requests. The path stays for operations; the query goes.
+        url = getattr(record, "url", None)
+        if isinstance(url, str) and "?" in url:
+            record.url = url.split("?", 1)[0]
         try:
             message = record.getMessage()
             exception = "".join(traceback.format_exception(*record.exc_info)) if record.exc_info else ""

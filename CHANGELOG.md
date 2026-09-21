@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The mandatory adapter's log redactor blanks Alerta's `ContextFilter` extras
+  `data` and `reqargs` and drops the query string from `url` on every record, so
+  `LOG_FORMAT=json` emits neither the operator's note nor a reader search's staged
+  intent value; the request path is kept. Found by the a17 application-security
+  review (body and arguments) and its cross-review (query string).
 - Forward migration 013 closes two NULL gaps in `worker_call` found by an
   independent SQL review of a17: `record_reconciliation`, `record_host_check`
   and `record_host_inventory` now require `worker_id`, an instance holding no
