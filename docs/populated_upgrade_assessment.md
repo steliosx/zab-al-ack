@@ -80,10 +80,13 @@ about. Migrations 009–012 are the ones that act on in-flight delivery state.
 
 All ten regressions pass at the candidate tree. No product defect was found.
 
-1. **Protected records and proofs are preserved.** Action state, reason, evidence,
-   uncertainty, attempt count, public reference and both deadlines, every
-   `attempts` and `outcomes` row and the effect are byte-identical across
-   008–012 for all six seeded actions.
+1. **Protected records and proofs are preserved — whole rows, not a chosen
+   subset.** The snapshot is `to_jsonb(t)` over `actions`, `attempts`, `outcomes`
+   and the joined `effects` row for every seeded action, with **no column
+   excluded**: identities, ordering, references, evidence and timestamps of
+   record are all compared. Every row is unchanged across 008–012. A curated
+   column list was the earlier form of this check and was weaker — a field left
+   out is a field the migration could have rewritten unobserved.
 2. **Uncertainty is not converted into permission to retry.** Two explicit
    operator acts stand between carried-over uncertainty and a fresh send, and
    the upgrade removes neither:
@@ -100,10 +103,17 @@ All ten regressions pass at the candidate tree. No product defect was found.
    pre-upgrade attempt lands as `late_response`, leaves action, effect and
    attempts unchanged, appends only an audit outcome row, and does not disturb
    any other action.
-4. **The unsealed intermediate state is refused by both gates.** Between the
-   migrations and `13_reseal.sql` the tree reports `zabalack_schema_version` 4
-   with `functions_ok` false; `health.py` raises `capture_health_schema` and the
-   `worker.py` capability predicate is false. Both pass after the explicit re-seal.
+4. **The unsealed intermediate state is refused by both gates, each executed
+   rather than imitated.** Between the migrations and `13_reseal.sql` the tree
+   reports `zabalack_schema_version` 4 with `functions_ok` false. The capture
+   path is the real `CaptureHealthProbe`, which raises `capture_health_schema`.
+   The worker gate is the shipped coroutine itself: `Worker.check_health()` is
+   awaited with real `Settings` and the `RoleSelectedLabPostgres` bridge the
+   worker-path suite already uses, so `worker_call('doctor')` runs as
+   `zabalack_worker`. It returns false before the re-seal and true after. An
+   earlier version of this file re-implemented the predicate and asserted on
+   source fragments; that could drift from the product without failing, and has
+   been removed.
    Note that `before_write` still answers `allowed` in that window — it is a
    lease-level permission answer, and the seal gate sits above it in the capture
    and worker paths. That is the shipped contract, not a defect.
@@ -132,6 +142,7 @@ discriminate:
 |---|---|
 | 009–012 removed | `test_an_api_error_on_a_carried_over_attempt_suspends_only_while_it_is_live` fails — *"an ambiguous API error on a live carried-over attempt did not suspend the instance"*; the unsealed-state case also fails |
 | 011 present, **012 removed** | the same test fails at the second leg — *"a replayed API error re-suspended the instance behind the operator's disposal and retry"* |
+| `functions_ok` term deleted from the production gate in `src/zabalack/worker.py` | the unsealed-state test fails — *"Worker.check_health() accepted a migrated but unsealed tree"*. `src/` was restored to digest `ae031554c2af1cbeaa885a0e751177158f9a6d34d39e47881ab007915043edfc` afterwards |
 
 The second control is the one that separates 012 from 011.
 
@@ -161,8 +172,14 @@ an explicit `13_reseal.sql`, in the runbook's order.
   `functions_ok` false and both gates refuse; that is the designed state, not a
   supported operating one.
 - PgBouncer-pooled and multi-session concurrency during the upgrade pass.
-- Real Zabbix delivery during or after the upgrade: outbound delivery is disabled
-  throughout, and no external write is attempted.
+- Real Zabbix delivery during or after the upgrade. Stated precisely, because
+  the earlier wording here was wrong: the database-level external-writes policy
+  is **enabled** in the lab (`operator_call('set_external_writes', enabled=true)`),
+  because the seeded states cannot be reached through the real entry points
+  without it. What does not happen is any **external Zabbix API call** -- no
+  `ZabbixClient` is constructed and no HTTP request leaves the process in this
+  file. Delivery is exercised only as far as the ledger: claim, attempt,
+  outcome. The real transport remains untested here.
 
 ## Retention
 

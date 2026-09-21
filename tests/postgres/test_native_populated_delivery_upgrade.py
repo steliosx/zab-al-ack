@@ -17,6 +17,7 @@ Native only, for the same reason the file it reuses is: a second database.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import psycopg
 import pytest
@@ -24,6 +25,10 @@ import pytest
 from conftest import connect_role
 from test_generation_fence import (INSTANCE, cleanup, enrol, fire_ack, intent_for, stage,
                                    stage_pre_fence, verify_through_worker_call)
+from test_worker_path import RoleSelectedLabPostgres
+from zabalack.config import Settings
+from zabalack.rpc import EndpointRegistry
+from zabalack.worker import Worker
 from test_native_generation_fence import ROOT, schema3_database, upgrade, upgrade_health
 
 pytestmark = pytest.mark.postgres
@@ -60,10 +65,18 @@ def inspect(lab, action_id):
 
 
 def enable_delivery(lab):
-    """Turn the baseline installation into one that actually delivers.
+    """Turn the baseline installation into one whose ledger accepts delivery.
 
     Through `operator_call`, not raw UPDATEs: the states this file upgrades have
     to be the ones an operator could really have left behind.
+
+    Note what this does and does not switch on. The database-level external
+    writes policy is genuinely **enabled** -- without it `claim_delivery` refuses
+    and none of the seeded states is reachable. **No external Zabbix API call is
+    performed anywhere in this file**: no `ZabbixClient` is constructed and no
+    HTTP request leaves the process. Delivery is exercised only as far as the
+    ledger -- claim, attempt, outcome -- so the real transport is out of scope
+    here and remains covered by the real-Zabbix suites.
     """
     operator(lab, "capture_bypass", enabled=False, config_revision="populated-v1")
     operator(lab, "configure_installation", deployment_id="isolated-populated-upgrade",
@@ -153,29 +166,46 @@ def seed_delivery_ledger(lab):
     return seeded
 
 
+VOLATILE = ()
+
+
+def strip_volatile(row):
+    return {k: v for k, v in row.items() if k not in VOLATILE}
+
+
 def ledger_actions(seeded):
     """Only the seeded action ids; the ambiguous lease bookkeeping is not one."""
     return {k: v for k, v in seeded.items() if not k.startswith("ambiguous_")}
 
 
 def ledger_snapshot(lab, seeded):
-    """Protected fields and proofs, read as the owner, for comparison across the upgrade."""
+    """Whole rows, as JSON, for every ledger table the seeded actions touch.
+
+    `to_jsonb(t)` rather than a column list: a field left out of the comparison
+    is a field the migration could rewrite unobserved, and the point of this
+    snapshot is that it is not curated. The keys in VOLATILE below are the only
+    ones excluded, each because the contract lets it move for reasons unrelated
+    to the upgrade; everything else -- identities, ordering, references,
+    evidence, timestamps of record -- is compared exactly.
+    """
     snapshot = {}
     with connect_role(lab, "zabalack_owner") as owner:
         for name, action_id in ledger_actions(seeded).items():
-            row = owner.execute(
-                "SELECT state,reason,completion_evidence,uncertain,attempts,public_reference,issued_at,execute_before "
-                "FROM zabalack.actions WHERE action_id=%s", (action_id,)).fetchone()
-            attempts = owner.execute(
-                "SELECT attempt_id,owner,lease_generation,operation,public_reference,frozen_event_id "
-                "FROM zabalack.attempts WHERE action_id=%s ORDER BY created_at", (action_id,)).fetchall()
-            outcomes = owner.execute(
-                "SELECT attempt_id,state,reason,completion_evidence,uncertain "
-                "FROM zabalack.outcomes WHERE action_id=%s ORDER BY recorded_at", (action_id,)).fetchall()
+            action = owner.execute("SELECT to_jsonb(t) FROM zabalack.actions t WHERE action_id=%s",
+                                   (action_id,)).fetchone()[0]
+            attempts = [r[0] for r in owner.execute(
+                "SELECT to_jsonb(t) FROM zabalack.attempts t WHERE action_id=%s ORDER BY created_at",
+                (action_id,)).fetchall()]
+            outcomes = [r[0] for r in owner.execute(
+                "SELECT to_jsonb(t) FROM zabalack.outcomes t WHERE action_id=%s ORDER BY recorded_at",
+                (action_id,)).fetchall()]
             effect = owner.execute(
-                "SELECT e.state,e.reason,e.completion_evidence,e.generation FROM zabalack.effects e "
-                "JOIN zabalack.actions a ON a.effect_id=e.effect_id WHERE a.action_id=%s", (action_id,)).fetchone()
-            snapshot[name] = {"action": row, "attempts": attempts, "outcomes": outcomes, "effect": effect}
+                "SELECT to_jsonb(e) FROM zabalack.effects e JOIN zabalack.actions a ON a.effect_id=e.effect_id "
+                "WHERE a.action_id=%s", (action_id,)).fetchone()[0]
+            snapshot[name] = {"action": strip_volatile(action),
+                              "attempts": [strip_volatile(r) for r in attempts],
+                              "outcomes": [strip_volatile(r) for r in outcomes],
+                              "effect": strip_volatile(effect)}
     return snapshot
 
 
@@ -311,7 +341,8 @@ def test_the_upgrade_does_not_reopen_delivered_or_settled_work(native, tmp_path)
             # Recording the late arrival is the contract; it is an audit row, not
             # a live outcome, so anything appended must say `late_response`.
             for appended in after[name]["outcomes"][len(before[name]["outcomes"]):]:
-                assert appended[1] == "late_response", (name, "a stale callback landed as a live outcome", appended)
+                assert appended["state"] == "late_response", \
+                    (name, "a stale callback landed as a live outcome", appended)
         assert {n: after[n]["action"] for n in ("pending", "abandoned", "uncertain")} == \
                {n: before[n]["action"] for n in ("pending", "abandoned", "uncertain")}, \
             "a stale callback for one action disturbed another"
@@ -341,34 +372,21 @@ def grant_and_reseal(lab):
         db.execute("RESET ROLE")
 
 
-def worker_capability_gate(health, *, database_name, deployment_id, config_revision):
-    """`src/zabalack/worker.py::check_health`, evaluated against a `doctor` payload.
+def real_worker_health(lab, doctor):
+    """`Worker.check_health()` itself, run against this lab's `doctor` response.
 
-    Copied rather than imported because the real method is an async coroutine
-    bound to a live worker's settings and connection. The predicate is the
-    product's, term for term; `test_capability_gate_matches_the_shipped_worker`
-    below fails if the shipped one changes and this one does not.
+    Not a copy of the predicate: the shipped coroutine is awaited, with the real
+    `Settings` and the `RoleSelectedLabPostgres` bridge the worker-path suite
+    already uses, so `worker_call('doctor')` executes as `zabalack_worker`.
+    Settings are taken from the lab's own doctor values, so the identity terms
+    match and the gate turns on the schema and seal terms alone.
     """
-    return (health.get("in_recovery") is False and
-            health.get("database_name") == database_name and
-            str(health.get("deployment_id")) == str(deployment_id) and
-            str(health.get("zabalack_schema_version")) == "4" and
-            type(health.get("api_error_recovery_version")) is int and
-            health["api_error_recovery_version"] == 1 and
-            health.get("trigger_ok") is True and health.get("functions_ok") is True and
-            health.get("capture_disabled") is False and
-            health.get("config_revision") == config_revision)
-
-
-def test_capability_gate_matches_the_shipped_worker():
-    """The local copy of the gate is the shipped one, term for term."""
-    source = (ROOT / "src/zabalack/worker.py").read_text()
-    for term in ('health.get("in_recovery") is False',
-                 'str(health.get("zabalack_schema_version")) == "4"',
-                 'health["api_error_recovery_version"] == 1',
-                 'health.get("trigger_ok") is True and health.get("functions_ok") is True',
-                 'health.get("capture_disabled") is False'):
-        assert term in source, ("the shipped capability gate changed; update this file's copy", term)
+    settings = Settings(database_name=doctor["database_name"],
+                        deployment_id=doctor["deployment_id"],
+                        config_revision=doctor["config_revision"])
+    worker = Worker(settings, RoleSelectedLabPostgres(lab["admin_dsn"]), {"lab": b"x" * 32},
+                    registry=EndpointRegistry({}, lab=True, approved_versions=settings.approved_versions))
+    return asyncio.run(worker.check_health())
 
 
 def test_required_checks_refuse_the_unsealed_intermediate_state(native, tmp_path):
@@ -401,10 +419,8 @@ def test_required_checks_refuse_the_unsealed_intermediate_state(native, tmp_path
         with connect_role(lab, "zabalack_worker") as w:
             doctor = w.execute("SELECT zabalack.worker_call('doctor','{}'::jsonb)").fetchone()[0]
         assert doctor["functions_ok"] is False
-        assert worker_capability_gate(doctor, database_name=doctor["database_name"],
-                                      deployment_id=doctor["deployment_id"],
-                                      config_revision=doctor["config_revision"]) is False, \
-            "the worker would have started against a migrated but unsealed tree"
+        assert real_worker_health(lab, doctor) is False, \
+            "Worker.check_health() accepted a migrated but unsealed tree"
 
         probe_obj = CaptureHealthProbe(ProbeConfig(lab["admin_dsn"], initial["database_name"],
                                        initial["deployment_id"], initial["config_revision"]), connector=connect)
@@ -422,10 +438,8 @@ def test_required_checks_refuse_the_unsealed_intermediate_state(native, tmp_path
         assert sealed["zabalack_schema_version"] == 4
         with connect_role(lab, "zabalack_worker") as w:
             doctor = w.execute("SELECT zabalack.worker_call('doctor','{}'::jsonb)").fetchone()[0]
-        assert worker_capability_gate(doctor, database_name=doctor["database_name"],
-                                      deployment_id=doctor["deployment_id"],
-                                      config_revision=doctor["config_revision"]) is True, \
-            "the worker still refuses a fully resealed tree"
+        assert real_worker_health(lab, doctor) is True, \
+            "Worker.check_health() still refuses a fully resealed tree"
         probe_obj = CaptureHealthProbe(ProbeConfig(lab["admin_dsn"], initial["database_name"],
                                        initial["deployment_id"], initial["config_revision"]), connector=connect)
         try:
@@ -570,11 +584,11 @@ def test_negative_controls_the_assertions_detect_the_wrong_behaviour(native, tmp
             owner.execute("UPDATE zabalack.actions SET uncertain=true WHERE action_id=%s", (seeded["uncertain"],))
 
         # 3. A reopened effect is detected.
-        assert ledger_snapshot(lab, seeded)[  "delivered"]["effect"][0] == "ok"
+        assert ledger_snapshot(lab, seeded)["delivered"]["effect"]["state"] == "ok"
         with connect_role(lab, "zabalack_owner") as owner:
             owner.execute("UPDATE zabalack.effects SET state='authorised' WHERE effect_id="
                           "(SELECT effect_id FROM zabalack.actions WHERE action_id=%s)", (seeded["delivered"],))
-        assert ledger_snapshot(lab, seeded)["delivered"]["effect"][0] != "ok", \
+        assert ledger_snapshot(lab, seeded)["delivered"]["effect"]["state"] != "ok", \
             "the reopened-effect assertion reads a field that cannot change"
 
 
