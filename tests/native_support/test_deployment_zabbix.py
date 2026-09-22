@@ -51,8 +51,8 @@ def test_rpc_uses_only_fixed_internal_endpoint_and_no_redirects(lab):
 
 
 @pytest.mark.parametrize("body", [
-    {"jsonrpc": "2.0", "id": True, "result": "7.0.10"},
-    {"jsonrpc": "2.0", "id": 99, "result": "7.0.10"},
+    {"jsonrpc": "2.0", "id": True, "result": zbx.REFERENCE_VERSION},
+    {"jsonrpc": "2.0", "id": 99, "result": zbx.REFERENCE_VERSION},
     {"jsonrpc": "2.0", "id": 1, "error": {"data": "PRIVATE_REMOTE_BODY"}},
     {"jsonrpc": "2.0", "id": 1, "result": "ok", "error": "PRIVATE_REMOTE_BODY"},
 ])
@@ -83,7 +83,7 @@ def test_bootstrap_refuses_active_actions_before_any_mutation(lab, monkeypatch):
 
     def rpc(method, params, **kwargs):
         methods.append(method)
-        return {"apiinfo.version": "7.0.10", "user.login": "a" * 32,
+        return {"apiinfo.version": zbx.REFERENCE_VERSION, "user.login": "a" * 32,
                 "action.get": [{"actionid": "1"}]}[method]
 
     monkeypatch.setattr(lab, "_rpc", rpc)
@@ -105,7 +105,7 @@ def test_worker_role_has_only_source_reads_ack_and_comment(lab, monkeypatch):
         nonlocal next_id, token_id, stored_role
         requests.append((method, params))
         if method == "apiinfo.version":
-            return "7.0.10"
+            return zbx.REFERENCE_VERSION
         if method == "user.login":
             return "a" * 32
         if method in ("action.get", "host.get"):

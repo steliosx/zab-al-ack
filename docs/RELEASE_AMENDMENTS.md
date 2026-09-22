@@ -1049,3 +1049,38 @@ target and the two scope statements about local-process records with R14.
 No host is changed: removing the runner account's Docker group membership,
 removing Docker from the guest and rewording the "root-equivalent Docker
 access" statements are separately reviewed operational steps.
+
+## R27 — One exact native Zabbix 7.0 reference: pin, disposable instance and coordinated validators
+
+Numbered after the a18 candidate's R23–R25 and the Docker-free routine CI
+change R26. `lab/zabbix_reference.json` selects Zabbix **7.0.31** (tag commit
+`fc62e967…`, released from 7.0.31rc1 unchanged) as the one patch the disposable
+reference lab, the deployment-path lab and their validators target, with the
+facts verified at the tag (frontend and API version 7.0.31; PostgreSQL 13.0 to
+18.x supported since 7.0.20; `AllowUnsupportedDBVersions` default 0; PHP 8.0
+minimum and the frontend's ini minima), the Ubuntu 24.04 package identities and
+signing key still to confirm on the runner host, the verification gate, the
+7.0.30 fallback rule and the changes since 7.0.10 that touch the lab.
+
+Producers and validators read the pin instead of carrying `7.0.10` literals:
+`tools/deployment_evidence.REFERENCE_VERSIONS`, the deployment provisioner's
+reference version and commit, the lab runtime's approved version and endpoint
+API version, the Compose runners' image tags, the staged Docker context and
+the mocked tests. `lab/zabbix_native_lab.py` provides the package-installed
+disposable instance without Docker: a marked directory with its own
+PostgreSQL 18 cluster and the packaged schema, a loopback-only
+`zabbix_server`, and the packaged frontend served privately at the fixed lab
+API; state classification, refusals of unmarked, ambiguous or running state,
+a verified stop, a fresh-database reset and a status record of component
+versions and package identities. `tools/record_real_zabbix.py --services-file`
+records those identities and refuses a run whose observed version differs from
+the pin.
+
+Historical results are preserved: the 7.0.0 reference-source inspection, the
+7.0.10 deployment-path and real-Zabbix records and their manifests keep their
+own bindings and are not rewritten. Author verification only: no packaged
+instance existed in the preparing environment (repo.zabbix.com unreachable),
+so the package identities are not reviewed, the pinned version's Ubuntu
+packages are not confirmed and no service run at 7.0.31 exists. Installed
+artifact qualification uses the packaged instance on the runner host; a
+source-built instance is an author convenience, never a substitute.

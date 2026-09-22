@@ -17,6 +17,17 @@ import tomllib
 
 from evidence_utils import binding_error
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def zabbix_reference_version() -> str:
+    """The pinned Zabbix patch (lab/zabbix_reference.json, R27); never a default."""
+    selected = json.loads((ROOT / 'lab/zabbix_reference.json').read_text())['selected']
+    if not isinstance(selected.get('version'), str) or not re.fullmatch(r'7\.0\.[0-9]+', selected['version']):
+        raise ValueError('lab/zabbix_reference.json selection is malformed')
+    return selected['version']
+
+
 CHECK_NAMES = {
     'authenticated_capture', 'cross_customer_denied', 'exactly_one_effect',
     'human_update_recorded', 'ingest_key_local_only', 'media_macro_ingestion',
@@ -24,7 +35,7 @@ CHECK_NAMES = {
     'recovery_macro_ingestion', 'repeat_409', 'separate_native_logins',
     'worker_denied_table_update',
 }
-REFERENCE_VERSIONS = {'alerta': '9.1.0', 'zabbix': '7.0.10', 'postgres_major': '18'}
+REFERENCE_VERSIONS = {'alerta': '9.1.0', 'zabbix': zabbix_reference_version(), 'postgres_major': '18'}
 IMAGE_COMPONENTS = {'postgres', 'zabbix-db', 'zabbix-server', 'zabbix-web'}
 EXPECTED_COUNTS = {'passed': 4, 'failed': 0, 'skipped': 0}
 EMPTY_COUNTS = {'passed': 0, 'failed': 0, 'skipped': 0}

@@ -3,7 +3,7 @@ import copy
 
 import pytest
 
-from lab.deployment_e2e_zabbix import ZabbixLab, LabZabbixError, ISOLATION_VALUE
+from lab.deployment_e2e_zabbix import ZabbixLab, LabZabbixError, ISOLATION_VALUE, REFERENCE_VERSION
 from lab.zabbix_roles import role_rules, verify_role
 
 
@@ -40,7 +40,7 @@ def test_failed_readback_prevents_user_and_token_creation(monkeypatch):
     def rpc(method, params, **kwargs):
         methods.append(method)
         if method == "apiinfo.version":
-            return "7.0.10"
+            return REFERENCE_VERSION
         if method == "user.login":
             return "a" * 32
         if method in ("action.get", "host.get"):

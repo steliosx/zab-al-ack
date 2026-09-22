@@ -13,6 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
+from deployment_evidence import REFERENCE_VERSIONS  # noqa: E402
 spec = importlib.util.spec_from_file_location("deployment_e2e_runner", ROOT / "tools/run_deployment_e2e.py")
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
@@ -24,7 +25,7 @@ def sample_result(path, *, failed=False, skipped=False, extra=False):
         "ingest_key_local_only", "worker_denied_table_update", "probe_denied_table_read", "separate_native_logins",
         "media_macro_ingestion", "neutral_update_filtered", "human_update_recorded", "recovery_macro_ingestion",
     }
-    report = {"checks": dict.fromkeys(names, True), "versions": {"alerta": "9.1.0", "zabbix": "7.0.10", "postgres_major": "18"},
+    report = {"checks": dict.fromkeys(names, True), "versions": dict(REFERENCE_VERSIONS),
               "private_password": "do-not-export-example"}
     (path / "observations.json").write_text(json.dumps(report))
     suite = ET.Element("testsuite")
@@ -54,9 +55,11 @@ def test_staged_context_imports_role_verifier(tmp_path):
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(root))
-from lab import deployment_e2e_zabbix, zabbix_roles
+from lab import deployment_e2e_zabbix, zabbix_reference, zabbix_roles
 assert Path(deployment_e2e_zabbix.__file__).resolve().is_relative_to(root)
 assert Path(zabbix_roles.__file__).resolve().is_relative_to(root)
+assert Path(zabbix_reference.__file__).resolve().is_relative_to(root)
+assert zabbix_reference.PATH.resolve().is_relative_to(root) and deployment_e2e_zabbix.REFERENCE_VERSION == zabbix_reference.VERSION
 """
     subprocess.run([sys.executable, "-I", "-c", probe, str(destination)],
                    cwd=destination, check=True, capture_output=True, timeout=30)
@@ -68,7 +71,8 @@ def test_staged_context_remains_traversable_under_private_umask(tmp_path, monkey
     inputs = ["pyproject.toml", "README.md", "LICENSE", "NOTICE", "MANIFEST.in", "requirements.lock",
               "src/product.py", "src/package/nested/helper.py", "sql/migrate.py", "sql/install/nested/schema.sql",
               "lab/deployment_e2e.Dockerfile",
-              "lab/deployment_e2e_runtime.py", "lab/zabbix_roles.py", "zabbix/media.yaml",
+              "lab/deployment_e2e_runtime.py", "lab/zabbix_roles.py", "lab/zabbix_reference.py",
+              "lab/zabbix_reference.json", "zabbix/media.yaml",
               "zabbix/templates/nested/media.yaml", "tests/deployment_e2e/test_service_path.py",
               "tests/deployment_e2e/nested/test_helpers.py"]
     for name in inputs:

@@ -57,7 +57,7 @@ to their original execution and do not imply this exact-artifact mode.
 
 The runner builds a Python 3.12.10 image from `requirements.lock` and a wheel from
 the current source by default. Services use PostgreSQL 18.3, PostgreSQL 16.4 for the source
-server, and Zabbix 7.0.10 server/web images. Version tags are explicit; a successful
+server, and the Zabbix server/web images at the pinned patch (`lab/zabbix_reference.json`). Version tags are explicit; a successful
 run records the actual Docker image IDs. Image pulls/build dependency downloads
 need ordinary registry access. The runtime network is a new internal Compose
 network with **no published ports**, host networking, Docker-socket mount or

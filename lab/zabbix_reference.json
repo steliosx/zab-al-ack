@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "scope": "The one exact Zabbix 7.0 LTS patch that the disposable reference lab, the deployment-path lab and their validators target (R27). Earlier records at 7.0.0 and 7.0.10 keep their own bindings and are not rewritten.",
+  "selected": {
+    "version": "7.0.31",
+    "series": "7.0",
+    "git_tag": "7.0.31",
+    "tag_commit": "fc62e967526bca2939bdc92b8ea154be2bbea685",
+    "tag_commit_source": "git ls-remote https://github.com/zabbix/zabbix refs/tags/7.0.31 on 2026-09-22 (official mirror)",
+    "tag_date": "2026-09-22",
+    "release_candidate": "7.0.31rc1 (2026-09-15) was released as 7.0.31 without any changes (ChangeLog at the tag)",
+    "fallback": {
+      "version": "7.0.30",
+      "tag_commit": "406d3a4b8b2ce1f06f271d9f874ea0e6015fa18e",
+      "rule": "Only if the Ubuntu 24.04 package index does not list 7.0.31. A substitution is a new pin recorded here and in the amendment; never mix package versions."
+    }
+  },
+  "verified_from_source": {
+    "note": "Read from raw.githubusercontent.com/zabbix/zabbix/7.0.31 on 2026-09-22; zabbix.com, repo.zabbix.com and the GitHub archive endpoint were not reachable from the preparing environment.",
+    "ui/include/defines.inc.php": {"sha256": "5baae9ed4bb3641f9580f184e62ac7b28f9b39f48a3e2525455ae4ff28e82214", "ZABBIX_VERSION": "7.0.31", "ZABBIX_API_VERSION": "7.0.31"},
+    "include/zbx_dbversion_constants.h": {"sha256": "6f41eff2977edc8c7254d023e539629f0fc391a0eab937c3a556ed78d9e4da11", "postgresql_min_supported": "13.0", "postgresql_max": "18.x", "note": "18.x support entered the 7.0 line in 7.0.20 (ChangeLog ZBXNEXT-10219, 7.0.20rc1)"},
+    "conf/zabbix_server.conf": {"sha256": "13f010436af8aad5a11934c5e521b15a64719bb21174acf3fedb5dfb95f27fb2", "AllowUnsupportedDBVersions_default": 0, "lab_rule": "keep the default so PostgreSQL 18 is supported, not merely allowed"},
+    "ui/include/classes/setup/CFrontendSetup.php": {"sha256": "6f14b39bdff1261909323ab89958be668411220561d04f2a11a027fae2f332d0", "MIN_PHP_VERSION": "8.0.0", "php_ini_minima": {"memory_limit": "128M", "post_max_size": "16M", "upload_max_filesize": "2M", "max_execution_time": 300, "max_input_time": 300, "session.auto_start": "off", "arg_separator.output": "&"}, "php_modules_fatal_if_missing": ["bcmath", "mbstring", "sockets", "gd (png, jpeg, freetype)", "libxml", "xmlwriter", "xmlreader", "ctype", "session", "pgsql"], "php_modules_warning_only": ["gd gif", "ldap", "openssl", "gettext", "curl"]}
+  },
+  "ubuntu_packages": {
+    "status": "NOT_VERIFIED_FROM_THE_PREPARING_ENVIRONMENT: repo.zabbix.com was blocked; the runner host must pass the verification gate before this pin is treated as an installed identity",
+    "distribution": "Ubuntu 24.04 (noble) amd64",
+    "repository": "deb https://repo.zabbix.com/zabbix/7.0/ubuntu noble main",
+    "release_package": "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb",
+    "expected_signing_key": {"long_id": "D913219AB5333005", "fingerprint_third_party_only": "4C3D6F2CC75F5146754FC374D913219AB5333005", "note": "the April 2024 key; confirm the fingerprint from the installed keyring before trusting the index"},
+    "expected_version_string": "1:7.0.31-1+ubuntu24.04 (inferred from the 7.0.24 and 7.0.29 patterns; the Debian revision is unconfirmed)",
+    "packages": ["zabbix-server-pgsql", "zabbix-frontend-php", "zabbix-sql-scripts", "zabbix-nginx-conf"],
+    "schema_path": "/usr/share/zabbix-sql-scripts/postgresql/server.sql.gz",
+    "verification_gate": [
+      "apt-cache madison zabbix-server-pgsql zabbix-frontend-php zabbix-sql-scripts lists exactly the pinned version from repo.zabbix.com",
+      "gpgv --keyring <installed zabbix keyring> /var/lib/apt/lists/*repo.zabbix.com*InRelease reports D913219AB5333005",
+      "dpkg-query -W -f '${Package}\\t${Version}\\t${Architecture}\\n' for every package above matches the pin, and lab/zabbix_native_lab.py status records them"
+    ]
+  },
+  "dependencies": {
+    "postgresql": {"major": 18, "package": "postgresql-18 from PGDG noble-pgdg (Ubuntu's archive stops at 16)", "pgdg_key_fingerprint": "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8", "zabbix_supported_range": "13.0 to 18.x"},
+    "php": {"minimum": "8.0.0", "ubuntu_24_04": "php8.3 (8.3.6-0ubuntu0.24.04.x at preparation time)", "packages": ["php8.3-fpm", "php8.3-pgsql", "php8.3-gd", "php8.3-bcmath", "php8.3-mbstring", "php8.3-xml"]},
+    "web": "official packages pair nginx + php8.3-fpm (zabbix-nginx-conf) or Apache; the disposable lab serves the packaged frontend files from a private copy with the PHP built-in server on 127.0.0.1:58080, which is a loopback lab convenience and not an official deployment configuration"
+  },
+  "lab_relevant_changes_since_7_0_10": [
+    "7.0.20 ZBXNEXT-10219: PostgreSQL 18 becomes a supported database version",
+    "7.0.25 ZBX-26128: acknowledgements with equal timestamps are ordered by id",
+    "7.0.26/7.0.30 ZBX-27485, ZBX-27836: user-role edit form fixes (frontend only)",
+    "7.0.28 ZBX-27561: fewer errors when parallel API requests edit user or host groups",
+    "trapper history.push memory-leak fix (DEV-4909, 2026-04-21) in 7.0.26 and later",
+    "token, role and history API classes have no functional change since January 2025"
+  ],
+  "not_verified": [
+    "U1 availability and exact Debian revision of the 7.0.31 (and 7.0.30) noble packages",
+    "U2 the official release-notes, requirements and download pages",
+    "U3 the current payload of the zabbix-release package",
+    "U4 the full fingerprint, user id and expiry of the April 2024 signing key from an official source",
+    "U5 package dependencies and installed file paths (confirm with apt-cache show and dpkg -L)",
+    "U6 the exact PGDG postgresql-18 Debian version and the PGDG key expiry",
+    "U7 the 7.0 support end dates"
+  ]
+}

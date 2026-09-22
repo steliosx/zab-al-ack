@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 IMAGES = {
     "postgres": "postgres:18.3-bookworm",
     "zabbix-db": "postgres:16.4-alpine",
-    "zabbix-server": "zabbix/zabbix-server-pgsql:alpine-7.0.10",
-    "zabbix-web": "zabbix/zabbix-web-nginx-pgsql:alpine-7.0.10",
+    "zabbix-server": "zabbix/zabbix-server-pgsql:alpine-" + REFERENCE_VERSIONS["zabbix"],
+    "zabbix-web": "zabbix/zabbix-web-nginx-pgsql:alpine-" + REFERENCE_VERSIONS["zabbix"],
 }
 EXPECTED_CASES = {
     "test_installed_authenticated_path_and_exactly_one_source_effect",
@@ -149,7 +149,8 @@ def staged_context(destination, wheel=None):
     for path in sorted((ROOT / "lab").glob("deployment_e2e*")):
         if path.is_file():
             shutil.copy2(path, destination / "lab" / path.name)
-    shutil.copy2(ROOT / "lab/zabbix_roles.py", destination / "lab/zabbix_roles.py")
+    for name in ("zabbix_roles.py", "zabbix_reference.py", "zabbix_reference.json"):
+        shutil.copy2(ROOT / "lab" / name, destination / "lab" / name)
     shutil.copytree(ROOT / "zabbix", destination / "zabbix")
     shutil.copytree(ROOT / "tests/deployment_e2e", destination / "tests/deployment_e2e", ignore=shutil.ignore_patterns("__pycache__"))
     # copy2/copytree preserve source modes, which may be owner-only. Normalize

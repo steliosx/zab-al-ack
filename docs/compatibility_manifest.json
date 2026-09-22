@@ -95,7 +95,13 @@
       "deployment_e2e_target": {
         "version": "7.0.10",
         "commit": "237358b56b2584b94b1f8358f479ade669693ba2",
-        "status": "EXECUTED_LOCAL_A16: installed a16 wheel, 4 passed and 13/13 observations; Docker Compose NOT_RUN."
+        "status": "EXECUTED_LOCAL_A16: installed a16 wheel, 4 passed and 13/13 observations; Docker Compose NOT_RUN. Historical: the target moved to lab/zabbix_reference.json (R27); this record is not rebound."
+      },
+      "native_lab_target": {
+        "version": "7.0.31",
+        "commit": "fc62e967526bca2939bdc92b8ea154be2bbea685",
+        "pin": "lab/zabbix_reference.json",
+        "status": "SELECTED_R27_NOT_EXECUTED: source facts verified at the tag; Ubuntu 24.04 package identities not verified from the preparing environment; no packaged run, no deployment-path run and no real-Zabbix run at this version yet."
       },
       "webhook_transport": {
         "amendment": "A2",

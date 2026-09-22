@@ -123,7 +123,7 @@ directory, and the local runner executes it unmodified. The operator supplies:
 | Input | Requirement |
 |---|---|
 | PostgreSQL 18 | reachable as host `postgres`, port 5432; superuser `lab_admin` with its password in `/run/zabalack-e2e/pg-password`; host logins password-authenticated (`scram-sha-256`); database `alerta` empty before the run |
-| Zabbix 7.0.10 | a fresh disposable instance: `zabbix_server` running with a clean environment (libcurl honours `HTTPS_PROXY`), its frontend reachable as `http://zabbix-web:8080` with the default `Admin` account, no enabled source action and no synthetic host |
+| Zabbix at the pinned patch (`lab/zabbix_reference.json`, R27) | a fresh disposable instance: `zabbix_server` running with a clean environment (libcurl honours `HTTPS_PROXY`), its frontend reachable as `http://zabbix-web:8080` with the default `Admin` account, no enabled source action and no synthetic host; the provisioner refuses any other `apiinfo.version` |
 | Hostnames | `postgres`, `zabbix-web` and `runner` resolving to loopback (for example in `/etc/hosts`) |
 | Checkout link | `/opt/zabalack-lab` resolving to the checkout under test |
 | Private directory | `/run/zabalack-e2e`, mode 0700, containing `pg-password`; the runner generates and replaces `bootstrap.json`, the lab certificate and every other file there |

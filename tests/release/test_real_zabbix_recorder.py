@@ -417,3 +417,68 @@ def test_link_substitution_rejected_without_reading_or_chmod_external_file(run_l
     code, record = run()
     assert code == 1 and record['status'] == 'FAIL' and not (root / recorder.PUBLIC).exists()
     assert outside.read_text() == PASS_XML and outside.stat().st_mode == mode
+
+
+def lab_status(reference='7.0.31', observed='7.0.31', match=True, **overrides):
+    """A lab/zabbix_native_lab.py status record with synthetic identities."""
+    identity = {'kind': 'dpkg', 'package': 'synthetic', 'version': '1:7.0.31-1+ubuntu24.04', 'architecture': 'amd64', 'sha256': 'a' * 64}
+    services = {'reference': reference, 'observed_api_version': observed, 'reference_match': match,
+                'zabbix_server': {'version_line': 'zabbix_server (Zabbix) 7.0.31', 'identity': dict(identity)},
+                'frontend': {'ZABBIX_VERSION': '7.0.31', 'identity': dict(identity)},
+                'schema': {'source': 'server.sql.gz', 'identity': dict(identity)},
+                'postgres': {'version': 'postgres (PostgreSQL) 18.3', 'identity': {'kind': 'unpackaged', 'sha256': 'b' * 64}},
+                'php': {'version_line': 'PHP 8.3.6 (cli)', 'identity': dict(identity)}}
+    services.update(overrides)
+    return {'state': {'state': 'running'}, 'services': services}
+
+
+def test_lab_services_file_is_recorded_as_bounded_identities(run_lab, tmp_path):
+    root, state, run, *_ = run_lab
+    state['xml'] = PASS_XML.replace('7.0.10', '7.0.31')
+    services = tmp_path / 'lab-status.json'
+    services.write_text(json.dumps(lab_status()))
+    code, record = run('--run', '--services-file', str(services))
+    assert code == 0 and record['status'] == 'PASS'
+    assert record['services']['reference'] == '7.0.31' and record['services']['observed_api_version'] == '7.0.31'
+    assert set(record['services']['components']) == set(recorder.SERVICE_COMPONENTS)
+    assert record['services']['components']['zabbix_server'] == {
+        'kind': 'dpkg', 'package': 'synthetic', 'version': '1:7.0.31-1+ubuntu24.04', 'architecture': 'amd64',
+        'sha256': 'a' * 64, 'version_line': 'zabbix_server (Zabbix) 7.0.31'}
+    assert record['services']['components']['frontend']['ZABBIX_VERSION'] == '7.0.31'
+    assert 'state' not in record['services'] and 'served_by' not in json.dumps(record['services'])
+
+
+@pytest.mark.parametrize('flaw', ['unmatched', 'other-observed', 'other-reference', 'missing-component',
+                                  'no-identity', 'incomplete-package', 'bad-digest', 'not-json'])
+def test_invalid_lab_services_file_fails_before_any_execution(run_lab, tmp_path, flaw):
+    root, state, run, *_ = run_lab
+    status = lab_status()
+    services = status['services']
+    if flaw == 'unmatched':
+        services['reference_match'] = False
+    elif flaw == 'other-observed':
+        services['observed_api_version'] = '7.0.30'
+    elif flaw == 'other-reference':
+        services['reference'] = '7.0.30'
+    elif flaw == 'missing-component':
+        del services['php']
+    elif flaw == 'no-identity':
+        services['schema'] = {'source': 'server.sql.gz'}
+    elif flaw == 'incomplete-package':
+        del services['frontend']['identity']['version']
+    elif flaw == 'bad-digest':
+        services['postgres']['identity']['sha256'] = 'not-a-digest'
+    path = tmp_path / 'lab-status.json'
+    path.write_text('{not json' if flaw == 'not-json' else json.dumps(status))
+    code, record = run('--run', '--services-file', str(path))
+    assert code == 1 and record['status'] == 'FAIL' and record['reason'] == 'lab_services_file_invalid'
+    assert state['calls'] == [] and 'services' not in record and not (root / recorder.PUBLIC).exists()
+
+
+def test_observed_version_must_agree_with_the_lab_services_record(run_lab, tmp_path):
+    root, state, run, *_ = run_lab
+    services = tmp_path / 'lab-status.json'
+    services.write_text(json.dumps(lab_status()))
+    code, record = run('--run', '--services-file', str(services))   # PASS_XML observed 7.0.10
+    assert code == 1 and record['status'] == 'FAIL' and record['reason'] == 'observed_version_differs_from_lab_services'
+    assert not (root / recorder.PUBLIC).exists()

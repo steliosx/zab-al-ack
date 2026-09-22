@@ -1,5 +1,19 @@
 # Zab-al-ack changelog
 
+## Unreleased — one exact native Zabbix 7.0 reference (R27)
+
+- `lab/zabbix_reference.json` pins Zabbix 7.0.31 with verified source facts,
+  the Ubuntu 24.04 package verification gate and the fallback rule; every
+  producer, validator and mocked test reads the pin instead of a `7.0.10` literal.
+- `lab/zabbix_native_lab.py`: disposable package-installed Zabbix instance
+  without Docker (own PostgreSQL 18 cluster, loopback-only server, packaged
+  frontend on the fixed lab API) with state classification, refusals, verified
+  stop, fresh-database reset and a component identity record;
+  `tools/record_real_zabbix.py --services-file` records it;
+  `lab/real_zabbix_prepare.py` provisions the synthetic contract fixture.
+- Historical 7.0.0/7.0.10 records are untouched. Author verification only; no
+  packaged run at the pinned version.
+
 ## Unreleased — Docker requirements inventory and runner-account verification (R28)
 
 - `docs/docker_requirements_inventory.md`: required / optional / historical

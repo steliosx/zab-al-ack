@@ -1,13 +1,53 @@
 # Optional real Zabbix contract suite
 
-The fresh reference server is defined in `compose.zabbix.yml`. Without Docker,
-the same lab can be assembled by hand: build `zabbix_server` from the upstream
-7.0.x source tarball (`--enable-server --with-postgresql --with-libpcre2`), load
-`database/postgresql/{schema,images,data}.sql` into a dedicated PostgreSQL
-cluster, serve `ui/` with PHP 8.x on `127.0.0.1:58080`, and run the server as an
-unprivileged user with loopback-only listeners. The suite accepts any 7.0.x
-patch release and records the observed version; the reference pin is 7.0.0.
+The reference instance is the one exact patch in `lab/zabbix_reference.json`
+(R27; 7.0.31 at the time of writing, with its verified source facts, the
+Ubuntu 24.04 package identities to confirm and the fallback rule). The suite
+accepts any 7.0.x patch release and records the observed version; the recorder
+refuses a lab services record that does not match the pin.
 No mocked result is permission, macro or notification evidence.
+
+## Native disposable instance (no Docker): `lab/zabbix_native_lab.py`
+
+On a host with the pinned packages installed (`zabbix-server-pgsql`,
+`zabbix-frontend-php`, `zabbix-sql-scripts`, `php8.3-*` and PGDG
+`postgresql-18`), the lab script keeps one marked directory,
+`.zabbix-lab/` in the checkout, with its own PostgreSQL 18 cluster on loopback
+port 55434 holding the packaged schema, a `zabbix_server` started from a
+generated loopback-only configuration (listen port 20051, `AllowRoot=0`,
+`AllowUnsupportedDBVersions` left at its default), and a private copy of the
+packaged frontend served by the PHP built-in server at the fixed lab API
+`http://127.0.0.1:58080/api_jsonrpc.php`. Everything runs as an unprivileged
+user (as `nobody` when started as root). The built-in server is a loopback lab
+convenience, not an official Zabbix deployment configuration.
+
+```bash
+export ACK_LAB_PG_BIN=/usr/lib/postgresql/18/bin
+export ZABALACK_ZABBIX_SERVER=/usr/sbin/zabbix_server ZABALACK_ZABBIX_UI=/usr/share/zabbix
+export ZABALACK_ZABBIX_SCHEMA=/usr/share/zabbix-sql-scripts/postgresql/server.sql.gz ZABALACK_PHP=/usr/bin/php8.3
+python lab/zabbix_native_lab.py plan                      # prints the layout; starts nothing
+python lab/zabbix_native_lab.py state                     # absent | stopped | running | unmarked | ambiguous
+python lab/zabbix_native_lab.py start --isolated-lab      # refuses unmarked/ambiguous; enforces the pin on apiinfo.version
+python lab/zabbix_native_lab.py status > /path/private/lab-status.json   # component identities for the recorder
+python lab/zabbix_native_lab.py stop --isolated-lab       # exit 0 only when every component is observed stopped
+python lab/zabbix_native_lab.py reset --isolated-lab      # fresh database from the schema; --wipe removes the directory
+```
+
+`start` refuses an unmarked or ambiguous directory, `reset` refuses anything but
+a marked, stopped lab, and a running instance whose `apiinfo.version` differs
+from the pin is reported and refused as the reference. On a fresh instance,
+`lab/real_zabbix_prepare.py --isolated-lab --private /path/private` creates
+the synthetic cohort and outside-scope hosts, trapper items and triggers, the
+restricted source role (read back and verified) and the read-only witness
+role, their users and tokens, raises the three problems through `history.push`
+and writes `fixture.json` plus the two mode-0600 token files into the private
+directory; it prints identifiers, never a token, and refuses an instance that
+already has the synthetic hosts or an enabled action. The status record names,
+for the server, frontend, schema, PostgreSQL and PHP, the version and the
+`dpkg` package identity (or the executable digest for a source build); pass it
+to `tools/record_real_zabbix.py --run --services-file` so the evidence carries
+the identities it ran against. A source-built instance is an author
+convenience: installed-artifact qualification uses the packaged instance.
 
 Start the explicit real-zabbix profile on an authorised development host. The
 network is internal; the UI/API exposes `127.0.0.1:58080` only. Confirm this is a

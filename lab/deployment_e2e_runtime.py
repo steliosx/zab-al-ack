@@ -26,6 +26,8 @@ from urllib.parse import quote
 import httpx
 import psycopg
 from psycopg import sql
+
+from lab.zabbix_reference import VERSION as ZABBIX_REFERENCE_VERSION
 from psycopg.conninfo import make_conninfo
 from psycopg.types.json import Jsonb
 
@@ -192,10 +194,10 @@ def configure(dsns, source):
         "probe_dsn_file": secret("probe.dsn", dsns["zabalack_probe"]),
         "worker_dsn_file": secret("worker.dsn", dsns["zabalack_worker"]),
         "operator_dsn_file": secret("operator.dsn", dsns["zabalack_operator"]),
-        "approved_versions": ["7.0.10"], "lab_mode": True,
+        "approved_versions": [ZABBIX_REFERENCE_VERSION], "lab_mode": True,
         "ingestion_mappings": {"ingest@lab.invalid": {"customer": CUSTOMER, "instance": INSTANCE}},
         "endpoint_registry": {INSTANCE: {"logical_instance": INSTANCE, "url": "https://127.0.0.1:58443/api_jsonrpc.php",
-            "token_file": secret("source.token", source.worker_token), "ca_file": str(PRIVATE / "server.crt"), "api_version": "7.0.10"}}}
+            "token_file": secret("source.token", source.worker_token), "ca_file": str(PRIVATE / "server.crt"), "api_version": ZABBIX_REFERENCE_VERSION}}}
     path = secret("zabalack.json", json.dumps(config))
     with psycopg.connect(dsns["zabalack_operator"], autocommit=True) as operator:
         audit = {"actor_ref": "synthetic-deployment-operator", "change_ref": "ISOLATED-LAB-ONLY"}
@@ -342,7 +344,7 @@ def execute_service_path():
                         checks["worker_denied_table_update" if role == "zabalack_worker" else "probe_denied_table_read"] = False
         checks["separate_native_logins"] = all(identities)
         postgres_major = str(int(admin.execute("SHOW server_version_num").fetchone()[0]) // 10000)
-        versions = {"alerta": version("alerta-server"), "zabbix": "7.0.10", "postgres_major": postgres_major}
+        versions = {"alerta": version("alerta-server"), "zabbix": ZABBIX_REFERENCE_VERSION, "postgres_major": postgres_major}
         # Verify the installed distribution has both real plugin entry points.
         entrypoints = {entry.name for entry in distribution("zabalack").entry_points if entry.group == "alerta.plugins"}
         if entrypoints != {"zabalack_zabbix_normalise", "zabalack_zabbix_ack"}:

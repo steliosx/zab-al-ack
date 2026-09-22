@@ -9,6 +9,7 @@ import tomllib
 import pytest
 
 from tests.release.test_release_provenance import candidate, build_fixture  # noqa: F401
+from deployment_evidence import REFERENCE_VERSIONS
 from evidence_utils import code_digests
 import public_audit
 import verify_release
@@ -59,7 +60,7 @@ def passing(root, local=False):
         'deployment_gates': 'MANUAL_GATE_PENDING', 'code_digests': code_digests(root),
         'tree_unchanged': True, 'counts': {'passed': 4, 'failed': 0, 'skipped': 0},
         'checks': {key: True for key in CHECKS},
-        'versions': {'alerta': '9.1.0', 'zabbix': '7.0.10', 'postgres_major': '18'},
+        'versions': dict(REFERENCE_VERSIONS),
         'started_at': '2026-09-11T12:00:00Z', 'finished_at': '2026-09-11T12:00:45Z',
         'runner_shutdown_exit_code': 0, 'shutdown_exit_code': 0,
         'image_ids': {key: 'sha256:' + 'a' * 64 for key in COMPONENTS},

@@ -24,11 +24,46 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from evidence_utils import redact_junit, cases, code_digests  # noqa: E402
 from lab.real_zabbix_safety import validate_lab_fixture  # noqa: E402
+from lab.zabbix_reference import VERSION as REFERENCE_VERSION  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 RECORD = 'evidence/real-zabbix-run.json'
 PUBLIC = 'evidence/real-zabbix.xml'
 EMPTY = {'passed': 0, 'failed': 0, 'skipped': 0}
+
+
+SERVICE_COMPONENTS = ('zabbix_server', 'frontend', 'schema', 'postgres', 'php')
+
+
+def lab_services(path: Path) -> dict:
+    """Bounded identities of the disposable lab (lab/zabbix_native_lab.py status); never free text."""
+    if path.stat().st_size > 65536:
+        raise ValueError('services file exceeds size limit')
+    data = json.loads(path.read_text())
+    services = data.get('services', data) if isinstance(data, dict) else None
+    if not isinstance(services, dict) or set(SERVICE_COMPONENTS) - set(services):
+        raise ValueError('services file must name ' + ', '.join(SERVICE_COMPONENTS))
+    if services.get('reference') != REFERENCE_VERSION or services.get('reference_match') is not True:
+        raise ValueError('services file does not record the pinned reference as matched')
+    if services.get('observed_api_version') != REFERENCE_VERSION:
+        raise ValueError('services file observed a different Zabbix version than the pin')
+    kept = {}
+    for name in SERVICE_COMPONENTS:
+        item = services[name]
+        identity = item.get('identity') if isinstance(item, dict) else None
+        if not isinstance(identity, dict) or identity.get('kind') not in ('dpkg', 'unpackaged'):
+            raise ValueError('services file lacks a package or digest identity for ' + name)
+        if identity['kind'] == 'dpkg' and not all(isinstance(identity.get(key), str) and identity[key]
+                                                 for key in ('package', 'version', 'architecture')):
+            raise ValueError('services file package identity is incomplete for ' + name)
+        digest = identity.get('sha256')
+        if digest is not None and not re.fullmatch(r'[0-9a-f]{64}', str(digest)):
+            raise ValueError('services file digest is malformed for ' + name)
+        kept[name] = {key: identity[key] for key in ('kind', 'package', 'version', 'architecture', 'sha256') if key in identity}
+        for key in ('version', 'version_line', 'ZABBIX_VERSION'):
+            if isinstance(item.get(key), str) and len(item[key]) <= 200:
+                kept[name][key] = item[key]
+    return {'reference': REFERENCE_VERSION, 'observed_api_version': services['observed_api_version'], 'components': kept}
 
 
 def utc_now() -> str:
@@ -179,6 +214,8 @@ def main() -> int:
     parser.add_argument('--forbid', action='append', default=[], metavar='TEXT')
     parser.add_argument('--forbid-file', action='append', default=[], type=Path, metavar='PATH')
     parser.add_argument('--timeout', type=int, default=300, help='pytest deadline in seconds (1..1800; default 300)')
+    parser.add_argument('--services-file', type=Path, default=None,
+                        help='status JSON written by lab/zabbix_native_lab.py; records the lab component identities (R27)')
     args = parser.parse_args()
     record_path, public = ROOT / RECORD, ROOT / PUBLIC
     record = {'schema_version': 2, 'layer': 'real_zabbix_7_0', 'runner': 'tools/record_real_zabbix.py --run',
@@ -212,6 +249,11 @@ def main() -> int:
         if args.junit is not None:
             return finish('FAIL', 'unowned_junit_import_disabled')
         attempt = PrivateAttempt(ROOT, record['code_digests'])
+        if args.services_file is not None:
+            try:
+                record['services'] = lab_services(args.services_file)
+            except (OSError, ValueError):
+                return finish('FAIL', 'lab_services_file_invalid')
         if not 1 <= args.timeout <= 1800:
             return finish('FAIL', 'invalid_timeout')
         if os.environ.get('ACK_TEST_REAL_ZABBIX_LAB') != 'YES_ISOLATED_LAB':
@@ -268,6 +310,8 @@ def main() -> int:
         if any(re.fullmatch(r'7\.0\.[0-9]+', value) is None for value in versions):
             return finish('FAIL', 'junit_version_property_invalid')
         record['observed_api_versions'] = versions
+        if 'services' in record and versions and versions != [record['services']['observed_api_version']]:
+            return finish('FAIL', 'observed_version_differs_from_lab_services')
         record['status'] = 'PASS' if result.returncode == 0 and counts['passed'] == len(rows) else 'FAIL'
         record['recorded_at'] = utc_now()
         record['junit'] = PUBLIC
