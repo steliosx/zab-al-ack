@@ -1,4 +1,4 @@
-include README.md AGENTS.md ALPHA_REPORT.md LICENSE NOTICE THIRD_PARTY.md
+include README.md AGENTS.md CLAUDE.md ALPHA_REPORT.md LICENSE NOTICE THIRD_PARTY.md
 include CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md GOVERNANCE.md CHANGELOG.md
 include requirements*.lock requirements-quality.in Makefile ruff.toml mypy.ini
 recursive-include config *.json

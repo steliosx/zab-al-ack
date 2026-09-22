@@ -7,7 +7,8 @@ from pathlib import Path
 import re
 
 SKILLS = ('zabalack-release-review', 'zabalack-isolated-lab', 'zabalack-migration-review')
-CONTEXT = ('AGENTS.md', 'CONTRIBUTING.md', 'docs/agent-workflows.md', 'docs/agents/astra.md',
+CONTEXT = ('AGENTS.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'docs/agent-workflows.md',
+           'docs/agents/astra.md', 'docs/agents/claude-code.md',
            'docs/RELEASING.md', 'docs/local-services.md', 'lab/real_zabbix.md',
            'docs/DESIGN.md', 'docs/final_review_notes.md', 'docs/SPEC_AMENDMENTS.md',
            'docs/deployment.md', 'docs/rollback.md', 'docs/INPUTS_REQUIRED.md',

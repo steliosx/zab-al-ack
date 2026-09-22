@@ -59,7 +59,8 @@ def guidance(tmp_path):
     return tmp_path
 
 
-@pytest.mark.parametrize('document', ['docs/agent-workflows.md', 'docs/agents/astra.md'])
+@pytest.mark.parametrize('document', ['docs/agent-workflows.md', 'docs/agents/astra.md',
+                                      'docs/agents/claude-code.md', 'CLAUDE.md'])
 def test_guidance_hash_detects_prose_without_rebinding_code(guidance, document):
     before = inspect(guidance)
     code = code_digests(guidance)
@@ -73,6 +74,14 @@ def test_guidance_validation_requires_astra_role_file(guidance):
     (guidance / 'docs/agents/astra.md').unlink()
     with pytest.raises(ValueError, match='agent_guidance_file_invalid'):
         inspect(guidance)
+
+
+def test_claude_entrypoint_imports_shared_guidance():
+    # Claude Code skips a direct AGENTS.md read when any CLAUDE.md is at or
+    # above the working directory, so the entrypoint must import it.
+    lines = (ROOT / 'CLAUDE.md').read_text().splitlines()
+    assert {'@AGENTS.md', '@docs/agents/claude-code.md'} <= set(lines)
+    assert all(line.startswith(('@', '<!--')) for line in lines if line.strip())
 
 
 def test_source_zip_contains_exact_validated_guidance(guidance, tmp_path):
