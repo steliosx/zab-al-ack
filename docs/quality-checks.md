@@ -66,8 +66,9 @@ place. The scanner lock likewise adds aarch64 hashes for its pinned
 `charset-normalizer` and `msgpack`; its other wheels are platform-independent.
 Hash and metadata verification does not establish successful installation or
 execution. Validate each runner with fresh environments, hash-checked binary
-installs, `pip check` and the required checks; Linux ARM64 results do not
-establish x86_64 coverage.
+installs, `pip check` and the required checks. Linux ARM64 results do not
+establish x86_64 coverage; since 2026-09-22 routine CI runs on native Linux x64,
+which uses the existing x86_64 hashes.
 
 | Direct tool | Pin | Package Python requirement | Official release metadata |
 |---|---|---|---|

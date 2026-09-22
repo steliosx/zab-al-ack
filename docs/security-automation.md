@@ -47,11 +47,11 @@ source visibility policy before enabling uploads. Keep private inventories,
 raw operational logs and runtime secrets out of every checkout.
 
 Active CodeQL and dependency/secret jobs now select the dedicated repository
-Linux ARM64 self-hosted runner with no paid-hosted fallback. This execution
+native Linux x64 self-hosted runner (ARM64 until 2026-09-22) with no paid-hosted fallback. This execution
 policy needs Opus review alongside the CI migration. Existing CodeQL enablement,
 permissions, query scope and ingestion requirements are unchanged; routing a
 skipped job does not establish a clean scan. The pinned CLI 2.27.0/action support
-native Linux ARM64. Validate host capacity and actual allocation before claiming
+native Linux x64 (and the former ARM64 host). CodeQL stays disabled by its gate. Validate host capacity and actual allocation before claiming
 execution, and preserve private failed/interrupted attempts through the trusted
 host hooks described in [self-hosted-runner.md](self-hosted-runner.md).
 

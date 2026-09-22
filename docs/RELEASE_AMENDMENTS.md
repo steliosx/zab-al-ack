@@ -963,3 +963,22 @@ original identities and are not evidence for a18. Required Actions runs, the
 release build and exact-artifact qualification, independent security review,
 approved private retention and the owner inputs remain open. No tag, upload,
 merge, release or deployment is authorized by this amendment.
+
+## R25 — Routine Actions execution moves to a native x64 runner
+
+The former dedicated Linux ARM64 runner went offline, leaving required runs
+queued. The owner authorized a staged replacement: one repository-specific
+Ubuntu Server 24.04 amd64 QEMU/KVM guest, `zabalack-omarchy-x64`, labelled
+`[self-hosted, Linux, X64, zabalack]`, with Docker inside the guest. Every active
+job now selects that label set. The trusted hook's platform policy accepts only
+`Linux`/`X64` and refuses ARM64 and every other platform. The security job
+installs the official Gitleaks 8.24.3 Linux x64 archive with its own inspected
+checksum; the version, source pin, account/path contracts, lab lock,
+retention-before-reset, required job names, producer/package chain and trust
+gates are unchanged. CodeQL stays behind its enablement gate.
+
+Earlier ARM64 runs remain ARM64 evidence at their original revisions. Routine
+x64 CI does not by itself close the x86_64 acceptance gate or any other
+qualification, security, installed-environment or publication requirement.
+`main` and scheduled runs keep the old definitions until a separately
+authorized merge.

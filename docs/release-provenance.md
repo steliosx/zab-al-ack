@@ -34,7 +34,8 @@ R12 scope and do not prove Docker or packaged-wheel service execution.
 
 ## Deliberate hosted issuance
 
-Routine CI now targets the dedicated Linux ARM64 self-hosted runner, with no
+Routine CI now targets the dedicated native Linux x64 self-hosted runner (ARM64
+until 2026-09-22), with no
 hosted fallback; see [ci-evidence.md](ci-evidence.md). This changes the execution
 policy for unsigned candidate validation and requires Opus review. It does not
 change the optional signed-attestation consumer policy below. The inactive

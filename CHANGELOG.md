@@ -2,6 +2,11 @@
 
 ## 0.1.0a18 — 2026-09-22 (alpha under qualification toward beta, unpublished)
 
+- Routine Actions execution moves from the offline Linux ARM64 runner to a
+  dedicated native x64 runner (R25); the hook accepts only Linux/X64 and the
+  security job verifies the official Gitleaks 8.24.3 x64 archive. Earlier ARM64
+  results remain ARM64 evidence.
+
 - Replacement candidate identity for the owner-selected combination on `a3317dc`:
   the wheel build-tool pin correction (PR #26), the pin-consistency check,
   forward migration 013, four corrections from the a17 application-security
