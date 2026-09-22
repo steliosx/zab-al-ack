@@ -31,6 +31,22 @@ class CaptureLogRedactor(logging.Filter):
     """Suppress SQL diagnostics carrying restricted candidate evidence."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        # Alerta's own `ContextFilter` attaches the raw request body and query
+        # arguments to every record, and `JSONFormatter` emits both, so under
+        # `LOG_FORMAT=json` the operator's acknowledgement note reaches the log
+        # without ever passing through the message. The body is outside the data
+        # inventory whatever it contains, so it is blanked unconditionally rather
+        # than only when the evidence test matches.
+        for attribute in ("data", "reqargs"):
+            if hasattr(record, attribute):
+                setattr(record, attribute, "-")
+        # `ContextFilter` also attaches `request.url` whole. A reader search that
+        # filters on the staged intent attribute carries the intent value in the
+        # query string, not the body, and Alerta's default `LOG_METHODS` logs
+        # GET requests. The path stays for operations; the query goes.
+        url = getattr(record, "url", None)
+        if isinstance(url, str) and "?" in url:
+            record.url = url.split("?", 1)[0]
         try:
             message = record.getMessage()
             exception = "".join(traceback.format_exception(*record.exc_info)) if record.exc_info else ""

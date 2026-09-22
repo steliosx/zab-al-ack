@@ -1,5 +1,40 @@
 # Zab-al-ack changelog
 
+## 0.1.0a18 — 2026-09-22 (alpha under qualification toward beta, unpublished)
+
+- Routine Actions execution moves from the offline Linux ARM64 runner to a
+  dedicated native x64 runner (R25); the hook accepts only Linux/X64 and the
+  security job verifies the official Gitleaks 8.24.3 x64 archive. Earlier ARM64
+  results remain ARM64 evidence.
+
+- Replacement candidate identity for the owner-selected combination on `a3317dc`:
+  the wheel build-tool pin correction (PR #26), the pin-consistency check,
+  forward migration 013, four corrections from the a17 application-security
+  review (`health.py`, `config.py`, `plugins.py`, `query_guard.py`), the logging
+  redaction and access-log route tests, and the populated delivery-ledger upgrade
+  coverage (PR #28). The a17 wheel `e5c9e212…` and every historical run keep their
+  original identities; none of them is evidence for this version.
+
+- Access-log routes documented and tested: Alerta's own after-request line
+  formats the request path and never a query string, the development server's
+  request line is held at WARNING, and a WSGI-server or reverse-proxy access log
+  needs a path-only format at that originating logger; no log message is rewritten.
+- The mandatory adapter's log redactor blanks Alerta's `ContextFilter` extras
+  `data` and `reqargs` and drops the query string from `url` on every record, so
+  `LOG_FORMAT=json` emits neither the operator's note nor a reader search's staged
+  intent value; the request path is kept. Found by the a17 application-security
+  review (body and arguments) and its cross-review (query string).
+- Forward migration 013 closes two NULL gaps in `worker_call` found by an
+  independent SQL review of a17: `record_reconciliation`, `record_host_check`
+  and `record_host_inventory` now require `worker_id`, an instance holding no
+  background lease refuses them instead of comparing a NULL owner to a NULL
+  caller, and a reconciliation `ok` with no `completion_evidence` key is refused
+  like one with the wrong evidence. 012's body is otherwise unchanged; the
+  routine digest is re-recorded and explicit resealing remains required.
+- The reference job fails when a `pyproject.toml` pin is not repeated in the
+  locks or a workflow or release-template action commit is not the inspected
+  one; `pip check` never saw that drift.
+
 ## 0.1.0a17 — 2026-09-18 (qualification candidate, unpublished)
 
 - Give the integrated recovery correction an explicit new artifact identity;

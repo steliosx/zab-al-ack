@@ -6,8 +6,10 @@ updates:
       interval: weekly
   # Covers the pyproject.toml runtime pins only. requirements.lock,
   # requirements-runtime.lock and requirements-scanner.lock are not names
-  # Dependabot's pip support reads; refresh them by hand (CONTRIBUTING.md) and
-  # rely on `pip check` in ci.yml to catch pyproject/lock drift.
+  # Dependabot's pip support reads; refresh them by hand (CONTRIBUTING.md).
+  # `pip check` does not see extras or build-system requirements, so
+  # tests/release/test_pin_consistency.py fails the reference job until every
+  # pyproject pin is repeated in the locks and every action commit is inspected.
   - package-ecosystem: pip
     directory: /
     schedule:

@@ -1,3 +1,8 @@
+> **Historical a17 record.** This report describes `0.1.0a17` and its evidence only. The
+> current candidate is `0.1.0a18` (draft PR #29); see
+> [docs/beta_preparation_note_2026-09-22.md](docs/beta_preparation_note_2026-09-22.md). Nothing
+> here is evidence for a18.
+
 # Zab-al-ack 0.1.0a17 — integrated recovery candidate
 
 This is an unpublished candidate under qualification, not beta acceptance.
@@ -19,6 +24,14 @@ CodeQL was skipped; a separate current whole-repository security report is
 unavailable. Independent technical review is distinct from GitHub approval.
 Native x64 remains deferred. Installed-account A4/G5, A2, T30/G1–G8 and
 publication/independent-review requirements remain open as applicable.
+
+Status at 21 September 2026 (superseded on 22 September; see the note above): the merged a17 is `a3317dc41890ef56411e7597b32c44c70b878416`
+with migrations 001–012 (010, 011 and 012 each require explicit resealing); the
+candidate under qualification is PR #26 head `3ac7829d0ae9c21d23d4f3cf7d522722ab3fc590`
+with the byte-identical wheel `e5c9e212…`. The a17 required runs, the receipted
+qualification and everything still open are in
+[docs/beta_readiness_snapshot_2026-09-21.md](docs/beta_readiness_snapshot_2026-09-21.md).
+The committed `evidence/` records remain a16's, as `evidence/README.md` states.
 
 ## Historical a16 report (retained verbatim below)
 

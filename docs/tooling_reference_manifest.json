@@ -112,5 +112,20 @@
       "Requires-Dist: hypothesis>=5.7.1; extra == \"testing\""
     ],
     "contains_pkg_resources": false
+  },
+  {
+    "name": "wheel",
+    "version": "0.48.0",
+    "sha256": "3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab",
+    "url": "https://files.pythonhosted.org/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl",
+    "metadata": [
+      "Requires-Python: >=3.9",
+      "Requires-Dist: packaging >= 24.0"
+    ],
+    "contains_pkg_resources": false,
+    "verified_at_utc": "2026-09-18T17:28:24.464723+00:00",
+    "verification": "Downloaded PyPI wheel bytes, SHA-256 verified against PyPI metadata and destination readback; METADATA inspected without running bundled code.",
+    "bytes": 33320,
+    "metadata_sha256": "e702fede719fefbb8accad64c01c78efe8d7efea27a7dcef3423f83ffaadfc48"
   }
 ]

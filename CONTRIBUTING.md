@@ -44,8 +44,14 @@ private histories, customer identifiers or sensitive inventories to an issue.
 Follow SECURITY.md for vulnerability reports.
 
 `requirements.lock`, `requirements-runtime.lock` and `requirements-scanner.lock`
-are refreshed by hand (Dependabot only tracks the `pyproject.toml` pins); CI runs
-`pip check` to catch pyproject/lock drift. The quality, SQL and reference
+are refreshed by hand (Dependabot only tracks the `pyproject.toml` pins).
+`pip check` reports only the core dependency list, not extras or build-system
+requirements, so `tests/release/test_pin_consistency.py` fails the reference job
+when a `pyproject.toml` pin is not repeated in the locks, or when a workflow or
+release-template action commit is not the one recorded in the inspection
+manifests (`docs/ci_reference_manifest.json`, `docs/upstream-codeql-manifest.json`,
+`docs/upstream-attestation-manifest.json`). A bump therefore carries its lock
+line and a fresh inspection record in the same change. The quality, SQL and reference
 runners rewrite committed files under `evidence/` (`quality-run.json`,
 `runtime_wasm_sql.json`, `test-summary.json`, `*.xml`, `reference-run.json`,
 `batch-*-supplemental.json`), so an ordinary local check leaves the tree

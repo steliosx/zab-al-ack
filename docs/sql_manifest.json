@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package": "zabalack",
-  "package_version": "0.1.0a17",
+  "package_version": "0.1.0a18",
   "files": [
     {
       "path": "sql/install/00_roles.sql",
@@ -78,6 +78,10 @@
     {
       "path": "sql/migrations/012_settled_attempt_suspension.sql",
       "sha256": "2b1ec1dc17ab71b7686ded37c34fcead07b9706fc03e37303067fde8ea417e45"
+    },
+    {
+      "path": "sql/migrations/013_background_fence_null_safety.sql",
+      "sha256": "98c35711bbc175bf80dab268d5971e0bcc74a22c790617a02212f9575dca84b4"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",

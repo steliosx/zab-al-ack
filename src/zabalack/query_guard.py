@@ -57,8 +57,10 @@ _KEYED = re.compile(r'"attributes"::jsonb\s*(?:->>|\?)\s*%\((\w+)\)s')
 _ATTRIBUTE_MENTION = re.compile(r'\battributes\b', re.IGNORECASE)
 # Upstream interpolates a sort key raw into `attributes->'{key}'` and a grouping
 # token raw into SELECT and GROUP BY, so anything that is not a plain name is
-# unsupported syntax and is refused rather than passed through.
-_SAFE_ATTRIBUTE_KEY = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]*$')
+# unsupported syntax and is refused rather than passed through. `\A`/`\Z`, not
+# `^`/`$`: `$` also matches immediately before a trailing newline, which would
+# normalise `<key>\n` into the plain name it is not.
+_SAFE_ATTRIBUTE_KEY = re.compile(r'\A[A-Za-z0-9_][A-Za-z0-9_-]*\Z')
 
 
 def _restricted(name: Any) -> bool:

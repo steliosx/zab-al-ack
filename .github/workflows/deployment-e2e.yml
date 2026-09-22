@@ -9,7 +9,7 @@ jobs:
   service-lab:
     # Review the repository's self-hosted lab policy before explicit enablement.
     if: ${{ vars.ZABALACK_DEPLOYMENT_E2E_ENABLED == 'true' }}
-    runs-on: [self-hosted, Linux, ARM64, zabalack]
+    runs-on: [self-hosted, Linux, X64, zabalack]
     timeout-minutes: 45
     steps:
       - name: Refuse an untrusted revision on the persistent runner

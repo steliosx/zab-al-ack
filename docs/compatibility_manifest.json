@@ -137,7 +137,7 @@
     "production_endpoints": [],
     "production_access": "NOT_AUTHORIZED_NOT_ATTEMPTED"
   },
-  "alpha_version": "0.1.0a17",
+  "alpha_version": "0.1.0a18",
   "ci_workflows": "SUPPLIED_NOT_RUN_ON_GITHUB",
   "database_schema_version": 4,
   "review_base_commit": "14b8c72f34d93b16c102013a232a995d75f7a6eb",

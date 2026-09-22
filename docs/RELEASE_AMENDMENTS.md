@@ -917,3 +917,68 @@ The a16 narrative and qualified artifacts are retained. Native x64 remains defer
 installed-account permissions, current security review, owner publication inputs
 and all applicable beta, amendment and deployment requirements remain open.
 No tag, upload, merge, release or deployment is authorized by this amendment.
+
+## R23 — Coherent wheel build-tool correction
+
+The build requirement and installed development lock now both pin `wheel==0.48.0`.
+PR #2 changed only the former, leaving `requirements.lock` at 0.46.2. The
+[upstream release notes](https://wheel.readthedocs.io/en/stable/news.html)
+identify the fix for `wheel convert` output-path traversal (GHSA-vgq5-9859-3mmw).
+The repository builds its own source with setuptools and does not invoke that
+conversion command; this correction does not establish a runtime exploit path.
+
+The new PyPI wheel's actual bytes and metadata were inspected and hashed; its
+dated entry is appended to `tooling_reference_manifest.json`. Its Python >=3.9
+and packaging >=24 requirements are compatible with the existing Python 3.12
+target and packaging 26.3 pin. Other pins and the runtime, quality and scanner
+hash locks are unchanged. `requirements.lock` remains an exact-version lock
+without hashes; adding one isolated hash would enable pip's hash enforcement
+without supplying the other required hashes. Historical R1 and compatibility
+observations retain their original versions.
+
+This changes the harness binding, not the application or SQL bytes. Preserve the
+merged-main and retained e5c9e212 wheel results at their original identities.
+Before freezing a replacement candidate, obtain the required ARM64 Actions jobs
+and dependency/secret checks at the new revision, retain authentic producer and
+package records, and rebuild reproducibly with the corrected toolchain. Qualify
+the exact retained output non-editably with the installed migrations and reseal
+procedure, including affected recovery and reader cases. A Windows build smoke
+check is not ARM64, installed-environment or beta acceptance evidence. No old
+evidence is relabelled and no acceptance or publication gate is waived.
+
+## R24 — 0.1.0a18: replacement candidate identity (alpha under qualification)
+
+The owner selected a replacement candidate instead of freezing PR #26 as-is. On
+base `a3317dc` it combines R23's wheel pin correction, the pin-consistency check,
+forward migration 013, four Python corrections from the a17 application-security
+review, the logging redaction and access-log route tests, the populated
+delivery-ledger upgrade coverage and the 21 September readiness documentation.
+Migrations 001–012 are byte-identical; 013 is the reviewed file. Only the
+manifest's `package_version` changes with this identity; every file hash in
+`docs/sql_manifest.json` is unchanged.
+
+`0.1.0a18` is an alpha under qualification toward beta, not a beta or release
+candidate. The a17 wheel `e5c9e212…` and all a17 and earlier results keep their
+original identities and are not evidence for a18. Required Actions runs, the
+release build and exact-artifact qualification, independent security review,
+approved private retention and the owner inputs remain open. No tag, upload,
+merge, release or deployment is authorized by this amendment.
+
+## R25 — Routine Actions execution moves to a native x64 runner
+
+The former dedicated Linux ARM64 runner went offline, leaving required runs
+queued. The owner authorized a staged replacement: one repository-specific
+Ubuntu Server 24.04 amd64 QEMU/KVM guest, `zabalack-omarchy-x64`, labelled
+`[self-hosted, Linux, X64, zabalack]`, with Docker inside the guest. Every active
+job now selects that label set. The trusted hook's platform policy accepts only
+`Linux`/`X64` and refuses ARM64 and every other platform. The security job
+installs the official Gitleaks 8.24.3 Linux x64 archive with its own inspected
+checksum; the version, source pin, account/path contracts, lab lock,
+retention-before-reset, required job names, producer/package chain and trust
+gates are unchanged. CodeQL stays behind its enablement gate.
+
+Earlier ARM64 runs remain ARM64 evidence at their original revisions. Routine
+x64 CI does not by itself close the x86_64 acceptance gate or any other
+qualification, security, installed-environment or publication requirement.
+`main` and scheduled runs keep the old definitions until a separately
+authorized merge.

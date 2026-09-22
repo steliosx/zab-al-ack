@@ -145,7 +145,7 @@ def actions_context(paths, environment):
     if any(not isinstance(value, str) or not value or len(value) > 512
            or any(ord(char) < 32 for char in value) for value in context.values()):
         raise ValueError('invalid_context')
-    if context['repository'] != REPOSITORY or context['runner_os'] != 'Linux' or context['runner_arch'] != 'ARM64':
+    if context['repository'] != REPOSITORY or context['runner_os'] != 'Linux' or context['runner_arch'] != 'X64':
         raise ValueError('wrong_repository_or_platform')
     if (not SHA.fullmatch(context['sha']) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]{0,99}', context['job'])
             or any(not re.fullmatch(r'[1-9][0-9]*', context[name]) for name in ('run_id', 'run_attempt'))):

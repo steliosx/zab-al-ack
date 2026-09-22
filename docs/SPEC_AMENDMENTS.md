@@ -304,8 +304,11 @@ additionally required to be plain identifiers, because the aggregate query
 interpolates them into `SELECT` and `GROUP BY` with no upstream validation, and
 attribute keys are required to be plain names, because `sort_by_columns`
 interpolates the key straight into `attributes->'<key>'` where a quote escapes
-the literal. Those forms are unsupported syntax and are refused whether or not
-they name the restricted key. Upstream's own `VALID_PARAMS` check already
+the literal. That name is matched whole (`\A`/`\Z`, not `^`/`$`, which also
+matches immediately before a trailing newline), so `<key>\n` is refused rather
+than normalised into the plain name it is not. Those forms are unsupported
+syntax and are refused whether or not they name the restricted key. Upstream's
+own `VALID_PARAMS` check already
 rejects a mis-cased `sort-by` or direct filter with its own 400; the guard's
 contribution on those surfaces is the restricted key, the whole-object form and
 the unsafe key syntax. Restricted selectors and whole-`attributes` operations are refused with a

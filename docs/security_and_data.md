@@ -33,6 +33,24 @@ Invalid/malformed/forged candidates receive verification leases only. They may n
 | Logs / monitoring / inventory export | Allowlisted identifiers and reason classes; no raw credentials, note, proof, entire intent or person directory | Approved redaction, log access/retention and incident recipients |
 | Backups / replicas | Includes Zab-al-ack schema/functions/grants and sensitive captures | site-A/site-B residency, backup access, restore tests, legal hold and deletion mapping |
 
+The mandatory adapter's log filter holds the logging row of that inventory: besides redacting records that carry restricted capture evidence, it blanks Alerta's `ContextFilter` extras `data` (the raw request body, which carries the operator's note) and `reqargs` on every record and drops the query string from `url` (a reader search filtering on the staged intent attribute carries the intent value there, and Alerta's default `LOG_METHODS` logs GET requests), so `LOG_FORMAT=json` cannot emit them; the request path is kept.
+
+Where a request line can reach a log at all, and what it carries, is established by
+`tests/security/test_access_log_route.py` rather than assumed. Alerta's own access
+line is the after-request record its logging setup registers; it formats
+`request.path`, so a free-text `q=` search value never reaches that message, and it
+is emitted only at `LOG_LEVEL` `INFO` or `DEBUG` (the default is `WARNING`). The
+development server's request line, which does carry the query, goes to the `werkzeug`
+logger, which Alerta's configuration holds at `WARNING`; the development server is a
+lab server, not a supported deployment, and a custom `LOG_CONFIG_FILE` that raises that
+logger to `INFO` would re-expose the query there. A WSGI server's access log (Gunicorn's
+`gunicorn.access`) and a reverse proxy's access log are separate loggers with their
+own handlers and formats that do not pass through the adapter; their default request
+line includes the query, so configure a path-only format at that originating logger
+(for Gunicorn, `%(m)s %(U)s %(H)s` in `--access-logformat` rather than `%(r)s`; the
+equivalent for the proxy). The adapter does not rewrite log messages, and none of this
+is a claim of universal log sanitisation or of deployment acceptance.
+
 No retention cleanup or destructive rollback is enabled. G8 must map each layer to a ratified classification, access, residency, retention, legal-hold and deletion policy before enabling any cleanup. A row omitted from an export is not deleted from authoritative evidence. The collection envelope sets `deployment_gate_passed=false`; summaries cannot replace restricted full export review when proving update-side effects or effective routing.
 
 ## Deployment safety review checklist

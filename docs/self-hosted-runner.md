@@ -1,7 +1,10 @@
 # Dedicated Linux Actions runner
 
-The workflow policy selects one repository-specific Linux ARM64 runner
-for `steliosx/zab-al-ack`. It has no automatic GitHub-hosted fallback. Windows
+The workflow policy selects one repository-specific native Linux x64 runner
+for `steliosx/zab-al-ack` (`[self-hosted, Linux, X64, zabalack]`). Since
+2026-09-22 this is `zabalack-omarchy-x64`, an Ubuntu Server 24.04 amd64 QEMU/KVM
+guest on the owner's Intel laptop. The former Linux ARM64 VM's runs remain
+historical ARM64 evidence. It has no automatic GitHub-hosted fallback. Windows
 remains the Codex controller. Configuration and unit tests are preparation;
 completion requires an authentic allocated Actions producer-to-package run on
 the reviewed candidate, with the run/attempt, PR head/base/tested merge SHA,
@@ -32,9 +35,18 @@ request cannot edit.
 
 **The boundary is repository access.** This is a private repository; a fork of
 one requires read access, and a pull request can only come from a principal who
-already has it. Verified 2026-09-18: the repository has exactly one
-collaborator, `steliosx`, with the `admin` role. No other principal can open a
-pull request, so no untrusted revision can currently be proposed.
+already has it. Verified 2026-09-18: the repository had exactly one
+collaborator, `steliosx`, with the `admin` role. Re-verified 2026-09-22: it is
+private, workflows from fork pull requests are disabled, the default workflow
+token is read-only, and there are two collaborators: `steliosx` (`admin`) and
+`Limni` (`write`, added 2026-09-22). The owner has recorded `Limni` as trusted
+on the same terms as the owner for this runner. A write collaborator can push
+a branch to this repository, and push-triggered workflows run it here with the
+runner account's root-equivalent Docker access; the head-repository refusal
+below does not cover same-repository pushes. No other principal can open a pull
+request or push, so no revision from outside those two can currently be proposed.
+Re-verify this list before each runner enablement; any further collaborator is
+a new owner decision.
 
 **Before that changes**, and before granting anyone repository access, set
 Settings → Actions → General → *Fork pull request workflows from outside
@@ -107,7 +119,8 @@ dependency, disk and retention checks pass. The
 provides default Actions variables and the event-file path to both scripts.
 
 The CLI accepts only `start` or `complete`; it has no path overrides. It requires
-the dedicated account, exact repository/workspace/temp paths, Linux ARM64 and
+the dedicated account, exact repository/workspace/temp paths, Linux X64 (`RUNNER_OS=Linux`,
+`RUNNER_ARCH=X64`; ARM64 and every other platform are refused) and
 real Actions context. Only an allowlist of repository, run, attempt, job, SHA,
 event, ref and platform fields is retained. A PR event adds its head, base and
 available merge SHA. The raw event, environment, tokens and credential files
@@ -240,9 +253,11 @@ disk-retention policy. Reviewers must retain required candidate bytes before
 that expiry.
 Check actual storage against the free allowance and keep required private
 copies outside disposable workspaces; retention duration alone is not a
-storage-budget guarantee. All migrated jobs, including package, produce ARM64
-execution evidence. Target x86_64 validation remains an open acceptance gate;
-keeping x64 wheel hashes does not execute that gate. CodeQL enablement and
+storage-budget guarantee. Since the 2026-09-22 migration, all jobs, including
+package, produce native x64 execution evidence; earlier jobs produced ARM64
+evidence and remain labelled as such. Routine x64 CI is not by itself the target
+x86_64 acceptance gate, which needs the frozen candidate's exact-artifact and
+installed-environment results in their actual scope. CodeQL enablement and
 ingestion, the separate daily scan, independent review, installed-environment
 acceptance and G1–G8/A5/T40/T41/T42 retain their existing requirements. The
 inactive signed-attestation template and its hosted-signer verifier remain a

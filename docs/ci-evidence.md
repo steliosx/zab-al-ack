@@ -21,18 +21,20 @@ reviews, the separate daily security scan and website automation are unchanged.
 
 ## Dedicated self-hosted execution
 
-All active workflow jobs select `[self-hosted, Linux, ARM64, zabalack]`. This
-explicitly replaces GitHub-hosted execution with one repository-specific Linux
-runner on the authorized lab VM; Windows remains the Codex controller. There is
-no paid-hosted fallback. An unavailable matching runner leaves work queued or
-unexecuted, never passing. The policy change requires Opus technical review and
-actual Actions execution before it establishes candidate readiness. Linux ARM64
-success does not establish x64 coverage. The selected policy keeps all jobs on
-the authorized ARM64 VM; it does not retain a hosted x64 lane or fallback.
-Target x86_64 execution is an **open acceptance gate**: retain final-candidate
-quality/reference/native/package and installed-environment results on an
-authorized x86_64 environment before claiming that target is validated. Added
-ARM64 wheel hashes preserve x64 installation pins, not x64 execution evidence.
+All active workflow jobs select `[self-hosted, Linux, X64, zabalack]`. Routine
+execution moved on 2026-09-22 from the offline Linux ARM64 VM to one
+repository-specific native x86_64 Ubuntu 24.04 VM (`zabalack-omarchy-x64`, QEMU/KVM
+on the owner's Intel laptop). This explicitly replaces GitHub-hosted execution
+with one repository-specific Linux runner. There is no paid-hosted fallback. An
+unavailable matching runner leaves work queued or unexecuted, never passing. The
+migration needs a technical review of its workflow/hook delta and actual Actions
+execution before it establishes candidate readiness. Earlier Linux ARM64 runs
+remain historical ARM64 evidence at their original revisions; they are not
+relabelled. Routine x64 CI does not by itself close the target x86_64 **acceptance
+gate**: that still needs the frozen candidate's exact-artifact quality, reference,
+native, package and installed-environment results in their actual scope. The
+aarch64 wheel hashes stay in the locks; they are installation pins, not execution
+evidence.
 
 | Workflow | Preserved entrypoints | Preserved jobs |
 |---|---|---|
@@ -64,18 +66,23 @@ projects and preserves synthetic volumes. Cancellation or process termination
 does not prove cleanup; preserve the interrupted attempt and inspect its exact
 owned resources before another lab starts. Never prune shared Docker resources.
 
-The security job installs the official Gitleaks 8.24.3 Linux ARM64 release binary
+The security job installs the official Gitleaks 8.24.3 Linux x64 release binary
 instead of requiring a Go compiler. The release corresponds to the existing
-`107a41827bb6698dbbff756b2300537774a1d84c` source pin. The
-[`gitleaks_8.24.3_linux_arm64.tar.gz` archive](https://github.com/gitleaks/gitleaks/releases/tag/v8.24.3)
+`107a41827bb6698dbbff756b2300537774a1d84c` source pin; the version is unchanged by
+the runner migration. The
+[`gitleaks_8.24.3_linux_x64.tar.gz` archive](https://github.com/gitleaks/gitleaks/releases/tag/v8.24.3)
 is verified before extraction against SHA-256
-`5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07`, inspected in the
+`9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c`, inspected in the
 [official checksum file](https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_checksums.txt)
-on 2026-09-16. The executable must report 8.24.3 before scanning.
+(itself SHA-256 `eefa9ab1ee69571248a6fa070a2a7de0837dd9eb72745d131f8766206aac8ac2`) on
+2026-09-22. The downloaded 5,796,002-byte archive matched, and its binary is a static x86-64
+executable that reports 8.24.3. The ARM64 archive hash inspected on 2026-09-16
+(`5f2edbe1…cf07`, from the same checksum file) applied to the former runner and is not reused.
+The executable must report 8.24.3 before scanning.
 
 CodeQL retains its explicit repository enablement gate and pinned action/CLI.
-[CLI 2.27.0 supports native Linux ARM64](https://github.com/github/codeql-cli-binaries/releases/tag/v2.27.0),
-and the pinned action selects its ARM64 bundle. Repository Code Scanning
+The pinned action selects the bundle for the runner's platform (Linux x64 after
+the 2026-09-22 migration; CLI 2.27.0 also supports the former Linux ARM64 host). Repository Code Scanning
 availability, resource sufficiency and successful ingestion remain separate
 checks; self-hosting does not turn a skipped analysis into a clean scan.
 Before enabling the existing gate, verify that the pinned bundle executes on
@@ -204,8 +211,12 @@ cross-run or cross-repository downloads.
 | `README.md` | `c088294825e648f9f1baf71deefd0a401984d97f0fc43d5c5be9a4ed64211639` |
 
 `tests/release/test_ci_collection.py` exercises synthetic artifacts and checks
-the workflow dependency/collection order. These are unit tests of the evidence
-boundary, not evidence that an Actions workflow, native lab or real Zabbix ran.
+the workflow dependency/collection order. `tests/release/test_pin_consistency.py`
+fails when any workflow or release-template action commit differs from the
+inspected commit in `ci_reference_manifest.json`, `upstream-codeql-manifest.json`
+or `upstream-attestation-manifest.json`, so a pin bump must carry a fresh
+inspection record. These are unit tests of the evidence boundary, not evidence
+that an Actions workflow, native lab or real Zabbix ran.
 
 The workflow can also be called by the deliberately inactive attestation template.
 That template uses the same required jobs and current-run evidence; see

@@ -275,3 +275,31 @@ def test_archive_bounds_fail_without_deleting_large_attempt(setup, monkeypatch):
     with pytest.raises(ValueError, match='retention_bound_exceeded'):
         begin(paths, {'fixture': 'next-job'})
     assert log.read_text() == '12345'
+
+
+def synthetic_environment(paths, **overrides):
+    """An injected mapping for actions_context; no process environment is set."""
+    event = write(paths.temporary, '_github_workflow/event.json', '{}')
+    environment = {'GITHUB_ACTIONS': 'true', 'GITHUB_WORKSPACE': str(paths.workspace),
+                   'RUNNER_TEMP': str(paths.temporary), 'GITHUB_REPOSITORY': hooks.REPOSITORY,
+                   'GITHUB_RUN_ID': '1', 'GITHUB_RUN_ATTEMPT': '1', 'GITHUB_JOB': 'quality',
+                   'GITHUB_SHA': 'a' * 40, 'GITHUB_EVENT_NAME': 'push', 'GITHUB_REF': 'refs/heads/x',
+                   'RUNNER_OS': 'Linux', 'RUNNER_ARCH': 'X64', 'GITHUB_EVENT_PATH': str(event)}
+    environment.update(overrides)
+    return environment
+
+
+def test_actions_context_accepts_the_dedicated_linux_x64_platform(setup):
+    paths, _ = setup
+    context = hooks.actions_context(paths, synthetic_environment(paths))
+    assert (context['runner_os'], context['runner_arch']) == ('Linux', 'X64')
+
+
+@pytest.mark.parametrize('overrides', [
+    {'RUNNER_ARCH': 'ARM64'}, {'RUNNER_ARCH': 'X86'}, {'RUNNER_ARCH': 'ARM'}, {'RUNNER_ARCH': 'x64'},
+    {'RUNNER_OS': 'macOS'}, {'RUNNER_OS': 'Windows'}, {'GITHUB_REPOSITORY': 'someone/zab-al-ack'},
+], ids=['arm64', 'x86', 'arm', 'lowercase-x64', 'macos', 'windows', 'other-repository'])
+def test_actions_context_refuses_any_other_repository_or_platform(setup, overrides):
+    paths, _ = setup
+    with pytest.raises(ValueError, match='wrong_repository_or_platform'):
+        hooks.actions_context(paths, synthetic_environment(paths, **overrides))

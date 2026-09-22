@@ -180,7 +180,7 @@ def audit(root: Path) -> dict:
     if production.get('cohorts') or production.get('endpoints'):
         findings.append({'path': 'config/production.example.json', 'rule': 'active-production-targets'})
     project = tomllib.loads((root / 'pyproject.toml').read_text())['project']
-    if project['license'] != 'Apache-2.0' or project['version'] != '0.1.0a17':
+    if project['license'] != 'Apache-2.0' or project['version'] != '0.1.0a18':
         findings.append({'path': 'pyproject.toml', 'rule': 'alpha-metadata-mismatch'})
     # Validate vendored Alerta schema against the inspected immutable manifest.
     manifest = json.loads((root / 'docs/reference_manifest.json').read_text())

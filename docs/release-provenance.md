@@ -34,7 +34,8 @@ R12 scope and do not prove Docker or packaged-wheel service execution.
 
 ## Deliberate hosted issuance
 
-Routine CI now targets the dedicated Linux ARM64 self-hosted runner, with no
+Routine CI now targets the dedicated native Linux x64 self-hosted runner (ARM64
+until 2026-09-22), with no
 hosted fallback; see [ci-evidence.md](ci-evidence.md). This changes the execution
 policy for unsigned candidate validation and requires Opus review. It does not
 change the optional signed-attestation consumer policy below. The inactive
@@ -88,9 +89,9 @@ itself. It never accepts a caller-supplied JSON report as evidence.
 ```bash
 export ZABALACK_RELEASE_REPOSITORY='<approved-owner>/<approved-repository>'
 export ZABALACK_RELEASE_COMMIT='<reviewed-40-hex-commit>'
-python tools/verify_attestation.py dist/pypi/zabalack-0.1.0a17-py3-none-any.whl \
+python tools/verify_attestation.py dist/pypi/zabalack-0.1.0a18-py3-none-any.whl \
   --repo "$ZABALACK_RELEASE_REPOSITORY" \
-  --source-ref refs/tags/v0.1.0a17 \
+  --source-ref refs/tags/v0.1.0a18 \
   --source-digest "$ZABALACK_RELEASE_COMMIT"
 ```
 
