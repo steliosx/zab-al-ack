@@ -142,16 +142,17 @@ def test_utc_evidence_timestamp(source, expected):
     assert utc_timestamp(source) == expected
 
 
-def test_gitleaks_arm64_binary_is_hash_verified_before_extraction_and_scanning():
+def test_gitleaks_x64_binary_is_hash_verified_before_extraction_and_scanning():
     """Static release-pin check; this does not claim a scanner execution."""
     data = yaml.safe_load((ROOT / '.github/workflows/security.yml').read_text())
     scripts = [step['run'] for step in data['jobs']['scan']['steps'] if 'run' in step]
     manifest = json.loads((ROOT / 'docs/gitleaks_reference_manifest.json').read_text())
     install = next(script for script in scripts if 'curl --fail' in script)
     version = manifest['tag'][1:]
-    assert f'https://github.com/{manifest["repository"]}/releases/download/{manifest["tag"]}/gitleaks_{version}_linux_arm64.tar.gz' in install
-    assert 'test "$(uname -m)" = aarch64' in install
-    assert '5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07' in install
+    assert f'https://github.com/{manifest["repository"]}/releases/download/{manifest["tag"]}/gitleaks_{version}_linux_x64.tar.gz' in install
+    assert 'test "$(uname -m)" = x86_64' in install
+    assert '9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c' in install
+    assert '5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07' not in install  # ARM64 hash
     assert install.index('sha256sum --check --strict') < install.index('tar --extract')
     assert install.rstrip().endswith('--no-same-owner gitleaks')
     assert not any('go install' in script for script in scripts)

@@ -533,13 +533,13 @@ def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_re
     assert uploads[0]['if'] == 'always()'
 
 
-def test_every_active_job_requires_the_dedicated_arm64_runner_without_hosted_fallback():
+def test_every_active_job_requires_the_dedicated_x64_runner_without_hosted_fallback():
     paths = list((ROOT / '.github/workflows').glob('*.yml'))
     assert {path.name for path in paths} == {'ci.yml', 'security.yml', 'codeql.yml', 'deployment-e2e.yml'}
     for path in paths:
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         for job in workflow['jobs'].values():
-            assert job['runs-on'] == ['self-hosted', 'Linux', 'ARM64', 'zabalack']
+            assert job['runs-on'] == ['self-hosted', 'Linux', 'X64', 'zabalack']
             assert 'continue-on-error' not in job
             for step in job['steps']:
                 # Context comes from Actions; local preflight must never forge it.
@@ -599,7 +599,7 @@ def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():
     for path in sorted((ROOT / '.github/workflows').glob('*.yml')):
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         for name, job in workflow['jobs'].items():
-            if job.get('runs-on') != ['self-hosted', 'Linux', 'ARM64', 'zabalack']:
+            if job.get('runs-on') != ['self-hosted', 'Linux', 'X64', 'zabalack']:
                 continue  # Nothing else may use this runner; see the assertion below.
             guarded += 1
             name = f'{path.name}/{name}'
