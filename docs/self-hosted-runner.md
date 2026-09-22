@@ -35,9 +35,18 @@ request cannot edit.
 
 **The boundary is repository access.** This is a private repository; a fork of
 one requires read access, and a pull request can only come from a principal who
-already has it. Verified 2026-09-18: the repository has exactly one
-collaborator, `steliosx`, with the `admin` role. No other principal can open a
-pull request, so no untrusted revision can currently be proposed.
+already has it. Verified 2026-09-18: the repository had exactly one
+collaborator, `steliosx`, with the `admin` role. Re-verified 2026-09-22: it is
+private, workflows from fork pull requests are disabled, the default workflow
+token is read-only, and there are two collaborators: `steliosx` (`admin`) and
+`Limni` (`write`, added 2026-09-22). The owner has recorded `Limni` as trusted
+on the same terms as the owner for this runner. A write collaborator can push
+a branch to this repository, and push-triggered workflows run it here with the
+runner account's root-equivalent Docker access; the head-repository refusal
+below does not cover same-repository pushes. No other principal can open a pull
+request or push, so no revision from outside those two can currently be proposed.
+Re-verify this list before each runner enablement; any further collaborator is
+a new owner decision.
 
 **Before that changes**, and before granting anyone repository access, set
 Settings → Actions → General → *Fork pull request workflows from outside
