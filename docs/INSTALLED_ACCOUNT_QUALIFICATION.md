@@ -15,7 +15,10 @@ do not rebuild or silently substitute it. At 21 September 2026 the candidate is
 `a3317dc41890ef56411e7597b32c44c70b878416`, wheel
 `e5c9e2127501f8c6fe9d0d534bbcd27a7e7d7744acf706f342829906b4a229f4`
 ([snapshot](beta_readiness_snapshot_2026-09-21.md)); the a16 baseline above is
-retained as the procedure's history. A changed implementation, dependency,
+retained as the procedure's history. That 21 September pointer is superseded:
+since 22 September 2026 the candidate is `0.1.0a18` (draft PR #29), which has no built
+wheel yet; `e5c9e212…` remains the a17 artifact only
+([preparation note](beta_preparation_note_2026-09-22.md)). A changed implementation, dependency,
 SQL or executable harness needs a documented affected-evidence revalidation
 decision. This procedure changes no version or artifact.
 

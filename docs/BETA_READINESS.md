@@ -73,6 +73,10 @@ captures added, including a real Zabbix frontend screenshot of the lab event.
 
 ## Current state (21 September 2026)
 
+> **Superseded on 22 September 2026.** The candidate under qualification is now
+> `0.1.0a18`, draft PR #29; see [beta_preparation_note_2026-09-22.md](beta_preparation_note_2026-09-22.md).
+> The paragraph below is kept unchanged as the 21 September record.
+
 `main` is `a3317dc41890ef56411e7597b32c44c70b878416` (PR #25 merged 2026-09-18) and
 the candidate under qualification is the open draft PR #26 at
 `3ac7829d0ae9c21d23d4f3cf7d522722ab3fc590`, wheel `e5c9e212…`. The dated

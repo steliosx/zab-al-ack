@@ -5,6 +5,10 @@ existing, **populated** Zabalack installation. Same-namespace Zabalack migration
 this is not an Ackline-to-Zabalack conversion, which `docs/RENAME.md` states this
 release does not implement.
 
+The results below are bound to PR #28 (`12d5a9b`…`0bb3749`) on a 012 tree. The combined
+`0.1.0a18` candidate also ships 013; its separately attributed results are in
+[the addendum at the end](#addendum-combined-010a18-candidate-22-september-2026).
+
 This assessment is not x64 qualification, not production acceptance, and does not
 qualify a release artifact. G1–G8 and the deployment gates are unaffected.
 
@@ -209,3 +213,35 @@ an explicit `13_reseal.sql`, in the runbook's order.
 **Pending.** These runs are single-store in an ephemeral development session. No
 second-store copy has been verified, and none is claimed. Raw diagnostics stay
 private; this file and the issue report carry sanitized results only.
+
+## Addendum: combined 0.1.0a18 candidate (22 September 2026)
+
+The assessment above is unchanged. It covers 001–012, and its results, including
+the discrimination controls, belong to PR #28's revisions on a 012 tree.
+
+In the combined candidate (draft PR #29) the migrations directory also contains
+`013_background_fence_null_safety.sql`. `sql/migrate.py` applies every migration
+in order, so this module's `upgrade()` now runs **008–013** in one pass, followed
+by the installer record, the application grant and an explicit `13_reseal.sql`.
+The supported baseline for that tree is therefore a schema-3 installation upgraded
+in one runner pass to `013`.
+
+Results for that combination, attributed to their actual execution revision:
+
+- **Where:** a local development host (x86_64, native PostgreSQL 18 + PgBouncer,
+  `tools/native_ci.py --isolated-lab --phase postgres`).
+- **Revision:** pre-version preparation commit `32f4994483efc85b7210bbab158dcf9d53d8cb33`,
+  source/harness `8947d5a1…` / `4cbbdbfe…`.
+- **Result:** this module passed 9/9 within a 216/0/0 phase.
+- **Not rerun at later revisions:** it has not been rerun at the versioned or
+  runner-migration revisions, whose digests differ, and the discrimination controls
+  above were not repeated on the 013 tree.
+- **013's own coverage** lies outside this module:
+  - its preconditions and resealing requirement come from
+    `tests/postgres/test_ambiguous_api_migration.py` (5/5 on PostgreSQL WASM at the same `32f4994`);
+  - its integrity closeout is Fable's author verification at `a4b3779`
+    ([issue #13 comment 5770342725](https://github.com/steliosx/zab-al-ack/issues/13#issuecomment-5770342725)),
+    which is not an independent review.
+
+None of this is x64 qualification, Actions evidence or production acceptance.
+
