@@ -14,6 +14,10 @@
 - `tools/lab_retention.py`: an unreadable diagnostic is a `RetentionError`
   (the caller refuses its destructive step) instead of an uncaught
   `PermissionError`; found by running the suite as an unprivileged account.
+- `tools/native_local.py`: an interrupted phase (SIGINT during pytest) is
+  recorded with reason `interrupted`, cleaned up and retained like any
+  failure, and the run record ends as FAIL (exit 130) instead of staying at
+  RUNNING with the phase missing.
 - `deployment-e2e.yml` (proposed, unchanged trigger, gate and artifact): build
   the wheel, prepare the runner environment, `cycle` under the shared lab lock
   on installed services; no Docker.
