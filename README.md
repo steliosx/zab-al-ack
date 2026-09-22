@@ -1,6 +1,6 @@
 # Zab-al-ack
 
-**0.1.0a17 · public alpha candidate · development and isolated evaluation**
+**0.1.0a18 · public alpha candidate · development and isolated evaluation**
 
 Formerly **Ackline**. 0.1.0a9 renamed the package, CLI, Alerta entry points,
 configuration, services, database namespace and signing domain to `zabalack`;

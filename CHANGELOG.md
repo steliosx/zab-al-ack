@@ -1,6 +1,14 @@
 # Zab-al-ack changelog
 
-## Unreleased
+## 0.1.0a18 — 2026-09-22 (alpha under qualification toward beta, unpublished)
+
+- Replacement candidate identity for the owner-selected combination on `a3317dc`:
+  the wheel build-tool pin correction (PR #26), the pin-consistency check,
+  forward migration 013, four corrections from the a17 application-security
+  review (`health.py`, `config.py`, `plugins.py`, `query_guard.py`), the logging
+  redaction and access-log route tests, and the populated delivery-ledger upgrade
+  coverage (PR #28). The a17 wheel `e5c9e212…` and every historical run keep their
+  original identities; none of them is evidence for this version.
 
 - Access-log routes documented and tested: Alerta's own after-request line
   formats the request path and never a query string, the development server's

@@ -945,3 +945,21 @@ the exact retained output non-editably with the installed migrations and reseal
 procedure, including affected recovery and reader cases. A Windows build smoke
 check is not ARM64, installed-environment or beta acceptance evidence. No old
 evidence is relabelled and no acceptance or publication gate is waived.
+
+## R24 — 0.1.0a18: replacement candidate identity (alpha under qualification)
+
+The owner selected a replacement candidate instead of freezing PR #26 as-is. On
+base `a3317dc` it combines R23's wheel pin correction, the pin-consistency check,
+forward migration 013, four Python corrections from the a17 application-security
+review, the logging redaction and access-log route tests, the populated
+delivery-ledger upgrade coverage and the 21 September readiness documentation.
+Migrations 001–012 are byte-identical; 013 is the reviewed file. Only the
+manifest's `package_version` changes with this identity; every file hash in
+`docs/sql_manifest.json` is unchanged.
+
+`0.1.0a18` is an alpha under qualification toward beta, not a beta or release
+candidate. The a17 wheel `e5c9e212…` and all a17 and earlier results keep their
+original identities and are not evidence for a18. Required Actions runs, the
+release build and exact-artifact qualification, independent security review,
+approved private retention and the owner inputs remain open. No tag, upload,
+merge, release or deployment is authorized by this amendment.

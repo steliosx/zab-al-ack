@@ -1,6 +1,7 @@
 # Beta readiness
 
-The candidate under qualification is 0.1.0a17. A beta requires the intended automation to
+The candidate under qualification is 0.1.0a18, an alpha under qualification toward beta
+(its identity is recorded in `docs/beta_preparation_note_2026-09-22.md`). A beta requires the intended automation to
 execute successfully on its exact commit in supported environments, plus the
 publication-owner inputs. See `ALPHA_REPORT.md` for current executed results.
 The original a16 release narrative below is historical. Its reference, mutation,
