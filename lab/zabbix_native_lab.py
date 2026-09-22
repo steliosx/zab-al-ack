@@ -138,6 +138,17 @@ def run(command: list[str], *, check: bool = True, **kwargs) -> subprocess.Compl
     return subprocess.run(unprivileged(command), check=check, text=True, capture_output=True, **kwargs)
 
 
+def service_env() -> dict[str, str]:
+    """The environment of zabbix_server and the PHP server: PATH, locale and time zone only.
+
+    libcurl inside zabbix_server and PHP honour HTTPS_PROXY and its variants;
+    an inherited proxy setting would route the lab's loopback webhook
+    deliveries elsewhere. Nothing else from the verifier's environment is
+    passed to a service.
+    """
+    return {'PATH': os.environ.get('PATH', '/usr/sbin:/usr/bin:/sbin:/bin'), 'TZ': 'UTC', 'LANG': 'C.UTF-8'}
+
+
 def own(path: Path) -> None:
     if os.geteuid() == 0:
         entry = pwd.getpwnam('nobody')
@@ -302,6 +313,14 @@ def ensure_database(paths: dict[str, Path]) -> bool:
     (STATE / 'schema-load.log').write_bytes(result.stdout + result.stderr)
     if result.returncode:
         raise SystemExit('Zabbix lab schema load failed; see .zabbix-lab/schema-load.log')
+    # zabbix_server refuses a database whose users table is empty; a bare
+    # schema.sql (tables only) is not an input, the packaged server.sql.gz or
+    # the schema directory with images.sql and data.sql is.
+    users = run([str(paths['pg_bin'] / 'psql'), '-X', '-At', '-h', '127.0.0.1', '-p', str(PG_PORT), '-U', DB_USER, '-d', DATABASE,
+                 '-c', 'SELECT count(*) FROM users']).stdout.strip()
+    if users in ('', '0'):
+        raise SystemExit('Zabbix schema loaded without its initial data (users table empty): ZABALACK_ZABBIX_SCHEMA must be the '
+                         'packaged server.sql.gz or the directory holding schema.sql, images.sql and data.sql')
     return True
 
 
@@ -318,7 +337,7 @@ def start_server(paths: dict[str, Path]) -> None:
     conf = STATE / 'zabbix_server.conf'
     conf.write_text(SERVER_CONF.format(server_port=SERVER_PORT, pg_port=PG_PORT, database=DATABASE, db_user=DB_USER, state=STATE))
     own(conf)
-    result = run([str(paths['zabbix_server']), '-c', str(conf)], check=False)
+    result = run([str(paths['zabbix_server']), '-c', str(conf)], check=False, env=service_env())
     if result.returncode:
         raise SystemExit('zabbix_server failed to start:\n' + (result.stdout + result.stderr)[-2000:])
     if not wait_until(lambda: port_listening(SERVER_PORT), 60):
@@ -340,7 +359,7 @@ def start_frontend(paths: dict[str, Path]) -> None:
         return
     log = (STATE / 'php.log').open('a')
     process = subprocess.Popen(unprivileged([str(paths['php']), *PHP_INI, '-S', f'{WEB_HOST}:{WEB_PORT}', '-t', str(UI)]),
-                               stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                               stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=service_env())
     (STATE / 'php.pid').write_text(f'{process.pid}\n')
     own(STATE / 'php.pid')
     if not wait_until(lambda: port_listening(WEB_PORT), 30):

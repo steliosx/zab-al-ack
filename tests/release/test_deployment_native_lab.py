@@ -91,6 +91,8 @@ def test_state_combines_the_cluster_the_zabbix_lab_and_the_layout(lab, monkeypat
         (lab.module.STATE / 'stranger').write_text('x')
     elif layout_kind == 'marked':
         marked(lab)
+    # The host under test may resolve the lab hostnames; this case fixes them unresolved.
+    monkeypatch.setattr(lab.module.socket, 'getaddrinfo', lambda name, port: (_ for _ in ()).throw(lab.module.socket.gaierror()))
     monkeypatch.setattr(lab.module, 'port_listening', lambda p: port and p == lab.module.PG_PORT)
     monkeypatch.setattr(lab.module, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, pg_status, '', ''))
     lab.zabbix.state = zabbix_state
@@ -295,6 +297,9 @@ def cycle_environment(lab, monkeypatch, *, runner_exit=0, stop_exit=0):
 
     def start_postgres(binaries):
         marked(lab)
+        (lab.module.STATE / 'postgres.log').write_text('synthetic postgres log\n')
+        (lab.tmp / '.zabbix-lab').mkdir(exist_ok=True)
+        (lab.tmp / '.zabbix-lab/zabbix_server.log').write_text('synthetic server log\n')
         live['postgres'] = True
     monkeypatch.setattr(lab.module, 'start_postgres', start_postgres)
 
@@ -325,6 +330,14 @@ def test_cycle_starts_runs_stops_and_wipes_and_reports_the_run_exit_code(lab, mo
     assert out['wipe'] == {'wipe': 'done', 'state': 'absent'} and out['final_state'] == 'absent'
     assert not lab.module.STATE.exists()
     assert lab.zabbix.calls == ['start', 'status', 'stop', 'reset']
+    # Both labs' diagnostics were preserved with digests before the wipe removed them.
+    retained = lab.tmp / 'build/private/retained-phases' / out['run_id'] / 'deployment-cycle'
+    manifest = json.loads((retained / 'manifest.json').read_text())
+    assert out['retention']['label'] == 'deployment-cycle'
+    assert {'.deployment-lab/postgres.log', '.deployment-lab/services.json', '.zabbix-lab/zabbix_server.log'} <= {
+        item['source'] for item in manifest['files'].values()}
+    assert (retained / '.zabbix-lab__zabbix_server.log').read_text() == 'synthetic server log\n'
+    assert (retained.parent.parent.stat().st_mode & 0o777) == 0o700
     (command,) = launched
     assert command[1].endswith('tools/run_deployment_e2e_local.py') and command[command.index('--wheel-sha256') + 1] == 'f' * 64
 
@@ -344,6 +357,17 @@ def test_cycle_exits_5_when_a_passing_run_leaves_a_component_running(lab, monkey
     out = json.loads(capsys.readouterr().out)
     assert out['run_exit_code'] == 0 and out['cleanup']['cleanup']['postgres'] == {'status': 'FAILED', 'exit_code': 1}
     assert out['wipe'] is None and out['final_state'] == 'partial' and lab.module.MARKER.exists()
+
+
+@pytest.mark.parametrize('runner_exit,expected', [(0, 5), (1, 1)])
+def test_cycle_refuses_the_wipe_when_diagnostics_are_not_preserved(lab, monkeypatch, capsys, runner_exit, expected):
+    cycle_environment(lab, monkeypatch, runner_exit=runner_exit)
+    monkeypatch.setattr(lab.module, 'preserve', lambda *args, **kwargs: (_ for _ in ()).throw(lab.module.RetentionError('disk full')))
+    assert lab.module.main(CYCLE) == expected
+    out = json.loads(capsys.readouterr().out)
+    assert out['retention'] == {'error': 'disk full'} and out['wipe'] is None and out['final_state'] == 'stopped'
+    assert lab.module.MARKER.exists() and (lab.module.STATE / 'postgres.log').exists()  # nothing removed
+    assert lab.zabbix.calls == ['start', 'status', 'stop']
 
 
 def test_cycle_cleans_up_after_a_start_refusal_and_keeps_the_failure(lab, monkeypatch, capsys):

@@ -212,6 +212,63 @@ def test_start_refuses_a_running_instance_that_is_not_the_pinned_reference(lab, 
     assert json.loads((lab.STATE / 'status.json').read_text())['reference_match'] is False
 
 
+@pytest.mark.parametrize('users,outcome', [('0', 'refused'), ('', 'refused'), ('1', 'loaded')])
+def test_schema_load_refuses_a_schema_without_its_initial_data(lab, paths, monkeypatch, users, outcome):
+    marked(lab)
+    queries = []
+
+    def run(command, **kwargs):
+        sql = command[-1]
+        queries.append(sql)
+        if 'pg_roles' in sql or 'pg_database' in sql:
+            return subprocess.CompletedProcess(command, 0, '1\n', '')
+        if 'pg_tables' in sql:
+            return subprocess.CompletedProcess(command, 0, '', '')   # not loaded yet
+        if 'FROM users' in sql:
+            return subprocess.CompletedProcess(command, 0, users + '\n', '')
+        return subprocess.CompletedProcess(command, 0, '', '')
+    monkeypatch.setattr(lab, 'run', run)
+    monkeypatch.setattr(lab.subprocess, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 0, b'', b''))
+    if outcome == 'refused':
+        with pytest.raises(SystemExit, match='without its initial data'):
+            lab.ensure_database(paths)
+    else:
+        assert lab.ensure_database(paths) is True
+    assert queries[-1] == 'SELECT count(*) FROM users' and (lab.STATE / 'schema.sha256').exists()
+
+
+def test_services_start_with_a_minimal_environment_without_inherited_proxy_settings(lab, paths, monkeypatch):
+    """libcurl in zabbix_server and PHP honour HTTPS_PROXY; the lab's loopback webhooks must not be proxied."""
+    marked(lab)
+    for key in ('HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'NO_PROXY', 'ALL_PROXY', 'PGPASSWORD'):
+        monkeypatch.setenv(key, 'inherited-value')
+    launched = {}
+
+    def run(command, **kwargs):
+        launched['server'] = kwargs
+        return subprocess.CompletedProcess(command, 0, '', '')
+    monkeypatch.setattr(lab, 'run', run)
+    monkeypatch.setattr(lab, 'wait_until', lambda predicate, timeout: True)
+    lab.start_server(paths)
+
+    class Process:
+        pid = 4242
+
+        def kill(self):
+            pytest.fail('the server should be listening')
+
+    def popen(command, **kwargs):
+        launched['php'] = kwargs
+        return Process()
+    monkeypatch.setattr(lab.subprocess, 'Popen', popen)
+    monkeypatch.setattr(lab, 'component_alive', lambda name: False)
+    lab.start_frontend(paths)
+    for name in ('server', 'php'):
+        env = launched[name]['env']
+        assert set(env) == {'PATH', 'TZ', 'LANG'} and env['TZ'] == 'UTC'
+        assert not any('proxy' in key.lower() for key in env)
+
+
 def test_inputs_are_required_and_named_when_absent(lab, monkeypatch):
     for key in ('ACK_LAB_PG_BIN', 'ZABALACK_ZABBIX_SERVER', 'ZABALACK_ZABBIX_UI', 'ZABALACK_ZABBIX_SCHEMA', 'ZABALACK_PHP'):
         monkeypatch.delenv(key, raising=False)

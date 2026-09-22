@@ -47,6 +47,8 @@ import sys
 import time
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / 'tools'))
+from lab_retention import RetentionError, preserve  # noqa: E402
 STATE = REPO / '.deployment-lab'
 MARKER = STATE / 'ISOLATED_DEPLOYMENT_LAB'
 PGDATA = STATE / 'pgdata'
@@ -58,6 +60,10 @@ HOSTNAMES = ('postgres', 'zabbix-web', 'runner')
 DATABASE = 'alerta'
 LAB_ROLES = ('alerta_app', 'migrator', 'zabalack_worker', 'zabalack_probe', 'zabalack_operator', 'zabalack_owner')
 ZABBIX_LAB = REPO / 'lab/zabbix_native_lab.py'
+# Diagnostics of both labs, preserved under build/private/retained-phases before a cycle's wipe.
+CYCLE_LOGS = ('.deployment-lab/initdb.log', '.deployment-lab/postgres.log', '.deployment-lab/services.json',
+              '.zabbix-lab/initdb.log', '.zabbix-lab/postgres.log', '.zabbix-lab/schema-load.log',
+              '.zabbix-lab/zabbix_server.log', '.zabbix-lab/php.log')
 
 
 def zabbix_module():
@@ -404,11 +410,15 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
     The lab must be absent first (no reuse of a previous attempt). The run's
     exit code is reported unchanged; a run that passed but left a component
     running or a lab directory behind exits 5. Cleanup runs after every
-    outcome, including a refusal or an interrupted run.
+    outcome, including a refusal or an interrupted run. Both labs' diagnostics
+    are preserved (tools/lab_retention.py) before the wipe; a preservation
+    failure leaves the stopped lab directories in place.
     """
     if observed['state'] != 'absent':
         raise SystemExit(f"cycle requires an absent deployment lab (state {observed['state']}); stop and wipe the previous lab first")
-    summary: dict = {'start': None, 'run_exit_code': None, 'cleanup': None, 'wipe': None, 'final_state': None}
+    run_id = os.urandom(6).hex()
+    summary: dict = {'run_id': run_id, 'start': None, 'run_exit_code': None, 'cleanup': None, 'retention': None, 'wipe': None,
+                     'final_state': None}
     code = 1
     try:
         summary['start'] = start_lab(binaries, observed)
@@ -424,7 +434,12 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
         try:
             stop_code, summary['cleanup'] = stop_lab(binaries, inspect(binaries))
             if stop_code == 0:
-                summary['wipe'] = wipe_lab(binaries, inspect(binaries))
+                try:
+                    summary['retention'] = preserve(REPO, run_id, 'deployment-cycle', [Path(name) for name in CYCLE_LOGS])
+                except RetentionError as error:
+                    summary['retention'] = {'error': str(error)}
+                else:
+                    summary['wipe'] = wipe_lab(binaries, inspect(binaries))
         except SystemExit as error:
             summary['cleanup'] = {'refusal': str(error)}
         summary['final_state'] = inspect(binaries)['state']

@@ -13,8 +13,17 @@ import sys
 from evidence_utils import code_digests
 
 ROOT = Path(__file__).resolve().parents[1]
+# The Docker-free lab and runner infrastructure (R26–R29): an explicit, bounded
+# list, not a repository-wide lint of tools/ and lab/. Every file must exist.
+INFRASTRUCTURE = (
+    'lab/deployment_native_lab.py', 'lab/local_runtime.py', 'lab/real_zabbix_prepare.py', 'lab/zabbix_native_lab.py',
+    'lab/zabbix_reference.py', 'tools/collect_package_identities.py', 'tools/deployment_evidence.py', 'tools/evidence_bundle.py',
+    'tools/lab_retention.py', 'tools/native_local.py', 'tools/record_real_zabbix.py', 'tools/run_deployment_e2e_local.py',
+    'tools/runner_account_check.py', 'tools/self_hosted_job.py', 'tools/supplied_wheel.py',
+)
 CHECKS = {
     'ruff': ['-m', 'ruff', 'check', 'src'],
+    'ruff-infrastructure': ['-m', 'ruff', 'check', *INFRASTRUCTURE],
     'mypy': ['-m', 'mypy', '--config-file', 'mypy.ini'],
     'pip-check': ['-m', 'pip', 'check'],
 }
@@ -35,6 +44,8 @@ def main() -> int:
         report['tools'] = {name: importlib.metadata.version(name) for name in ('ruff', 'mypy', 'hypothesis')}
         if any(report['tools'][name] != pins[name].split()[0] for name in report['tools']):
             raise ValueError('quality_tool_version_mismatch')
+        if not all((ROOT / name).is_file() for name in INFRASTRUCTURE):
+            raise ValueError('infrastructure_check_file_missing')
         env = dict(os.environ, TZ='UTC', MYPY_CACHE_DIR=str(raw / 'mypy-cache'),
                    RUFF_CACHE_DIR=str(raw / 'ruff-cache'), PIP_DISABLE_PIP_VERSION_CHECK='1')
         for name, arguments in CHECKS.items():

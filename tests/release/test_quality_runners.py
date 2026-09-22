@@ -15,6 +15,9 @@ import run_sql_checks
 def tree(tmp_path):
     (tmp_path / 'tools').mkdir()
     (tmp_path / 'tools/check.py').write_text('VALUE = 1\n')
+    for name in run_quality.INFRASTRUCTURE:
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text('VALUE = 1\n')
     (tmp_path / 'evidence').mkdir()
     (tmp_path / 'requirements-quality.lock').write_text(
         '\n'.join(name + '==1.2.3 --hash=sha256:abc' for name in ('ruff', 'mypy', 'hypothesis')))
@@ -47,6 +50,23 @@ def test_quality_runner_invalidates_prior_success_and_pins_tools(tmp_path, monke
     assert 'old' not in report
     if flaw == 'version-mismatch':
         assert report['checks'] == []
+
+
+def test_infrastructure_lint_is_an_explicit_existing_file_list_run_as_its_own_check(tmp_path, monkeypatch):
+    """R29: a bounded ruff pass over the Docker-free lab/runner code, not a repository-wide lint."""
+    real = Path(run_quality.__file__).resolve().parents[1]
+    assert all((real / name).is_file() for name in run_quality.INFRASTRUCTURE)
+    assert not any(any(ch in name for ch in '*?[') or name.endswith('/') for name in run_quality.INFRASTRUCTURE)
+    assert run_quality.CHECKS['ruff-infrastructure'] == ['-m', 'ruff', 'check', *run_quality.INFRASTRUCTURE]
+    assert set(run_quality.CHECKS) == {'ruff', 'ruff-infrastructure', 'mypy', 'pip-check'}
+    root = tree(tmp_path)
+    (root / run_quality.INFRASTRUCTURE[0]).unlink()
+    monkeypatch.setattr(run_quality, 'ROOT', root)
+    monkeypatch.setattr(run_quality.importlib.metadata, 'version', lambda name: '1.2.3')
+    monkeypatch.setattr(run_quality.subprocess, 'run', lambda *args, **kwargs: pytest.fail('nothing runs with a listed file missing'))
+    assert run_quality.main() == 1
+    report = json.loads((root / 'evidence/quality-run.json').read_text())
+    assert report['status'] == 'FAIL' and report['reason'] == 'ValueError' and report['checks'] == []
 
 
 @pytest.mark.parametrize('flaw', ['none', 'failure', 'missing', 'malformed', 'timeout', 'edited-tree'])
