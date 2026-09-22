@@ -363,6 +363,7 @@ def main(argv: list[str] | None = None) -> int:
                         'diagnostic_dir': 'build/evidence-raw/native-' + phase + '-' + run_id}
         pooler = None
         stage = 'lab-reset'
+        interrupted = False
         try:
             result['lab_reset'] = cluster_start(pg, run_id, phase)
             stage = 'pgbouncer-startup'
@@ -394,6 +395,14 @@ def main(argv: list[str] | None = None) -> int:
             result['reason'] = (type(error).__name__ + ': ' + str(error))[:500]
             result['stage'] = stage
             retain_phase_exception(raw, phase, run_id, stage, error)
+        except KeyboardInterrupt:
+            # subprocess.run has killed the pytest child. The interrupted phase
+            # is recorded like any failure, cleanup and retention run below, and
+            # the run ends with a FAIL record instead of one left at RUNNING.
+            interrupted = True
+            result['status'] = 'FAIL'
+            result['reason'] = 'interrupted'
+            result['stage'] = stage
         finally:
             # Each service is cleaned up on its own; the original failure above
             # is never replaced and both outcomes are recorded.
@@ -418,6 +427,11 @@ def main(argv: list[str] | None = None) -> int:
         report['phases'].append(result)
         report_path.write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(result), flush=True)
+        if interrupted:
+            report.update(status='FAIL', reason='interrupted', tree_unchanged=report['code_digests'] == code_digests(ROOT))
+            report_path.write_text(json.dumps(report, indent=2) + '\n')
+            print(json.dumps({'overall': 'FAIL', 'reason': 'interrupted', 'phases': len(report['phases'])}))
+            return 130
         if result['status'] != 'PASS':
             break
     report['tree_unchanged'] = report['code_digests'] == code_digests(ROOT)

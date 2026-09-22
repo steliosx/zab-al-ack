@@ -196,6 +196,24 @@ def test_interrupted_previous_run_is_preserved_stopped_and_replaced(harness):
     assert record['status'] == 'PASS'
 
 
+def test_an_interrupted_phase_is_recorded_cleaned_up_and_the_run_ends_as_fail_not_running(harness):
+    """SIGINT during pytest: the record must not stay RUNNING with the phase missing."""
+    box = harness
+    box.pytest_error = KeyboardInterrupt()
+    assert native_local.main(['--isolated-lab', '--phase', 'postgres']) == 130
+    record = report(box)
+    assert record['status'] == 'FAIL' and record['reason'] == 'interrupted' and record['tree_unchanged'] is True
+    phase, = record['phases']
+    assert phase['status'] == 'FAIL' and phase['reason'] == 'interrupted' and phase['stage'] == 'pytest'
+    assert phase['cleanup'] == {'pgbouncer': {'status': 'STOPPED'}, 'postgres': {'status': 'STOPPED', 'exit_code': 0, 'state': 'stopped'}}
+    assert phase['shutdown_exit_code'] == 0 and phase['retention']['status'] == 'RETAINED' and 'finished_at' in phase
+    assert 'pool-stop' in box.events and 'stop' in box.lab.calls and box.lab.state == 'stopped'
+    # The next run treats it as an interrupted previous run: preserved, then replaced.
+    box.pytest_error = None
+    assert native_local.main(['--isolated-lab', '--phase', 'postgres']) == 0
+    assert report(box)['status'] == 'PASS'
+
+
 @pytest.mark.parametrize('failing', ['pgbouncer', 'postgres', 'both'])
 @pytest.mark.parametrize('phase_failed', [False, True], ids=['phase-passed', 'phase-failed'])
 def test_cleanup_steps_are_independent_and_the_original_failure_is_kept(harness, monkeypatch, failing, phase_failed):
