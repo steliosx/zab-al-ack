@@ -163,11 +163,12 @@ update-operation effects, T30 deployment measurements, A5 and the other G1-G8
 requirements open until their own evidence is accepted. This document does not
 change `deployment_gates.csv` or authorize production execution.
 
-Fable remains an optional advisory reviewer. Consume substantive findings from
-all reviewers; an unanswered request alone does not block other authorized
-work. Implementation validation and same-account technical review are distinct
-from independent approval. Native x64 qualification remains `DEFERRED`, never
-`PASS`; ARM64 evidence does not establish x64 compatibility. Publication,
+Reviewers are assigned per task ([agent workflows](agent-workflows.md#review)).
+Consume substantive findings from all reviewers; an unanswered optional request
+alone does not block other authorized work. Implementation validation and
+same-account technical review are distinct from independent approval. Native x64
+qualification of this procedure has not been performed and is never `PASS` by
+default; ARM64 evidence does not establish x64 compatibility. Publication,
 merging, release and deployment each retain their separate requirements and
 authorization under [beta readiness](BETA_READINESS.md) and
 [release preparation](RELEASING.md).
