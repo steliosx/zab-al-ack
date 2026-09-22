@@ -1053,9 +1053,12 @@ root start without a usable unprivileged identity is `BLOCKED_ENVIRONMENT`.
 The local runner gains the Compose form's supplied-wheel receipt
 (`--wheel-sha256`: exact bytes, project identity, payload equal to the
 checkout, installed bytes equal to the wheel; `artifact_mode: supplied_wheel`
-in the record), and `tools/deployment_evidence.py` accepts that receipt on a
-`not_docker` record. The trusted job hook's live-service guard covers the
-deployment and Zabbix lab PID files.
+in the record); the unchanged `tools/deployment_evidence.py` already accepts
+that receipt on a `not_docker` record, which a test now pins. The trusted job
+hook's live-service guard covers the deployment and Zabbix lab PID files.
+`tools/lab_retention.py` reports an unreadable diagnostic as a
+`RetentionError` rather than an uncaught `PermissionError`, so the caller
+refuses its destructive step; the unprivileged run of the suite found it.
 
 The manual `deployment-e2e.yml` job is proposed in the Docker-free form:
 build one wheel from the checkout, prepare the runner environment from it,

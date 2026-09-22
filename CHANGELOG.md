@@ -9,8 +9,11 @@
   verified stop, wipe, and `cycle` (start, run, stop, wipe with cleanup after
   every outcome).
 - `tools/run_deployment_e2e_local.py --wheel-sha256`: the supplied-wheel
-  receipt in the local form; `tools/deployment_evidence.py` accepts it on a
-  `not_docker` record.
+  receipt in the local form; the unchanged `tools/deployment_evidence.py`
+  already accepts it on a `not_docker` record, now pinned by a test.
+- `tools/lab_retention.py`: an unreadable diagnostic is a `RetentionError`
+  (the caller refuses its destructive step) instead of an uncaught
+  `PermissionError`; found by running the suite as an unprivileged account.
 - `deployment-e2e.yml` (proposed, unchanged trigger, gate and artifact): build
   the wheel, prepare the runner environment, `cycle` under the shared lab lock
   on installed services; no Docker.

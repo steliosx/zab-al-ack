@@ -50,11 +50,13 @@ def _sync(directory: Path) -> None:
 
 def _copy(source: Path, target: Path) -> dict:
     """Copy one regular file with O_NOFOLLOW on both ends and verify the bytes."""
-    # O_NONBLOCK: a FIFO in place of a diagnostic must fail, not block.
-    fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     digest = hashlib.sha256()
     size = 0
     try:
+        # O_NONBLOCK: a FIFO in place of a diagnostic must fail, not block. An
+        # unreadable source is a RetentionError like every other failure here,
+        # so the caller refuses its destructive step instead of crashing.
+        fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(fd, 'rb') as reader:
             info = os.fstat(reader.fileno())
             _require(stat.S_ISREG(info.st_mode), 'not a regular file: ' + source.name)
