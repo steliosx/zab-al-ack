@@ -1069,6 +1069,21 @@ prerequisites are verification items for the runner handoff
 (`docs/self-hosted-runner.md`); none is provisioned by this change, and no
 hosted run of the native form has been recorded.
 
+Corrections from the author cycles: the cycle preserves both labs'
+diagnostics (`tools/lab_retention.py`) before its wipe and refuses the wipe
+when preservation fails; `lab/zabbix_native_lab.py` starts `zabbix_server`
+and the PHP server with `PATH`, `TZ` and `LANG` only, because an inherited
+proxy setting made the lab's loopback webhook deliveries fail; and a schema
+loaded without its initial data is refused at load. Package identities for
+the runner host are collected there with
+`tools/collect_package_identities.py` (dpkg, apt origin, InRelease signature
+against the installed keyrings, `dpkg -V`, version line), validated against
+the pin and the policy (a missing observation is INCOMPLETE, a source build,
+foreign origin, unverified signature or off-pin version DEVIATES), and
+proposed for review from a CONFORMS record only; the reviewed lists stay
+empty until that review. `tools/run_quality.py` adds `ruff-infrastructure`,
+a bounded lint of the listed Docker-free lab and runner files.
+
 ## R28 — Docker requirements inventory and runner-account verification (prepared handoff)
 
 Numbered after R26 (Docker-free routine native CI) and R27 (native Zabbix

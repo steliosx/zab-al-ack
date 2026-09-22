@@ -16,8 +16,21 @@
   on installed services; no Docker.
 - `tools/self_hosted_job.py`: the live-service guard covers the deployment and
   Zabbix lab PID files. `Makefile` gains `deployment-e2e-native`.
-- Author verification on a synthetic host only; no hosted run of the native
-  deployment form is recorded.
+- `lab/zabbix_native_lab.py`: `zabbix_server` and the PHP server start with a
+  minimal environment (no inherited proxy settings); a schema without its
+  initial data is refused at load with the correct inputs named.
+- `tools/collect_package_identities.py`: read-only collection of the native
+  labs' package identities on a host (dpkg, apt origin, InRelease signature,
+  dpkg -V, version line), validation against the pin and the policy
+  (CONFORMS / DEVIATES / INCOMPLETE) and a reviewed-identity proposal written
+  only from a CONFORMS record; the policy files stay unchanged and their
+  reviewed lists empty. `lab/zabbix_reference.json` records the official
+  Ubuntu archive observation for php8.3 and the sources still unreachable.
+- `tools/run_quality.py`: `ruff-infrastructure`, a bounded lint of the listed
+  Docker-free lab and runner files.
+- Author verification on a synthetic host only (one passing native deployment
+  cycle: 4/4 cases, supplied-wheel receipt, cleanup and retention complete);
+  no hosted run of the native deployment form is recorded.
 
 ## Unreleased — one exact native Zabbix 7.0 reference (R27)
 

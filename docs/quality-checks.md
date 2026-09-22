@@ -12,6 +12,14 @@ python -m ruff check src
 python -m mypy --config-file mypy.ini
 ```
 
+`tools/run_quality.py` runs the same three checks and, since R29, a fourth,
+`ruff-infrastructure`: the same Ruff rules over the explicit list of
+Docker-free lab and runner files in its `INFRASTRUCTURE` tuple (the
+deployment and Zabbix lab orchestrators, the local native runner, retention,
+evidence bundling, the runner-account and package-identity checks, the job
+hook). The list is bounded and every file must exist; it is not a
+repository-wide lint of `tools/` or `lab/`.
+
 The quality lock contains development tools only and is not an application
 dependency upgrade. Do not combine the two lock-file install commands: pip's
 hash-checking mode would also require hashes on every application requirement.

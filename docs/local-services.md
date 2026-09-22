@@ -177,7 +177,7 @@ user (as `nobody` when started as root; a root start without a usable
 | `services` | the services file with each component's version and package identity |
 | `prepare-runner --wheel … --venv …` | a Python environment with `requirements.lock` and the wheel installed non-editably; refuses when it imports the checkout |
 | `run --runner-python … --wheel … [--wheel-sha256 …]` | services file, then `tools/run_deployment_e2e_local.py` with `reset` as the reset command; exit code passed through |
-| `cycle …` | `start`, `run`, `stop`, `wipe` in one invocation from an absent lab; cleanup after every outcome; exit 5 when a passing run left something behind |
+| `cycle …` | `start`, `run`, `stop`, `wipe` in one invocation from an absent lab; cleanup after every outcome; both labs' logs preserved under `build/private/retained-phases/<run>/deployment-cycle/` before the wipe, and a preservation failure leaves the stopped lab in place; exit 5 when a passing run left something behind |
 | `stop` | both components; exit 0 only when every component is observed stopped |
 | `wipe` | removes the lab directories; refuses while any component runs |
 
@@ -191,9 +191,14 @@ python lab/deployment_native_lab.py cycle --isolated-lab --runner-python /path/e
 ```
 
 The Zabbix packages, PHP and PostgreSQL are read from `ZABALACK_ZABBIX_SERVER`,
-`ZABALACK_ZABBIX_UI`, `ZABALACK_ZABBIX_SCHEMA`, `ZABALACK_PHP` and
-`ACK_LAB_PG_BIN` (`lab/zabbix_native_lab.py`); the Zabbix instance must observe
-the pinned reference version or the services file is refused. Raw logs stay under
+`ZABALACK_ZABBIX_UI`, `ZABALACK_ZABBIX_SCHEMA` (the packaged `server.sql.gz`,
+or a directory holding `schema.sql`, `images.sql` and `data.sql`; a bare
+`schema.sql` is refused after the load because it carries no initial data),
+`ZABALACK_PHP` and `ACK_LAB_PG_BIN` (`lab/zabbix_native_lab.py`); the Zabbix
+instance must observe the pinned reference version or the services file is
+refused. `zabbix_server` and the PHP server start with `PATH`, `TZ` and `LANG`
+only: an inherited `HTTPS_PROXY` would route the lab's loopback webhook
+deliveries elsewhere. Raw logs stay under
 `.deployment-lab/`, `.zabbix-lab/` and `build/private/<project>/`.
 
 ## What the local records do not claim

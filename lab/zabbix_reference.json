@@ -17,29 +17,124 @@
   },
   "verified_from_source": {
     "note": "Read from raw.githubusercontent.com/zabbix/zabbix/7.0.31 on 2026-09-22; zabbix.com, repo.zabbix.com and the GitHub archive endpoint were not reachable from the preparing environment.",
-    "ui/include/defines.inc.php": {"sha256": "5baae9ed4bb3641f9580f184e62ac7b28f9b39f48a3e2525455ae4ff28e82214", "ZABBIX_VERSION": "7.0.31", "ZABBIX_API_VERSION": "7.0.31"},
-    "include/zbx_dbversion_constants.h": {"sha256": "6f41eff2977edc8c7254d023e539629f0fc391a0eab937c3a556ed78d9e4da11", "postgresql_min_supported": "13.0", "postgresql_max": "18.x", "note": "18.x support entered the 7.0 line in 7.0.20 (ChangeLog ZBXNEXT-10219, 7.0.20rc1)"},
-    "conf/zabbix_server.conf": {"sha256": "13f010436af8aad5a11934c5e521b15a64719bb21174acf3fedb5dfb95f27fb2", "AllowUnsupportedDBVersions_default": 0, "lab_rule": "keep the default so PostgreSQL 18 is supported, not merely allowed"},
-    "ui/include/classes/setup/CFrontendSetup.php": {"sha256": "6f14b39bdff1261909323ab89958be668411220561d04f2a11a027fae2f332d0", "MIN_PHP_VERSION": "8.0.0", "php_ini_minima": {"memory_limit": "128M", "post_max_size": "16M", "upload_max_filesize": "2M", "max_execution_time": 300, "max_input_time": 300, "session.auto_start": "off", "arg_separator.output": "&"}, "php_modules_fatal_if_missing": ["bcmath", "mbstring", "sockets", "gd (png, jpeg, freetype)", "libxml", "xmlwriter", "xmlreader", "ctype", "session", "pgsql"], "php_modules_warning_only": ["gd gif", "ldap", "openssl", "gettext", "curl"]}
+    "ui/include/defines.inc.php": {
+      "sha256": "5baae9ed4bb3641f9580f184e62ac7b28f9b39f48a3e2525455ae4ff28e82214",
+      "ZABBIX_VERSION": "7.0.31",
+      "ZABBIX_API_VERSION": "7.0.31"
+    },
+    "include/zbx_dbversion_constants.h": {
+      "sha256": "6f41eff2977edc8c7254d023e539629f0fc391a0eab937c3a556ed78d9e4da11",
+      "postgresql_min_supported": "13.0",
+      "postgresql_max": "18.x",
+      "note": "18.x support entered the 7.0 line in 7.0.20 (ChangeLog ZBXNEXT-10219, 7.0.20rc1)"
+    },
+    "conf/zabbix_server.conf": {
+      "sha256": "13f010436af8aad5a11934c5e521b15a64719bb21174acf3fedb5dfb95f27fb2",
+      "AllowUnsupportedDBVersions_default": 0,
+      "lab_rule": "keep the default so PostgreSQL 18 is supported, not merely allowed"
+    },
+    "ui/include/classes/setup/CFrontendSetup.php": {
+      "sha256": "6f14b39bdff1261909323ab89958be668411220561d04f2a11a027fae2f332d0",
+      "MIN_PHP_VERSION": "8.0.0",
+      "php_ini_minima": {
+        "memory_limit": "128M",
+        "post_max_size": "16M",
+        "upload_max_filesize": "2M",
+        "max_execution_time": 300,
+        "max_input_time": 300,
+        "session.auto_start": "off",
+        "arg_separator.output": "&"
+      },
+      "php_modules_fatal_if_missing": [
+        "bcmath",
+        "mbstring",
+        "sockets",
+        "gd (png, jpeg, freetype)",
+        "libxml",
+        "xmlwriter",
+        "xmlreader",
+        "ctype",
+        "session",
+        "pgsql"
+      ],
+      "php_modules_warning_only": [
+        "gd gif",
+        "ldap",
+        "openssl",
+        "gettext",
+        "curl"
+      ]
+    }
   },
   "ubuntu_packages": {
     "status": "NOT_VERIFIED_FROM_THE_PREPARING_ENVIRONMENT: repo.zabbix.com was blocked; the runner host must pass the verification gate before this pin is treated as an installed identity",
     "distribution": "Ubuntu 24.04 (noble) amd64",
     "repository": "deb https://repo.zabbix.com/zabbix/7.0/ubuntu noble main",
     "release_package": "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb",
-    "expected_signing_key": {"long_id": "D913219AB5333005", "fingerprint_third_party_only": "4C3D6F2CC75F5146754FC374D913219AB5333005", "note": "the April 2024 key; confirm the fingerprint from the installed keyring before trusting the index"},
+    "expected_signing_key": {
+      "long_id": "D913219AB5333005",
+      "fingerprint_third_party_only": "4C3D6F2CC75F5146754FC374D913219AB5333005",
+      "note": "the April 2024 key; confirm the fingerprint from the installed keyring before trusting the index"
+    },
     "expected_version_string": "1:7.0.31-1+ubuntu24.04 (inferred from the 7.0.24 and 7.0.29 patterns; the Debian revision is unconfirmed)",
-    "packages": ["zabbix-server-pgsql", "zabbix-frontend-php", "zabbix-sql-scripts", "zabbix-nginx-conf"],
+    "packages": [
+      "zabbix-server-pgsql",
+      "zabbix-frontend-php",
+      "zabbix-sql-scripts",
+      "zabbix-nginx-conf"
+    ],
     "schema_path": "/usr/share/zabbix-sql-scripts/postgresql/server.sql.gz",
     "verification_gate": [
       "apt-cache madison zabbix-server-pgsql zabbix-frontend-php zabbix-sql-scripts lists exactly the pinned version from repo.zabbix.com",
       "gpgv --keyring <installed zabbix keyring> /var/lib/apt/lists/*repo.zabbix.com*InRelease reports D913219AB5333005",
       "dpkg-query -W -f '${Package}\\t${Version}\\t${Architecture}\\n' for every package above matches the pin, and lab/zabbix_native_lab.py status records them"
-    ]
+    ],
+    "collection": {
+      "tool": "tools/collect_package_identities.py",
+      "procedure": "collect on the runner host as the runner account (read-only), validate against this file and lab/native_service_identities.json, review the record, approve into a proposal file, then record the reviewed values in the policy files with an amendment",
+      "reachability_from_the_preparing_environment_2026-09-22": {
+        "https://repo.zabbix.com/zabbix/7.0/release/ubuntu/dists/noble/InRelease": "blocked (no HTTP status)",
+        "https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/InRelease": "blocked (no HTTP status)",
+        "https://www.zabbix.com/rn/rn7.0.31": "blocked (no HTTP status)",
+        "https://api.github.com/repos/zabbix/zabbix/git/ref/tags/7.0.31": "403 from the proxy; the tag commit was read with git ls-remote (see selected.tag_commit_source)",
+        "https://archive.ubuntu.com/ubuntu/dists/noble-updates/main/binary-amd64/Packages.gz": "200",
+        "https://archive.ubuntu.com/ubuntu/dists/noble-security/main/binary-amd64/Packages.gz": "200"
+      }
+    }
   },
   "dependencies": {
-    "postgresql": {"major": 18, "package": "postgresql-18 from PGDG noble-pgdg (Ubuntu's archive stops at 16)", "pgdg_key_fingerprint": "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8", "zabbix_supported_range": "13.0 to 18.x"},
-    "php": {"minimum": "8.0.0", "ubuntu_24_04": "php8.3 (8.3.6-0ubuntu0.24.04.x at preparation time)", "packages": ["php8.3-fpm", "php8.3-pgsql", "php8.3-gd", "php8.3-bcmath", "php8.3-mbstring", "php8.3-xml"]},
+    "postgresql": {
+      "major": 18,
+      "package": "postgresql-18 from PGDG noble-pgdg (Ubuntu's archive stops at 16)",
+      "pgdg_key_fingerprint": "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8",
+      "zabbix_supported_range": "13.0 to 18.x"
+    },
+    "php": {
+      "minimum": "8.0.0",
+      "ubuntu_24_04": "php8.3 (8.3.6-0ubuntu0.24.04.x at preparation time)",
+      "packages": [
+        "php8.3-fpm",
+        "php8.3-pgsql",
+        "php8.3-gd",
+        "php8.3-bcmath",
+        "php8.3-mbstring",
+        "php8.3-xml"
+      ],
+      "index_observation_2026-09-22": {
+        "source": "archive.ubuntu.com noble-updates and noble-security main/binary-amd64 Packages indexes; noble-updates InRelease verified with the preparing container's ubuntu-archive-keyring (GOODSIG 871920D1991BC93C, Ubuntu Archive Automatic Signing Key (2018))",
+        "php8.3-cli": {
+          "version": "8.3.6-0ubuntu0.24.04.11",
+          "filename": "pool/main/p/php8.3/php8.3-cli_8.3.6-0ubuntu0.24.04.11_amd64.deb",
+          "sha256": "0c1730e4b6e2ba0126a620c373ab6e66eb72ae7276671684863e649d03f8edcd"
+        },
+        "php8.3-pgsql": {
+          "version": "8.3.6-0ubuntu0.24.04.11",
+          "filename": "pool/main/p/php8.3/php8.3-pgsql_8.3.6-0ubuntu0.24.04.11_amd64.deb",
+          "sha256": "b0feef8b103e76c05108eb49e97caa098d2c04fe54bfe75b90c094fc295356ff"
+        },
+        "note": "an index observation of the official archive, not an installed identity of the runner host; the host record is collected there"
+      }
+    },
     "web": "official packages pair nginx + php8.3-fpm (zabbix-nginx-conf) or Apache; the disposable lab serves the packaged frontend files from a private copy with the PHP built-in server on 127.0.0.1:58080, which is a loopback lab convenience and not an official deployment configuration"
   },
   "lab_relevant_changes_since_7_0_10": [
@@ -51,12 +146,12 @@
     "token, role and history API classes have no functional change since January 2025"
   ],
   "not_verified": [
-    "U1 availability and exact Debian revision of the 7.0.31 (and 7.0.30) noble packages",
-    "U2 the official release-notes, requirements and download pages",
+    "U1 availability and exact Debian revision of the 7.0.31 (and 7.0.30) noble packages (repo.zabbix.com still blocked on 2026-09-22; the validator accepts any Debian revision of the pinned upstream version and records it)",
+    "U2 the official release-notes, requirements and download pages (zabbix.com blocked)",
     "U3 the current payload of the zabbix-release package",
-    "U4 the full fingerprint, user id and expiry of the April 2024 signing key from an official source",
-    "U5 package dependencies and installed file paths (confirm with apt-cache show and dpkg -L)",
-    "U6 the exact PGDG postgresql-18 Debian version and the PGDG key expiry",
+    "U4 the full fingerprint, user id and expiry of the April 2024 signing key from an official source (the collector records the GOODSIG/VALIDSIG of the host's InRelease against its installed keyrings)",
+    "U5 package dependencies and installed file paths (confirm with apt-cache show and dpkg -L; the collector records dpkg -V for the used packages)",
+    "U6 the exact PGDG postgresql-18 Debian version and the PGDG key expiry (apt.postgresql.org blocked)",
     "U7 the 7.0 support end dates"
   ]
 }

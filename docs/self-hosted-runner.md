@@ -253,6 +253,24 @@ the workspace; the hooks archive them and a live service there refuses the next
 job (above). The Compose form remains available on a disposable local Docker
 host and is not run by any workflow.
 
+Package identities are collected on the host, never assumed. As the runner
+account, read-only:
+
+```bash
+python tools/collect_package_identities.py collect --output /path/private/package-identities.json --label x64-runner
+python tools/collect_package_identities.py validate /path/private/package-identities.json
+```
+
+`validate` reports CONFORMS, DEVIATES (a source build, an origin other than
+`repo.zabbix.com`, `apt.postgresql.org` or the Ubuntu archive, an InRelease
+signature that does not match the expected key, changed package files, or a
+version outside the pin and the policy) or INCOMPLETE (a missing observation;
+never a pass). After review, `approve --reviewer … --amendment … --output …`
+writes the reviewed entries as a separate proposal; the reviewer copies them
+into `lab/native_service_identities.json` (`reviewed`) and
+`lab/zabbix_reference.json` and records the review in
+`docs/RELEASE_AMENDMENTS.md`. The tool edits neither file.
+
 ### Successful native phase network retirement (Compose form only)
 
 `native_ci.py` retains networks by default. Repeated fresh projects can exhaust
