@@ -160,12 +160,50 @@ tarball's `schema.sql`, `images.sql` and `data.sql`, restarted the server with
 `env -i`, dropped and recreated the `alerta` database and the lab roles on the
 PostgreSQL 18 cluster, and removed generated files from the private directory.
 
+### Services from the orchestrator: `lab/deployment_native_lab.py` (R29)
+
+The orchestrator supplies the table above from installed artifacts on one
+host and is the operator's reset command. Everything runs as an unprivileged
+user (as `nobody` when started as root; a root start without a usable
+`nobody` identity is `BLOCKED_ENVIRONMENT`). Mutation requires
+`--isolated-lab`.
+
+| Command | Effect |
+|---|---|
+| `plan` | read-only: fixed topology, host layout check with the exact missing prerequisites |
+| `state` | read-only: `absent`, `stopped`, `running`, `partial`, `unmarked` or `ambiguous` (an occupied port 5432 without the lab cluster, for example a packaged default cluster, is ambiguous and refuses) |
+| `start` | dedicated PostgreSQL 18 cluster (`.deployment-lab/pgdata`, loopback 5432, `lab_admin` from `/run/zabalack-e2e/pg-password`, `scram-sha-256` host logins, database `alerta`) and the disposable Zabbix instance on port 8080 |
+| `reset` | fresh `alerta` database with the lab roles dropped; Zabbix stopped, reloaded from the schema and restarted at the pinned reference |
+| `services` | the services file with each component's version and package identity |
+| `prepare-runner --wheel … --venv …` | a Python environment with `requirements.lock` and the wheel installed non-editably; refuses when it imports the checkout |
+| `run --runner-python … --wheel … [--wheel-sha256 …]` | services file, then `tools/run_deployment_e2e_local.py` with `reset` as the reset command; exit code passed through |
+| `cycle …` | `start`, `run`, `stop`, `wipe` in one invocation from an absent lab; cleanup after every outcome; exit 5 when a passing run left something behind |
+| `stop` | both components; exit 0 only when every component is observed stopped |
+| `wipe` | removes the lab directories; refuses while any component runs |
+
+```bash
+python -m build --no-isolation --wheel --outdir /path/dist
+python lab/deployment_native_lab.py plan
+python lab/deployment_native_lab.py prepare-runner --isolated-lab --wheel /path/dist/zabalack-<version>-py3-none-any.whl --venv /path/e2e-runner
+export ACK_LAB_PG_BIN=/usr/lib/postgresql/18/bin   # and ZABALACK_ZABBIX_* / ZABALACK_PHP when the packages are elsewhere
+python lab/deployment_native_lab.py cycle --isolated-lab --runner-python /path/e2e-runner/bin/python \
+  --wheel /path/dist/zabalack-<version>-py3-none-any.whl --wheel-sha256 "$EXPECTED_WHEEL_SHA256"
+```
+
+The Zabbix packages, PHP and PostgreSQL are read from `ZABALACK_ZABBIX_SERVER`,
+`ZABALACK_ZABBIX_UI`, `ZABALACK_ZABBIX_SCHEMA`, `ZABALACK_PHP` and
+`ACK_LAB_PG_BIN` (`lab/zabbix_native_lab.py`); the Zabbix instance must observe
+the pinned reference version or the services file is refused. Raw logs stay under
+`.deployment-lab/`, `.zabbix-lab/` and `build/private/<project>/`.
+
 ## What the local records do not claim
 
 They do not execute the Compose images or an installed systemd/Ansible
 topology, and they do not close G1–G8. A record written by the routine Actions
 `native` job through this form is Actions execution evidence bound by
 `tools/collect_ci_evidence.py`; a record produced by hand on a development host
-is not, whatever its counts. A2 (webhook transport
+is not, whatever its counts. The same holds for the manual deployment job
+(`deployment-e2e.yml`, R29): its uploaded record is hosted execution evidence;
+an author's `cycle` on a development host is preparation. A2 (webhook transport
 verification) and the Alerta table-owner startup identity remain as described in
 `docs/deployment-e2e.md`.

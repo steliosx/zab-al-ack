@@ -39,7 +39,29 @@ jobs:
           printf '%s\n' "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - run: python -m pip install -r requirements.lock
       - run: python -m pip check
-      - run: flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock python tools/run_deployment_e2e.py --isolated-lab
+      - name: Build the one wheel this job installs
+        run: |
+          test ! -e "$RUNNER_TEMP/dist"
+          python -m build --no-isolation --wheel --outdir "$RUNNER_TEMP/dist"
+          test "$(ls "$RUNNER_TEMP"/dist/zabalack-*-py3-none-any.whl | wc -l)" = 1
+      - name: Prepare the runner environment from the built wheel only
+        run: |
+          test ! -e "$RUNNER_TEMP/e2e-runner"
+          python lab/deployment_native_lab.py prepare-runner --isolated-lab --wheel "$RUNNER_TEMP"/dist/zabalack-*-py3-none-any.whl --venv "$RUNNER_TEMP/e2e-runner"
+      - name: Deployment path on the runner's installed services (no Docker)
+        env:
+          # Reviewed package paths (lab/native_service_identities.json, lab/zabbix_reference.json); no Docker.
+          ACK_LAB_PG_BIN: /usr/lib/postgresql/18/bin
+          ZABALACK_ZABBIX_SERVER: /usr/sbin/zabbix_server
+          ZABALACK_ZABBIX_UI: /usr/share/zabbix
+          ZABALACK_ZABBIX_SCHEMA: /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz
+          ZABALACK_PHP: /usr/bin/php8.3
+        run: |
+          # One invocation under the shared host lab lock: start, run, stop, wipe.
+          # The digest is this job's own build; the preflight it enables proves the
+          # wheel payload equals this checkout and the installed bytes equal the wheel.
+          WHEEL="$(ls "$RUNNER_TEMP"/dist/zabalack-*-py3-none-any.whl)"
+          flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock python lab/deployment_native_lab.py cycle --isolated-lab --runner-python "$RUNNER_TEMP/e2e-runner/bin/python" --wheel "$WHEEL" --wheel-sha256 "$(sha256sum "$WHEEL" | cut -d' ' -f1)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

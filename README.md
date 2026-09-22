@@ -88,6 +88,8 @@ for native PostgreSQL, PgBouncer and optional real-Zabbix procedures.
 # Without Docker, on operator-provided local services (docs/local-services.md):
 .venv/bin/python tools/native_local.py --isolated-lab --plan
 .venv/bin/python tools/run_deployment_e2e_local.py --isolated-lab --plan ...
+# Services from installed PostgreSQL 18 / Zabbix packages on this host (R29):
+.venv/bin/python lab/deployment_native_lab.py plan
 ```
 
 See [mutation testing](docs/mutation-testing.md),

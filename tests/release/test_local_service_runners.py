@@ -1,4 +1,5 @@
 """Offline checks of the non-Docker service runners (R14). No service is started."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -147,3 +148,36 @@ def test_local_e2e_runner_records_not_run_without_the_host_layout(tmp_path, monk
     assert record['status'] == 'NOT_RUN' and record['reason'].startswith('lab_link_missing')
     assert 'counts' not in record and 'checks' not in record and 'code_digests' not in record
     assert json.loads(capsys.readouterr().out)['status'] == 'NOT_RUN'
+
+
+def test_local_e2e_runner_records_a_supplied_wheel_identity_only_after_the_exact_preflight(tmp_path, monkeypatch, capsys):
+    """R29: the native path carries the Compose form's supplied-wheel receipt."""
+    monkeypatch.setattr(local_e2e, 'ROOT', tmp_path)
+    monkeypatch.setattr(local_e2e, 'code_digests', lambda root: {'source': 'x', 'harness': 'y'})
+    (tmp_path / 'evidence').mkdir()
+    services = tmp_path / 'services.json'
+    services.write_text(json.dumps({name: 'synthetic ' + name for name in local_e2e.IMAGE_COMPONENTS}))
+    wheel = synthetic_wheel(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl')
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    # Wrong digest: refused before the host layout or runner is examined.
+    monkeypatch.setattr(local_e2e, 'check_host_layout', lambda: pytest.fail('layout must not be checked after a failed preflight'))
+    code = local_e2e.main(['--isolated-lab', '--runner-python', os.fspath(tmp_path / 'absent'), '--wheel', str(wheel),
+                           '--services-file', str(services), '--wheel-sha256', '0' * 64])
+    record = json.loads((tmp_path / 'evidence/deployment-e2e-run.json').read_text())
+    assert code == 2 and record['status'] == 'NOT_RUN' and record['reason'] == 'supplied_wheel_preflight_failed'
+    assert 'supplied_wheel' not in record and record.get('artifact_mode') is None
+    capsys.readouterr()
+    # Right digest and checkout payload: the plan names supplied_wheel mode and the receipt carries the identity.
+    monkeypatch.setattr(local_e2e, 'check_source', lambda path, expected, root: (b'', {'filename': wheel.name, 'sha256': expected, 'version': '0.1.0a0'}))
+    monkeypatch.setattr(local_e2e, 'check_host_layout', lambda: None)
+    monkeypatch.setattr(local_e2e, 'check_runner', lambda python, path: {'python': str(python), 'version': '0.1.0a0', 'wheel_sha256': digest, 'location': '/site'})
+    code = local_e2e.main(['--isolated-lab', '--runner-python', os.fspath(tmp_path / 'python'), '--wheel', str(wheel),
+                           '--services-file', str(services), '--wheel-sha256', digest, '--plan'])
+    plan = json.loads(capsys.readouterr().out)
+    assert code == 0 and plan['artifact_mode'] == 'supplied_wheel'
+    # A runner whose installed wheel differs from the supplied identity is refused.
+    monkeypatch.setattr(local_e2e, 'check_runner', lambda python, path: {'python': str(python), 'version': '0.1.0a0', 'wheel_sha256': 'e' * 64, 'location': '/site'})
+    code = local_e2e.main(['--isolated-lab', '--runner-python', os.fspath(tmp_path / 'python'), '--wheel', str(wheel),
+                           '--services-file', str(services), '--wheel-sha256', digest])
+    record = json.loads((tmp_path / 'evidence/deployment-e2e-run.json').read_text())
+    assert code == 2 and record['reason'] == 'supplied_wheel_identity_mismatch'

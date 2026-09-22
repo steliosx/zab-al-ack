@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: test quality mutation deployment-e2e quickstart wasm sql native native-local deployment-e2e-local property-nightly audit build
+.PHONY: test quality mutation deployment-e2e quickstart wasm sql native native-local deployment-e2e-local deployment-e2e-native property-nightly audit build
 test:
 	$(PYTHON) tools/run_reference_suite.py
 quality:
@@ -26,5 +26,8 @@ native-local:
 # Operator inputs: RUNNER_PYTHON=<venv python with the wheel installed> WHEEL=<dist/pypi/zabalack-*.whl> SERVICES=<services.json>
 deployment-e2e-local:
 	$(PYTHON) tools/run_deployment_e2e_local.py --isolated-lab --runner-python "$(RUNNER_PYTHON)" --wheel "$(WHEEL)" --services-file "$(SERVICES)"
+# Services from lab/deployment_native_lab.py on this host (R29): RUNNER_PYTHON and WHEEL as above
+deployment-e2e-native:
+	$(PYTHON) lab/deployment_native_lab.py cycle --isolated-lab --runner-python "$(RUNNER_PYTHON)" --wheel "$(WHEEL)"
 property-nightly:
 	$(PYTHON) tools/run_property_nightly.py --isolated-lab

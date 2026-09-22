@@ -1,5 +1,24 @@
 # Zab-al-ack changelog
 
+## Unreleased — native deployment path and Docker-free deployment job (R29)
+
+- `lab/deployment_native_lab.py`: disposable PostgreSQL 18 cluster (loopback
+  5432, scram host logins, `alerta`) and the R27 Zabbix instance on 8080 for
+  `tools/run_deployment_e2e_local.py`; state classification and refusals,
+  verified host layout, runner environment from the wheel only, reset,
+  verified stop, wipe, and `cycle` (start, run, stop, wipe with cleanup after
+  every outcome).
+- `tools/run_deployment_e2e_local.py --wheel-sha256`: the supplied-wheel
+  receipt in the local form; `tools/deployment_evidence.py` accepts it on a
+  `not_docker` record.
+- `deployment-e2e.yml` (proposed, unchanged trigger, gate and artifact): build
+  the wheel, prepare the runner environment, `cycle` under the shared lab lock
+  on installed services; no Docker.
+- `tools/self_hosted_job.py`: the live-service guard covers the deployment and
+  Zabbix lab PID files. `Makefile` gains `deployment-e2e-native`.
+- Author verification on a synthetic host only; no hosted run of the native
+  deployment form is recorded.
+
 ## Unreleased — one exact native Zabbix 7.0 reference (R27)
 
 - `lab/zabbix_reference.json` pins Zabbix 7.0.31 with verified source facts,

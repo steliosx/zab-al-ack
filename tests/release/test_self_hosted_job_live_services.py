@@ -52,7 +52,8 @@ def untouched(paths):
             and not list(paths.evidence.rglob('*.tar')) and not list(paths.evidence.rglob('*.tar.partial')))
 
 
-@pytest.mark.parametrize('pid_file', hooks.LAB_PID_FILES, ids=['postgres', 'pgbouncer'])
+@pytest.mark.parametrize('pid_file', hooks.LAB_PID_FILES,
+                         ids=['postgres', 'pgbouncer', 'zabbix-postgres', 'zabbix-server', 'zabbix-php', 'deployment-postgres'])
 def test_live_lab_pid_refuses_start_without_archive_or_reset_then_stale_pid_is_retained(setup, child, pid_file):
     paths, context = setup
     (paths.workspace / 'keep.txt').write_text('keep')

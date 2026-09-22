@@ -196,7 +196,8 @@ complete service/test/normal-cleanup invocation. Direct agent labs must use the
 same lock. The lock is taken explicitly in the workflow command, not by the
 service unit or hook: `ci.yml` wraps `tools/native_local.py --isolated-lab`
 (R26; previously `tools/native_ci.py` with its network-retention arguments) and
-`deployment-e2e.yml` wraps `tools/run_deployment_e2e.py --isolated-lab` with
+`deployment-e2e.yml` wraps `lab/deployment_native_lab.py cycle --isolated-lab`
+(R29; previously `tools/run_deployment_e2e.py`) with
 `flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock`.
 A stopped hook/process does not prove services stopped; retain the
 attempt and inspect exact owned resources before another service lab starts.
@@ -226,6 +227,31 @@ preserved under `build/private/retained-phases` before every reset inside the
 run (`docs/local-services.md`); the end-of-job archive is in addition to that,
 not instead of it. The Compose form and its network retirement below remain
 available for the deployment lab and for local Docker hosts.
+
+### Deployment path without Docker (R29, prepared)
+
+The manual `deployment-e2e.yml` job runs `lab/deployment_native_lab.py cycle`
+on services installed on the runner host. Nothing below is provisioned by the
+repository; each row is a verification item for the runner host's handoff,
+checked with `python lab/deployment_native_lab.py plan` and `state` before
+the job is enabled:
+
+| Requirement | Value |
+|---|---|
+| PostgreSQL 18 | `ACK_LAB_PG_BIN=/usr/lib/postgresql/18/bin`; **no other cluster on loopback port 5432** (a packaged default cluster makes the lab state ambiguous and the job refuses) |
+| Zabbix at the pinned patch | `zabbix-server-pgsql`, `zabbix-frontend-php` and `zabbix-sql-scripts` at the version in `lab/zabbix_reference.json` (`/usr/sbin/zabbix_server`, `/usr/share/zabbix`, `/usr/share/zabbix-sql-scripts/postgresql/server.sql.gz`); identities recorded, not assumed |
+| PHP | `ZABALACK_PHP=/usr/bin/php8.3` with the frontend's extensions; the frontend is served by PHP's built-in server on loopback 8080 |
+| Hostnames | `postgres`, `zabbix-web` and `runner` resolving to loopback in `/etc/hosts` |
+| Checkout link | `/opt/zabalack-lab` resolving to the job workspace checkout (a fixed link to the runner's `_work/<repo>/<repo>` directory) |
+| Private directory | `/run/zabalack-e2e`, mode 0700, owned by the runner account, holding `pg-password` (`/run` is volatile: a `tmpfiles.d` rule or the service's pre-start recreates it) |
+| Ports | 5432, 8080, 20051 and 55434 (lab services) and 58081/58443 (application and TLS proxy) free on loopback while the job runs |
+| Account | the runner account runs every service itself; no Docker group membership is needed for this job |
+| Build tooling | `build`, `setuptools` and `wheel` from `requirements.lock` build the job's wheel in `$RUNNER_TEMP/dist` |
+
+The job creates `.deployment-lab/`, `.zabbix-lab/` and `build/private/` inside
+the workspace; the hooks archive them and a live service there refuses the next
+job (above). The Compose form remains available on a disposable local Docker
+host and is not run by any workflow.
 
 ### Successful native phase network retirement (Compose form only)
 

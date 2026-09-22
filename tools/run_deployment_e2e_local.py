@@ -44,6 +44,7 @@ import zipfile
 from deployment_evidence import IMAGE_COMPONENTS, validate_report
 from evidence_utils import code_digests
 from run_deployment_e2e import certificates, protected, stamp, validate_result
+from supplied_wheel import check_source
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE = Path("/run/zabalack-e2e")
@@ -155,6 +156,7 @@ def main(argv=None):
     parser.add_argument("--wheel", type=Path, required=True, help="the built zabalack wheel the runner environment installed")
     parser.add_argument("--services-file", type=Path, required=True, help="JSON naming the postgres, zabbix-db, zabbix-server and zabbix-web services")
     parser.add_argument("--reset-command", default=None, help="operator command returning Zabbix and the alerta database to a fresh state")
+    parser.add_argument("--wheel-sha256", default=None, help="expected SHA-256 of --wheel: records the exact supplied artifact identity (supplied_wheel mode)")
     parser.add_argument("--plan", action="store_true", help="Validate inputs and print the plan without running")
     args = parser.parse_args(argv)
     evidence = ROOT / "evidence"
@@ -168,12 +170,27 @@ def main(argv=None):
 
     if not args.plan:
         save()  # invalidate the previous record before any service is touched
+    supplied = None
+    if args.wheel_sha256 is not None:
+        # Same preflight as the Compose form's supplied-wheel mode: exact bytes,
+        # exact project identity, and the wheel payload equal to this checkout.
+        try:
+            _, supplied = check_source(args.wheel.resolve(), args.wheel_sha256, ROOT)
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+            report.update(status="NOT_RUN", reason="supplied_wheel_preflight_failed", finished_at=stamp())
+            report.pop("code_digests", None)
+            if not args.plan:
+                save()
+            print(json.dumps(report))
+            return 2
+        report["artifact_mode"] = "supplied_wheel"
     try:
         components = services(args.services_file)
         check_host_layout()
         # Never resolve the interpreter path: a virtual environment python is a symlink to its base interpreter.
         runner_python = Path(os.path.abspath(args.runner_python))
         runner = check_runner(runner_python, args.wheel.resolve())
+        require(supplied is None or runner["wheel_sha256"] == supplied["sha256"], "supplied_wheel_identity_mismatch")
     except (RuntimeError, OSError, ValueError, KeyError, StopIteration) as error:
         report.update(status="NOT_RUN", reason=str(error)[:300], finished_at=stamp())
         report.pop("code_digests", None)
@@ -181,6 +198,9 @@ def main(argv=None):
             save()
         print(json.dumps(report))
         return 2
+    if supplied is not None:
+        # check_runner verified every installed package file against the wheel bytes.
+        report["supplied_wheel"] = {**supplied, "installed_bytes_verified": True}
     # Public description: no interpreter or site-packages path leaves the host.
     components["runner"] = ("this host: a Python 3.12 environment with requirements.lock and the built zabalack "
                             + runner["version"] + " wheel installed non-editably (sha256 " + runner["wheel_sha256"]
@@ -189,6 +209,7 @@ def main(argv=None):
     project = "zabalack-e2e-" + os.urandom(6).hex()
     if args.plan:
         print(json.dumps({"project": project, "runner": runner, "components": components, "reset_command": args.reset_command,
+                          "artifact_mode": "supplied_wheel" if supplied else "built_wheel",
                           "tests": "tests/deployment_e2e through lab/deployment_e2e_runtime.py", "external_zabbix_writes": "isolated lab only"}, indent=2))
         return 0
     report.update(project=project, runner="lab/deployment_e2e_runtime.py executed unmodified through pytest tests/deployment_e2e on one host "

@@ -1032,6 +1032,43 @@ verification only. It does not execute on the x64 runner, does not review the
 runner host's packages, does not uninstall Docker or change any privilege, and
 authorizes no merge, runner activation, release or deployment.
 
+## R29 — Native deployment path: installed-wheel lab orchestration and a Docker-free deployment job (prepared)
+
+Numbered after R26–R28. `lab/deployment_native_lab.py` supplies the two
+services `tools/run_deployment_e2e_local.py` (R14) needs from artifacts
+installed on one host: a dedicated PostgreSQL 18 cluster on loopback 5432
+(`lab_admin`, `scram-sha-256` host logins, database `alerta`) and the
+disposable Zabbix instance of R27 with its frontend on 8080. It classifies
+the lab (`absent`, `stopped`, `running`, `partial`, `unmarked`, `ambiguous`)
+without touching it, refuses occupied or unmarked state, verifies but never
+changes the host layout the runtime fixes, prepares a runner environment from
+the wheel only (refusing one that imports the checkout), is its own reset
+command (fresh `alerta` database with the lab roles dropped, Zabbix reloaded
+from the schema at the pinned reference), stops with exit 0 only when every
+component is observed stopped, and wipes only a stopped lab. `cycle` runs
+start, run, stop and wipe as one invocation from an absent lab with cleanup
+after every outcome; a passing run that leaves anything behind exits 5. A
+root start without a usable unprivileged identity is `BLOCKED_ENVIRONMENT`.
+
+The local runner gains the Compose form's supplied-wheel receipt
+(`--wheel-sha256`: exact bytes, project identity, payload equal to the
+checkout, installed bytes equal to the wheel; `artifact_mode: supplied_wheel`
+in the record), and `tools/deployment_evidence.py` accepts that receipt on a
+`not_docker` record. The trusted job hook's live-service guard covers the
+deployment and Zabbix lab PID files.
+
+The manual `deployment-e2e.yml` job is proposed in the Docker-free form:
+build one wheel from the checkout, prepare the runner environment from it,
+then `lab/deployment_native_lab.py cycle --isolated-lab` under the shared
+host lab lock with the installed services named by the step environment. The
+trigger, enablement variable, runner labels, permissions, artifact name,
+record path and upload-on-failure rule are unchanged; a missing prerequisite
+fails the step (NOT_RUN is exit 2), so the gate is neither removed nor made
+optional. The Compose runner remains the optional Docker form. Host
+prerequisites are verification items for the runner handoff
+(`docs/self-hosted-runner.md`); none is provisioned by this change, and no
+hosted run of the native form has been recorded.
+
 ## R28 — Docker requirements inventory and runner-account verification (prepared handoff)
 
 Numbered after R26 (Docker-free routine native CI) and R27 (native Zabbix

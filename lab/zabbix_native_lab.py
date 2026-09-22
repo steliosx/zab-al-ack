@@ -51,7 +51,10 @@ PGDATA = STATE / 'pgdata'
 UI = STATE / 'ui'
 PG_PORT = 55434
 SERVER_PORT = 20051  # zabbix_server accepts 1024..32767; the default 10051 is left to any host service
-WEB_HOST, WEB_PORT = '127.0.0.1', 58080
+WEB_HOST = '127.0.0.1'
+# The contract suite's fixed lab API is 58080 (lab/real_zabbix_safety.py); the
+# deployment-path lab addresses the frontend as zabbix-web:8080 instead.
+WEB_PORT = int(os.environ.get('ZABALACK_ZABBIX_WEB_PORT', '58080'))
 API_URL = f'http://{WEB_HOST}:{WEB_PORT}/api_jsonrpc.php'
 DATABASE = 'zabbix'
 DB_USER = 'zabbix'

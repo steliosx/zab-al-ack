@@ -17,7 +17,7 @@ host: those are prepared operational steps, listed at the end.
 | `ci.yml` / `package` | blocked by `native` (`needs`) | Docker-free |
 | `ci.yml` / `quality`, `reference`, `mutation` | Docker-free (Docker appears only in the job preamble comments) | unchanged |
 | `security.yml` / `scan`, `codeql.yml` / `analyze` | Docker-free | unchanged |
-| `deployment-e2e.yml` / `service-lab` | **OPTIONAL**: manual dispatch behind `vars.ZABALACK_DEPLOYMENT_E2E_ENABLED`; `tools/run_deployment_e2e.py` needs a local Docker daemon | unchanged; the Docker-free form is `tools/run_deployment_e2e_local.py` |
+| `deployment-e2e.yml` / `service-lab` | **OPTIONAL**: manual dispatch behind `vars.ZABALACK_DEPLOYMENT_E2E_ENABLED`; `tools/run_deployment_e2e.py` needs a local Docker daemon | R29 (prepared): Docker-free, `lab/deployment_native_lab.py cycle --isolated-lab` on the runner's installed PostgreSQL 18, Zabbix packages and PHP under the same shared lab lock; a missing prerequisite fails the step |
 | `release/publish.yml.example` | inactive template; `pypa/gh-action-pypi-publish` runs a container on a hosted runner | outside `.github/workflows`; unchanged |
 
 No active workflow uses `container:`, `services:`, `docker://` or a container
@@ -29,8 +29,8 @@ action; every pinned action is a `node20`/`node24` JavaScript action.
 |---|---|---|
 | `tools/native_ci.py`, `tools/native_docker_relay.py`, `tools/native_network_retention.py`, `lab/compose.postgres.yml`, `lab/Dockerfile.pgbouncer` | OPTIONAL after R26 (REQUIRED before) | Compose form of the native phases; importable without Docker; R26 adds the shared run-start preservation to `native_ci.py` |
 | `tools/native_local.py`, `lab/local_runtime.py`, `lab/build_postgres.sh`, `tools/lab_retention.py` (R26), `lab/native_service_identities.json` (R26) | DOCKER-FREE | the routine form; PgBouncer 1.24+ policy and reviewed identities live here |
-| `tools/run_deployment_e2e.py`, `lab/deployment_e2e*.Dockerfile`, `lab/deployment_e2e_wheel.py` | OPTIONAL | deployment lab Compose form; the exact-wheel `supplied_wheel` receipt mode exists only in this form |
-| `tools/run_deployment_e2e_local.py`, `lab/deployment_e2e_runtime.py`, `lab/deployment_e2e_zabbix.py` | DOCKER-FREE | Compose-shaped topology (hostnames, ports, private directory) that the local runner supplies on one host |
+| `tools/run_deployment_e2e.py`, `lab/deployment_e2e*.Dockerfile`, `lab/deployment_e2e_wheel.py` | OPTIONAL | deployment lab Compose form; before R29 the exact-wheel `supplied_wheel` receipt mode existed only in this form |
+| `tools/run_deployment_e2e_local.py`, `lab/deployment_e2e_runtime.py`, `lab/deployment_e2e_zabbix.py`, `lab/deployment_native_lab.py` (R29) | DOCKER-FREE | Compose-shaped topology (hostnames, ports, private directory) that the local runner supplies on one host; R29 supplies the services from installed artifacts and adds the supplied-wheel receipt to this form |
 | `lab/compose.zabbix.yml` | OPTIONAL | manual real-Zabbix rig; the Docker-free instance is `lab/zabbix_native_lab.py` (R27) |
 | `tools/collect_ci_evidence.py`, `tools/update_acceptance.py`, `tools/public_audit.py`, `tools/native_failure_summary.py`, `tools/verify_release.py`, `tools/build_release.py` | DOCKER-FREE | the native predicates never required Compose identities; R26 adds the reviewed-identity requirement for a `not_docker` native record |
 | `tools/deployment_evidence.py` | DOCKER-FREE | validates both Docker (`image_ids`) and local (`not_docker`, `components`) deployment records |
@@ -87,9 +87,8 @@ BETA_READINESS, ALPHA_REPORT, evidence/README, the independent reviews and
 Separate from the repository changes and not authorized by them:
 
 1. Remove `zabalack-runner` from the `docker` group (or remove Docker from the
-   guest) once routine CI runs the Docker-free form and the deployment lab's
-   Docker form is no longer needed there; verify with
-   `tools/runner_account_check.py`.
+   guest) once routine CI runs the Docker-free form (R26) and the deployment
+   job runs the native form (R29); verify with `tools/runner_account_check.py`.
 2. Reword the "root-equivalent Docker access" statements above after that
    change is reviewed.
 3. Retire the orphaned Compose project recorded on the former ARM64 runner

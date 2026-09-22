@@ -150,10 +150,51 @@ Zabbix 7.0.10 commit `237358b56b2584b94b1f8358f479ade669693ba2`
 server/web Dockerfiles and entrypoints. No interface was inferred from a mock's
 successful return alone.
 
+## Native form on one host (R29)
+
+`lab/deployment_native_lab.py` supplies the two services the local runner
+needs from artifacts installed on the host, without Docker, and keeps them
+disposable: a dedicated PostgreSQL 18 cluster under `.deployment-lab/pgdata`
+on loopback port 5432 (`lab_admin`, `scram-sha-256` host logins, database
+`alerta`) and the disposable Zabbix instance of `lab/zabbix_native_lab.py`
+(R27) with its frontend on port 8080. The host layout the runtime fixes
+(`postgres`, `zabbix-web` and `runner` resolving to loopback,
+`/opt/zabalack-lab` resolving to the checkout, `/run/zabalack-e2e` mode 0700
+owned by the running user) is verified, never changed; `plan` prints what is
+missing. `docs/local-services.md` lists the commands.
+
+```bash
+python -m build --no-isolation --wheel --outdir /path/dist
+python lab/deployment_native_lab.py prepare-runner --isolated-lab \
+  --wheel /path/dist/zabalack-<version>-py3-none-any.whl --venv /path/e2e-runner
+ACK_LAB_PG_BIN=/usr/lib/postgresql/18/bin python lab/deployment_native_lab.py cycle --isolated-lab \
+  --runner-python /path/e2e-runner/bin/python --wheel /path/dist/zabalack-<version>-py3-none-any.whl \
+  --wheel-sha256 "$EXPECTED_WHEEL_SHA256"
+```
+
+`cycle` refuses unless the lab is absent, then starts both services, writes
+the services file, runs `tools/run_deployment_e2e_local.py` with the
+orchestrator's own `reset` as the reset command and the supplied-wheel
+identity, and stops and wipes both services after every outcome, including a
+refusal or an interruption. The run's exit code is reported unchanged (2 is
+NOT_RUN, 1 a failed execution or validation); a run that passed but left a
+component running or a lab directory behind exits 5. With `--wheel-sha256`
+the local runner performs the same supplied-wheel preflight as the Compose
+form (exact bytes, project identity, payload equal to the checkout) and the
+record carries `artifact_mode: supplied_wheel` with the installed-bytes
+verification result.
+
 For a hosted isolated run, the supplied `deployment-e2e.yml` workflow is manual
 and requires `ZABALACK_DEPLOYMENT_E2E_ENABLED=true` after repository policy review.
 It uses no custom secrets, has read-only repository permissions, and uploads only
-the fixed public result JSON even on failure. It is separate from the required
+the fixed public result JSON even on failure. Since R29 it runs the native form:
+the job builds one wheel from the checkout, prepares the runner environment from
+that wheel only, and runs `lab/deployment_native_lab.py cycle --isolated-lab`
+under the shared host lab lock with the installed services named by the step
+environment; no Docker daemon is involved. A missing prerequisite (services,
+layout, packages at the pinned patch) fails the step: NOT_RUN is exit 2, never
+a passing job. It is separate from the required
 quality/reference/native/mutation packaging workflow; a service result is not
 silently imported into that workflow's acceptance evidence. Hosted execution and
-repository enablement are NOT_RUN here.
+repository enablement are NOT_RUN here; the Compose form remains available on a
+disposable local Docker host.

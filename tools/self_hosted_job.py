@@ -32,8 +32,12 @@ EXCLUDED = {'.git', 'node_modules', '.venv', '__pycache__', '.pytest_cache',
             '.mypy_cache', '.ruff_cache', '.cache'}
 SHA = re.compile(r'[0-9a-f]{40}')
 REPOSITORY = 'steliosx/zab-al-ack'
-# PID files the local native lab writes inside the workspace (tools/native_local.py).
-LAB_PID_FILES = ('.lab/pgdata/postmaster.pid', 'build/private/pgbouncer-local/pgbouncer.pid')
+# PID files the local labs write inside the workspace: the native phases
+# (tools/native_local.py), the disposable Zabbix instance (lab/zabbix_native_lab.py)
+# and the deployment-path cluster (lab/deployment_native_lab.py).
+LAB_PID_FILES = ('.lab/pgdata/postmaster.pid', 'build/private/pgbouncer-local/pgbouncer.pid',
+                 '.zabbix-lab/pgdata/postmaster.pid', '.zabbix-lab/zabbix_server.pid', '.zabbix-lab/php.pid',
+                 '.deployment-lab/pgdata/postmaster.pid')
 
 
 @dataclass(frozen=True)

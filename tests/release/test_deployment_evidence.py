@@ -166,3 +166,20 @@ def test_duplicate_json_fields_cannot_hide_failed_checks(candidate):
     build_fixture(root, output)
     with pytest.raises(ValueError, match='Deployment E2E'):
         verify_release.verify(root, output / 'dist')
+
+
+def test_a_local_record_may_carry_the_supplied_wheel_receipt(tmp_path):
+    """R29: the native deployment path records the exact artifact identity like the Compose form."""
+    from deployment_evidence import validate_report
+    root = tmp_path / 'checkout'
+    (root / 'src/zabalack').mkdir(parents=True)
+    (root / 'src/zabalack/__init__.py').write_text('')
+    (root / 'tests').mkdir()
+    (root / 'pyproject.toml').write_text('[project]\nname = "zabalack"\nversion = "0.1.0a18"\n')
+    value = passing(root, local=True)
+    value['artifact_mode'] = 'supplied_wheel'
+    value['supplied_wheel'] = {'filename': 'zabalack-0.1.0a18-py3-none-any.whl', 'sha256': 'a' * 64, 'version': '0.1.0a18', 'installed_bytes_verified': True}
+    validate_report(value, root)
+    value['supplied_wheel']['installed_bytes_verified'] = False
+    with pytest.raises(ValueError):
+        validate_report(value, root)

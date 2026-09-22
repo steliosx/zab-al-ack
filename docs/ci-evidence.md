@@ -52,8 +52,11 @@ interrupted attempts before cleanup. Each Python job refuses an existing
 `$RUNNER_TEMP/venv`, creates a new virtual environment after the pinned Python
 setup action, and selects its interpreter for subsequent installs and commands.
 Do not reuse the agent's editable environment. Provision only the required
-Python 3.12, Node 22, Git, archive/download tools, Docker Compose and compatible
-pinned wheels/images; keep dependency versions and action commits unchanged.
+Python 3.12, Node 22, Git, archive/download tools, the installed services the
+native jobs name (`docs/self-hosted-runner.md`, R26 and R29) and compatible
+pinned wheels; Docker Compose is needed only by the optional Compose forms,
+which no workflow job runs after R26 and R29. Keep dependency versions and
+action commits unchanged.
 The job UID can rewrite the private archives, and its Docker access is
 root-equivalent on the lab VM. These copies are diagnostic retention, not
 tamper-evident evidence; preserve reviewed copies outside the VM. The runner

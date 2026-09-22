@@ -554,11 +554,37 @@ def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_re
     assert value['permissions'] == {'contents': 'read'}
     job = value['jobs']['service-lab']
     assert job['if'] == "${{ vars.ZABALACK_DEPLOYMENT_E2E_ENABLED == 'true' }}"
-    assert any(step.get('run') == 'flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
-               'python tools/run_deployment_e2e.py --isolated-lab' for step in job['steps'])
+    assert any(line.strip().startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
+                                       'python lab/deployment_native_lab.py cycle --isolated-lab ')
+               for step in job['steps'] for line in step.get('run', '').splitlines())
     uploads = [step for step in job['steps'] if step.get('uses', '').startswith('actions/upload-artifact@')]
     assert len(uploads) == 1 and uploads[0]['with']['path'] == 'evidence/deployment-e2e-run.json'
     assert uploads[0]['if'] == 'always()'
+    assert uploads[0]['with']['name'] == 'zabalack-deployment-e2e-${{ github.run_id }}-${{ github.run_attempt }}'
+
+
+def test_deployment_job_builds_installs_and_cycles_the_native_lab_without_docker():
+    """R29: the manual deployment job needs no Docker daemon; NOT_RUN is a failed step, not a pass."""
+    workflow = yaml.load((ROOT / '.github/workflows/deployment-e2e.yml').read_text(), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['service-lab']['steps']
+    commands = [line.strip() for step in steps if 'run' in step
+                for line in step['run'].splitlines() if line.strip() and not line.strip().startswith('#')]
+    assert not any('docker' in line.lower() or 'run_deployment_e2e.py' in line for line in commands)
+    build = next(i for i, line in enumerate(commands) if line.startswith('python -m build --no-isolation --wheel --outdir "$RUNNER_TEMP/dist"'))
+    prepare = next(i for i, line in enumerate(commands) if line.startswith('python lab/deployment_native_lab.py prepare-runner --isolated-lab'))
+    cycle = next(i for i, line in enumerate(commands) if line.startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '))
+    assert build < prepare < cycle
+    assert commands[build + 1] == 'test "$(ls "$RUNNER_TEMP"/dist/zabalack-*-py3-none-any.whl | wc -l)" = 1'
+    assert '--venv "$RUNNER_TEMP/e2e-runner"' in commands[prepare] and '--wheel "$RUNNER_TEMP"/dist/zabalack-*-py3-none-any.whl' in commands[prepare]
+    assert '--runner-python "$RUNNER_TEMP/e2e-runner/bin/python"' in commands[cycle] and '--wheel "$WHEEL"' in commands[cycle]
+    assert '--wheel-sha256 "$(sha256sum "$WHEEL" | cut -d\' \' -f1)"' in commands[cycle]
+    assert not any('|| true' in line or 'continue-on-error' in line for line in commands)
+    native = next(step for step in steps if 'lab/deployment_native_lab.py cycle' in step.get('run', ''))
+    assert native['env'] == {'ACK_LAB_PG_BIN': '/usr/lib/postgresql/18/bin', 'ZABALACK_ZABBIX_SERVER': '/usr/sbin/zabbix_server',
+                             'ZABALACK_ZABBIX_UI': '/usr/share/zabbix',
+                             'ZABALACK_ZABBIX_SCHEMA': '/usr/share/zabbix-sql-scripts/postgresql/server.sql.gz',
+                             'ZABALACK_PHP': '/usr/bin/php8.3'}
+    assert 'continue-on-error' not in native and 'if' not in native
 
 
 def test_every_active_job_requires_the_dedicated_x64_runner_without_hosted_fallback():
@@ -599,14 +625,15 @@ def test_dependency_installations_use_a_new_environment_before_any_installs_or_e
 
 
 def test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner():
-    targets = {'ci.yml': ('native', 'tools/native_local.py'),
-               'deployment-e2e.yml': ('service-lab', 'tools/run_deployment_e2e.py')}
-    for filename, (job_name, runner) in targets.items():
+    targets = {'ci.yml': ('native', 'python tools/native_local.py --isolated-lab'),
+               'deployment-e2e.yml': ('service-lab', 'python lab/deployment_native_lab.py cycle --isolated-lab')}
+    for filename, (job_name, invocation) in targets.items():
         workflow = yaml.load((ROOT / '.github/workflows' / filename).read_text(), Loader=yaml.BaseLoader)
         scripts = [step['run'] for step in workflow['jobs'][job_name]['steps'] if 'run' in step]
-        invocations = [script for script in scripts if runner in script]
-        assert invocations == ['flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
-                               f'python {runner} --isolated-lab']
+        # Every line that starts services (the runner invocation, not its prepare step) holds the lock.
+        lines = [line.strip() for script in scripts for line in script.splitlines()
+                 if invocation in line and not line.strip().startswith('#')]
+        assert len(lines) == 1 and lines[0].startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock ' + invocation)
         assert not any('docker system prune' in script or 'down --volumes' in script for script in scripts)
 
 
