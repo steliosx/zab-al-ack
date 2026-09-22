@@ -19,8 +19,12 @@
 - `docs/docker_requirements_inventory.md`: required / optional / historical
   classification of every Docker dependency and what R26 changes.
 - `tools/runner_account_check.py`: read-only host capability report for the
-  runner account (groups, sudo, sockets, Docker CLI/contexts/settings,
-  Docker-requiring workflows) with `docker-allowed` and `docker-free` policies.
+  runner account and its running process (configured versus running identity,
+  capabilities, sudo, socket mode/ACL with inferred and demonstrated access,
+  effective unit configuration including drop-ins and environment files, the
+  account's own Docker configuration read as files, Docker-requiring
+  workflows) with `docker-allowed` and `docker-free` policies; a missing
+  required observation is INCOMPLETE, never CONFORMS.
 - Corrections: the local-runtime blocked-environment message names the local
   form; the Makefile gains the `deployment-e2e-local` rule; the deployment
   validator and release-provenance scope statements agree with R14.

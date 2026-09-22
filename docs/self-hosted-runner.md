@@ -276,27 +276,45 @@ Runner hooks, deployment workflows and failed attempts remain unchanged.
 
 ## Runner account verification (prepared, not applied)
 
-`tools/runner_account_check.py` is a read-only report of the dedicated account's
+`tools/runner_account_check.py` is a read-only report of the dedicated runner's
 host capabilities for the Docker-removal handoff (R28,
-`docs/docker_requirements_inventory.md`): effective groups, sudo rules (as
-root), the container sockets' mode and group, the Docker CLI and its contexts,
-every `DOCKER_HOST`/`DOCKER_CONTEXT`/`DOCKER_CONFIG` setting the runner could
-inherit (environment, the runner's `.env`, its systemd unit, the account's
-`~/.docker/config.json`), other host-capable groups and the workflows that
-still invoke Docker. `--policy docker-allowed` describes the host as provisioned
-today; `--policy docker-free` is the target after routine CI runs the local
-native form. It changes nothing and prints a JSON report; exit 0 conforms, 1
-deviates, 2 incomplete.
+`docs/docker_requirements_inventory.md`). It distinguishes the *configured*
+account (uid, gid, configured groups) from the *running* runner process, whose
+real and effective uid and gid, supplementary groups, capability sets and
+`no_new_privs` flag it reads from `/proc` (selected by the unit's `MainPID`,
+`--runner-pid` or the `Runner.Listener` process name). For each container
+socket it records the mode, owner, group and POSIX ACL, the permission
+*inferred* for the runner identity and the access *demonstrated* by
+connecting under that identity in a child process (uid, gid and groups
+switched; nothing is sent; a stale permissive socket without a daemon is a
+latent grant). The service configuration is read from the unit fragment, its
+drop-ins, `Environment=` and `EnvironmentFile=` lines, the runner's `.env` and
+the running process's environment, keeping only `DOCKER_*` keys. The intended
+account's Docker configuration (`DOCKER_CONFIG` from the effective service
+environment, else its `~/.docker`) is read as files: `currentContext`, the
+number of stored auths and the context store's endpoints; no Docker CLI runs
+and no daemon or remote endpoint is contacted. Sudo rules are listed as root.
+
+A required observation that cannot be made (no root for sudo or identity
+switching, an unreadable file, an absent or ambiguous runner process) is
+reported as NOT_OBSERVED and makes the verdict INCOMPLETE; it never becomes
+"absent" and CONFORMS. Any deviation makes it DEVIATES, with the incomplete
+observations listed alongside. `--policy docker-allowed` describes the host
+as provisioned today; `--policy docker-free` is the target after routine CI
+runs the local native form. Exit 0 conforms, 1 deviates, 2 incomplete. The
+report contains no secrets: no environment dump, no auth values, no tokens.
 
 ```bash
-sudo python3 tools/runner_account_check.py --policy docker-allowed   # before the change
+sudo python3 tools/runner_account_check.py --policy docker-allowed   # before the change; runner service running
 sudo python3 tools/runner_account_check.py --policy docker-free      # after removing the docker group membership
 ```
 
-The operational change itself (removing `zabalack-runner` from the `docker`
-group or removing Docker from the guest, then rewording the "root-equivalent
-Docker access" statements) is a separately reviewed host step. Nothing in the
-repository performs it.
+Run it as root while the runner service is running; a stopped runner yields
+INCOMPLETE because the running identity cannot be verified. The operational
+change itself (removing `zabalack-runner` from the `docker` group or removing
+Docker from the guest, then rewording the "root-equivalent Docker access"
+statements) is a separately reviewed host step. Nothing in the repository
+performs it.
 
 ## Validation and policy limits
 
