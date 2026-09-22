@@ -1,5 +1,16 @@
 # Zab-al-ack changelog
 
+## Unreleased — Docker requirements inventory and runner-account verification (R28)
+
+- `docs/docker_requirements_inventory.md`: required / optional / historical
+  classification of every Docker dependency and what R26 changes.
+- `tools/runner_account_check.py`: read-only host capability report for the
+  runner account (groups, sudo, sockets, Docker CLI/contexts/settings,
+  Docker-requiring workflows) with `docker-allowed` and `docker-free` policies.
+- Corrections: the local-runtime blocked-environment message names the local
+  form; the Makefile gains the `deployment-e2e-local` rule; the deployment
+  validator and release-provenance scope statements agree with R14.
+
 ## Unreleased — routine native CI without Docker (R26)
 
 - The routine Actions `native` job runs `tools/native_local.py` on the runner's

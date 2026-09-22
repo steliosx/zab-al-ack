@@ -30,7 +30,9 @@ When a deployment-lab report is present in the source archive, its reported
 counts, required observations, cleanup, runtime identities, versions and source
 binding must also pass the shared deployment-evidence validator. Hashing a
 contradictory report does not make it valid. Local-process reports keep their
-R12 scope and do not prove Docker or packaged-wheel service execution.
+distinct scope: they establish the installed-wheel service path on the named
+local services (R14) and do not prove Docker execution or the Compose-only
+exact-artifact `supplied_wheel` receipt.
 
 ## Deliberate hosted issuance
 

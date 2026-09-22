@@ -1,8 +1,11 @@
 """Validate the meaning of a public deployment-lab result, without services.
 
 This is consistency validation, not authentication of a record's author. The
-service runner owns execution. R12 local-process records retain their distinct
-scope and cannot establish Docker execution or installed-wheel service coverage.
+service runner owns execution. Local-process records (`not_docker`) keep their
+distinct scope: they establish the installed-wheel service path on the named
+local services (R14; the local runner verifies the installed bytes against the
+wheel) and cannot establish Docker execution or the Compose-only exact-artifact
+`supplied_wheel` receipt.
 """
 from __future__ import annotations
 

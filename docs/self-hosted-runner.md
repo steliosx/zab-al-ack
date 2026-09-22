@@ -274,6 +274,30 @@ first phase when the address pool is already exhausted. Any initial capacity
 recovery requires a separate exact-resource evidence and ownership check.
 Runner hooks, deployment workflows and failed attempts remain unchanged.
 
+## Runner account verification (prepared, not applied)
+
+`tools/runner_account_check.py` is a read-only report of the dedicated account's
+host capabilities for the Docker-removal handoff (R28,
+`docs/docker_requirements_inventory.md`): effective groups, sudo rules (as
+root), the container sockets' mode and group, the Docker CLI and its contexts,
+every `DOCKER_HOST`/`DOCKER_CONTEXT`/`DOCKER_CONFIG` setting the runner could
+inherit (environment, the runner's `.env`, its systemd unit, the account's
+`~/.docker/config.json`), other host-capable groups and the workflows that
+still invoke Docker. `--policy docker-allowed` describes the host as provisioned
+today; `--policy docker-free` is the target after routine CI runs the local
+native form. It changes nothing and prints a JSON report; exit 0 conforms, 1
+deviates, 2 incomplete.
+
+```bash
+sudo python3 tools/runner_account_check.py --policy docker-allowed   # before the change
+sudo python3 tools/runner_account_check.py --policy docker-free      # after removing the docker group membership
+```
+
+The operational change itself (removing `zabalack-runner` from the `docker`
+group or removing Docker from the guest, then rewording the "root-equivalent
+Docker access" statements) is a separately reviewed host step. Nothing in the
+repository performs it.
+
 ## Validation and policy limits
 
 Run the hook filesystem regressions locally with injected temporary roots;

@@ -23,5 +23,8 @@ build:
 	$(PYTHON) tools/build_release.py
 native-local:
 	$(PYTHON) tools/native_local.py --isolated-lab
+# Operator inputs: RUNNER_PYTHON=<venv python with the wheel installed> WHEEL=<dist/pypi/zabalack-*.whl> SERVICES=<services.json>
+deployment-e2e-local:
+	$(PYTHON) tools/run_deployment_e2e_local.py --isolated-lab --runner-python "$(RUNNER_PYTHON)" --wheel "$(WHEEL)" --services-file "$(SERVICES)"
 property-nightly:
 	$(PYTHON) tools/run_property_nightly.py --isolated-lab

@@ -1031,3 +1031,21 @@ its fix removed. This amendment records an implementation with author
 verification only. It does not execute on the x64 runner, does not review the
 runner host's packages, does not uninstall Docker or change any privilege, and
 authorizes no merge, runner activation, release or deployment.
+
+## R28 — Docker requirements inventory and runner-account verification (prepared handoff)
+
+Numbered after R26 (Docker-free routine native CI) and R27 (native Zabbix
+reference). `docs/docker_requirements_inventory.md` classifies every Docker
+dependency at a17 and the a18 candidate as required by the routine path,
+optional retained support or historical record, and names what R26 changes:
+after it, no routine Actions job needs Docker; the deployment lab's Compose
+form, the Compose native form and the inactive publication template remain
+optional. `tools/runner_account_check.py` is a read-only report of the
+dedicated account's host capabilities against a `docker-allowed` or
+`docker-free` policy for the operational handoff. Small corrections align the
+local-runtime blocked-environment message, the Makefile's local deployment-lab
+target and the two scope statements about local-process records with R14.
+
+No host is changed: removing the runner account's Docker group membership,
+removing Docker from the guest and rewording the "root-equivalent Docker
+access" statements are separately reviewed operational steps.

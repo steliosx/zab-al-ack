@@ -116,7 +116,7 @@ def main() -> int:
     if os.geteuid() == 0 and args.command == "start":
         capability = subprocess.run(["runuser", "-u", "nobody", "--", "id", "-u"], capture_output=True, text=True)
         if capability.returncode:
-            raise SystemExit("BLOCKED_ENVIRONMENT: isolated PostgreSQL requires a non-root OS identity; this runtime cannot create one. Use lab/compose.postgres.yml on an authorised development host. No PostgreSQL root-safety checks are changed.")
+            raise SystemExit("BLOCKED_ENVIRONMENT: isolated PostgreSQL requires a non-root OS identity; this runtime cannot create one. Run the lab on a host with an unprivileged account (tools/native_local.py, docs/local-services.md), or the Compose lab where Docker is authorised. No PostgreSQL root-safety checks are changed.")
     pg = binaries()
     if args.command == "start":
         if STATE.exists() and not MARKER.exists():
