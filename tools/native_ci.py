@@ -13,6 +13,7 @@ import traceback
 import xml.etree.ElementTree as ET
 from uuid import uuid4
 from evidence_utils import redact_junit, cases, code_digests
+from lab_retention import RetentionError, preserve
 from native_docker_relay import DockerLabRelays
 import native_network_retention as network_retention
 
@@ -77,6 +78,15 @@ def retain_phase_exception(raw: Path, phase: str, run_id: str, stage: str, error
         print('Native private exception diagnostic could not be retained.', file=sys.stderr, flush=True)
 
 
+def previous_run_sources(evidence: Path, raw: Path) -> list[Path]:
+    """Every report or raw diagnostic a previous run of either native runner may have left."""
+    sources = [evidence / 'native-run.json']
+    for phase in PHASES:
+        sources += [evidence / f'native-{phase}.xml', raw / f'native-{phase}.xml', raw / f'native-{phase}.log']
+    sources += sorted(raw.glob('native-*-exception.log')) if raw.is_dir() else []
+    return sources
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--isolated-lab', action='store_true', required=True)
@@ -97,8 +107,18 @@ def main() -> int:
             'external_zabbix_writes': False}, indent=2))
         return 0
     evidence = ROOT / 'evidence'
-    evidence.mkdir(exist_ok=True)
     raw = ROOT / 'build/evidence-raw'
+    run_id = uuid4().hex[:10]
+    # Preserve whatever an earlier run left before this run invalidates it
+    # (tools/lab_retention.py, shared with tools/native_local.py). A failure
+    # leaves every previous file in place and starts nothing.
+    try:
+        previous = preserve(ROOT, run_id, 'previous-run', previous_run_sources(evidence, raw))
+    except RetentionError as error:
+        print(json.dumps({'layer': 'native_postgres18_pgbouncer', 'status': 'NOT_RUN',
+                          'reason': 'retention_failed: ' + str(error)[:300], 'previous_reports': 'left in place'}))
+        return 2
+    evidence.mkdir(exist_ok=True)
     raw.mkdir(parents=True, exist_ok=True)
     # Invalidate every report owned by this runner before any Docker operation.
     # Startup/cleanup can fail before pytest is reached, and CI uploads XML by
@@ -108,10 +128,10 @@ def main() -> int:
         (evidence / ('native-' + phase + '.xml')).unlink(missing_ok=True)
     report = {'layer': 'native_postgres18_pgbouncer', 'status': 'RUNNING', 'phases': [],
         'code_digests': code_digests(ROOT),
-        'real_zabbix': 'NOT_RUN', 'deployment_gates': 'MANUAL_GATE_PENDING'}
+        'real_zabbix': 'NOT_RUN', 'deployment_gates': 'MANUAL_GATE_PENDING',
+        'retention': {'previous_run': previous}}
     report_path = evidence / 'native-run.json'
     report_path.write_text(json.dumps(report, indent=2) + '\n')
-    run_id = uuid4().hex[:10]
     store = None
     if args.retire_empty_networks:
         try:

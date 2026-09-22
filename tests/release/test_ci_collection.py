@@ -393,6 +393,34 @@ def test_native_gate_requires_complete_successful_junit_and_cleanup(collection, 
         ci.collect(root, inputs, CONTEXT)
 
 
+@pytest.mark.parametrize('services', ['missing', 'unreviewed', 'one-unreviewed', 'no-identity', 'reviewed'])
+def test_local_native_records_require_reviewed_service_identities(collection, services):
+    """R26: a tools/native_local.py record passes only with reviewed PostgreSQL and PgBouncer identities."""
+    root, inputs = collection
+    directory = artifact(inputs, 'native')
+    filename = 'evidence/native-run.json'
+    report = json.loads((directory / filename).read_text())
+    report['not_docker'] = True
+    identity = {'kind': 'dpkg', 'package': 'synthetic', 'version': '0', 'architecture': 'amd64', 'sha256': 'a' * 64}
+    if services != 'missing':
+        report['services'] = {name: {'version': 'synthetic', 'identity': dict(identity), 'review': 'REVIEWED'}
+                              for name in ('postgres', 'pgbouncer')}
+    if services == 'unreviewed':
+        for name in ('postgres', 'pgbouncer'):
+            report['services'][name]['review'] = 'UNREVIEWED'
+    elif services == 'one-unreviewed':
+        report['services']['pgbouncer']['review'] = 'UNREVIEWED'
+    elif services == 'no-identity':
+        del report['services']['postgres']['identity']
+    (directory / filename).write_text(json.dumps(report))
+    refresh_manifest(directory, filename)
+    if services == 'reviewed':
+        ci.collect(root, inputs, CONTEXT)
+    else:
+        with pytest.raises(ci.EvidenceError, match='not reviewed'):
+            ci.collect(root, inputs, CONTEXT)
+
+
 @pytest.mark.parametrize('mutation', ['missing-required-check', 'false-exit-code', 'empty-phase-list',
                                      'foreign-xml-path', 'wrong-layer', 'sql-failure', 'boolean-count'])
 def test_collection_validates_schema_and_selected_required_checks(collection, mutation):
@@ -571,17 +599,29 @@ def test_dependency_installations_use_a_new_environment_before_any_installs_or_e
 
 
 def test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner():
-    targets = {'ci.yml': ('native', 'tools/native_ci.py'),
+    targets = {'ci.yml': ('native', 'tools/native_local.py'),
                'deployment-e2e.yml': ('service-lab', 'tools/run_deployment_e2e.py')}
     for filename, (job_name, runner) in targets.items():
         workflow = yaml.load((ROOT / '.github/workflows' / filename).read_text(), Loader=yaml.BaseLoader)
         scripts = [step['run'] for step in workflow['jobs'][job_name]['steps'] if 'run' in step]
         invocations = [script for script in scripts if runner in script]
-        retirement = (' --retire-empty-networks --network-evidence-root /var/lib/zabalack-evidence/native-networks'
-                      if filename == 'ci.yml' else '')
         assert invocations == ['flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
-                               f'python {runner} --isolated-lab' + retirement]
+                               f'python {runner} --isolated-lab']
         assert not any('docker system prune' in script or 'down --volumes' in script for script in scripts)
+
+
+def test_routine_native_job_runs_the_local_form_on_reviewed_service_paths_without_docker():
+    """R26: the routine native phases need no Docker daemon, context or network retention."""
+    workflow = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['native']['steps']
+    commands = [line.strip() for step in steps if 'run' in step
+                for line in step['run'].splitlines() if line.strip() and not line.strip().startswith('#')]
+    assert not any('native_ci.py' in line or 'docker' in line.lower() or '--network-evidence-root' in line
+                   or '--retire-empty-networks' in line for line in commands)
+    native = next(step for step in steps if 'tools/native_local.py' in step.get('run', ''))
+    assert native['env'] == {'ACK_LAB_PG_BIN': '/usr/lib/postgresql/18/bin', 'ACK_LAB_PGBOUNCER_BIN': '/usr/sbin/pgbouncer'}
+    # The whole service/test/cleanup invocation still runs under the shared host lab lock.
+    assert native['run'].startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock ')
 
 
 def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():

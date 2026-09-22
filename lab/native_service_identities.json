@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "scope": "Service identities accepted by tools/native_local.py for the routine native PostgreSQL 18 / PgBouncer phases. Policy is enforced on every run; reviewed identities are enforced for packaged binaries on every run and for every binary by CI evidence collection.",
+  "policy": {
+    "postgres": {"major": 18},
+    "pgbouncer": {"major": 1, "minimum_minor": 24}
+  },
+  "reviewed": {
+    "postgres": [],
+    "pgbouncer": []
+  },
+  "identity_kinds": {
+    "dpkg": "{\"kind\": \"dpkg\", \"package\": \"postgresql-18\", \"version\": \"<exact dpkg version>\", \"architecture\": \"amd64\"} — matched against dpkg -S / dpkg-query of the executable actually used",
+    "binary": "{\"kind\": \"binary\", \"sha256\": \"<sha256 of the executable>\"} — for a source build; matched against the digest of the executable actually used"
+  },
+  "review_procedure": "Add an entry only from a reviewed provisioning record of the runner host (package name, exact version, architecture, and the repository it was installed from, or the source archive hash and build inputs). Record the review in docs/RELEASE_AMENDMENTS.md. Removing an entry retires that identity; never edit an entry to match an observed host."
+}

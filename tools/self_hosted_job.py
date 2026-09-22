@@ -32,6 +32,8 @@ EXCLUDED = {'.git', 'node_modules', '.venv', '__pycache__', '.pytest_cache',
             '.mypy_cache', '.ruff_cache', '.cache'}
 SHA = re.compile(r'[0-9a-f]{40}')
 REPOSITORY = 'steliosx/zab-al-ack'
+# PID files the local native lab writes inside the workspace (tools/native_local.py).
+LAB_PID_FILES = ('.lab/pgdata/postmaster.pid', 'build/private/pgbouncer-local/pgbouncer.pid')
 
 
 @dataclass(frozen=True)
@@ -352,6 +354,85 @@ def archive_workspace(paths, attempt, status, context, head_reader=actual_head):
     return record
 
 
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # Some other account's process: ambiguous, treat as live.
+    return True
+
+
+def own_lineage():
+    """This hook and its runner ancestors, which never own workspace data."""
+    pids = set()
+    pid = os.getpid()
+    while pid > 1 and pid not in pids:
+        pids.add(pid)
+        try:
+            status = Path(f'/proc/{pid}/status').read_text()
+        except OSError:
+            break
+        parent = next((line.split()[1] for line in status.splitlines() if line.startswith('PPid:')), '0')
+        pid = int(parent) if parent.isdigit() else 0
+    return pids
+
+
+def processes_within(root):
+    """PIDs whose working directory or an open file lies under root (own lineage excluded).
+
+    Processes of other accounts are unreadable and therefore invisible here; a
+    lab service started by the runner account is visible. A deleted directory
+    still appears in the link target, so a service running from removed data is
+    still detected.
+    """
+    prefix = str(root)
+    lineage = own_lineage()
+    found = set()
+    for entry in Path('/proc').iterdir():
+        if not entry.name.isdigit() or int(entry.name) in lineage:
+            continue
+        links = [entry / 'cwd']
+        try:
+            links += list((entry / 'fd').iterdir())
+        except OSError:
+            pass
+        for link in links:
+            try:
+                target = os.readlink(link)
+            except OSError:
+                continue
+            if target == prefix or target.startswith(prefix + '/'):
+                found.add(int(entry.name))
+                break
+    return sorted(found)
+
+
+def live_workspace_services(paths, processes=processes_within):
+    """Refuse any archive or reset while a lab service or process still owns workspace data.
+
+    A live PID named by a lab PID file, an unreadable PID file (ambiguous
+    ownership) or any visible process working inside the workspace stops the
+    hook before it archives or deletes anything. A stale PID file whose process
+    has gone is not live; the archive then retains it with the logs.
+    """
+    for name in LAB_PID_FILES:
+        path = paths.workspace / name
+        if path.is_symlink():
+            raise ValueError('symlink_path')
+        if not path.exists():
+            continue
+        try:
+            pid = int(path.read_text().splitlines()[0].strip())
+        except (OSError, ValueError, IndexError) as error:
+            raise ValueError('unreadable_lab_pid_file') from error
+        if pid_alive(pid):
+            raise ValueError('live_lab_service')
+    if paths.workspace.exists() and processes(paths.workspace):
+        raise ValueError('workspace_in_use')
+
+
 def reset_directory(path):
     checked(path)
     if path.exists():
@@ -362,11 +443,15 @@ def reset_directory(path):
         shutil.rmtree(path)
 
 
-def run_hook(phase, paths, context, *, head_reader=actual_head):
+def run_hook(phase, paths, context, *, head_reader=actual_head, processes=processes_within):
     """Caller supplies validated Actions context; tests supply labelled fixtures."""
     validate_paths(paths)
     with hook_lock(paths):
         capacity(paths)
+        # Live or ambiguously owned lab service data is never archived while it
+        # changes and never deleted from under its process. Nothing below runs
+        # until the workspace is quiescent; the refusal leaves everything as is.
+        live_workspace_services(paths, processes)
         state_path = paths.evidence / 'current-job.json'
         previous = read_json(state_path) if state_path.exists() else None
         if phase == 'complete':

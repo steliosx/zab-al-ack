@@ -1,5 +1,21 @@
 # Zab-al-ack changelog
 
+## Unreleased — routine native CI without Docker (R26)
+
+- The routine Actions `native` job runs `tools/native_local.py` on the runner's
+  installed PostgreSQL 18 / PgBouncer under the same shared lab lock; the Compose
+  form and its network retention are no longer part of routine CI.
+- `lab/local_runtime.py state` classifies the lab; the local runner refuses to
+  reset unmarked, ambiguous or failed-to-stop labs, stops and re-inspects a
+  running one, and cleans up PgBouncer and PostgreSQL independently with both
+  outcomes recorded next to the phase's original failure.
+- `tools/lab_retention.py` preserves phase diagnostics before every destructive
+  reset in both runners; a preservation failure refuses the reset. The job hook
+  refuses to archive or reset live or ambiguously owned lab data.
+- PgBouncer must be 1.24 or newer; `lab/native_service_identities.json` records
+  reviewed service identities, which evidence collection now requires for a
+  `not_docker` native record. Author verification only; no x64 execution.
+
 ## 0.1.0a18 — 2026-09-22 (alpha under qualification toward beta, unpublished)
 
 - Routine Actions execution moves from the offline Linux ARM64 runner to a

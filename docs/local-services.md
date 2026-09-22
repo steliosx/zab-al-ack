@@ -14,7 +14,9 @@ service path on the named local services, not the Compose image path.
 
 Inputs (environment): `ACK_LAB_PG_BIN`, a directory with PostgreSQL 18
 `pg_ctl`, `initdb`, `psql` and `postgres` (build with `lab/build_postgres.sh` or
-install a packaged 18.x); `ACK_LAB_PGBOUNCER_BIN`, a PgBouncer 1.x executable.
+install a packaged 18.x); `ACK_LAB_PGBOUNCER_BIN`, a PgBouncer **1.24 or newer**
+executable. The version policy and the reviewed package identities live in
+`lab/native_service_identities.json` (see *Service identities* below).
 When run as root, both services start as the unprivileged `nobody` user, as
 `lab/local_runtime.py` does. The runner writes only under `.lab/`, `build/` and
 `evidence/` in the checkout.
@@ -33,6 +35,85 @@ production), runs the phase's pytest targets with the same `ACK_TEST_*`
 environment as `tools/native_ci.py`, redacts the JUnit into `evidence/`, stops
 PgBouncer and the cluster, and records the cleanup exit code. A missing input
 records NOT_RUN (exit 2); a failed phase stops the run (exit 1).
+
+Since R26 this form is also what the routine Actions `native` job executes on
+the dedicated runner's installed services; the Compose form stays available for
+a local host with Docker.
+
+### Lifecycle, refusals and retention (R26)
+
+Before any destructive step the runner asks `lab/local_runtime.py state` (a
+read-only command that needs no `--isolated-lab` flag) to classify the
+checkout's `.lab` directory:
+
+| State | Meaning | Runner action |
+|---|---|---|
+| `absent` | no `.lab`, nothing on port 55432 | start a fresh cluster |
+| `stopped` | marked lab, `pg_ctl status` reports no server, port free | preserve its logs, remove `.lab`, start fresh |
+| `running` | marked, initialised lab with a live postmaster | `pg_ctl stop`, re-inspect; only a verified `stopped` result continues |
+| `unmarked` | a `.lab` directory without `ISOLATED_ACK_LAB` | refuse: the phase fails, nothing is touched |
+| `ambiguous` | inaccessible data directory, an unclassifiable PID file, or a listener on port 55432 that is not the marked cluster | refuse: the phase fails, nothing is touched |
+
+A stop that leaves anything other than `stopped` (a non-zero `pg_ctl`, a
+still-running server or an ambiguous result) also refuses the reset. The
+refusal is recorded as the phase's `reason` (for example
+`LabStateError: lab_state_unmarked_reset_refused`) with `stage: lab-reset`.
+Resolve it by hand: inspect the directory, stop whatever owns it, and only then
+remove it yourself. The runner never deletes what it did not declare. PgBouncer
+is guarded the same way: a live PID in `build/private/pgbouncer-local` or a
+listener on port 56432 refuses the phase before any file is replaced.
+
+Every destructive step is preceded by preservation through
+`tools/lab_retention.py` into `build/private/retained-phases/<run id>/<label>/`
+(mode 0700, private, never exported):
+
+- `previous-run` — before this run invalidates an earlier run's
+  `evidence/native-run.json`, `evidence/native-*.xml` and raw logs, including
+  the exception logs and the lab/pool logs an interrupted run left behind;
+- `pre-reset-<phase>` — the lab's `postgres.log` and `initdb.log` before `.lab`
+  is removed;
+- `phase-<phase>` — the raw JUnit, pytest log, exception log and the phase's
+  own `pgbouncer.log` (one log per phase, no longer appended across runs).
+
+Each copy is verified by digest and listed in a `manifest.json`; the public
+record carries only the directory, counts and manifest digest. A preservation
+failure is a refusal: at run start nothing is invalidated and NOT_RUN (exit 2)
+is printed without rewriting the previous report; before a reset the phase
+fails and the directory stays; at a phase end a passing phase becomes FAIL
+(`retention.status: FAILED`) and the run stops before the next reset.
+Retained copies are never deleted by the runner; on the dedicated runner the
+job hook archives them with the workspace, elsewhere the operator prunes
+`build/private/retained-phases` deliberately. End-of-job retention is not a
+substitute for this: a file the run itself deleted between phases would be gone
+before any end-of-job archive ran.
+
+PgBouncer and PostgreSQL are cleaned up independently. The phase record's
+`cleanup` names both outcomes (`STOPPED`, `NOT_STARTED`, `FAILED` with the error
+type, or `REFUSED` with the observed state); `shutdown_exit_code` is 0 only when
+both succeeded and `shutdown_reason` names the failed services. The phase's own
+`reason` (a failed test run, a refused reset) is never replaced by a cleanup
+outcome, and a failing PgBouncer stop never skips the cluster stop.
+
+### Service identities
+
+The record's `services` section names, for `postgres` and `pgbouncer`, the
+version string, the identity of the executable actually used and its review
+status:
+
+- `{"kind": "dpkg", "package", "version", "architecture", "sha256"}` when
+  `dpkg -S` attributes the executable to an installed package;
+- `{"kind": "unpackaged", "sha256"}` for a source build.
+
+`lab/native_service_identities.json` fixes the policy (PostgreSQL major 18;
+PgBouncer 1.24 or newer) and lists the reviewed identities. A packaged
+executable that is not listed refuses the run before any service starts
+(`postgres_package_not_reviewed …`, NOT_RUN). A source build is labelled
+`UNREVIEWED` unless a reviewed `binary` digest matches. CI evidence collection
+accepts a `not_docker` native record only when both services are `REVIEWED`
+(`Local native service identities are not reviewed` otherwise), so a runner
+host's packages must be reviewed and recorded before its run can be packaged.
+Add entries only from a reviewed provisioning record; never edit an entry to
+match an observed host.
 
 ## Deployment-path lab: `tools/run_deployment_e2e_local.py`
 
@@ -81,7 +162,10 @@ PostgreSQL 18 cluster, and removed generated files from the private directory.
 
 ## What the local records do not claim
 
-They do not execute the Compose images, the hosted workflows or an installed
-systemd/Ansible topology, and they do not close G1–G8. A2 (webhook transport
+They do not execute the Compose images or an installed systemd/Ansible
+topology, and they do not close G1–G8. A record written by the routine Actions
+`native` job through this form is Actions execution evidence bound by
+`tools/collect_ci_evidence.py`; a record produced by hand on a development host
+is not, whatever its counts. A2 (webhook transport
 verification) and the Alerta table-owner startup identity remain as described in
 `docs/deployment-e2e.md`.

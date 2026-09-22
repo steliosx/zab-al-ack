@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Fresh native PostgreSQL 18 / PgBouncer phases on locally installed services.
 
-Non-Docker form of tools/native_ci.py (docs/RELEASE_AMENDMENTS.md R14): the same
-phases, the same pytest targets, the same ACK_TEST_* environment, a fresh
+Non-Docker form of tools/native_ci.py (docs/RELEASE_AMENDMENTS.md R14, R26): the
+same phases, the same pytest targets, the same ACK_TEST_* environment, a fresh
 disposable cluster per phase through lab/local_runtime.py, PgBouncer from the
 repository's own lab/pgbouncer.ini and lab/pgbouncer_users.txt on loopback
 port 56432, and JUnit redaction through tools/evidence_utils. The record it
@@ -16,6 +16,15 @@ Both are used only for the disposable loopback cluster; when run as root the
 services are started as the unprivileged `nobody` user, exactly as
 lab/local_runtime.py does. Nothing outside this checkout's .lab directory and
 build/ is written.
+
+Lifecycle (R26): before any destructive step the runner inspects the lab through
+`lab/local_runtime.py state`. An absent or safely stopped lab may be reset; a
+running marked lab is stopped and re-inspected first; an unmarked, ambiguous or
+failed-to-stop lab refuses the reset and fails the phase. Every reset and every
+phase end first preserves the phase diagnostics under
+build/private/retained-phases/ (tools/lab_retention.py); a preservation failure
+also refuses the reset. PgBouncer and PostgreSQL are cleaned up independently
+and both outcomes are recorded next to the phase's original failure.
 """
 from __future__ import annotations
 
@@ -25,22 +34,34 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import socket
 import subprocess
 import sys
 import time
+from functools import partial
+from typing import Callable
 from uuid import uuid4
 
 from evidence_utils import cases, code_digests, redact_junit
-from native_ci import PHASES
+from lab_retention import RetentionError, preserve
+from native_ci import PHASES, retain_phase_exception
 
 ROOT = Path(__file__).resolve().parents[1]
 PG_PORT = 55432
 POOL_PORT = 56432
 DATABASE = 'alerta'
 LAYER = 'native_postgres18_pgbouncer'
+IDENTITIES = Path('lab/native_service_identities.json')
+LAB_LOGS = (Path('.lab/postgres.log'), Path('.lab/initdb.log'))
+POOL_STATE = Path('build/private/pgbouncer-local')
+RESETTABLE = {'absent', 'stopped'}
+
+
+class LabStateError(RuntimeError):
+    """The lab is not in a state that permits the requested destructive step."""
 
 
 def wait_port(port: int, timeout: float = 30) -> bool:
@@ -77,19 +98,109 @@ def binaries() -> tuple[Path, Path]:
     return Path(pg), Path(pool)
 
 
-def versions(pg: Path, pool: Path) -> dict[str, str]:
+def reviewed_identities() -> tuple[dict, str]:
+    raw = (ROOT / IDENTITIES).read_bytes()
+    record = json.loads(raw)
+    policy = record['policy']
+    reviewed = record['reviewed']
+    if not (isinstance(policy.get('postgres'), dict) and isinstance(policy.get('pgbouncer'), dict)
+            and isinstance(reviewed.get('postgres'), list) and isinstance(reviewed.get('pgbouncer'), list)):
+        raise RuntimeError('lab/native_service_identities.json is malformed')
+    return record, hashlib.sha256(raw).hexdigest()
+
+
+def package_identity(binary: Path) -> dict:
+    """The dpkg package providing the executable actually used, or its digest."""
+    real = binary.resolve()
+    with real.open('rb') as handle:
+        digest = hashlib.file_digest(handle, 'sha256').hexdigest()
+    if shutil.which('dpkg') and shutil.which('dpkg-query'):
+        owner = subprocess.run(['dpkg', '-S', str(real)], capture_output=True, text=True, timeout=30)
+        if owner.returncode == 0 and ': ' in owner.stdout:
+            package = owner.stdout.strip().splitlines()[0].rsplit(': ', 1)[0].split(':')[0].strip()
+            query = subprocess.run(['dpkg-query', '-W', '-f', '${Package}\t${Version}\t${Architecture}\t${Status}', package],
+                                   capture_output=True, text=True, timeout=30)
+            if query.returncode == 0 and query.stdout.count('\t') == 3:
+                name, version, architecture, status = query.stdout.split('\t')
+                if status.strip() != 'install ok installed':
+                    raise RuntimeError('service package is not cleanly installed: ' + name)
+                return {'kind': 'dpkg', 'package': name, 'version': version, 'architecture': architecture, 'sha256': digest}
+    return {'kind': 'unpackaged', 'sha256': digest}
+
+
+def review_status(service: str, identity: dict, reviewed: list) -> str:
+    for entry in reviewed:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('kind') == 'binary' and entry.get('sha256') == identity['sha256']:
+            return 'REVIEWED'
+        if (entry.get('kind') == 'dpkg' and identity['kind'] == 'dpkg'
+                and all(entry.get(key) == identity[key] for key in ('package', 'version', 'architecture'))):
+            return 'REVIEWED'
+    if identity['kind'] == 'dpkg':
+        raise RuntimeError(f"{service}_package_not_reviewed: {identity['package']} {identity['version']} "
+                           f"{identity['architecture']} is not in lab/native_service_identities.json")
+    return 'UNREVIEWED'
+
+
+def service_identities(pg: Path, pool: Path) -> dict:
+    """Version policy and reviewed-identity checks for the binaries actually used."""
+    record, digest = reviewed_identities()
     postgres = subprocess.check_output([str(pg / 'postgres'), '--version'], text=True, timeout=10).strip()
     pgbouncer = subprocess.check_output([str(pool), '--version'], text=True, timeout=10).strip().splitlines()[0]
-    if not postgres.startswith('postgres (PostgreSQL) 18.'):
-        raise RuntimeError('PostgreSQL 18 required; found ' + postgres)
-    if not pgbouncer.startswith('PgBouncer 1.'):
-        raise RuntimeError('PgBouncer 1.x required; found ' + pgbouncer)
-    return {'postgres': postgres, 'pgbouncer': pgbouncer}
+    major = record['policy']['postgres']['major']
+    if not postgres.startswith(f'postgres (PostgreSQL) {major}.'):
+        raise RuntimeError(f'PostgreSQL {major} required; found ' + postgres)
+    pool_policy = record['policy']['pgbouncer']
+    match = re.fullmatch(r'PgBouncer (\d+)\.(\d+)(?:\.(\d+))?(?:\D.*)?', pgbouncer)
+    if (match is None or int(match[1]) != pool_policy['major'] or int(match[2]) < pool_policy['minimum_minor']):
+        raise RuntimeError(f"PgBouncer {pool_policy['major']}.{pool_policy['minimum_minor']} or newer required; found " + pgbouncer)
+    services: dict = {'identities_file': IDENTITIES.as_posix(), 'identities_sha256': digest}
+    for name, binary, version in (('postgres', pg / 'postgres', postgres), ('pgbouncer', pool, pgbouncer)):
+        identity = package_identity(binary)
+        services[name] = {'version': version, 'identity': identity,
+                          'review': review_status(name, identity, record['reviewed'][name])}
+    return services
 
 
-def cluster_start(pg: Path) -> None:
-    local_runtime('stop')
-    shutil.rmtree(ROOT / '.lab', ignore_errors=True)
+def lab_state() -> dict:
+    result = local_runtime('state')
+    if result.returncode:
+        raise LabStateError('lab_state_unavailable: ' + (result.stdout + result.stderr)[-500:])
+    try:
+        observed = json.loads(result.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError) as error:
+        raise LabStateError('lab_state_unreadable') from error
+    if not isinstance(observed, dict) or not isinstance(observed.get('state'), str):
+        raise LabStateError('lab_state_unreadable')
+    return observed
+
+
+def reset_lab(run_id: str, phase: str) -> dict:
+    """Return the lab to `absent`, refusing every unowned, ambiguous or failed state.
+
+    Preservation of the lab logs happens before the directory is removed; a
+    preservation failure refuses the reset as well.
+    """
+    observed = lab_state()
+    record: dict = {'before': observed['state']}
+    if observed['state'] == 'running':
+        stopped = local_runtime('stop')
+        record['stop_exit_code'] = stopped.returncode
+        observed = lab_state()
+        if stopped.returncode or observed['state'] != 'stopped':
+            raise LabStateError(f"lab_stop_failed_reset_refused: {observed['state']}: {observed.get('detail', '')}")
+    if observed['state'] not in RESETTABLE:
+        raise LabStateError(f"lab_state_{observed['state']}_reset_refused: {observed.get('detail', '')}")
+    record['retention'] = preserve(ROOT, run_id, 'pre-reset-' + phase, LAB_LOGS)
+    if observed['state'] == 'stopped':
+        shutil.rmtree(ROOT / '.lab')
+    record['after'] = 'absent'
+    return record
+
+
+def cluster_start(pg: Path, run_id: str, phase: str) -> dict:
+    record = reset_lab(run_id, phase)
     result = local_runtime('start')
     if result.returncode:
         raise RuntimeError('cluster_start_failed: ' + (result.stdout + result.stderr)[-1500:])
@@ -99,11 +210,43 @@ def cluster_start(pg: Path) -> None:
                               '-Atc', f'CREATE DATABASE {DATABASE} OWNER lab_admin'], text=True, capture_output=True, timeout=60)
     if created.returncode:
         raise RuntimeError('lab_database_create_failed: ' + created.stderr[-500:])
+    return record
+
+
+def cluster_stop() -> dict:
+    """Leave the lab stopped; never touch an unowned or ambiguous directory."""
+    observed = lab_state()
+    if observed['state'] == 'running':
+        stopped = local_runtime('stop')
+        observed = lab_state()
+        status = 'STOPPED' if stopped.returncode == 0 and observed['state'] == 'stopped' else 'FAILED'
+        return {'status': status, 'exit_code': stopped.returncode, 'state': observed['state']}
+    if observed['state'] == 'stopped':
+        return {'status': 'STOPPED', 'exit_code': 0, 'state': 'stopped'}
+    if observed['state'] == 'absent':
+        return {'status': 'NOT_STARTED', 'exit_code': 0, 'state': 'absent'}
+    return {'status': 'REFUSED', 'state': observed['state'], 'detail': str(observed.get('detail', ''))[:200]}
+
+
+def pid_alive(path: Path) -> bool:
+    try:
+        pid = int(path.read_text().strip().splitlines()[0])
+    except (OSError, ValueError, IndexError):
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def pgbouncer_start(pool: Path, state: Path) -> subprocess.Popen:
     if not port_free(POOL_PORT):
         raise RuntimeError('pool_port_in_use_before_start')
+    if pid_alive(state / 'pgbouncer.pid'):
+        raise RuntimeError('pool_pid_alive_before_start')
     state.mkdir(parents=True, exist_ok=True)
     for stale in (state / 'pgbouncer.pid', state / f'.s.PGSQL.{POOL_PORT}'):
         stale.unlink(missing_ok=True)
@@ -123,7 +266,8 @@ def pgbouncer_start(pool: Path, state: Path) -> subprocess.Popen:
     if os.geteuid() == 0:
         for path in (state, state / 'pgbouncer.ini', state / 'users.txt'):
             shutil.chown(path, 'nobody', 'nogroup')
-    log = (state / 'pgbouncer.log').open('a')
+    # One log per phase; the previous phase's log was preserved at its end.
+    log = (state / 'pgbouncer.log').open('w')
     process = subprocess.Popen(unprivileged([str(pool), str(state / 'pgbouncer.ini')]), stdout=log, stderr=subprocess.STDOUT)
     if not wait_port(POOL_PORT):
         process.kill()
@@ -148,6 +292,23 @@ def pgbouncer_stop(process: subprocess.Popen, state: Path) -> None:
         raise RuntimeError('pgbouncer_still_listening')
 
 
+def outcome(action: Callable[[], object]) -> dict:
+    """Run one cleanup step on its own; a failure never skips the other step."""
+    try:
+        value = action()
+    except (RuntimeError, subprocess.SubprocessError, OSError, ValueError) as error:
+        return {'status': 'FAILED', 'error': type(error).__name__}
+    return value if isinstance(value, dict) else {'status': 'STOPPED'}
+
+
+def previous_run_sources(evidence: Path, raw: Path) -> list[Path]:
+    sources = [evidence / 'native-run.json', *LAB_LOGS, POOL_STATE / 'pgbouncer.log']
+    for phase in PHASES:
+        sources += [evidence / f'native-{phase}.xml', raw / f'native-{phase}.xml', raw / f'native-{phase}.log']
+    sources += sorted(raw.glob('native-*-exception.log')) if raw.is_dir() else []
+    return sources
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--isolated-lab', action='store_true', required=True)
@@ -158,40 +319,55 @@ def main(argv: list[str] | None = None) -> int:
     if args.plan:
         print(json.dumps({'phases': selected, 'bind': '127.0.0.1', 'fresh_cluster_per_phase': True,
                           'services': 'lab/local_runtime.py cluster + PgBouncer from lab/pgbouncer.ini, not Docker',
+                          'lab_state_inspection': 'lab/local_runtime.py state before every reset; unowned or ambiguous state refuses',
+                          'retention': 'build/private/retained-phases before every reset and at every phase end',
                           'external_zabbix_writes': False}, indent=2))
         return 0
     evidence = ROOT / 'evidence'
-    evidence.mkdir(exist_ok=True)
     raw = ROOT / 'build/evidence-raw'
+    state = ROOT / POOL_STATE
+    run_id = uuid4().hex[:10]
+    # Preserve whatever an earlier run left before this run invalidates it. A
+    # preservation failure leaves every previous file, including the previous
+    # report, untouched: nothing is invalidated and nothing is started.
+    try:
+        previous = preserve(ROOT, run_id, 'previous-run', previous_run_sources(evidence, raw))
+    except RetentionError as error:
+        print(json.dumps({'layer': LAYER, 'status': 'NOT_RUN', 'reason': 'retention_failed: ' + str(error)[:300],
+                          'not_docker': True, 'previous_reports': 'left in place'}))
+        return 2
+    evidence.mkdir(exist_ok=True)
     raw.mkdir(parents=True, exist_ok=True)
-    state = ROOT / 'build/private/pgbouncer-local'
     for phase in PHASES:
         (raw / ('native-' + phase + '.xml')).unlink(missing_ok=True)
         (evidence / ('native-' + phase + '.xml')).unlink(missing_ok=True)
     report: dict = {'layer': LAYER, 'status': 'RUNNING', 'phases': [], 'code_digests': code_digests(ROOT),
                     'real_zabbix': 'NOT_RUN', 'deployment_gates': 'MANUAL_GATE_PENDING', 'not_docker': True,
                     'runner': 'tools/native_local.py: same phases, targets and ACK_TEST_* environment as tools/native_ci.py on '
-                              'locally installed PostgreSQL 18 and PgBouncer (fresh loopback cluster per phase); see docs/RELEASE_AMENDMENTS.md R14'}
+                              'locally installed PostgreSQL 18 and PgBouncer (fresh loopback cluster per phase); see docs/RELEASE_AMENDMENTS.md R14 and R26',
+                    'retention': {'previous_run': previous}}
     report_path = evidence / 'native-run.json'
     report_path.write_text(json.dumps(report, indent=2) + '\n')
     try:
         pg, pool = binaries()
-        report['services'] = versions(pg, pool)
-    except (RuntimeError, subprocess.SubprocessError, OSError) as error:
+        report['services'] = service_identities(pg, pool)
+    except (RuntimeError, subprocess.SubprocessError, OSError, ValueError, KeyError) as error:
         report.update(status='NOT_RUN', reason=str(error)[:500])
         report_path.write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(report))
         return 2
-    run_id = uuid4().hex[:10]
     for phase, targets in selected.items():
         print(json.dumps({'phase': phase, 'layer': LAYER}), flush=True)
         result: dict = {'phase': phase, 'exit_code': 1, 'status': 'FAIL',
                         'started_at': datetime.now(timezone.utc).isoformat(),
                         'diagnostic_dir': 'build/evidence-raw/native-' + phase + '-' + run_id}
         pooler = None
+        stage = 'lab-reset'
         try:
-            cluster_start(pg)
+            result['lab_reset'] = cluster_start(pg, run_id, phase)
+            stage = 'pgbouncer-startup'
             pooler = pgbouncer_start(pool, state)
+            stage = 'pytest'
             env = {key: value for key, value in os.environ.items() if not key.startswith('ACK_TEST_')}
             env.update(ACK_TEST_ADMIN_DSN=f'postgresql://lab_admin@127.0.0.1:{PG_PORT}/{DATABASE}',
                        ACK_TEST_DESTRUCTIVE_LAB='YES_ISOLATED_LAB',
@@ -204,6 +380,7 @@ def main(argv: list[str] | None = None) -> int:
                                        '--basetemp=' + str(raw / ('native-' + phase + '-' + run_id))],
                                       cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=900).returncode
             result['exit_code'] = code
+            stage = 'junit-processing'
             if raw_xml.exists():
                 result['raw_junit_sha256'] = hashlib.sha256(raw_xml.read_bytes()).hexdigest()
                 redact_junit(raw_xml, public_xml, ROOT)
@@ -215,16 +392,28 @@ def main(argv: list[str] | None = None) -> int:
         except (RuntimeError, subprocess.SubprocessError, OSError, ValueError) as error:
             result['status'] = 'FAIL'
             result['reason'] = (type(error).__name__ + ': ' + str(error))[:500]
+            result['stage'] = stage
+            retain_phase_exception(raw, phase, run_id, stage, error)
         finally:
-            try:
-                if pooler is not None:
-                    pgbouncer_stop(pooler, state)
-                result['shutdown_exit_code'] = local_runtime('stop').returncode
-                if result['shutdown_exit_code']:
-                    result['status'] = 'FAIL'
-            except (RuntimeError, subprocess.SubprocessError, OSError) as error:
+            # Each service is cleaned up on its own; the original failure above
+            # is never replaced and both outcomes are recorded.
+            cleanup = {'pgbouncer': outcome(partial(pgbouncer_stop, pooler, state)) if pooler is not None
+                       else {'status': 'NOT_STARTED'},
+                       'postgres': outcome(cluster_stop)}
+            result['cleanup'] = cleanup
+            failed = [name for name, item in cleanup.items() if item['status'] not in ('STOPPED', 'NOT_STARTED')]
+            result['shutdown_exit_code'] = 1 if failed else 0
+            if failed:
                 result['status'] = 'FAIL'
-                result['shutdown_reason'] = type(error).__name__
+                result['shutdown_reason'] = ','.join(failed)
+            try:
+                result['retention'] = preserve(ROOT, run_id, 'phase-' + phase, [
+                    raw / ('native-' + phase + '.xml'), raw / ('native-' + phase + '.log'),
+                    raw / f'native-{phase}-{run_id}-exception.log', state / 'pgbouncer.log'])
+            except RetentionError as error:
+                result['retention'] = {'status': 'FAILED', 'error': str(error)[:200]}
+                result['status'] = 'FAIL'
+                result.setdefault('reason', 'RetentionError: phase diagnostics were not preserved')
         result['finished_at'] = datetime.now(timezone.utc).isoformat()
         report['phases'].append(result)
         report_path.write_text(json.dumps(report, indent=2) + '\n')

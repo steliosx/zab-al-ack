@@ -59,12 +59,15 @@ records what was compared; `dist/SHA256SUMS` covers each release file. This loca
 provenance is not a signed attestation. The wheel contains Python code/licences;
 the source distributions include SQL, deployment tooling, examples and tests.
 
-Run native integration CI with `python tools/native_ci.py --isolated-lab` on a
-local host with Docker Compose. Each phase creates a uniquely named fresh
-cluster and stops its containers while preserving synthetic volumes. The runner
-rejects remote Docker contexts. Local trust authentication is confined to the
-isolated lab; actual SCRAM/TLS/PgBouncer identities remain deployment evidence.
-Native suite success cannot be inferred from a supplied CI workflow.
+Routine native integration CI runs `python tools/native_local.py --isolated-lab`
+on the runner's installed services (R26; reviewed identities in
+`lab/native_service_identities.json`). Locally, `python tools/native_ci.py
+--isolated-lab` is the Compose form on a host with Docker: each phase creates a
+uniquely named fresh cluster and stops its containers while preserving synthetic
+volumes, and remote Docker contexts are rejected. Local trust authentication is
+confined to the isolated lab; actual SCRAM/TLS/PgBouncer identities remain
+deployment evidence. Native suite success cannot be inferred from a supplied CI
+workflow.
 
 ## Security scans
 

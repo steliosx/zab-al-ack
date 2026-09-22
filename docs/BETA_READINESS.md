@@ -109,6 +109,28 @@ Do not repeat the historical 500-case warmed batch or unchanged scanner scopes
 merely because the candidate version changed. Required check names and evidence
 binding rules remain intact. The owner decisions and release sequence below apply.
 
+## Execution-form decision for routine native CI (22 September 2026)
+
+The routine Actions `native` job executes the five native PostgreSQL 18 /
+PgBouncer phases through the Docker-free form, `tools/native_local.py`, on the
+dedicated runner's installed services (R26). The Compose form
+`tools/native_ci.py` and its network retention remain available for local
+Docker hosts and are no longer part of routine CI. The change adds lab-state
+inspection with refusals, per-phase preservation before every destructive
+reset inside the run, independent PgBouncer/PostgreSQL cleanup with both
+outcomes recorded, a PgBouncer 1.24-or-newer policy, reviewed service
+identities (`lab/native_service_identities.json`) that evidence collection
+requires, and a job-hook guard against archiving or resetting live lab data.
+
+Status: implemented with author verification only (mocked lifecycle
+regressions and an end-to-end run on source-built services in a development
+container). It has **not** executed on the x64 runner, the runner host's
+package identities are not yet reviewed or listed, and no Actions run of this
+form exists. Nothing here claims that the pending x64 qualification, the
+x86_64 acceptance gate or any other requirement has passed. ARM64 results
+remain ARM64 evidence at their revisions; historical Compose-form records keep
+their original bindings.
+
 ## Historical PR24 ARM64 qualification assessment (18 September 2026)
 
 The frozen candidate is PR #24 head

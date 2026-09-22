@@ -14,8 +14,9 @@ python tools/public_audit.py
 python tools/build_release.py
 ```
 
-Native integration CI uses `python tools/native_ci.py --isolated-lab` with Docker
-Compose. Real Zabbix tests require the explicit synthetic fixture in
+Native integration CI uses `python tools/native_local.py --isolated-lab` on the
+runner's installed PostgreSQL 18 and PgBouncer (R26); `tools/native_ci.py` is the
+Compose form for a local Docker host. Real Zabbix tests require the explicit synthetic fixture in
 `lab/real_zabbix.md`. Unit/mocked, WASM, native and deployment evidence are
 separate; a skipped case is never a pass. Don't add tests that merely mirror an
 implementation detail. New tests should demonstrate a meaningful behaviour or

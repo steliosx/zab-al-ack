@@ -7,8 +7,10 @@ The native reference stack is Alerta 9.1.0, PostgreSQL 18.0 and optional PgBounc
 
 ## Native PostgreSQL
 
-On an authorised local Linux development host with Docker Compose and direct
-host routing to its bridge containers:
+Routine Actions CI runs the native phases without Docker through
+`tools/native_local.py` (`docs/local-services.md`, R26). On an authorised local
+Linux development host with Docker Compose and direct host routing to its
+bridge containers, the Compose form is:
 
 ```bash
 python tools/native_ci.py --isolated-lab --phase postgres
@@ -35,13 +37,17 @@ Alternatively build the pinned source archive into a workspace-local prefix:
 bash lab/build_postgres.sh --isolated-lab /path/to/postgresql-18.0.tar.bz2
 python lab/local_runtime.py start --isolated-lab
 export ACK_TEST_ADMIN_DSN='postgresql://lab_admin@127.0.0.1:55432/postgres'
+python lab/local_runtime.py state   # read-only: absent, stopped, running, unmarked or ambiguous
 ```
 
 The source builder verifies SHA-256 and needs gcc, make, bison, flex, perl, zlib
 and OpenSSL development headers. It does not install dependencies globally.
 The local server uses loopback-only trust authentication as a synthetic lab
 convenience, and must not be copied to production. `local_runtime.py stop
---isolated-lab` stops only the marked repository cluster and preserves its data.
+--isolated-lab` stops only the marked repository cluster and preserves its data;
+it exits 0 only when the cluster is observed stopped afterwards (5 otherwise).
+`local_runtime.py state` classifies the directory without touching it; a failed
+`initdb` leaves its output in `.lab/initdb.log`.
 
 `local_runtime.py` runs the server as the `nobody` user when started as root and
 refuses to run PostgreSQL as root. Some hosted coding sandboxes provide no second

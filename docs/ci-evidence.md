@@ -2,8 +2,10 @@
 
 The reference workflow runs four required jobs against the same commit:
 `quality`, `reference`, `native` and `mutation`. The reference job executes unit/mock and
-PostgreSQL WASM phases; the native job requires the disposable Docker Compose
-PostgreSQL/PgBouncer lab, including the multi-process delivery fault phase.
+PostgreSQL WASM phases; the native job runs the five native PostgreSQL 18 /
+PgBouncer phases, including the multi-process delivery fault phase, on the
+runner's installed services through `tools/native_local.py` (R26; the Compose
+form `tools/native_ci.py` remains for local Docker hosts).
 The package job depends on all four jobs succeeding. An unavailable native
 runtime prevents CI candidate packaging; it does not become a passing native
 result. A local development candidate can still record native `NOT_RUN` under
@@ -61,10 +63,15 @@ cleans the remaining temporary directory on a best-effort basis. See
 Both native service entrypoints run their complete service/test/cleanup command
 under nonblocking `flock` on the host's shared Linux lab lock. Direct agent lab
 users must hold that same lock. Contention fails the attempt without resetting
-another owner's services. The runner's existing cleanup stops only its generated
-projects and preserves synthetic volumes. Cancellation or process termination
-does not prove cleanup; preserve the interrupted attempt and inspect its exact
-owned resources before another lab starts. Never prune shared Docker resources.
+another owner's services. The routine native runner inspects the lab state
+before every reset, refuses an unmarked, ambiguous or failed-to-stop lab, stops
+PgBouncer and the cluster independently with both outcomes recorded, and
+preserves each phase's diagnostics under `build/private/retained-phases` before
+any file is removed (`docs/local-services.md`). The Compose runners stop only
+their generated projects and preserve synthetic volumes. Cancellation or
+process termination does not prove cleanup; preserve the interrupted attempt
+and inspect its exact owned resources before another lab starts. Never prune
+shared Docker resources.
 
 The security job installs the official Gitleaks 8.24.3 Linux x64 release binary
 instead of requiring a Go compiler. The release corresponds to the existing
@@ -116,7 +123,8 @@ invented head/base identities, but cannot satisfy a current PR context. Retain
 head, base and tested SHA alongside the authentic run in the private record too.
 Never invent `GITHUB_*` values for direct-local validation. After its required commands
 succeed, `pack` checks the unchanged digests, required phase set, JUnit outcomes,
-exact counts, native cleanup, required Ruff/mypy/pip checks and the complete
+exact counts, native cleanup, reviewed service identities for a `not_docker`
+native record, required Ruff/mypy/pip checks and the complete
 selected mutation catalogue with behavioral assertion kills. Invalid mutants,
 survivors, errors and timeouts fail the mutation gate. It copies only
 the selected redacted reports and records their byte hashes and sizes in a

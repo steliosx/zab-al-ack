@@ -166,6 +166,18 @@ then create a fresh environment; no shared editable environment is reused.
 The hooks serialize with a separate process-owned private hook lock and keep
 its inode. They perform no Docker stop, remove, prune or volume reset.
 
+Neither hook archives or resets a workspace whose lab service data is live or
+ambiguously owned (R26). Before anything else, the hook reads the lab PID files
+the local native runner writes inside the workspace
+(`.lab/pgdata/postmaster.pid`, `build/private/pgbouncer-local/pgbouncer.pid`)
+and scans `/proc` for any visible process whose working directory or open file
+lies under the workspace, excluding itself and its runner ancestors. A live PID
+(`live_lab_service`), an unreadable PID file (`unreadable_lab_pid_file`), a
+symlinked PID file, or any such process (`workspace_in_use`) stops the hook
+with nothing archived and nothing deleted; the operator stops the process and
+the next start retains the state, including a stale PID file, before resetting.
+A crashed lab whose process is gone is retained and reset normally.
+
 The runner's own temporary-directory manager cleans the rest of `_work/_temp`
 at job initialization and completion; the service unit adds no blanket reset.
 In runner v2.337.0, this is best-effort cleanup: deletion errors are logged and
@@ -182,14 +194,40 @@ investigate a reported cleanup error before assuming a clean environment.
 Both native workflow entrypoints hold the shared Linux lab lock for their
 complete service/test/normal-cleanup invocation. Direct agent labs must use the
 same lock. The lock is taken explicitly in the workflow command, not by the
-service unit or hook: `ci.yml` wraps `tools/native_ci.py --isolated-lab` and
+service unit or hook: `ci.yml` wraps `tools/native_local.py --isolated-lab`
+(R26; previously `tools/native_ci.py` with its network-retention arguments) and
 `deployment-e2e.yml` wraps `tools/run_deployment_e2e.py --isolated-lab` with
 `flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock`.
-A stopped hook/process does not prove containers stopped; retain the
+A stopped hook/process does not prove services stopped; retain the
 attempt and inspect exact owned resources before another service lab starts.
 Never reset resources belonging to another agent or job.
 
-### Successful native phase network retirement
+### Routine native phases without Docker (R26)
+
+The routine `native` job needs no Docker daemon, context or network retention.
+It runs `tools/native_local.py` on services installed on the runner host and
+named by the workflow step's environment:
+
+| Requirement | Value |
+|---|---|
+| PostgreSQL 18 | `ACK_LAB_PG_BIN=/usr/lib/postgresql/18/bin` (`pg_ctl`, `initdb`, `psql`, `postgres`) |
+| PgBouncer 1.24 or newer | `ACK_LAB_PGBOUNCER_BIN=/usr/sbin/pgbouncer` |
+| Reviewed identities | the installed packages (name, exact version, architecture) listed in `lab/native_service_identities.json` |
+| Ports | 55432 (cluster) and 56432 (pool) on loopback, free of other services while a job runs |
+| Account | `zabalack-runner` runs both services itself; no Docker group membership is needed for this job |
+
+The job creates `.lab/` and `build/private/` inside the workspace and the
+hooks archive them; a live service there refuses the next job (above). The
+runner records the service identities it used; a packaged executable that is
+not reviewed refuses the run, and evidence collection refuses a record whose
+services are not reviewed. Fill the reviewed list from the runner host's
+provisioning record before expecting a packaged run. Per-phase diagnostics are
+preserved under `build/private/retained-phases` before every reset inside the
+run (`docs/local-services.md`); the end-of-job archive is in addition to that,
+not instead of it. The Compose form and its network retirement below remain
+available for the deployment lab and for local Docker hosts.
+
+### Successful native phase network retirement (Compose form only)
 
 `native_ci.py` retains networks by default. Repeated fresh projects can exhaust
 Docker's address pools even when every container is stopped. The explicit

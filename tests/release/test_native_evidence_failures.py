@@ -292,8 +292,13 @@ def test_private_diagnostic_write_failure_preserves_original_reason_and_owned_cl
     monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: None)
     monkeypatch.setattr(sys, 'argv', ['native_ci.py', '--isolated-lab', '--phase', 'postgres'])
     relay_context.__enter__.side_effect = OSError(errno.EADDRINUSE, 'synthetic-private-startup')
-    def unavailable(*args, **kwargs):
-        raise PermissionError('synthetic-private-retention-error')
+    real_open = os.open
+    def unavailable(path, *args, **kwargs):
+        # Only the exception diagnostic is unwritable; the run-start
+        # preservation (tools/lab_retention.py) has its own regressions.
+        if str(path).endswith('-exception.log'):
+            raise PermissionError('synthetic-private-retention-error')
+        return real_open(path, *args, **kwargs)
     monkeypatch.setattr(native_ci.os, 'open', unavailable)
     commands = []
     def child(command, **kwargs):
@@ -373,3 +378,47 @@ def test_acceptance_accepts_consistent_native_success_or_explicit_unavailability
     monkeypatch.setattr(update_acceptance.subprocess, 'run', mapped)
     assert update_acceptance.main() == 0
     assert ('--native-xml' in commands[0]) == (status == 'PASS')
+
+
+def test_compose_runner_preserves_previous_reports_before_invalidating_them(tmp_path, monkeypatch, relay_context):
+    """R26: the run-start preservation is shared with tools/native_local.py."""
+    evidence, raw = seed_reports(tmp_path)
+    (raw / 'native-postgres.log').write_text('previous pytest output\n')
+    previous_report = (evidence / 'native-run.json').read_bytes()
+    monkeypatch.setattr(native_ci, 'ROOT', tmp_path)
+    monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: None)
+    monkeypatch.setattr(sys, 'argv', ['native_ci.py', '--isolated-lab', '--phase', 'postgres'])
+
+    def child(command, **kwargs):
+        if '-m' in command and 'pytest' in command:
+            (raw / 'native-postgres.xml').write_text(PASS_XML)
+        return subprocess.CompletedProcess(command, 0)
+    monkeypatch.setattr(native_ci.subprocess, 'run', child)
+    assert native_ci.main() == 0
+    report = json.loads((evidence / 'native-run.json').read_text())
+    retained = tmp_path / report['retention']['previous_run']['directory']
+    manifest = json.loads((retained / 'manifest.json').read_text())
+    assert manifest['files']['evidence__native-run.json']['sha256'] == hashlib.sha256(previous_report).hexdigest()
+    assert (retained / 'evidence__native-run.json').read_bytes() == previous_report
+    assert set(manifest['files']) >= {'evidence__native-run.json', 'evidence__native-postgres.xml',
+                                      'build__evidence-raw__native-postgres.xml', 'build__evidence-raw__native-postgres.log'}
+    assert (evidence / 'native-run.json').read_bytes() != previous_report
+
+
+def test_compose_runner_refuses_to_invalidate_when_preservation_fails(tmp_path, monkeypatch, relay_context, capsys):
+    evidence, raw = seed_reports(tmp_path)
+    before = {path: path.read_bytes() for path in [*evidence.iterdir(), *raw.iterdir()]}
+    monkeypatch.setattr(native_ci, 'ROOT', tmp_path)
+    monkeypatch.setattr(native_ci, 'ensure_local_docker', lambda: None)
+    monkeypatch.setattr(sys, 'argv', ['native_ci.py', '--isolated-lab', '--phase', 'postgres'])
+    commands = []
+    monkeypatch.setattr(native_ci.subprocess, 'run', lambda command, **kwargs: commands.append(command) or subprocess.CompletedProcess(command, 0))
+
+    def refused(root, run_id, label, sources):
+        raise native_ci.RetentionError('synthetic-private-retention-failure')
+    monkeypatch.setattr(native_ci, 'preserve', refused)
+    assert native_ci.main() == 2
+    assert {path: path.read_bytes() for path in [*evidence.iterdir(), *raw.iterdir()]} == before
+    assert commands == [] and not relay_context.__enter__.called
+    out = json.loads(capsys.readouterr().out)
+    assert out['status'] == 'NOT_RUN' and out['reason'].startswith('retention_failed') and out['previous_reports'] == 'left in place'

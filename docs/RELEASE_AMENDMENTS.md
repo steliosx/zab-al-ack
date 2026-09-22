@@ -982,3 +982,52 @@ x64 CI does not by itself close the x86_64 acceptance gate or any other
 qualification, security, installed-environment or publication requirement.
 `main` and scheduled runs keep the old definitions until a separately
 authorized merge.
+
+## R26 — Routine native CI without Docker: lab lifecycle, retention and reviewed service identities
+
+Numbered after the a18 candidate's R23–R25 (PR #29), which this change is
+prepared to integrate onto. The routine Actions `native` job runs
+`tools/native_local.py --isolated-lab` under the same shared host lab lock
+instead of `tools/native_ci.py` with its Docker network-retention arguments;
+the step names the installed services (`ACK_LAB_PG_BIN`,
+`ACK_LAB_PGBOUNCER_BIN`). The Compose form is unchanged apart from the shared
+run-start preservation and remains for local Docker hosts.
+
+Lifecycle. `lab/local_runtime.py state` classifies the checkout's lab as
+absent, stopped, running, unmarked or ambiguous without touching it, and
+`stop` exits 0 only when the cluster is observed stopped. The local runner
+resets only an absent or stopped lab; a running marked lab is stopped and
+re-inspected first; unmarked, ambiguous or failed-to-stop state refuses the
+reset and fails the phase with nothing removed. PgBouncer refuses to start over
+a live PID or an occupied port. Cleanup of PgBouncer and PostgreSQL is
+independent: both outcomes are recorded in `cleanup`, `shutdown_exit_code` is
+0 only when both succeeded, `shutdown_reason` names the failed services, and
+the phase's original `reason` is never replaced.
+
+Retention. `tools/lab_retention.py` preserves diagnostics under
+`build/private/retained-phases/<run>/<label>/` with verified digests and a
+manifest: the previous run's reports before invalidation (both runners), the
+lab logs before each `.lab` reset, and each phase's raw JUnit, log, exception
+log and pool log at its end. A preservation failure refuses the corresponding
+destructive step; at run start nothing is invalidated and the previous report
+is left in place. End-of-job hook retention is in addition, not a substitute.
+The trusted job hook refuses to archive or reset a workspace with a live lab
+PID, an unreadable PID file or any visible process working inside it.
+
+Identities. `lab/native_service_identities.json` fixes PostgreSQL major 18 and
+PgBouncer 1.24 or newer (the former check accepted any 1.x) and lists reviewed
+package or binary identities. The runner records the executable identities it
+used; a packaged executable that is not reviewed refuses the run, a source
+build is labelled UNREVIEWED, and `collect_ci_evidence.py` accepts a
+`not_docker` native record only with both services REVIEWED. The reviewed list
+ships empty: the runner host's packages must be reviewed and added before its
+run can be packaged.
+
+Regressions: `tests/release/test_native_local_lifecycle.py`,
+`test_local_runtime_state.py`, `test_lab_retention.py`,
+`test_self_hosted_job_live_services.py`, and additions to
+`test_native_evidence_failures.py` and `test_ci_collection.py`; each fails with
+its fix removed. This amendment records an implementation with author
+verification only. It does not execute on the x64 runner, does not review the
+runner host's packages, does not uninstall Docker or change any privilege, and
+authorizes no merge, runner activation, release or deployment.

@@ -223,6 +223,14 @@ def validate_reports(root: Path, directory: Path, kind: str) -> set[str]:
     require(len(phases) == len(expected) and {phase.get('phase') for phase in phases} == set(expected), 'Required phase set missing or duplicated')
     if kind == 'native':
         require(record.get('status') == 'PASS', 'Required native gate did not pass')
+        if record.get('not_docker') is True:
+            # Local services (tools/native_local.py) must be reviewed identities
+            # from lab/native_service_identities.json, not whatever the host had.
+            services = record.get('services')
+            require(isinstance(services, dict) and all(
+                isinstance(services.get(name), dict) and services[name].get('review') == 'REVIEWED'
+                and isinstance(services[name].get('identity'), dict) for name in ('postgres', 'pgbouncer')),
+                'Local native service identities are not reviewed')
     else:
         require(record.get('all_executed_phases_succeeded') is True, 'Required reference gate did not pass')
     observed = {}
