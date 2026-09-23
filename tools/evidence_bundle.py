@@ -65,6 +65,15 @@ def write_manifest(directory: Path) -> Path:
     return manifest
 
 
+def canonical_name(name: str) -> bool:
+    """A relative POSIX path in its one normal spelling: no '', '.' or '..' parts, no leading or doubled '/'.
+
+    Two spellings of one path ('a.txt' and './a.txt') would give one extracted
+    file two manifest identities, the last one written winning.
+    """
+    return bool(name) and not name.startswith('/') and all(part not in ('', '.', '..') for part in name.split('/'))
+
+
 def parse_manifest(text: str) -> dict[str, str]:
     """The one parser for a manifest on disk or inside an archive."""
     entries = {}
@@ -72,7 +81,7 @@ def parse_manifest(text: str) -> dict[str, str]:
         if not line.strip():
             continue
         value, sep, name = line.partition('  ')
-        if not sep or len(value) != 64 or not name or name.startswith('/') or '..' in name.split('/'):
+        if not sep or len(value) != 64 or not canonical_name(name):
             raise BundleError(f'malformed manifest line {number}')
         if name in entries:
             raise BundleError('duplicate manifest entry: ' + name)
@@ -134,7 +143,7 @@ def verify_archive(archive: Path) -> dict:
         if len(set(names)) != len(names):
             raise BundleError('duplicate archive member: ' + next(name for name in names if names.count(name) > 1))
         for member in members:
-            if not (member.isfile() or member.isdir()) or member.name.startswith('/') or '..' in member.name.split('/'):
+            if not (member.isfile() or member.isdir()) or not canonical_name(member.name.rstrip('/') if member.isdir() else member.name):
                 raise BundleError('unsafe archive member: ' + member.name)
         manifests = [m for m in members if m.isfile() and m.name.split('/')[1:] == [MANIFEST]]
         if len(manifests) != 1:

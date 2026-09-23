@@ -160,3 +160,23 @@ def test_cli_builds_and_verifies(tmp_path, capsys):
     (directory / 'README.md').write_text('tampered')
     assert bundle.main(['verify', str(directory)]) == 1
     assert 'digest mismatch' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('members, message', [
+    ([('bundle/SHA256SUMS', line(BODY, 'a.txt') + line(b'x', './a.txt')), ('bundle/a.txt', BODY), ('bundle/./a.txt', b'x')],
+     'unsafe archive member: bundle/./a.txt'),
+    ([('bundle/SHA256SUMS', line(BODY, 'a.txt')), ('bundle/a.txt', BODY), ('bundle/./a.txt', b'substituted')], 'unsafe archive member'),
+    ([('bundle/SHA256SUMS', line(BODY, 'dir//a.txt')), ('bundle/dir//a.txt', BODY)], 'unsafe archive member'),
+    ([('bundle/SHA256SUMS', line(BODY, 'a.txt')), ('./bundle/a.txt', BODY)], 'unsafe archive member'),
+], ids=['dot-alias-entries', 'dot-alias-member-substitutes-bytes', 'doubled-slash', 'dot-root'])
+def test_only_the_canonical_spelling_of_a_path_is_accepted(tmp_path, members, message):
+    """Re-review N5: 'bundle/a.txt' and 'bundle/./a.txt' both verified, and extraction kept the substituted bytes."""
+    archive = crafted(tmp_path / 'alias.tar.gz', members)
+    with pytest.raises(bundle.BundleError, match=message):
+        bundle.verify_archive(archive)
+
+
+@pytest.mark.parametrize('name', ['./a.txt', 'dir//a.txt', 'dir/./a.txt', 'dir/', '../a.txt', '/a.txt'])
+def test_the_manifest_parser_refuses_a_non_canonical_entry(name):
+    with pytest.raises(bundle.BundleError, match='malformed manifest line 1'):
+        bundle.parse_manifest(line(BODY, name).decode())
