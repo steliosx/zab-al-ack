@@ -2,8 +2,8 @@
 
 ## Unreleased — corrections after the non-author review of `b57bebb` (Opus)
 
-Five corrective commits (O17–O21) and a test commit (O22, with its lint
-follow-up) layered on the reviewed `b57bebb`, which is not rewritten; each
+Five corrective commits (O17–O21) and two test commits (O22 with its lint
+follow-up, O19b) layered on the reviewed `b57bebb`, which is not rewritten; each
 correction carries a regression that fails with its fix removed. Author
 verification only, not independent review or approval.
 
@@ -21,7 +21,7 @@ verification only, not independent review or approval.
 - O19: the only startup hook the runner check accepts is setuptools'
   `distutils-precedence.pth` with the exact bytes of the pinned setuptools
   83.0.0 wheel; a `.pth` a pinned distribution's consistent RECORD owns is
-  otherwise refused. The record states what is anchored
+  otherwise refused (O19b keeps the reviewer's appended-RECORD reproduction). The record states what is anchored
   (`runner_environment`, `dependency_verification: record_consistency_only`).
 - O20: the Zabbix lab stages the packaged frontend without the package's
   dangling `conf/zabbix.conf.php` link, which failed the first real cycle.
