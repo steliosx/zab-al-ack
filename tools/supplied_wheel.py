@@ -1,4 +1,12 @@
-"""Verify the exact pure-Python artifact used by the isolated service lab."""
+"""Verify the exact pure-Python artifact used by the isolated service lab.
+
+`check_installed` runs inside the interpreter that installed the wheel and
+compares the whole installation with the wheel: every wheel member's bytes,
+the package directory's inventory (nothing added), the dist-info inventory
+(only what pip itself adds), no other top-level entry carrying the project's
+name, and every startup hook in site-packages (`.pth`, `sitecustomize`,
+`usercustomize`) owned by another installed distribution's RECORD.
+"""
 from __future__ import annotations
 
 from email.parser import BytesParser
@@ -14,6 +22,8 @@ import tomllib
 import zipfile
 
 MAX_BYTES = 32 * 1024 * 1024
+PIP_ADDED = ("INSTALLER", "REQUESTED", "RECORD", "direct_url.json")
+STARTUP_HOOKS = ("sitecustomize.py", "usercustomize.py")
 
 
 def require(condition, reason):
@@ -76,6 +86,38 @@ def check_source(path, expected, root):
     return data, identity
 
 
+def dist_info_files(directory):
+    require(directory.is_dir() and not directory.is_symlink(), "installed_distribution_metadata_missing")
+    files = set()
+    for path in directory.rglob("*"):
+        require(not path.is_symlink(), "linked_dist_info_member")
+        if path.is_file():
+            files.add(directory.name + "/" + path.relative_to(directory).as_posix())
+    return files
+
+
+def owned_files(location, except_dist):
+    """Every file the other installed distributions' RECORDs claim, relative to site-packages."""
+    owned = set()
+    for candidate in location.glob("*.dist-info"):
+        if candidate.name == except_dist or candidate.is_symlink():
+            continue
+        record = candidate / "RECORD"
+        if not record.is_file():
+            continue
+        for line in record.read_text(encoding="utf-8").splitlines():
+            name = line.split(",")[0]
+            if name:
+                owned.add(PurePosixPath(name).as_posix())
+    return owned
+
+
+def startup_hooks(location):
+    """`.pth` files and site customisation modules directly in site-packages: the interpreter runs them at start."""
+    return sorted(path.name for path in location.iterdir()
+                  if path.is_file() and (path.suffix == ".pth" or path.name in STARTUP_HOOKS))
+
+
 def check_installed(path, expected, checkout):
     _, contents, identity = wheel_bytes(path, expected)
     dist = importlib.metadata.distribution("zabalack")
@@ -84,6 +126,7 @@ def check_installed(path, expected, checkout):
     require(not location.is_relative_to(checkout.resolve()), "installed_from_checkout")
     direct = dist.read_text("direct_url.json")
     require(not direct or not json.loads(direct).get("dir_info", {}).get("editable"), "editable_install")
+    dist_dir = "zabalack-" + identity["version"] + ".dist-info"
     for name, value in contents.items():
         if name.endswith(".dist-info/RECORD"):
             continue  # pip rewrites RECORD for generated launchers and metadata.
@@ -92,6 +135,17 @@ def check_installed(path, expected, checkout):
                 and target.read_bytes() == value, "installed_wheel_bytes_mismatch")
     require(package_files(location / "zabalack") == {n: v for n, v in contents.items() if n.startswith("zabalack/")},
             "installed_package_inventory_mismatch")
+    # The dist-info holds the wheel's metadata members and what pip adds on install, nothing else.
+    allowed = {n for n in contents if n.startswith(dist_dir + "/")} | {dist_dir + "/" + n for n in PIP_ADDED}
+    require(dist_info_files(location / dist_dir) <= allowed, "installed_dist_info_inventory_mismatch")
+    # No other top-level entry carries the project's name (a second package, a .pth, a stray dist-info).
+    require({p.name for p in location.iterdir() if p.name.lower().startswith("zabalack")} == {"zabalack", dist_dir},
+            "unexpected_installed_entries")
+    # Every startup hook belongs to another installed distribution (for example setuptools' distutils-precedence.pth).
+    unowned = [name for name in startup_hooks(location) if name not in owned_files(location, dist_dir)]
+    require(not unowned, "unowned_startup_hook")
     module = importlib.import_module("zabalack")
     require(Path(module.__file__).resolve() == location / "zabalack/__init__.py", "wrong_import_origin")
-    return {**identity, "installed_bytes_verified": True}
+    entry_points = {entry.name for entry in dist.entry_points if entry.group == "alerta.plugins"}
+    require(entry_points == {"zabalack_zabbix_normalise", "zabalack_zabbix_ack"}, "installed_entry_points_missing")
+    return {**identity, "installed_bytes_verified": True, "startup_hooks": startup_hooks(location)}

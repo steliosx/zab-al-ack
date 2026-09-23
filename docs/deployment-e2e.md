@@ -186,12 +186,22 @@ verification result.
 
 For a hosted isolated run, the supplied `deployment-e2e.yml` workflow is manual
 and requires `ZABALACK_DEPLOYMENT_E2E_ENABLED=true` after repository policy review.
-It uses no custom secrets, has read-only repository permissions, and uploads only
-the fixed public result JSON even on failure. Since R29 it runs the native form:
-the job builds one wheel from the checkout, prepares the runner environment from
-that wheel only, and runs `lab/deployment_native_lab.py cycle --isolated-lab`
-under the shared host lab lock with the installed services named by the step
-environment; no Docker daemon is involved. A missing prerequisite (services,
+It uses no custom secrets, has read-only repository and Actions permissions,
+and uploads only the fixed public result JSON even on failure. Since R29 it runs
+the native form on the exact candidate wheel: the dispatcher supplies the
+candidate's CI run ID, its full revision and the wheel's SHA-256; the job is
+dispatched on that revision (`git rev-parse HEAD` must equal it), confirms
+through the Actions API that the run is a successful run of that revision,
+downloads that run's `zabalack-candidate-*` artifact, verifies the wheel's
+digest with `sha256sum -c` before anything installs it, prepares the runner
+environment from that wheel only, and runs `lab/deployment_native_lab.py cycle
+--isolated-lab --wheel-sha256 "$WHEEL_SHA256"` under the shared host lab lock
+with the installed services named by the step environment; nothing is built in
+the job and no Docker daemon is involved. Inside the runner interpreter
+`tools/supplied_wheel.check_installed` compares the whole installation with
+the wheel (every member's bytes, the package and dist-info inventories, no
+other entry named after the project, every `.pth` or site customisation hook
+owned by another installed distribution). A missing prerequisite (services,
 layout, packages at the pinned patch) fails the step: NOT_RUN is exit 2, never
 a passing job. It is separate from the required
 quality/reference/native/mutation packaging workflow; a service result is not

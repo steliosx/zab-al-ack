@@ -16,8 +16,12 @@ are supplied by the operator on one host:
   * /opt/zabalack-lab resolving to this checkout and <private> being
     /run/zabalack-e2e with mode 0700 (both fixed in lab/deployment_e2e_runtime.py);
   * a runner Python environment (--runner-python) in which zabalack is installed
-    from the wheel named by --wheel, not editably: the installed package bytes are
-    compared with the wheel and the record names the wheel's SHA-256.
+    from the wheel named by --wheel, not editably: tools/supplied_wheel.py's
+    check_installed runs inside that interpreter (every wheel member's bytes,
+    package and dist-info inventories, no unexpected entries, startup hooks
+    owned by other installed distributions) and the record names the wheel's
+    SHA-256, supplied through --wheel-sha256 when the run qualifies an exact
+    candidate artifact.
 
 The optional --reset-command is the operator's script that returns Zabbix and
 the `alerta` database to a fresh state before the run; --services-file names
@@ -29,7 +33,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-from importlib.metadata import PathDistribution
 import json
 import os
 from pathlib import Path
@@ -41,7 +44,7 @@ import sys
 import xml.etree.ElementTree as ET
 import zipfile
 
-from cancellation import Cancellation, Cancelled, describe, run_child
+from cancellation import Cancellation, describe, run_child
 from deployment_evidence import IMAGE_COMPONENTS, validate_report
 from evidence_utils import code_digests
 from run_deployment_e2e import certificates, protected, stamp, validate_result
@@ -78,40 +81,33 @@ def check_host_layout():
             require(sock.connect_ex(("127.0.0.1", port)) != 0, "lab_port_in_use_before_run: " + str(port))
 
 
-def wheel_identity(wheel: Path) -> tuple[str, dict[str, bytes]]:
-    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
-    with zipfile.ZipFile(wheel) as archive:
-        names = [name for name in archive.namelist() if name.startswith("zabalack/") and name.endswith(".py")]
-        require(names, "wheel_has_no_package")
-        contents = {name: archive.read(name) for name in names}
-        metadata = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
-        version = re.search(r"^Version: (.+)$", archive.read(metadata).decode(), re.M)
-    require(version is not None, "wheel_version_missing")
-    return digest, contents
+RUNNER_CHECK = ("import json, sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; "
+                "from supplied_wheel import check_installed; "
+                "print(json.dumps(check_installed(Path(sys.argv[2]), sys.argv[3], Path(sys.argv[4]))))")
 
 
-def check_runner(python: Path, wheel: Path) -> dict:
-    """The runner must import the installed wheel, never this checkout."""
+def check_runner(python: Path, wheel: Path, expected: str) -> dict:
+    """The runner must hold exactly the wheel, verified inside its own interpreter, and never import this checkout.
+
+    tools/supplied_wheel.check_installed runs in the runner environment: the
+    wheel's bytes and digest, every installed member's bytes, the package and
+    dist-info inventories, no unexpected entry named after the project, and
+    every startup hook owned by another installed distribution. A failure is
+    reported by its fixed label only; nothing from the runner's output is
+    copied into the public record.
+    """
     require(python.is_file() and os.access(python, os.X_OK), "runner_python_missing")
-    probe = ("import json, zabalack, importlib.metadata as m; d = m.distribution('zabalack'); "
-             "print(json.dumps({'file': zabalack.__file__, 'version': d.version, 'location': str(d.locate_file('')), "
-             "'direct_url': d.read_text('direct_url.json')}))")
-    result = subprocess.run([str(python), "-c", probe], cwd="/", env={"PATH": os.environ["PATH"], "TZ": "UTC"},
-                            text=True, capture_output=True, timeout=60)
-    require(result.returncode == 0, "runner_cannot_import_zabalack")
-    info = json.loads(result.stdout)
-    installed = Path(info["file"]).resolve().parent
-    require(not installed.is_relative_to(ROOT), "runner_imports_checkout_not_wheel")
-    if info["direct_url"]:
-        require(not json.loads(info["direct_url"]).get("dir_info", {}).get("editable"), "runner_install_is_editable")
-    digest, contents = wheel_identity(wheel)
-    for name, data in contents.items():
-        require((installed.parent / name).read_bytes() == data, "installed_bytes_differ_from_wheel: " + name)
-    record_path = Path(info["location"]) / ("zabalack-" + info["version"] + ".dist-info")
-    require(record_path.is_dir(), "installed_distribution_metadata_missing")
-    entry_points = {entry.name for entry in PathDistribution(record_path).entry_points if entry.group == "alerta.plugins"}
-    require(entry_points == {"zabalack_zabbix_normalise", "zabalack_zabbix_ack"}, "installed_entry_points_missing")
-    return {"python": str(python), "version": info["version"], "wheel_sha256": digest, "location": str(installed.parent)}
+    require(isinstance(expected, str) and re.fullmatch(r"[0-9a-f]{64}", expected), "invalid_wheel_digest")
+    result = subprocess.run([str(python), "-c", RUNNER_CHECK, str(ROOT / "tools"), str(wheel), expected, str(ROOT)],
+                            cwd="/", env={"PATH": os.environ["PATH"], "TZ": "UTC"}, text=True, capture_output=True, timeout=120)
+    if result.returncode != 0:
+        last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else ""
+        label = last[len("ValueError: "):] if last.startswith("ValueError: ") and re.fullmatch(r"ValueError: [a-z_]+", last) else None
+        require(False, "runner_installed_wheel_check_failed" + (": " + label if label else ""))
+    identity = json.loads(result.stdout)
+    require(identity.get("installed_bytes_verified") is True and identity.get("sha256") == expected, "runner_installed_wheel_check_incomplete")
+    return {"python": str(python), "version": identity["version"], "wheel_sha256": identity["sha256"],
+            "installed_bytes_verified": True, "startup_hooks": identity.get("startup_hooks", [])}
 
 
 def services(path: Path) -> dict[str, str]:
@@ -189,7 +185,8 @@ def main(argv=None):
         check_host_layout()
         # Never resolve the interpreter path: a virtual environment python is a symlink to its base interpreter.
         runner_python = Path(os.path.abspath(args.runner_python))
-        runner = check_runner(runner_python, args.wheel.resolve())
+        expected = args.wheel_sha256 if supplied is not None else hashlib.sha256(args.wheel.resolve().read_bytes()).hexdigest()
+        runner = check_runner(runner_python, args.wheel.resolve(), expected)
         require(supplied is None or runner["wheel_sha256"] == supplied["sha256"], "supplied_wheel_identity_mismatch")
     except (RuntimeError, OSError, ValueError, KeyError, StopIteration) as error:
         # The artifact was not exercised: a NOT_RUN record carries no artifact-mode or wheel metadata.
@@ -201,14 +198,14 @@ def main(argv=None):
         print(json.dumps(report))
         return 2
     if supplied is not None:
-        # check_runner verified every installed package file against the wheel bytes.
+        # check_runner verified the whole installation against the wheel inside the runner interpreter.
         report["artifact_mode"] = "supplied_wheel"
         report["supplied_wheel"] = {**supplied, "installed_bytes_verified": True}
     # Public description: no interpreter or site-packages path leaves the host.
-    components["runner"] = ("this host: a Python 3.12 environment with requirements.lock and the built zabalack "
+    components["runner"] = ("this host: a Python 3.12 environment with requirements.lock and the zabalack "
                             + runner["version"] + " wheel installed non-editably (sha256 " + runner["wheel_sha256"]
-                            + "); installed package bytes verified against the wheel; provides the Alerta entry points, "
-                            "zabalack CLI and Flask CLI HTTPS server")
+                            + "); every installed file verified against the wheel inside the runner interpreter; provides the "
+                            "Alerta entry points, zabalack CLI and Flask CLI HTTPS server")
     project = "zabalack-e2e-" + os.urandom(6).hex()
     cancellation = Cancellation()
     if args.plan:

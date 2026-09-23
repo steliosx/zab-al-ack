@@ -231,7 +231,11 @@ available for the deployment lab and for local Docker hosts.
 ### Deployment path without Docker (R29, prepared)
 
 The manual `deployment-e2e.yml` job runs `lab/deployment_native_lab.py cycle`
-on services installed on the runner host. Nothing below is provisioned by the
+on services installed on the runner host, against the exact candidate wheel:
+the dispatch inputs name the candidate's CI run, its revision and the wheel's
+SHA-256, the job downloads that run's candidate artifact and verifies the
+digest before installing it, and the cycle passes that supplied digest to the
+supplied-wheel preflight (nothing is built in the job). Nothing below is provisioned by the
 repository; each row is a verification item for the runner host's handoff,
 checked with `python lab/deployment_native_lab.py plan` and `state` before
 the job is enabled:

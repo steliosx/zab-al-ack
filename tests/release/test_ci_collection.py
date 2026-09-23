@@ -551,7 +551,10 @@ def test_inactive_publication_template_reuses_required_ci_and_verifies_before_up
 def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_report():
     value = yaml.load((ROOT / '.github/workflows/deployment-e2e.yml').read_text(), Loader=yaml.BaseLoader)
     assert set(value['on']) == {'workflow_dispatch'}
-    assert value['permissions'] == {'contents': 'read'}
+    assert value['permissions'] == {'contents': 'read', 'actions': 'read'}
+    inputs = value['on']['workflow_dispatch']['inputs']
+    assert set(inputs) == {'candidate_run_id', 'candidate_revision', 'wheel_sha256'}
+    assert all(item['required'] == 'true' and item['type'] == 'string' for item in inputs.values())
     job = value['jobs']['service-lab']
     assert job['if'] == "${{ vars.ZABALACK_DEPLOYMENT_E2E_ENABLED == 'true' }}"
     assert any(line.strip().startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
@@ -563,27 +566,45 @@ def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_re
     assert uploads[0]['with']['name'] == 'zabalack-deployment-e2e-${{ github.run_id }}-${{ github.run_attempt }}'
 
 
-def test_deployment_job_builds_installs_and_cycles_the_native_lab_without_docker():
-    """R29: the manual deployment job needs no Docker daemon; NOT_RUN is a failed step, not a pass."""
+def test_deployment_job_consumes_the_verified_candidate_wheel_and_cycles_the_native_lab_without_docker():
+    """R29/R10: the manual deployment job installs the already-produced candidate wheel whose digest the dispatcher
+    supplied, bound to the candidate run and revision; it builds nothing, needs no Docker daemon, and NOT_RUN is a
+    failed step, not a pass."""
     workflow = yaml.load((ROOT / '.github/workflows/deployment-e2e.yml').read_text(), Loader=yaml.BaseLoader)
     steps = workflow['jobs']['service-lab']['steps']
     commands = [line.strip() for step in steps if 'run' in step
                 for line in step['run'].splitlines() if line.strip() and not line.strip().startswith('#')]
     assert not any('docker' in line.lower() or 'run_deployment_e2e.py' in line for line in commands)
-    build = next(i for i, line in enumerate(commands) if line.startswith('python -m build --no-isolation --wheel --outdir "$RUNNER_TEMP/dist"'))
+    assert not any('python -m build' in line or 'pip wheel' in line or 'setup.py' in line for line in commands), 'no wheel is built in the job'
+    bind = next(i for i, line in enumerate(commands) if line == 'test "$(git rev-parse HEAD)" = "$CANDIDATE_REVISION"')
+    confirm = next(i for i, line in enumerate(commands) if 'actions/runs/$CANDIDATE_RUN_ID' in line)
+    verify = next(i for i, line in enumerate(commands) if line == 'printf \'%s  %s\\n\' "$WHEEL_SHA256" "$WHEEL" | sha256sum -c --strict -')
     prepare = next(i for i, line in enumerate(commands) if line.startswith('python lab/deployment_native_lab.py prepare-runner --isolated-lab'))
     cycle = next(i for i, line in enumerate(commands) if line.startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '))
-    assert build < prepare < cycle
-    assert commands[build + 1] == 'test "$(ls "$RUNNER_TEMP"/dist/zabalack-*-py3-none-any.whl | wc -l)" = 1'
+    assert bind < confirm < verify < prepare < cycle
+    # The inputs are validated as fixed shapes before anything uses them.
+    assert commands[bind - 3:bind] == ['printf \'%s\' "$CANDIDATE_RUN_ID" | grep -Eq \'^[0-9]{1,20}$\'',
+                                       'printf \'%s\' "$CANDIDATE_REVISION" | grep -Eq \'^[0-9a-f]{40}$\'',
+                                       'printf \'%s\' "$WHEEL_SHA256" | grep -Eq \'^[0-9a-f]{64}$\'']
+    assert 'assert run["head_sha"] == sys.argv[2]' in ' '.join(commands) and 'assert run["conclusion"] == "success"' in ' '.join(commands)
+    # The candidate artifact is downloaded from the named run, then exactly one wheel is copied into the fixed dist directory.
+    download = next(step for step in steps if step.get('uses', '').startswith('actions/download-artifact@'))
+    assert download['with']['run-id'] == '${{ inputs.candidate_run_id }}'
+    assert download['with']['pattern'] == 'zabalack-candidate-${{ inputs.candidate_run_id }}-*'
+    assert download['with']['github-token'] == '${{ github.token }}' and download['with']['merge-multiple'] == 'false'
+    assert steps.index(download) < next(i for i, step in enumerate(steps) if 'sha256sum -c --strict' in step.get('run', ''))
+    assert commands[verify - 1] == 'WHEEL="$(ls "$RUNNER_TEMP"/candidate/zabalack-candidate-*/dist/pypi/zabalack-*-py3-none-any.whl)"'
+    assert commands[verify + 3] == 'test "$(ls "$RUNNER_TEMP"/dist/zabalack-*-py3-none-any.whl | wc -l)" = 1'
     assert '--venv "$RUNNER_TEMP/e2e-runner"' in commands[prepare] and '--wheel "$RUNNER_TEMP"/dist/zabalack-*-py3-none-any.whl' in commands[prepare]
     assert '--runner-python "$RUNNER_TEMP/e2e-runner/bin/python"' in commands[cycle] and '--wheel "$WHEEL"' in commands[cycle]
-    assert '--wheel-sha256 "$(sha256sum "$WHEEL" | cut -d\' \' -f1)"' in commands[cycle]
+    # The cycle receives the supplied digest, never one computed from the file it is about to test.
+    assert commands[cycle].endswith('--wheel-sha256 "$WHEEL_SHA256"') and 'sha256sum' not in commands[cycle]
     assert not any('|| true' in line or 'continue-on-error' in line for line in commands)
     native = next(step for step in steps if 'lab/deployment_native_lab.py cycle' in step.get('run', ''))
     assert native['env'] == {'ACK_LAB_PG_BIN': '/usr/lib/postgresql/18/bin', 'ZABALACK_ZABBIX_SERVER': '/usr/sbin/zabbix_server',
                              'ZABALACK_ZABBIX_UI': '/usr/share/zabbix',
                              'ZABALACK_ZABBIX_SCHEMA': '/usr/share/zabbix-sql-scripts/postgresql/server.sql.gz',
-                             'ZABALACK_PHP': '/usr/bin/php8.3'}
+                             'ZABALACK_PHP': '/usr/bin/php8.3', 'WHEEL_SHA256': '${{ inputs.wheel_sha256 }}'}
     assert 'continue-on-error' not in native and 'if' not in native
 
 
