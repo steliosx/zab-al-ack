@@ -68,7 +68,13 @@ def harness(tmp_path, monkeypatch):
                         'PgBouncer 1.24.1\nlibevent 2.1.12-stable\n' if command[0] == str(pool) else 'postgres (PostgreSQL) 18.3\n')
     events = []
     pooler = MagicMock()
-    monkeypatch.setattr(native_local, 'pgbouncer_start', lambda pool, state: events.append('pool-start') or pooler)
+
+    def pgbouncer_start(pool, state, holder=None):
+        events.append('pool-start')
+        if holder is not None:
+            holder['process'] = pooler
+        return pooler
+    monkeypatch.setattr(native_local, 'pgbouncer_start', pgbouncer_start)
     monkeypatch.setattr(native_local, 'pgbouncer_stop', lambda process, state: events.append('pool-stop'))
     lab = FakeLab(root)
     monkeypatch.setattr(native_local, 'local_runtime', lab)
@@ -85,6 +91,7 @@ def harness(tmp_path, monkeypatch):
         events.append('createdb')
         return subprocess.CompletedProcess(command, 0, '', '')
     monkeypatch.setattr(native_local.subprocess, 'run', run)
+    monkeypatch.setattr(native_local, 'run_pytest', lambda command, env, log: run(command).returncode)
     return box
 
 
@@ -194,6 +201,69 @@ def test_interrupted_previous_run_is_preserved_stopped_and_replaced(harness):
             'build__evidence-raw__native-postgres-0123456789-exception.log', '.lab__postgres.log'} <= set(previous['files'])
     assert record['phases'][0]['lab_reset']['before'] == 'running'
     assert record['status'] == 'PASS'
+
+
+def test_an_interrupt_during_identity_collection_ends_with_a_fail_record_not_running(harness, monkeypatch):
+    """R9: an interrupt outside any phase body is caught by the whole-run guard."""
+    box = harness
+    monkeypatch.setattr(native_local, 'service_identities', lambda pg, pool: (_ for _ in ()).throw(KeyboardInterrupt()))
+    assert native_local.main(['--isolated-lab', '--phase', 'postgres']) == 130
+    value = report(box)
+    assert value['status'] == 'FAIL' and value['reason'] == 'interrupted' and value['phases'] == []
+    assert value['guard'] == {'reason': 'interrupted', 'cleanup': {'status': 'NOT_STARTED', 'exit_code': 0, 'state': 'absent'}}
+
+
+def test_a_second_interrupt_during_cleanup_still_stops_the_other_service_and_writes_the_record(harness, monkeypatch):
+    """R9: cleanup steps are independent under interruption; the record never stays RUNNING."""
+    box = harness
+    box.pytest_error = KeyboardInterrupt()
+
+    def stop(process, state):
+        box.events.append('pool-stop')
+        raise KeyboardInterrupt
+    monkeypatch.setattr(native_local, 'pgbouncer_stop', stop)
+    assert native_local.main(['--isolated-lab', '--phase', 'postgres']) == 130
+    value = report(box)
+    assert value['status'] == 'FAIL' and value['reason'] == 'interrupted'
+    phase, = value['phases']
+    assert phase['cleanup']['pgbouncer'] == {'status': 'INTERRUPTED', 'error': 'interrupted'}
+    assert phase['cleanup']['postgres'] == {'status': 'STOPPED', 'exit_code': 0, 'state': 'stopped'}
+    assert phase['shutdown_exit_code'] == 1 and phase['shutdown_reason'] == 'pgbouncer' and phase['retention']['status'] == 'RETAINED'
+    assert 'stop' in box.lab.calls and box.lab.state == 'stopped'
+
+
+def test_an_interrupt_inside_pgbouncer_startup_stops_the_spawned_process(harness, monkeypatch):
+    """R20: a PgBouncer spawned before the interrupt is handed to cleanup, never recorded as NOT_STARTED."""
+    box = harness
+
+    def start(pool, state, holder=None):
+        box.events.append('pool-start')
+        holder['process'] = box.pooler
+        raise KeyboardInterrupt
+    monkeypatch.setattr(native_local, 'pgbouncer_start', start)
+    assert native_local.main(['--isolated-lab', '--phase', 'postgres']) == 130
+    phase, = report(box)['phases']
+    assert phase['stage'] == 'pgbouncer-startup' and phase['cleanup']['pgbouncer'] == {'status': 'STOPPED'}
+    assert 'pool-stop' in box.events and phase['cleanup']['postgres']['status'] == 'STOPPED'
+
+
+def test_a_deferred_signal_during_phase_cleanup_is_raised_after_the_record_is_written(harness, monkeypatch):
+    """A signal arriving while cleanup runs waits for the record; the guard then ends the run as FAIL."""
+    import signal as signal_module
+    box = harness
+    cancellation = native_local.Cancellation()
+    monkeypatch.setattr(native_local, 'Cancellation', lambda: cancellation)
+    box.pytest_error = KeyboardInterrupt()
+
+    def stop(process, state):
+        box.events.append('pool-stop')
+        cancellation._handler(signal_module.SIGTERM, None)   # deferred inside the critical section
+    monkeypatch.setattr(native_local, 'pgbouncer_stop', stop)
+    assert native_local.main(['--isolated-lab', '--phase', 'postgres']) == 130
+    value = report(box)
+    phase, = value['phases']
+    assert phase['cleanup'] == {'pgbouncer': {'status': 'STOPPED'}, 'postgres': {'status': 'STOPPED', 'exit_code': 0, 'state': 'stopped'}}
+    assert value['status'] == 'FAIL' and value['guard']['reason'] == 'interrupted (SIGTERM)'
 
 
 def test_an_interrupted_phase_is_recorded_cleaned_up_and_the_run_ends_as_fail_not_running(harness):

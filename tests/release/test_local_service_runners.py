@@ -150,6 +150,31 @@ def test_local_e2e_runner_records_not_run_without_the_host_layout(tmp_path, monk
     assert json.loads(capsys.readouterr().out)['status'] == 'NOT_RUN'
 
 
+def test_local_e2e_runner_records_an_interrupted_execution_and_exits_130(tmp_path, monkeypatch, capsys):
+    """R8: a cancellation during pytest ends with FAIL lab_interrupted, the ports checked, the record written."""
+    import signal as signal_module
+    monkeypatch.setattr(local_e2e, 'ROOT', tmp_path)
+    monkeypatch.setattr(local_e2e, 'code_digests', lambda root: {'source': 'x', 'harness': 'y'})
+    (tmp_path / 'evidence').mkdir()
+    services = tmp_path / 'services.json'
+    services.write_text(json.dumps({name: 'synthetic ' + name for name in local_e2e.IMAGE_COMPONENTS}))
+    wheel = synthetic_wheel(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl')
+    private = tmp_path / 'private'
+    private.mkdir(mode=0o700)
+    monkeypatch.setattr(local_e2e, 'PRIVATE', private)
+    monkeypatch.setattr(local_e2e, 'check_host_layout', lambda: None)
+    monkeypatch.setattr(local_e2e, 'check_runner', lambda python, path: {'python': str(python), 'version': '0.1.0a0', 'wheel_sha256': 'e' * 64, 'location': '/site'})
+    monkeypatch.setattr(local_e2e, 'bootstrap', lambda project: None)
+    monkeypatch.setattr(local_e2e, 'clean_private', lambda: None)
+    monkeypatch.setattr(local_e2e, 'lab_ports_free', lambda: True)
+    monkeypatch.setattr(local_e2e, 'run_child', lambda command, **kwargs: (_ for _ in ()).throw(local_e2e.Cancelled(signal_module.SIGTERM)))
+    code = local_e2e.main(['--isolated-lab', '--runner-python', os.fspath(tmp_path / 'python'), '--wheel', str(wheel), '--services-file', str(services)])
+    record = json.loads((tmp_path / 'evidence/deployment-e2e-run.json').read_text())
+    assert code == 130 and record['status'] == 'FAIL' and record['reason'] == 'lab_interrupted' and record['interrupted_by'] == 'interrupted (SIGTERM)'
+    assert record['shutdown_exit_code'] == 0 and 'finished_at' in record
+    assert json.loads(capsys.readouterr().out)['status'] == 'FAIL'
+
+
 def test_local_e2e_runner_records_a_supplied_wheel_identity_only_after_the_exact_preflight(tmp_path, monkeypatch, capsys):
     """R29: the native path carries the Compose form's supplied-wheel receipt."""
     monkeypatch.setattr(local_e2e, 'ROOT', tmp_path)

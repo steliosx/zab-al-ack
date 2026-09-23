@@ -228,7 +228,7 @@ def test_run_writes_services_then_invokes_the_local_runner_with_reset_and_wheel_
     monkeypatch.setattr(lab.module, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 0, 'postgres (PostgreSQL) 18.3\n', ''))
     monkeypatch.setattr(lab.module, 'port_listening', lambda port: port == lab.module.PG_PORT)
     launched = []
-    monkeypatch.setattr(lab.module.subprocess, 'run', lambda command, **kwargs: launched.append((command, kwargs)) or subprocess.CompletedProcess(command, 3))
+    monkeypatch.setattr(lab.module, 'run_child', lambda command, **kwargs: launched.append((command, kwargs)) or 3)
     code = lab.module.main(['run', '--isolated-lab', '--runner-python', '/venv/bin/python', '--wheel', '/dist/zabalack-0.1.0a18-py3-none-any.whl',
                             '--wheel-sha256', 'f' * 64])
     assert code == 3
@@ -334,8 +334,8 @@ def cycle_environment(lab, monkeypatch, *, runner_exit=0, stop_exit=0):
     def runner(command, **kwargs):
         launched.append(command)
         inner_record('PASS' if runner_exit == 0 else ('NOT_RUN' if runner_exit == 2 else 'FAIL'), reason=None if runner_exit == 0 else 'synthetic')
-        return subprocess.CompletedProcess(command, runner_exit)
-    monkeypatch.setattr(lab.module.subprocess, 'run', runner)
+        return runner_exit
+    monkeypatch.setattr(lab.module, 'run_child', runner)
     lab.inner_record = inner_record
     return launched
 
@@ -461,7 +461,7 @@ def test_a_fresh_not_run_record_replaces_the_stale_pass_before_any_service_work(
         real = lab.module.zabbix
         monkeypatch.setattr(lab.module, 'zabbix', lambda command, *args, check=True: subprocess.CompletedProcess(command, 1, '', 'boom')
                             if command == 'start' else real(command, *args, check=check))
-    monkeypatch.setattr(lab.module.subprocess, 'run', lambda command, **kwargs: pytest.fail('the runner must not start: ' + str(command)))
+    monkeypatch.setattr(lab.module, 'run_child', lambda command, **kwargs: pytest.fail('the runner must not start: ' + str(command)))
     assert lab.module.main(CYCLE) == 2
     value = record(lab)
     assert value['status'] == 'NOT_RUN' and value['reason'] == expected
@@ -502,6 +502,48 @@ def test_wipe_reports_a_failed_zabbix_wipe(lab, monkeypatch, capsys):
     assert lab.module.main(['wipe', '--isolated-lab']) == 0
     out = json.loads(capsys.readouterr().out)
     assert out['wipe'] == 'failed' and out['zabbix_exit_code'] == 7
+
+
+def test_a_cancellation_during_the_run_records_fail_interrupted_after_a_full_cleanup(lab, monkeypatch, capsys):
+    """R8: SIGTERM/SIGHUP take the same path as Ctrl-C: cleanup, retention, wipe, a FAIL record, exit 130."""
+    import signal as signal_module
+    launched = cycle_environment(lab, monkeypatch, runner_exit=0)
+    cancelled = lab.module.Cancellation()
+
+    def runner(command, **kwargs):
+        launched.append(command)
+        lab.inner_record('RUNNING')
+        raise lab.module.Cancelled(signal_module.SIGTERM)
+    monkeypatch.setattr(lab.module, 'run_child', runner)
+    monkeypatch.setattr(lab.module, 'Cancellation', lambda: cancelled)
+    assert lab.module.main(CYCLE) == 130
+    value = record(lab)
+    assert value['status'] == 'FAIL' and value['reason'] == 'interrupted (SIGTERM)'
+    native = value['native_lab']
+    assert native['run_exit_code'] is None and native['refusal'] == 'interrupted' and native['interrupted'] == 'interrupted (SIGTERM)'
+    assert native['cleanup']['state'] == 'stopped' and native['wipe']['wipe'] == 'done' and native['final_state'] == 'absent'
+    assert lab.zabbix.calls == ['start', 'status', 'stop', 'reset']  # services file written, then the runner was cancelled
+    out = json.loads(capsys.readouterr().out)
+    assert out['status'] == 'FAIL' and out['refusal'] == 'interrupted (SIGTERM)'
+
+
+def test_a_signal_during_cleanup_is_deferred_until_the_record_is_written(lab, monkeypatch, capsys):
+    """R8/R9: a second signal inside stop/retention/wipe never cuts the cleanup or the record short."""
+    import signal as signal_module
+    cycle_environment(lab, monkeypatch, runner_exit=0)
+    cancelled = lab.module.Cancellation()
+    monkeypatch.setattr(lab.module, 'Cancellation', lambda: cancelled)
+    real_stop = lab.module.stop_lab
+
+    def stop(binaries, observed):
+        cancelled._handler(signal_module.SIGTERM, None)   # arrives while stopping: deferred, not raised
+        return real_stop(binaries, observed)
+    monkeypatch.setattr(lab.module, 'stop_lab', stop)
+    assert lab.module.main(CYCLE) == 130
+    value = record(lab)
+    assert value['status'] == 'FAIL' and value['reason'] == 'interrupted (SIGTERM)'
+    assert value['native_lab']['cleanup']['state'] == 'stopped' and value['native_lab']['wipe']['wipe'] == 'done'
+    assert value['native_lab']['final_state'] == 'absent' and lab.zabbix.calls == ['start', 'status', 'stop', 'reset']
 
 
 def test_cycle_cleans_up_after_a_start_refusal_and_keeps_the_failure(lab, monkeypatch, capsys):

@@ -41,6 +41,7 @@ import sys
 import xml.etree.ElementTree as ET
 import zipfile
 
+from cancellation import Cancellation, Cancelled, describe, run_child
 from deployment_evidence import IMAGE_COMPONENTS, validate_report
 from evidence_utils import code_digests
 from run_deployment_e2e import certificates, protected, stamp, validate_result
@@ -209,6 +210,7 @@ def main(argv=None):
                             + "); installed package bytes verified against the wheel; provides the Alerta entry points, "
                             "zabalack CLI and Flask CLI HTTPS server")
     project = "zabalack-e2e-" + os.urandom(6).hex()
+    cancellation = Cancellation()
     if args.plan:
         print(json.dumps({"project": project, "runner": runner, "components": components, "reset_command": args.reset_command,
                           "artifact_mode": "supplied_wheel" if supplied else "built_wheel",
@@ -221,6 +223,7 @@ def main(argv=None):
                   components=components, image_ids=None)
     private_logs = ROOT / "build/private" / project
     private_logs.mkdir(parents=True, mode=0o700)
+    cancellation.install()
     try:
         clean_private()
         bootstrap(project)
@@ -230,33 +233,39 @@ def main(argv=None):
         env = {"PATH": str(runner_python.parent) + os.pathsep + os.environ["PATH"], "HOME": "/tmp", "TZ": "UTC",
                "PYTHONUNBUFFERED": "1", "ACK_DEPLOYMENT_E2E": "GENERATED_ISOLATED_PROJECT"}
         with (private_logs / "pytest.log").open("w") as log:
-            result = subprocess.run([str(runner_python), "-m", "pytest", "tests/deployment_e2e", "-q", "-p", "no:cacheprovider",
-                                     "--junitxml=" + str(PRIVATE / "junit.xml")], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=900)
+            # pytest and the lab processes it spawns (Alerta, worker, TLS proxy) share one
+            # session: a cancellation terminates the whole group before it propagates.
+            returncode = run_child([str(runner_python), "-m", "pytest", "tests/deployment_e2e", "-q", "-p", "no:cacheprovider",
+                                    "--junitxml=" + str(PRIVATE / "junit.xml")], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                   timeout=900, grace=30)
         # The runner process is the pytest child itself; it has exited here.
         report["runner_shutdown_exit_code"] = 0
-        report.update(validate_result(PRIVATE, result.returncode))
+        report.update(validate_result(PRIVATE, returncode))
     except (OSError, ValueError, KeyError, subprocess.SubprocessError, ET.ParseError):
         report.update(status="FAIL", reason="lab_execution_or_validation_failed")
-    except KeyboardInterrupt:
-        report.update(status="FAIL", reason="lab_interrupted")
+    except KeyboardInterrupt as error:
+        report.update(status="FAIL", reason="lab_interrupted", interrupted_by=describe(error))
     finally:
         # The runtime terminates its own Alerta, worker and TLS-proxy children;
-        # cleanup succeeded only when no lab listener remains.
-        report["shutdown_exit_code"] = 0 if lab_ports_free() else 1
-        if report["shutdown_exit_code"]:
-            report.update(status="FAIL", reason="lab_processes_still_listening")
-        report["tree_unchanged"] = report["code_digests"] == code_digests(ROOT)
-        if not report["tree_unchanged"]:
-            report.update(status="FAIL", reason="source_changed_during_run")
-        report["finished_at"] = stamp()
-        if report["status"] == "PASS":
-            try:
-                validate_report(report, ROOT)
-            except ValueError:
-                report.update(status="FAIL", reason="final_evidence_validation_failed")
-        save()
+        # cleanup succeeded only when no lab listener remains. A further signal
+        # is deferred until the record is written.
+        with cancellation.critical():
+            report["shutdown_exit_code"] = 0 if lab_ports_free() else 1
+            if report["shutdown_exit_code"]:
+                report.update(status="FAIL", reason="lab_processes_still_listening")
+            report["tree_unchanged"] = report["code_digests"] == code_digests(ROOT)
+            if not report["tree_unchanged"]:
+                report.update(status="FAIL", reason="source_changed_during_run")
+            report["finished_at"] = stamp()
+            if report["status"] == "PASS":
+                try:
+                    validate_report(report, ROOT)
+                except ValueError:
+                    report.update(status="FAIL", reason="final_evidence_validation_failed")
+            save()
+        cancellation.restore()
     print(json.dumps({key: report.get(key) for key in ("status", "counts", "tree_unchanged", "reason", "project")}))
-    return 0 if report["status"] == "PASS" else 1
+    return 0 if report["status"] == "PASS" else (130 if report.get("reason") == "lab_interrupted" else 1)
 
 
 if __name__ == "__main__":

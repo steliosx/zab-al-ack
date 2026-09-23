@@ -49,6 +49,7 @@ import time
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'tools'))
+from cancellation import Cancellation, Cancelled, describe, run_child  # noqa: E402
 from lab_retention import RetentionError, preserve  # noqa: E402
 STATE = REPO / '.deployment-lab'
 MARKER = STATE / 'ISOLATED_DEPLOYMENT_LAB'
@@ -394,7 +395,9 @@ def run_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, se
                '--wheel', str(wheel), '--services-file', str(services_path), '--reset-command', reset_command]
     if wheel_sha256:
         command += ['--wheel-sha256', wheel_sha256]
-    return subprocess.run(command, cwd=REPO, timeout=3600).returncode
+    # The runner handles SIGTERM itself (its pytest group, its lab processes); a
+    # cancellation here terminates it and waits for that cleanup, bounded.
+    return run_child(command, cwd=REPO, timeout=3600, grace=90)
 
 
 def stop_lab(binaries: Path, observed: dict) -> tuple[int, dict]:
@@ -480,7 +483,15 @@ def finalize_record(command: str, code: int, summary: dict) -> dict:
     if summary.get('refusal'):
         native['refusal'] = refusal_code(str(summary['refusal']))
     record['native_lab'] = native
-    if summary.get('run_exit_code') is None:
+    interrupted = bool(summary.get('interrupted')) or (bool(summary.get('refusal')) and 'interrupted' in str(summary['refusal']))
+    if interrupted:
+        # A cancellation at any stage is a FAIL, never a NOT_RUN that could read as "nothing happened".
+        native['interrupted'] = str(summary.get('refusal') or 'interrupted')
+        if summary.get('run_exit_code') is None:
+            for key in EXECUTION_KEYS:
+                record.pop(key, None)
+        record.update(status='FAIL', reason=native['interrupted'])
+    elif summary.get('run_exit_code') is None:
         for key in EXECUTION_KEYS:
             record.pop(key, None)
         record.update(status='NOT_RUN', reason=native.get('refusal', 'lab_' + command + '_not_started'))
@@ -506,7 +517,8 @@ def cleanup_reason(summary: dict) -> str:
     return 'lab_cleanup_incomplete: final state ' + str(summary.get('final_state'))
 
 
-def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, services_path: Path, wheel_sha256: str | None) -> tuple[int, dict]:
+def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, services_path: Path, wheel_sha256: str | None,
+              cancellation: Cancellation | None = None, summary: dict | None = None) -> tuple[int, dict]:
     """start, run, stop and wipe in one invocation: the hosted job's whole service/test/cleanup step.
 
     The lab must be absent first (no reuse of a previous attempt). The run's
@@ -519,8 +531,9 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
     if observed['state'] != 'absent':
         raise SystemExit(f"cycle requires an absent deployment lab (state {observed['state']}); stop and wipe the previous lab first")
     run_id = os.urandom(6).hex()
-    summary: dict = {'run_id': run_id, 'start': None, 'run_exit_code': None, 'cleanup': None, 'retention': None, 'wipe': None,
-                     'final_state': None}
+    cancellation = cancellation or Cancellation()
+    summary = summary if summary is not None else {}
+    summary.update({'run_id': run_id, 'start': None, 'run_exit_code': None, 'cleanup': None, 'retention': None, 'wipe': None, 'final_state': None})
     code = 1
     try:
         summary['start'] = start_lab(binaries, observed)
@@ -530,22 +543,27 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
         # A refusal or start failure before the runner ran: NOT_RUN semantics (exit 2).
         summary['refusal'] = str(error) if not isinstance(error.code, int) else f'exit {error.code}'
         code = 2
-    except KeyboardInterrupt:
-        summary['refusal'] = 'interrupted'
+    except KeyboardInterrupt as error:
+        summary['refusal'] = describe(error)
         code = 130
     finally:
-        try:
-            stop_code, summary['cleanup'] = stop_lab(binaries, inspect(binaries))
-            if stop_code == 0:
-                try:
-                    summary['retention'] = preserve(REPO, run_id, 'deployment-cycle', [Path(name) for name in CYCLE_LOGS])
-                except RetentionError as error:
-                    summary['retention'] = {'error': str(error)}
-                else:
-                    summary['wipe'] = wipe_lab(binaries, inspect(binaries))
-        except SystemExit as error:
-            summary['cleanup'] = {'refusal': str(error)}
-        summary['final_state'] = inspect(binaries)['state']
+        # Cleanup, retention and the wipe are one critical section: a further
+        # signal is deferred until the outcome is recorded.
+        with cancellation.critical():
+            try:
+                stop_code, summary['cleanup'] = stop_lab(binaries, inspect(binaries))
+                if stop_code == 0:
+                    try:
+                        summary['retention'] = preserve(REPO, run_id, 'deployment-cycle', [Path(name) for name in CYCLE_LOGS])
+                    except RetentionError as error:
+                        summary['retention'] = {'error': str(error)}
+                    else:
+                        summary['wipe'] = wipe_lab(binaries, inspect(binaries))
+            except SystemExit as error:
+                summary['cleanup'] = {'refusal': str(error)}
+            except KeyboardInterrupt as error:
+                summary['cleanup'] = {'interrupted': describe(error), **(summary.get('cleanup') or {})}
+            summary['final_state'] = inspect(binaries)['state']
     wipe = summary.get('wipe')
     if code == 0 and (summary['final_state'] != 'absent' or not isinstance(wipe, dict) or wipe.get('wipe') != 'done'):
         code = 5
@@ -553,28 +571,47 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
 
 
 def guarded(args, parser) -> int:
-    """run/cycle: a fresh NOT_RUN record first, then the environment checks, then the command; every refusal is NOT_RUN exit 2."""
+    """run/cycle: a fresh NOT_RUN record first, then the environment checks, then the command.
+
+    Every refusal is NOT_RUN exit 2. SIGTERM, SIGHUP and SIGINT are routed into
+    the interrupt path (cleanup, retention, a FAIL record, exit 130); a signal
+    during cleanup or the record write is deferred until it is written.
+    """
+    cancellation = Cancellation().install()
     fresh_record(args.command)
     services_path = args.services_file or STATE / 'services.json'
     summary: dict = {}
     try:
-        if not unprivileged_helper_available():
-            raise SystemExit('BLOCKED_ENVIRONMENT: the deployment lab requires a non-root OS identity')
-        binaries = pg_bin()
-        observed = inspect(binaries)
-        if args.command == 'cycle':
-            code, summary = cycle_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
-        else:
-            code = run_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
-            summary = {'run_exit_code': code, 'final_state': inspect(binaries)['state']}
-    except SystemExit as error:
-        message = str(error) if not isinstance(error.code, int) else f'exit {error.code}'
-        record = finalize_record(args.command, 2, {**summary, 'refusal': message})
-        print(json.dumps({'status': record['status'], 'reason': record['reason'], **summary, 'refusal': message[:300]}))
-        return 2
-    record = finalize_record(args.command, code, summary)
-    print(json.dumps({'status': record.get('status'), 'reason': record.get('reason'), **summary}))
-    return code
+        try:
+            if not unprivileged_helper_available():
+                raise SystemExit('BLOCKED_ENVIRONMENT: the deployment lab requires a non-root OS identity')
+            binaries = pg_bin()
+            observed = inspect(binaries)
+            if args.command == 'cycle':
+                code, summary = cycle_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256,
+                                          cancellation=cancellation, summary=summary)
+            else:
+                code = run_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
+                summary = {'run_exit_code': code, 'final_state': inspect(binaries)['state']}
+        except SystemExit as error:
+            message = str(error) if not isinstance(error.code, int) else f'exit {error.code}'
+            with cancellation.critical():
+                record = finalize_record(args.command, 2, {**summary, 'refusal': message})
+                print(json.dumps({'status': record['status'], 'reason': record['reason'], **summary, 'refusal': message[:300]}))
+            return 2
+        except KeyboardInterrupt as error:
+            # Outside cycle_lab's own handling (before it started, or a deferred
+            # signal raised after its cleanup): the record ends as FAIL.
+            with cancellation.critical():
+                record = finalize_record(args.command, 130, {**summary, 'refusal': describe(error), 'interrupted': True})
+                print(json.dumps({'status': record['status'], 'reason': record['reason'], **summary, 'refusal': describe(error)}))
+            return 130
+        with cancellation.critical():
+            record = finalize_record(args.command, code, summary)
+            print(json.dumps({'status': record.get('status'), 'reason': record.get('reason'), **summary}))
+        return code
+    finally:
+        cancellation.restore()
 
 
 def main(argv: list[str] | None = None) -> int:

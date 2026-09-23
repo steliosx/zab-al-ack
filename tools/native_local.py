@@ -45,6 +45,7 @@ from functools import partial
 from typing import Callable
 from uuid import uuid4
 
+from cancellation import Cancellation, describe, run_child, terminate_group
 from evidence_utils import cases, code_digests, redact_junit
 from lab_retention import RetentionError, preserve
 from native_ci import PHASES, retain_phase_exception
@@ -242,7 +243,13 @@ def pid_alive(path: Path) -> bool:
     return True
 
 
-def pgbouncer_start(pool: Path, state: Path) -> subprocess.Popen:
+def pgbouncer_start(pool: Path, state: Path, holder: dict | None = None) -> subprocess.Popen:
+    """Start PgBouncer in its own session; the spawned process is handed to `holder` before anything can fail.
+
+    An interrupt or a timeout while waiting for the port then still finds the
+    process in the holder, so cleanup stops it (the whole session group: as
+    root, the child is `runuser`, and its group holds pgbouncer itself).
+    """
     if not port_free(POOL_PORT):
         raise RuntimeError('pool_port_in_use_before_start')
     if pid_alive(state / 'pgbouncer.pid'):
@@ -268,9 +275,17 @@ def pgbouncer_start(pool: Path, state: Path) -> subprocess.Popen:
             shutil.chown(path, 'nobody', 'nogroup')
     # One log per phase; the previous phase's log was preserved at its end.
     log = (state / 'pgbouncer.log').open('w')
-    process = subprocess.Popen(unprivileged([str(pool), str(state / 'pgbouncer.ini')]), stdout=log, stderr=subprocess.STDOUT)
-    if not wait_port(POOL_PORT):
-        process.kill()
+    process = subprocess.Popen(unprivileged([str(pool), str(state / 'pgbouncer.ini')]), stdout=log, stderr=subprocess.STDOUT,
+                               start_new_session=True)
+    if holder is not None:
+        holder['process'] = process
+    try:
+        listening = wait_port(POOL_PORT)
+    except BaseException:
+        terminate_group(process, 5)
+        raise
+    if not listening:
+        terminate_group(process, 5)
         raise RuntimeError('pgbouncer_not_listening')
     return process
 
@@ -283,8 +298,8 @@ def pgbouncer_stop(process: subprocess.Popen, state: Path) -> None:
     try:
         process.wait(15)
     except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(5)
+        # The session group, not only the direct child (which is runuser as root).
+        terminate_group(process, 5)
     end = time.monotonic() + 15
     while not port_free(POOL_PORT) and time.monotonic() < end:
         time.sleep(0.3)
@@ -293,12 +308,19 @@ def pgbouncer_stop(process: subprocess.Popen, state: Path) -> None:
 
 
 def outcome(action: Callable[[], object]) -> dict:
-    """Run one cleanup step on its own; a failure never skips the other step."""
+    """Run one cleanup step on its own; a failure or an interrupt never skips the other step."""
     try:
         value = action()
     except (RuntimeError, subprocess.SubprocessError, OSError, ValueError) as error:
         return {'status': 'FAILED', 'error': type(error).__name__}
+    except KeyboardInterrupt as error:
+        return {'status': 'INTERRUPTED', 'error': describe(error)}
     return value if isinstance(value, dict) else {'status': 'STOPPED'}
+
+
+def run_pytest(command: list[str], env: dict, log) -> int:
+    """pytest in its own session: a cancellation stops the whole group before it propagates."""
+    return run_child(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=900, grace=20)
 
 
 def previous_run_sources(evidence: Path, raw: Path) -> list[Path]:
@@ -323,6 +345,14 @@ def main(argv: list[str] | None = None) -> int:
                           'retention': 'build/private/retained-phases before every reset and at every phase end',
                           'external_zabbix_writes': False}, indent=2))
         return 0
+    cancellation = Cancellation().install()
+    try:
+        return execute(selected, cancellation)
+    finally:
+        cancellation.restore()
+
+
+def execute(selected: dict, cancellation: Cancellation) -> int:
     evidence = ROOT / 'evidence'
     raw = ROOT / 'build/evidence-raw'
     state = ROOT / POOL_STATE
@@ -349,6 +379,28 @@ def main(argv: list[str] | None = None) -> int:
     report_path = evidence / 'native-run.json'
     report_path.write_text(json.dumps(report, indent=2) + '\n')
     try:
+        return phases(selected, cancellation, report, report_path, evidence, raw, state, run_id)
+    except BaseException as error:
+        # Whole-run guard: an interrupt outside a phase body (identity collection,
+        # a second signal after cleanup) or any unexpected error ends with a
+        # FAIL record, never one left at RUNNING. Cleanup is attempted, bounded.
+        with cancellation.critical():
+            reason = describe(error) if isinstance(error, KeyboardInterrupt) else 'unexpected ' + type(error).__name__
+            report['guard'] = {'reason': reason, 'cleanup': outcome(cluster_stop)}
+            report['status'] = 'FAIL'
+            report.setdefault('reason', reason)
+            report['finished_at'] = datetime.now(timezone.utc).isoformat()
+            report_path.write_text(json.dumps(report, indent=2) + '\n')
+            print(json.dumps({'overall': 'FAIL', 'reason': report['reason'], 'guard': report['guard']}), flush=True)
+        if isinstance(error, KeyboardInterrupt):
+            return 130
+        if isinstance(error, SystemExit):
+            raise
+        return 1
+
+
+def phases(selected: dict, cancellation: Cancellation, report: dict, report_path: Path, evidence: Path, raw: Path, state: Path, run_id: str) -> int:
+    try:
         pg, pool = binaries()
         report['services'] = service_identities(pg, pool)
     except (RuntimeError, subprocess.SubprocessError, OSError, ValueError, KeyError) as error:
@@ -361,13 +413,13 @@ def main(argv: list[str] | None = None) -> int:
         result: dict = {'phase': phase, 'exit_code': 1, 'status': 'FAIL',
                         'started_at': datetime.now(timezone.utc).isoformat(),
                         'diagnostic_dir': 'build/evidence-raw/native-' + phase + '-' + run_id}
-        pooler = None
+        pool_holder: dict = {}
         stage = 'lab-reset'
         interrupted = False
         try:
             result['lab_reset'] = cluster_start(pg, run_id, phase)
             stage = 'pgbouncer-startup'
-            pooler = pgbouncer_start(pool, state)
+            pgbouncer_start(pool, state, pool_holder)
             stage = 'pytest'
             env = {key: value for key, value in os.environ.items() if not key.startswith('ACK_TEST_')}
             env.update(ACK_TEST_ADMIN_DSN=f'postgresql://lab_admin@127.0.0.1:{PG_PORT}/{DATABASE}',
@@ -377,9 +429,8 @@ def main(argv: list[str] | None = None) -> int:
             raw_xml = raw / ('native-' + phase + '.xml')
             public_xml = evidence / raw_xml.name
             with (raw / ('native-' + phase + '.log')).open('w') as log:
-                code = subprocess.run([sys.executable, '-m', 'pytest', *targets, '-q', '-rs', '--junitxml=' + str(raw_xml),
-                                       '--basetemp=' + str(raw / ('native-' + phase + '-' + run_id))],
-                                      cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=900).returncode
+                code = run_pytest([sys.executable, '-m', 'pytest', *targets, '-q', '-rs', '--junitxml=' + str(raw_xml),
+                                   '--basetemp=' + str(raw / ('native-' + phase + '-' + run_id))], env, log)
             result['exit_code'] = code
             stage = 'junit-processing'
             if raw_xml.exists():
@@ -395,42 +446,45 @@ def main(argv: list[str] | None = None) -> int:
             result['reason'] = (type(error).__name__ + ': ' + str(error))[:500]
             result['stage'] = stage
             retain_phase_exception(raw, phase, run_id, stage, error)
-        except KeyboardInterrupt:
-            # subprocess.run has killed the pytest child. The interrupted phase
-            # is recorded like any failure, cleanup and retention run below, and
+        except KeyboardInterrupt as error:
+            # The pytest group has been stopped. The interrupted phase is
+            # recorded like any failure, cleanup and retention run below, and
             # the run ends with a FAIL record instead of one left at RUNNING.
             interrupted = True
             result['status'] = 'FAIL'
-            result['reason'] = 'interrupted'
+            result['reason'] = describe(error)
             result['stage'] = stage
         finally:
             # Each service is cleaned up on its own; the original failure above
-            # is never replaced and both outcomes are recorded.
-            cleanup = {'pgbouncer': outcome(partial(pgbouncer_stop, pooler, state)) if pooler is not None
-                       else {'status': 'NOT_STARTED'},
-                       'postgres': outcome(cluster_stop)}
-            result['cleanup'] = cleanup
-            failed = [name for name, item in cleanup.items() if item['status'] not in ('STOPPED', 'NOT_STARTED')]
-            result['shutdown_exit_code'] = 1 if failed else 0
-            if failed:
-                result['status'] = 'FAIL'
-                result['shutdown_reason'] = ','.join(failed)
-            try:
-                result['retention'] = preserve(ROOT, run_id, 'phase-' + phase, [
-                    raw / ('native-' + phase + '.xml'), raw / ('native-' + phase + '.log'),
-                    raw / f'native-{phase}-{run_id}-exception.log', state / 'pgbouncer.log'])
-            except RetentionError as error:
-                result['retention'] = {'status': 'FAILED', 'error': str(error)[:200]}
-                result['status'] = 'FAIL'
-                result.setdefault('reason', 'RetentionError: phase diagnostics were not preserved')
-        result['finished_at'] = datetime.now(timezone.utc).isoformat()
-        report['phases'].append(result)
-        report_path.write_text(json.dumps(report, indent=2) + '\n')
-        print(json.dumps(result), flush=True)
+            # is never replaced and both outcomes are recorded. A further signal
+            # is deferred until the record is written.
+            with cancellation.critical():
+                pooler = pool_holder.get('process')
+                cleanup = {'pgbouncer': outcome(partial(pgbouncer_stop, pooler, state)) if pooler is not None
+                           else {'status': 'NOT_STARTED'},
+                           'postgres': outcome(cluster_stop)}
+                result['cleanup'] = cleanup
+                failed = [name for name, item in cleanup.items() if item['status'] not in ('STOPPED', 'NOT_STARTED')]
+                result['shutdown_exit_code'] = 1 if failed else 0
+                if failed:
+                    result['status'] = 'FAIL'
+                    result['shutdown_reason'] = ','.join(failed)
+                try:
+                    result['retention'] = preserve(ROOT, run_id, 'phase-' + phase, [
+                        raw / ('native-' + phase + '.xml'), raw / ('native-' + phase + '.log'),
+                        raw / f'native-{phase}-{run_id}-exception.log', state / 'pgbouncer.log'])
+                except RetentionError as error:
+                    result['retention'] = {'status': 'FAILED', 'error': str(error)[:200]}
+                    result['status'] = 'FAIL'
+                    result.setdefault('reason', 'RetentionError: phase diagnostics were not preserved')
+                result['finished_at'] = datetime.now(timezone.utc).isoformat()
+                report['phases'].append(result)
+                if interrupted:
+                    report.update(status='FAIL', reason=result['reason'], tree_unchanged=report['code_digests'] == code_digests(ROOT))
+                report_path.write_text(json.dumps(report, indent=2) + '\n')
+                print(json.dumps(result), flush=True)
         if interrupted:
-            report.update(status='FAIL', reason='interrupted', tree_unchanged=report['code_digests'] == code_digests(ROOT))
-            report_path.write_text(json.dumps(report, indent=2) + '\n')
-            print(json.dumps({'overall': 'FAIL', 'reason': 'interrupted', 'phases': len(report['phases'])}))
+            print(json.dumps({'overall': 'FAIL', 'reason': report['reason'], 'phases': len(report['phases'])}))
             return 130
         if result['status'] != 'PASS':
             break
