@@ -327,26 +327,48 @@ def good_signatures(status: str) -> list[dict]:
     return found
 
 
-def signature_observation(uri: str, suite: str, scratch: Path, lists: Path | None = None) -> dict:
+def signature_observation(uri: str, suite: str, scratch: Path, lists: Path | None = None, bodies: dict | None = None) -> dict:
+    """gpgv of the origin's InRelease against each installed keyring.
+
+    The verified content itself comes from `gpgv --output`: exactly the text
+    the good signature covers, dash-unescaped, without anything outside the
+    signed message. Its SHA-256 is recorded (`verified_body_sha256`) and the
+    text is handed to the index observation through `bodies`, keyed by
+    (uri, suite), so index digests are only ever read from signed content.
+    """
     path = inrelease_path(uri, suite, lists)
     if not path.is_file():
         return not_observed('InRelease list file missing: ' + path.name)
     if shutil.which('gpgv') is None:
         return not_observed('gpgv unavailable')
     good: list[dict] = []
+    verified_bodies: set[bytes] = set()
     tried = 0
-    for keyring in keyrings():
+    for number, keyring in enumerate(keyrings()):
         usable = dearmored(keyring, scratch)
         if usable is None:
             continue
         tried += 1
-        result = subprocess.run(['gpgv', '--status-fd', '1', '--keyring', str(usable), str(path)], capture_output=True, text=True, timeout=60)
-        good.extend(dict(key, keyring=keyring.name) for key in good_signatures(result.stdout))
+        output = scratch / f'verified-{number}'
+        output.unlink(missing_ok=True)
+        result = subprocess.run(['gpgv', '--status-fd', '1', '--output', str(output), '--keyring', str(usable), str(path)],
+                                capture_output=True, text=True, timeout=60)
+        signatures = good_signatures(result.stdout)
+        if signatures and result.returncode == 0 and output.is_file():
+            good.extend(dict(key, keyring=keyring.name) for key in signatures)
+            verified_bodies.add(output.read_bytes())
+        output.unlink(missing_ok=True)
     if not tried:
         return not_observed('no usable keyring under ' + ', '.join(str(d) for d in KEYRING_DIRS))
     if not good:
         return observed(inrelease=path.name, verified=False, keyrings_tried=tried)
-    return observed(inrelease=path.name, verified=True, keys=good, keyrings_tried=tried)
+    if len(verified_bodies) != 1:
+        return not_observed('verified InRelease content differs between keyrings: ' + path.name)
+    body = verified_bodies.pop()
+    if bodies is not None:
+        bodies[(uri, suite)] = body.decode('utf-8', 'replace')
+    return observed(inrelease=path.name, verified=True, keys=good, keyrings_tried=tried,
+                    verified_body_sha256=hashlib.sha256(body).hexdigest())
 
 
 def read_index(path: Path) -> bytes:
@@ -402,7 +424,8 @@ def index_stanza(text: str, package: str, version: str) -> dict | None:
     return None
 
 
-def index_observation(origin: dict, package: str, version: str, host_architecture: str, lists: Path | None = None) -> dict:
+def index_observation(origin: dict, package: str, version: str, host_architecture: str, lists: Path | None = None,
+                      verified_body: str | None = None) -> dict:
     """The signed index entry of the installed version: the Packages file digest must be listed in the InRelease.
 
     Binds the `.deb` digest and file name to the origin's signature: InRelease
@@ -415,10 +438,11 @@ def index_observation(origin: dict, package: str, version: str, host_architectur
     inrelease = lists / (prefix + '_dists_' + dist + '_InRelease')
     if not inrelease.is_file():
         return not_observed('InRelease list file missing: ' + inrelease.name)
-    body = cleartext_signed_body(inrelease.read_text(errors='replace'))
-    if body is None:
+    if cleartext_signed_body(inrelease.read_text(errors='replace')) is None:
         return not_observed('InRelease carries content outside its signed message: ' + inrelease.name)
-    digests = inrelease_digests(body)
+    if verified_body is None:
+        return not_observed('no signature-verified InRelease content for ' + origin['uri'] + ' ' + origin['suite'])
+    digests = inrelease_digests(verified_body)
     if not digests:
         return not_observed('InRelease carries no SHA256 digest list: ' + inrelease.name)
     tried = []
@@ -437,6 +461,7 @@ def index_observation(origin: dict, package: str, version: str, host_architectur
         if not signed:
             return not_observed('Packages index digest differs from the InRelease digest: ' + candidate.name)
         record = observed(list_file=candidate.name, index_signed=True, index_relative_path=relative, stanza_architecture=stanza.get('Architecture'),
+                          inrelease_verified_sha256=hashlib.sha256(verified_body.encode('utf-8')).hexdigest(),
                           deb_sha256=stanza.get('SHA256'), filename=stanza.get('Filename'), size=stanza.get('Size'))
         if not (isinstance(record['deb_sha256'], str) and HEX64.fullmatch(record['deb_sha256'])):
             return not_observed('index entry carries no SHA256 for ' + package + ' ' + version)
@@ -492,10 +517,13 @@ def collect(label: str, scratch: Path) -> dict:
                 item['apt'] = apt_observation(item['dpkg']['package'])
                 if item['apt']['status'] == 'OBSERVED':
                     origins = [origin for origin in item['apt']['origins'] if not origin['uri'].startswith('/')]
-                    item['signatures'] = [dict(origin, signature=signature_observation(origin['uri'], origin['suite'], scratch)) for origin in origins]
+                    bodies: dict = {}
+                    item['signatures'] = [dict(origin, signature=signature_observation(origin['uri'], origin['suite'], scratch, bodies=bodies))
+                                          for origin in origins]
                     item['index'] = not_observed('no repository origin for the installed version')
                     for origin in origins:
-                        index = index_observation(origin, item['dpkg']['package'], item['dpkg']['version'], host_architecture)
+                        index = index_observation(origin, item['dpkg']['package'], item['dpkg']['version'], host_architecture,
+                                                  verified_body=bodies.get((origin['uri'], origin['suite'])))
                         item['index'] = dict(index, origin_uri=origin['uri'], origin_suite=origin['suite'])
                         if index['status'] == 'OBSERVED':
                             break
@@ -572,6 +600,10 @@ def missing_observations(record: dict) -> list[str]:
         index = item.get('index') if isinstance(item.get('index'), dict) else None
         if index is None or index.get('status') != 'OBSERVED':
             missing.append(f'{name}.index: ' + (index.get('reason', 'not observed') if index else 'absent'))
+        elif not isinstance(index.get('inrelease_verified_sha256'), str):
+            missing.append(f'{name}.index: no digest of the verified InRelease content')
+        elif (index.get('origin_uri'), index.get('origin_suite')) not in by_origin:
+            missing.append(f'{name}.index: no signature observation for {index.get("origin_uri")} {index.get("origin_suite")}')
     return missing
 
 
@@ -667,6 +699,17 @@ def evaluate(record: dict, reference: dict, identities: dict) -> tuple[str, list
         if index.get('status') == 'OBSERVED':
             if not index.get('index_signed'):
                 deviations.append(f'{name}: Packages index not bound to the InRelease digest')
+            # The digest list the index was checked against must be the content the
+            # pinned signature of that same repository and suite verified.
+            bound_entry = signatures.get((index.get('origin_uri'), index.get('origin_suite')))
+            bound = (bound_entry or {}).get('signature') or {}
+            bound_keys = [key.get('fingerprint') for key in bound.get('keys', []) if isinstance(key, dict)] if bound.get('verified') else []
+            if bound_entry is None or bound.get('status') != 'OBSERVED':
+                pass  # a missing observation (missing_observations names it): INCOMPLETE, never CONFORMS
+            elif not (bound_keys and any(key in allowed_fingerprints(origin_host(str(index.get('origin_uri', ''))), reference) for key in bound_keys)
+                    and isinstance(index.get('inrelease_verified_sha256'), str)
+                    and index['inrelease_verified_sha256'] == bound.get('verified_body_sha256')):
+                deviations.append(f'{name}: index digests not taken from the InRelease content the pinned signature verified')
             index_host = origin_host(str(index.get('origin_uri', '')))
             if index_host not in spec['origins'] or (str(index.get('origin_uri', '')).rstrip('/'), str(index.get('origin_suite'))) not in ALLOWED_REPOSITORIES.get(index_host, set()):
                 deviations.append(f'{name}: signed index entry comes from {index.get("origin_uri")} {index.get("origin_suite")}, not an allowed repository')

@@ -293,8 +293,10 @@ cannot attribute, such as a flat repository, included; never a pass). A
 signature counts only when one gpgv signature block holds both GOODSIG and
 VALIDSIG and no revoked, expired or bad signature; the pinned fingerprint is
 the primary key's. Signatures are matched to origins by repository and suite,
-and index digests are read only from the signed part of the InRelease (any
-content outside the signed message is a missing observation). The cached
+and index digests are read only from the content `gpgv --output` returns for
+the good signature (its SHA-256 is recorded on both the signature and the
+index observation and must match for that repository and suite); an InRelease
+with any content outside its signed message is a missing observation. The cached
 `.deb` is found under apt's epoch-encoded name.
 `approve` refuses to write over either policy file. After review,
 `approve --reviewer … --amendment … --output …` writes the reviewed entries,

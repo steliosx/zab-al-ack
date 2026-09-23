@@ -9,6 +9,7 @@ or source-built identity.
 import gzip
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -55,9 +56,13 @@ def cleartext(body):
             + '-----BEGIN PGP SIGNATURE-----\n\nsynthetic\n-----END PGP SIGNATURE-----\n')
 
 
+VERIFIED_BODY = 'e' * 64  # sha256 of the InRelease content the good signature covered (synthetic)
+
+
 def signature(host, fingerprint, verified=True):
     return {'uri': repository(host)[0], 'suite': repository(host)[1], 'architecture': 'amd64', 'priority': 500,
             'signature': {'status': 'OBSERVED', 'inrelease': host + '_x_dists_noble_InRelease', 'verified': verified,
+                          **({'verified_body_sha256': VERIFIED_BODY} if verified else {}),
                           'keys': [{'long_id': fingerprint[-16:], 'fingerprint': fingerprint, 'user_id': 'synthetic', 'keyring': 'k.gpg'}] if verified else [],
                           'keyrings_tried': 1}}
 
@@ -77,6 +82,7 @@ def component(version_line, package, version, host, fingerprint, *, kind='dpkg',
     item['signatures'] = [signature(host, fingerprint)]
     item['index'] = {'status': 'OBSERVED', 'origin_uri': repository(host)[0], 'origin_suite': repository(host)[1], 'list_file': host + '_x_dists_noble_main_binary-' + architecture + '_Packages',
                      'index_signed': True, 'index_relative_path': 'main/binary-' + architecture + '/Packages', 'stanza_architecture': architecture,
+                     'inrelease_verified_sha256': VERIFIED_BODY,
                      'deb_sha256': 'c' * 64, 'filename': 'pool/main/x/' + package + '_' + version + '_' + architecture + '.deb', 'size': '1'}
     item['cached_deb'] = {'status': 'OBSERVED', 'present': False}
     return item
@@ -272,18 +278,23 @@ def signed_lists(tmp_path, stanza_arch='all', tamper=False):
     return lists
 
 
+def verified(lists):
+    """What gpgv --output yields for the synthetic InRelease: its signed body."""
+    return cpi.cleartext_signed_body(next(lists.glob('*_InRelease')).read_text())
+
+
 def test_the_signed_index_entry_binds_the_deb_digest_to_the_inrelease(tmp_path):
     """R19: the Packages index must hash to the InRelease entry; Arch:all packages are found in binary-all."""
     lists = signed_lists(tmp_path)
     origin = {'uri': 'https://repo.zabbix.com/zabbix/7.0/ubuntu', 'suite': 'noble/main'}
-    server = cpi.index_observation(origin, 'zabbix-server-pgsql', '1:7.0.31-1+ubuntu24.04', 'amd64', lists)
+    server = cpi.index_observation(origin, 'zabbix-server-pgsql', '1:7.0.31-1+ubuntu24.04', 'amd64', lists, verified(lists))
     assert server['status'] == 'OBSERVED' and server['index_signed'] is True and server['deb_sha256'] == '1' * 64
     assert server['index_relative_path'] == 'main/binary-amd64/Packages' and server['stanza_architecture'] == 'amd64'
-    scripts = cpi.index_observation(origin, 'zabbix-sql-scripts', '1:7.0.31-1+ubuntu24.04', 'amd64', lists)
+    scripts = cpi.index_observation(origin, 'zabbix-sql-scripts', '1:7.0.31-1+ubuntu24.04', 'amd64', lists, verified(lists))
     assert scripts['status'] == 'OBSERVED' and scripts['deb_sha256'] == '2' * 64 and scripts['stanza_architecture'] == 'all'
-    assert cpi.index_observation(origin, 'zabbix-server-pgsql', '1:7.0.30-1+ubuntu24.04', 'amd64', lists)['status'] == 'NOT_OBSERVED'
+    assert cpi.index_observation(origin, 'zabbix-server-pgsql', '1:7.0.30-1+ubuntu24.04', 'amd64', lists, verified(lists))['status'] == 'NOT_OBSERVED'
     tampered = signed_lists(tmp_path / 'tampered', tamper=True)
-    assert 'differs from the InRelease digest' in cpi.index_observation(origin, 'zabbix-sql-scripts', '1:7.0.31-1+ubuntu24.04', 'amd64', tampered)['reason']
+    assert 'differs from the InRelease digest' in cpi.index_observation(origin, 'zabbix-sql-scripts', '1:7.0.31-1+ubuntu24.04', 'amd64', tampered, verified(tampered))['reason']
     assert cpi.index_observation(origin, 'zabbix-server-pgsql', '1:7.0.31-1+ubuntu24.04', 'amd64', tmp_path / 'nowhere')['status'] == 'NOT_OBSERVED'
     cache = tmp_path / 'cache'
     cache.mkdir()
@@ -335,7 +346,13 @@ def test_collect_records_dpkg_apt_signature_and_index_observations_for_a_package
     # gpgv's real status format (observed on the runner host): NEWSIG, GOODSIG, VALIDSIG ending with the primary key.
     gpgv_output = ('[GNUPG:] NEWSIG\n[GNUPG:] GOODSIG ' + ZABBIX_FPR[-16:] + ' Zabbix LLC (Apr 2024) <packager@zabbix.com>\n'
                    '[GNUPG:] VALIDSIG ' + ZABBIX_FPR + ' 2026-09-22 1790067776 0 4 0 1 10 01 ' + ZABBIX_FPR + '\n')
-    monkeypatch.setattr(cpi.subprocess, 'run', lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, gpgv_output, ''))
+
+    def gpgv(argv, **kwargs):
+        # gpgv --output writes the signed content it verified.
+        Path(argv[argv.index('--output') + 1]).write_text(cpi.cleartext_signed_body(Path(argv[-1]).read_text()))
+        return subprocess.CompletedProcess(argv, 0, gpgv_output, '')
+    monkeypatch.setattr(cpi.subprocess, 'run', gpgv)
+    (tmp_path / 'scratch').mkdir()
     record = cpi.collect('synthetic', tmp_path / 'scratch')
     item = record['components']['zabbix_server']
     assert item['executable']['version_line'] == 'zabbix_server (Zabbix) 7.0.31'
@@ -347,6 +364,7 @@ def test_collect_records_dpkg_apt_signature_and_index_observations_for_a_package
     (entry,) = item['signatures']
     assert entry['signature']['verified'] is True and entry['signature']['keys'][0]['fingerprint'] == ZABBIX_FPR
     assert item['index']['status'] == 'OBSERVED' and item['index']['deb_sha256'] == '1' * 64 and item['index']['index_signed'] is True
+    assert item['index']['inrelease_verified_sha256'] == entry['signature']['verified_body_sha256']
     assert item['index']['origin_uri'] == 'https://repo.zabbix.com/zabbix/7.0/ubuntu' and item['cached_deb'] == {'status': 'OBSERVED', 'present': False}
     assert record['distribution'] == {'id': 'ubuntu', 'version_id': '24.04', 'architecture': 'amd64'}
     # The other components are missing on this synthetic host; the derived list says so and nothing else is read.
@@ -573,7 +591,7 @@ def test_only_digests_inside_the_signed_message_bind_an_index(tmp_path, placemen
     forged = 'SHA256:\n ' + '2' * 64 + ' 10 main/binary-amd64/Packages\n'
     inrelease.write_text(text + forged if placement == 'appended' else forged + text)
     origin = {'uri': 'https://repo.zabbix.com/zabbix/7.0/ubuntu', 'suite': 'noble/main'}
-    observation = cpi.index_observation(origin, 'zabbix-server-pgsql', ZVER, 'amd64', lists)
+    observation = cpi.index_observation(origin, 'zabbix-server-pgsql', ZVER, 'amd64', lists, cpi.cleartext_signed_body(text))
     assert observation['status'] == 'NOT_OBSERVED' and 'outside its signed message' in observation['reason']
 
 
@@ -582,3 +600,75 @@ def test_the_signed_body_undoes_dash_escaping_and_ignores_the_armour_headers():
                                      '-----BEGIN PGP SIGNATURE-----\n\nabc\n-----END PGP SIGNATURE-----\n')
     assert body == 'Origin: x\n-----not armour\nSHA256:'
     assert cpi.cleartext_signed_body('Origin: x\nSHA256:\n') is None
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda r: r['components']['zabbix_server']['index'].update(inrelease_verified_sha256='f' * 64),
+    lambda r: r['components']['zabbix_server']['signatures'][0]['signature'].pop('verified_body_sha256'),
+], ids=['index-from-other-content', 'signature-without-verified-content'])
+def test_index_digests_must_come_from_the_content_the_pinned_signature_verified(mutate):
+    """O13: the Packages digest list must be the gpgv-verified InRelease content of that same repository and suite."""
+    record = conforming_record()
+    mutate(record)
+    result, deviations, _ = evaluate(record)
+    assert result == 'DEVIATES'
+    assert any('index digests not taken from the InRelease content the pinned signature verified' in line for line in deviations), deviations
+
+
+def test_an_index_bound_to_a_suite_without_a_signature_observation_is_incomplete():
+    record = conforming_record()
+    index = record['components']['zabbix_server']['index']
+    index['origin_suite'] = 'noble/other'
+    result, deviations, incomplete = evaluate(record)
+    assert result != 'CONFORMS'
+    assert any('no signature observation for' in line for line in incomplete), incomplete
+
+
+def test_an_index_without_signature_verified_content_is_not_observed(tmp_path):
+    lists = signed_lists(tmp_path)
+    origin = {'uri': 'https://repo.zabbix.com/zabbix/7.0/ubuntu', 'suite': 'noble/main'}
+    observation = cpi.index_observation(origin, 'zabbix-server-pgsql', ZVER, 'amd64', lists)
+    assert observation['status'] == 'NOT_OBSERVED' and 'no signature-verified InRelease content' in observation['reason']
+
+
+def test_real_gpgv_output_is_the_signed_body_dash_unescaped_and_ignores_appended_text(tmp_path, monkeypatch):
+    """With a throwaway key and the real gpgv: the verified content excludes an unsigned SHA256 block appended after the
+    signature and keeps OpenPGP dash-unescaping; the structural check refuses such a file as well."""
+    import shutil
+    if not (shutil.which('gpg') and shutil.which('gpgv')):
+        pytest.skip('gpg/gpgv unavailable')
+    home = tmp_path / 'gnupg'
+    home.mkdir(mode=0o700)
+    env = {**os.environ, 'GNUPGHOME': str(home)}
+    try:
+        subprocess.run(['gpg', '--batch', '--quiet', '--pinentry-mode', 'loopback', '--passphrase', '', '--quick-gen-key',
+                        'Throwaway <t@example.invalid>', 'ed25519', 'sign', '1d'], env=env, check=True, capture_output=True, timeout=60)
+        keyring_dir = tmp_path / 'keyrings'
+        keyring_dir.mkdir()
+        (keyring_dir / 'throwaway.gpg').write_bytes(
+            subprocess.run(['gpg', '--batch', '--export'], env=env, check=True, capture_output=True, timeout=60).stdout)
+        signed_digest = hashlib.sha256(b'signed index').hexdigest()
+        body = f'Origin: x\n-----dashline\nSHA256:\n {signed_digest} 12 main/binary-amd64/Packages\n'
+        (tmp_path / 'body').write_text(body)
+        lists = tmp_path / 'lists'
+        lists.mkdir()
+        inrelease = lists / 'repo.example_x_dists_noble_InRelease'
+        subprocess.run(['gpg', '--batch', '--quiet', '--pinentry-mode', 'loopback', '--passphrase', '', '--clearsign', '-o', str(inrelease),
+                        str(tmp_path / 'body')], env=env, check=True, capture_output=True, timeout=60)
+    finally:
+        subprocess.run(['gpgconf', '--kill', 'all'], env=env, capture_output=True, timeout=60)
+    monkeypatch.setattr(cpi, 'KEYRING_DIRS', (keyring_dir,))
+    scratch = tmp_path / 'scratch'
+    scratch.mkdir()
+    key = ('https://repo.example/x', 'noble/main')
+    bodies = {}
+    clean = cpi.signature_observation(*key, scratch, lists, bodies)
+    assert clean['verified'] is True and bodies[key] == body
+    assert clean['verified_body_sha256'] == hashlib.sha256(body.encode()).hexdigest()
+    assert '- -----dashline' in inrelease.read_text()  # dash-escaped in the file, unescaped in the verified content
+    inrelease.write_text(inrelease.read_text() + 'SHA256:\n ' + '2' * 64 + ' 12 main/binary-amd64/Packages\n')
+    bodies = {}
+    appended = cpi.signature_observation(*key, scratch, lists, bodies)
+    assert appended['verified'] is True and bodies[key] == body  # the appended block is not signed content
+    assert cpi.inrelease_digests(bodies[key]) == {'main/binary-amd64/Packages': signed_digest}
+    assert cpi.cleartext_signed_body(inrelease.read_text()) is None  # and the file itself is refused
