@@ -323,34 +323,49 @@ Runner hooks, deployment workflows and failed attempts remain unchanged.
 `tools/runner_account_check.py` is a read-only report of the dedicated runner's
 host capabilities for the Docker-removal handoff (R28,
 `docs/docker_requirements_inventory.md`). It distinguishes the *configured*
-account (uid, gid, configured groups) from the *running* runner process, whose
-real and effective uid and gid, supplementary groups, capability sets and
-`no_new_privs` flag it reads from `/proc` (selected by the unit's `MainPID`,
-`--runner-pid` or the `Runner.Listener` process name). For each container
-socket it records the mode, owner, group and POSIX ACL, the permission
-*inferred* for the runner identity and the access *demonstrated* by
-connecting under that identity in a child process (uid, gid and groups
-switched; nothing is sent; a stale permissive socket without a daemon is a
-latent grant). The service configuration is read from the unit fragment, its
-drop-ins, `Environment=` and `EnvironmentFile=` lines, the runner's `.env` and
-the running process's environment, keeping only `DOCKER_*` keys. The intended
-account's Docker configuration (`DOCKER_CONFIG` from the effective service
-environment, else its `~/.docker`) is read as files: `currentContext`, the
-number of stored auths and the context store's endpoints; no Docker CLI runs
-and no daemon or remote endpoint is contacted. Sudo rules are listed as root.
+account (uid, gid, configured groups) from the *running* runner processes: every
+process in the exact unit's cgroup (or `--runner-pid`, or the `Runner.Listener`
+name only when no unit cgroup can be read), whose four uid and four gid fields,
+supplementary groups, capability sets and `no_new_privs` flag it reads from
+`/proc`. Candidates that differ in any of those fields are an ambiguous identity
+and fail closed; the account matches only when every uid field equals its uid
+and every gid field its gid. For each container socket (a symlink is resolved
+and its target evaluated; a dangling or non-socket target is a failed
+observation) it records the mode, owner, group and POSIX ACL, the permission
+*inferred* for the runner identity, whether a systemd `.socket` unit owns the
+path, and the access *demonstrated* by connecting under that identity in a
+child process (uid, gid and groups switched; nothing is sent). While
+`docker.socket` or `podman.socket` is active for the path no connect is
+attempted, because a permitted connect would start the daemon; the inferred
+permission decides then. A connect that ends neither in success, a permission
+denial nor "no listener" (for example EAGAIN on a full accept queue) is
+NOT_OBSERVED, never "no access". Under `docker-free`, inferred write permission,
+a successful connect and a permission that exists without a daemon are each a
+deviation. The service configuration is the effective one from `systemctl show`
+of the exact unit named by `--unit` (transient `systemd-run` units under
+`/run/systemd/transient` included; globs are refused): fragment, drop-ins,
+`User`/`Group`/`SupplementaryGroups`, `Environment=`, `EnvironmentFiles=`, the
+control group, plus the runner's `.env` (from `--runner-root` or the unit's
+`WorkingDirectory`) and the running process's environment, keeping only
+`DOCKER_*` keys. The intended account's Docker configuration (`DOCKER_CONFIG`
+from the effective service environment, else its `~/.docker`) is read as files:
+`currentContext`, the number of stored auths and the context store's endpoints;
+malformed metadata is a failed observation; no Docker CLI runs and no daemon or
+remote endpoint is contacted. Sudo rules are listed as root.
 
 A required observation that cannot be made (no root for sudo or identity
-switching, an unreadable file, an absent or ambiguous runner process) is
-reported as NOT_OBSERVED and makes the verdict INCOMPLETE; it never becomes
-"absent" and CONFORMS. Any deviation makes it DEVIATES, with the incomplete
-observations listed alongside. `--policy docker-allowed` describes the host
-as provisioned today; `--policy docker-free` is the target after routine CI
-runs the local native form. Exit 0 conforms, 1 deviates, 2 incomplete. The
-report contains no secrets: no environment dump, no auth values, no tokens.
+switching, an unreadable file, an absent or ambiguous runner process, an
+unclassifiable connect, an unknown socket-activation state) is reported as
+NOT_OBSERVED and makes the verdict INCOMPLETE; it never becomes "absent" and
+CONFORMS. Any deviation makes it DEVIATES, with the incomplete observations
+listed alongside. `--policy docker-allowed` describes the host as provisioned
+today; `--policy docker-free` is the target after routine CI runs the local
+native form. Exit 0 conforms, 1 deviates, 2 incomplete. The report contains no
+secrets: no environment dump, no auth values, no tokens.
 
 ```bash
-sudo python3 tools/runner_account_check.py --policy docker-allowed   # before the change; runner service running
-sudo python3 tools/runner_account_check.py --policy docker-free      # after removing the docker group membership
+sudo python3 tools/runner_account_check.py --unit actions.runner.zabalack-attended --policy docker-allowed   # before the change; runner running
+sudo python3 tools/runner_account_check.py --unit actions.runner.zabalack-attended --policy docker-free      # after removing the docker group membership
 ```
 
 Run it as root while the runner service is running; a stopped runner yields
