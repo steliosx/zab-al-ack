@@ -414,3 +414,18 @@ def test_reference_and_policy_files_still_carry_no_approved_identities():
     assert 'verified' not in REFERENCE['ubuntu_packages']
     assert REFERENCE['selected']['fallback']['version'] is None
     assert len(ZABBIX_FPR) == 40 and ZABBIX_FPR.endswith(REFERENCE['ubuntu_packages']['expected_signing_key']['long_id'])
+
+
+@pytest.mark.parametrize('status, verdict', [
+    ('hold ok installed', 'CONFORMS'),
+    ('deinstall ok installed', 'DEVIATES'),
+    ('install ok half-configured', 'DEVIATES'),
+], ids=['held', 'removal-requested', 'half-configured'])
+def test_a_held_package_conforms_and_a_package_marked_for_removal_deviates(status, verdict):
+    # The qualification host holds its exact versions; dpkg then reports
+    # 'hold ok installed'. A package selected for removal is not a clean install.
+    record = conforming_record()
+    record['components']['php']['dpkg'].update(package_status=status)
+    result, deviations, _ = evaluate(record)
+    assert result == verdict
+    assert (verdict == 'CONFORMS') == (deviations == [])

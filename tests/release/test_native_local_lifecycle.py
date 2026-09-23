@@ -472,3 +472,32 @@ def test_pgbouncer_start_refuses_a_live_pid_file_before_touching_its_state(tmp_p
         native_local.pgbouncer_start(tmp_path / 'pgbouncer', state)
     assert (state / 'pgbouncer.pid').read_text() == f'{os.getpid()}\n' and (state / 'users.txt').exists()
     assert not (state / 'pgbouncer.ini').exists()
+
+
+@pytest.mark.parametrize('status, accepted', [
+    ('install ok installed', True),
+    ('hold ok installed', True),
+    ('deinstall ok installed', False),
+    ('install ok half-configured', False),
+    ('hold reinstreq half-installed', False),
+], ids=['installed', 'held', 'removal-requested', 'half-configured', 'reinstall-required'])
+def test_package_identity_accepts_a_held_package_and_refuses_partial_states(tmp_path, monkeypatch, status, accepted):
+    # The qualification host holds its exact package versions against unattended
+    # upgrades, so dpkg reports 'hold ok installed' for the reviewed binaries.
+    binary = tmp_path / 'postgres'
+    binary.write_bytes(b'synthetic executable')
+
+    def fake_run(argv, **kwargs):
+        if argv[0] == 'dpkg':
+            return subprocess.CompletedProcess(argv, 0, f'postgresql-18: {binary.resolve()}\n', '')
+        return subprocess.CompletedProcess(argv, 0, f'postgresql-18\t18.6-1.pgdg24.04+2\tamd64\t{status}', '')
+
+    monkeypatch.setattr(native_local.shutil, 'which', lambda name: '/usr/bin/' + name)
+    monkeypatch.setattr(native_local.subprocess, 'run', fake_run)
+    if accepted:
+        identity = native_local.package_identity(binary)
+        assert identity == {'kind': 'dpkg', 'package': 'postgresql-18', 'version': '18.6-1.pgdg24.04+2',
+                            'architecture': 'amd64', 'sha256': hashlib.sha256(b'synthetic executable').hexdigest()}
+    else:
+        with pytest.raises(RuntimeError, match='service package is not cleanly installed: postgresql-18'):
+            native_local.package_identity(binary)

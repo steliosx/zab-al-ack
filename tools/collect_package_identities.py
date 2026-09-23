@@ -528,7 +528,7 @@ def evaluate(record: dict, reference: dict, identities: dict) -> tuple[str, list
         expected_arch = 'all' if package in ARCH_ALL_PACKAGES else 'amd64'
         if dpkg.get('architecture') != expected_arch:
             deviations.append(f'{name}: architecture {dpkg.get("architecture")}, expected {expected_arch}')
-        if str(dpkg.get('package_status', '')).split()[-1:] != ['installed']:
+        if str(dpkg.get('package_status', '')).split() not in (['install', 'ok', 'installed'], ['hold', 'ok', 'installed']):
             deviations.append(f'{name}: dpkg status "{dpkg.get("package_status")}" is not installed')
         verification = dpkg.get('file_verification') if isinstance(dpkg.get('file_verification'), dict) else {}
         if verification.get('status') == 'OBSERVED' and not verification.get('payload_verified'):

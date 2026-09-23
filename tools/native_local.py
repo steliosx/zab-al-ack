@@ -123,7 +123,10 @@ def package_identity(binary: Path) -> dict:
                                    capture_output=True, text=True, timeout=30)
             if query.returncode == 0 and query.stdout.count('\t') == 3:
                 name, version, architecture, status = query.stdout.split('\t')
-                if status.strip() != 'install ok installed':
+                # A held package ('hold ok installed') is installed as cleanly as
+                # 'install ok installed'; the qualification host holds its exact
+                # versions. Anything else (removal requested, half-installed) refuses.
+                if status.split() not in (['install', 'ok', 'installed'], ['hold', 'ok', 'installed']):
                     raise RuntimeError('service package is not cleanly installed: ' + name)
                 return {'kind': 'dpkg', 'package': name, 'version': version, 'architecture': architecture, 'sha256': digest}
     return {'kind': 'unpackaged', 'sha256': digest}
