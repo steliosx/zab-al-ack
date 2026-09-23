@@ -1,5 +1,31 @@
 # Zab-al-ack changelog
 
+## Unreleased — corrections after the non-author review of `b57bebb` (Opus)
+
+Five corrective commits (O17–O21) layered on the reviewed `b57bebb`, which
+is not rewritten; each carries a regression that fails with its fix removed.
+Author verification only, not independent review or approval.
+
+- O17 (HIGH): inside a cycle the runner validates its execution evidence and
+  writes `PENDING_BINDING` (`provisional_status: PASS`, `native_lab.pending`),
+  never PASS; only the cycle, after an exit-0 run and a complete cleanup that
+  left the lab absent, sets PASS and validates the final bound record
+  (`final_evidence_validation_failed` and a non-zero exit otherwise). A
+  pending record, or a plain PASS from a bound runner, never validates.
+- O18: `pg_hba.conf` blanks are PostgreSQL's (space, TAB, CR) and records end
+  at `\n` only, matching PostgreSQL 18's `pg_hba_file_rules`.
+- O19: the only startup hook the runner check accepts is setuptools'
+  `distutils-precedence.pth` with the exact bytes of the pinned setuptools
+  83.0.0 wheel; a `.pth` a pinned distribution's consistent RECORD owns is
+  otherwise refused. The record states what is anchored
+  (`runner_environment`, `dependency_verification: record_consistency_only`).
+- O20: the Zabbix lab stages the packaged frontend without the package's
+  dangling `conf/zabbix.conf.php` link, which failed the first real cycle.
+- O21: the runner interpreter starts with its own `libpython` in the
+  deployment path's minimal environments (`LD_LIBRARY_PATH` derived from the
+  interpreter's prefix); the setup-python interpreter otherwise loaded the
+  system libpython and `_ctypes` failed to import.
+
 ## Unreleased — integration corrections after the re-review of `19d0fc7` (Opus)
 
 Sixteen corrective commits on Fable's corrected delivery `19d0fc7` (O1–O15

@@ -1153,6 +1153,20 @@ and the first cause and cannot signal a reused group id; bundle paths must
 be canonical; `pg_hba.conf` is read with PostgreSQL's quoting rules. The runner-host observations then ran on
 `zabalack-omarchy-x64`; their review and any identity approval are recorded separately (not yet).
 
+Corrections after the non-author review of `b57bebb` (2026-09-23; five
+commits O17–O21 layered on it, each with a regression that fails with its fix
+removed; author verification only): inside a cycle the runner writes
+`PENDING_BINDING` and only the cycle sets and validates the final PASS, so a
+pending record never validates and a real cycle can pass; `pg_hba.conf`
+blanks and record ends follow PostgreSQL; the only startup hook allowed is
+setuptools' pinned `distutils-precedence.pth`, and the record states that
+dependency files are checked for RECORD consistency only; the packaged
+frontend is staged without its dangling configuration link; the runner
+interpreter starts with its own `libpython` in the minimal child
+environments. A manual native `cycle` of the a18 wheel on
+`zabalack-omarchy-x64` then passed (4 passed, lab absent, final record
+validated); it is a verification run, not a qualification record.
+
 ## R28 — Docker requirements inventory and runner-account verification (prepared handoff)
 
 Numbered after R26 (Docker-free routine native CI) and R27 (native Zabbix
