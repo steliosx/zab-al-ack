@@ -9,7 +9,9 @@ that fails with its fix removed; no delivered commit is rewritten.
   fresh NOT_RUN record before any service work, rewrites it on every refusal
   with a public reason code, binds it to the cycle outcome afterwards (a
   failed stop, retention or wipe, or a lab left behind, turns a PASS into
-  FAIL with `cleanup_reason`; an interruption is FAIL), and
+  FAIL whose reason names the cleanup step: `lab_retention_failed`,
+  `lab_wipe_failed`, `lab_cleanup_refused` or `lab_cleanup_incomplete: final
+  state <state>`; an interruption is FAIL), and
   `tools/deployment_evidence.py` accepts a native-lab record only when the
   lab ended absent with the run at exit 0. `tools/run_deployment_e2e_local.py`
   sets `artifact_mode` and the supplied-wheel receipt only after the runner
