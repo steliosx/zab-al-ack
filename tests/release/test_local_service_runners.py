@@ -395,3 +395,36 @@ def test_prepare_runner_installs_the_wheel_without_bytecode(monkeypatch, tmp_pat
     module.prepare_runner(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl', tmp_path / 'venv')
     wheel_install = next(argv for argv in calls if str(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl') in argv)
     assert '--no-compile' in wheel_install and '--no-deps' in wheel_install
+    probe = next(argv for argv in calls if 'import zabalack, json; print(json.dumps(zabalack.__file__))' in argv)
+    assert probe[1] == '-B', 'the prepare probe must not write bytecode into the checked package'
+
+
+def test_the_installed_check_can_run_again_and_after_the_prepare_probe(tmp_path, monkeypatch):
+    """Review of O5 (HIGH-1): the probe imported the package without -B, writing the bytecode the next check refused."""
+    monkeypatch.setattr(local_e2e, 'ROOT', ROOT)
+    wheel, members = candidate_wheel(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl')
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    python, site = runner_environment(tmp_path)
+    install(site, members)
+    for _ in range(2):
+        assert local_e2e.check_runner(python, wheel, digest)['installed_bytes_verified'] is True
+    # What prepare-runner's own import probe runs:
+    subprocess.run([str(python), '-B', '-c', 'import zabalack'], cwd='/', check=True)
+    assert not (site / 'zabalack/__pycache__').exists()
+    assert local_e2e.check_runner(python, wheel, digest)['installed_bytes_verified'] is True
+
+
+def test_runner_site_paths_use_the_venv_scheme_not_the_platform_default(monkeypatch):
+    """Review of O5 (HIGH-2): under -S, Debian's default scheme names <venv>/local/lib/pythonX.Y/dist-packages."""
+    import supplied_wheel
+    seen = []
+    import sysconfig
+    real_get_path = sysconfig.get_path
+
+    def get_path(key, scheme=None, vars=None):
+        seen.append(scheme)
+        return real_get_path(key, scheme='venv', vars=vars)
+    monkeypatch.setattr(sysconfig, 'get_path', get_path)
+    paths = supplied_wheel.runner_site_paths()
+    assert seen and set(seen) == {'venv'}
+    assert all(Path(path).is_dir() and 'dist-packages' not in path for path in paths)

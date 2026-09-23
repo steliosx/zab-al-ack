@@ -176,8 +176,13 @@ def runner_site_paths():
     import sysconfig
     env = Path(sys.executable).parent.parent
     require((env / "pyvenv.cfg").is_file(), "runner_not_a_venv")
-    paths = [sysconfig.get_path(key, vars={"base": str(env), "platbase": str(env)}) for key in ("purelib", "platlib")]
-    return list(dict.fromkeys(paths))
+    # The venv scheme explicitly: without the site module sys.prefix is the base
+    # interpreter's, and Debian's patched default scheme would then name
+    # <venv>/local/lib/pythonX.Y/dist-packages (observed on Ubuntu 24.04).
+    paths = list(dict.fromkeys(sysconfig.get_path(key, scheme="venv", vars={"base": str(env), "platbase": str(env)})
+                               for key in ("purelib", "platlib")))
+    require(all(Path(path).is_dir() for path in paths), "runner_site_packages_missing")
+    return paths
 
 
 def check_installed(path, expected, checkout):

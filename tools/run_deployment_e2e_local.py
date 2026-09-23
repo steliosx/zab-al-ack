@@ -107,7 +107,8 @@ def check_runner(python: Path, wheel: Path, expected: str) -> dict:
     """
     require(python.is_file() and os.access(python, os.X_OK), "runner_python_missing")
     require(isinstance(expected, str) and re.fullmatch(r"[0-9a-f]{64}", expected), "invalid_wheel_digest")
-    result = subprocess.run([str(python), "-I", "-S", "-c", RUNNER_CHECK, str(ROOT / "tools"), str(wheel), expected, str(ROOT)],
+    # -B: the check imports the package; it must not write the bytecode it refuses.
+    result = subprocess.run([str(python), "-I", "-S", "-B", "-c", RUNNER_CHECK, str(ROOT / "tools"), str(wheel), expected, str(ROOT)],
                             cwd="/", env={"PATH": os.environ["PATH"], "TZ": "UTC"}, text=True, capture_output=True, timeout=120)
     if result.returncode != 0:
         last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else ""

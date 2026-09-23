@@ -325,7 +325,8 @@ def prepare_runner(wheel: Path, venv: Path) -> dict:
     # --no-compile: the installed-file check refuses bytecode in the package,
     # which would otherwise run instead of the verified source.
     subprocess.run([*pip, 'install', '--no-deps', '--no-compile', str(wheel)], check=True, timeout=300)
-    probe = subprocess.run([str(venv / 'bin/python'), '-c', 'import zabalack, json; print(json.dumps(zabalack.__file__))'],
+    # -B: importing the package here must not leave the bytecode the installed-file check refuses.
+    probe = subprocess.run([str(venv / 'bin/python'), '-B', '-c', 'import zabalack, json; print(json.dumps(zabalack.__file__))'],
                            cwd='/', capture_output=True, text=True, check=True, timeout=60)
     location = Path(json.loads(probe.stdout)).resolve()
     if location.is_relative_to(REPO.resolve()):
