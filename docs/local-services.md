@@ -198,7 +198,11 @@ or a directory holding `schema.sql`, `images.sql` and `data.sql`; a bare
 instance must observe the pinned reference version or the services file is
 refused. `zabbix_server` and the PHP server start with `PATH`, `TZ` and `LANG`
 only: an inherited `HTTPS_PROXY` would route the lab's loopback webhook
-deliveries elsewhere. Raw logs stay under
+deliveries elsewhere. The Zabbix lab cluster (loopback 55434) accepts
+`scram-sha-256` logins only, with its generated passwords kept in
+`.zabbix-lab/` at mode 0600, and its `stop` signals a component PID only when
+the live process matches the identity the lab recorded at start (see
+`lab/real_zabbix.md`). Raw logs stay under
 `.deployment-lab/`, `.zabbix-lab/` and `build/private/<project>/`.
 
 ## What the local records do not claim

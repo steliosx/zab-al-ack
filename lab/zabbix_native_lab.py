@@ -9,6 +9,20 @@ built-in server on the fixed lab API `http://127.0.0.1:58080/api_jsonrpc.php`
 (`lab/real_zabbix_safety.py`). Everything runs as an unprivileged user; when
 started as root the services run as `nobody`, as `lab/local_runtime.py` does.
 
+The cluster accepts `scram-sha-256` logins only: `initdb` takes the generated
+`lab_admin` password from a private file, the `zabbix` role is created with a
+second generated password, and both live only in the marked lab directory with
+mode 0600 (`pg-password`, `zabbix-db-password`); the generated `zabbix_server`
+and frontend configurations carrying the role password are mode 0600 as well.
+A cluster whose `pg_hba.conf` still allows unauthenticated access is refused.
+
+Every PID file is verified before a signal: the process must be the one the lab
+recorded when it started it (`<component>.identity.json`: PID, `comm`, start
+time and uid from `/proc`), run as the service identity and carry the lab's own
+arguments. A PID file naming anything else (a reused PID, a process another
+checkout started) is classified `foreign_pid`, reported, and never signalled;
+the lab does not signal process groups at all.
+
 Inputs name the installed artifacts; the pin in `lab/zabbix_reference.json`
 is enforced against the running frontend's `apiinfo.version`:
 
@@ -37,7 +51,9 @@ import os
 from pathlib import Path
 import pwd
 import re
+import secrets
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -60,6 +76,9 @@ DATABASE = 'zabbix'
 DB_USER = 'zabbix'
 PID_FILES = {'postgres': PGDATA / 'postmaster.pid', 'zabbix_server': STATE / 'zabbix_server.pid', 'php': STATE / 'php.pid'}
 PORTS = {'postgres': PG_PORT, 'zabbix_server': SERVER_PORT, 'php': WEB_PORT}
+ADMIN_USER = 'lab_admin'
+PASSWORD_FILE_NAMES = {ADMIN_USER: 'pg-password', DB_USER: 'zabbix-db-password'}
+ACCEPTED_AUTH_METHODS = ('scram-sha-256', 'reject')
 SERVER_CONF = '''# Generated disposable lab configuration; loopback only; never production.
 ListenIP=127.0.0.1
 ListenPort={server_port}
@@ -67,6 +86,7 @@ DBHost=127.0.0.1
 DBPort={pg_port}
 DBName={database}
 DBUser={db_user}
+DBPassword={db_password}
 LogFile={state}/zabbix_server.log
 LogFileSize=10
 PidFile={state}/zabbix_server.pid
@@ -94,7 +114,7 @@ $DB['SERVER']   = '127.0.0.1';
 $DB['PORT']     = '{pg_port}';
 $DB['DATABASE'] = '{database}';
 $DB['USER']     = '{db_user}';
-$DB['PASSWORD'] = '';
+$DB['PASSWORD'] = '{db_password}';
 $DB['SCHEMA']   = '';
 $DB['ENCRYPTION'] = false;
 $DB['DOUBLE_IEEE754'] = true;
@@ -155,6 +175,63 @@ def own(path: Path) -> None:
         os.chown(path, entry.pw_uid, entry.pw_gid)
 
 
+def service_user() -> dict:
+    """Popen arguments that run a service as the unprivileged lab identity when the lab runs as root."""
+    if os.geteuid() != 0:
+        return {}
+    entry = pwd.getpwnam('nobody')
+    return {'user': entry.pw_uid, 'group': entry.pw_gid, 'extra_groups': []}
+
+
+def expected_uid() -> int:
+    """The uid every lab service runs as."""
+    return pwd.getpwnam('nobody').pw_uid if os.geteuid() == 0 else os.geteuid()
+
+
+def write_private(path: Path, text: str) -> None:
+    """Write a file only the lab and its service identity read: mode 0600, owned by the service user when root."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as handle:
+        handle.write(text)
+    os.chmod(path, 0o600)
+    own(path)
+
+
+def password_file(role: str) -> Path:
+    return STATE / PASSWORD_FILE_NAMES[role]
+
+
+def password(role: str, *, create: bool = False) -> str:
+    """The generated synthetic password of a lab role, kept only in the marked lab directory with mode 0600."""
+    path = password_file(role)
+    if not path.is_file():
+        if not create:
+            raise SystemExit(f'Zabbix lab password file missing: {path}; reset --wipe and start again')
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'w') as handle:
+            handle.write(secrets.token_urlsafe(32) + '\n')
+    os.chmod(path, 0o600)
+    value = path.read_text().strip()
+    if not value or not re.fullmatch(r'[A-Za-z0-9_-]+', value):
+        raise SystemExit(f'Zabbix lab password file is not a generated token: {path}')
+    return value
+
+
+def verify_authentication(pgdata: Path) -> None:
+    """Refuse a cluster whose pg_hba.conf allows a login without a scram password."""
+    try:
+        lines = (pgdata / 'pg_hba.conf').read_text().splitlines()
+    except OSError as error:
+        raise SystemExit(f'Zabbix lab cluster authentication unreadable: {error}') from error
+    for line in lines:
+        tokens = line.split('#', 1)[0].split()
+        if not tokens:
+            continue
+        if 'trust' in tokens or not any(method in tokens for method in ACCEPTED_AUTH_METHODS):
+            raise SystemExit('Zabbix lab cluster allows unauthenticated or non-scram local access (pg_hba.conf: '
+                             + ' '.join(tokens) + '); reset --wipe and start again')
+
+
 def port_listening(port: int) -> bool:
     with socket.socket() as sock:
         sock.settimeout(0.5)
@@ -168,14 +245,77 @@ def read_pid(path: Path) -> int | None:
         return None
 
 
-def pid_alive(pid: int) -> bool:
+def process_identity(pid: int) -> dict | None:
+    """What /proc records for a live process: comm, start time, real uid, state and argv; None when absent."""
+    proc = Path('/proc') / str(pid)
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+        stat = (proc / 'stat').read_text()
+        status = (proc / 'status').read_text()
+        argv = (proc / 'cmdline').read_bytes().decode(errors='replace').split('\0')
+    except OSError:
+        return None
+    head, _, tail = stat.rpartition(')')
+    fields = tail.split()
+    uid = [line.split()[1] for line in status.splitlines() if line.startswith('Uid:')]
+    if '(' not in head or len(fields) < 20 or not uid:
+        return None
+    if argv and argv[-1] == '':
+        argv.pop()
+    return {'pid': pid, 'comm': head.split('(', 1)[1], 'starttime': int(fields[19]), 'uid': int(uid[0]),
+            'state': fields[0], 'argv': argv}
+
+
+def identity_file(name: str) -> Path:
+    return STATE / f'{name}.identity.json'
+
+
+def record_identity(name: str, pid: int) -> dict | None:
+    """Remember the process the lab started for a component; only that process is ever signalled."""
+    identity = process_identity(pid)
+    if identity is None:
+        return None
+    recorded = {key: identity[key] for key in ('pid', 'comm', 'starttime', 'uid')}
+    identity_file(name).write_text(json.dumps(recorded) + '\n')
+    return recorded
+
+
+def expected_argv(name: str) -> list[str]:
+    """Arguments the lab passes to a component; a verified process carries every one of them."""
+    return {'postgres': ['-D', str(PGDATA)], 'zabbix_server': ['-c', str(STATE / 'zabbix_server.conf')],
+            'php': ['-S', f'{WEB_HOST}:{WEB_PORT}', '-t', str(UI)]}[name]
+
+
+def verified_pid(name: str) -> tuple[dict | None, str]:
+    """The component's live identity, or None with why: stopped, unreadable_pid, stale_pid or foreign_pid.
+
+    A PID file is trusted only when the process it names is the one the lab
+    recorded at start (same PID, comm, start time and uid), runs as the
+    service identity and carries the lab's own arguments. A reused PID or a
+    process the lab never recorded is foreign and is never signalled.
+    """
+    path = PID_FILES[name]
+    if not path.exists():
+        return None, 'stopped'
+    pid = read_pid(path)
+    if pid is None:
+        return None, 'unreadable_pid'
+    identity = process_identity(pid)
+    if identity is None or identity['state'] == 'Z':
+        return None, 'stale_pid'
+    try:
+        recorded = json.loads(identity_file(name).read_text())
+    except (OSError, ValueError):
+        recorded = None
+    if not isinstance(recorded, dict) or any(recorded.get(key) != identity[key] for key in ('pid', 'comm', 'starttime', 'uid')):
+        return None, 'foreign_pid'
+    if identity['uid'] != expected_uid() or not all(argument in identity['argv'] for argument in expected_argv(name)):
+        return None, 'foreign_pid'
+    return identity, 'running'
+
+
+def process_gone(identity: dict) -> bool:
+    current = process_identity(identity['pid'])
+    return current is None or current['state'] == 'Z' or current['starttime'] != identity['starttime']
 
 
 def inspect() -> dict:
@@ -191,34 +331,27 @@ def inspect() -> dict:
         record['state'] = 'unmarked'
         record['detail'] = 'existing .zabbix-lab directory without the isolated-lab marker'
         return record
-    live, stale, unreadable = [], [], []
-    for name, path in PID_FILES.items():
-        if not path.exists():
-            record['components'][name] = 'stopped'
-            continue
-        pid = read_pid(path)
-        if pid is None:
-            unreadable.append(name)
-            record['components'][name] = 'unreadable_pid'
-        elif pid_alive(pid):
-            live.append(name)
-            record['components'][name] = 'running'
-        else:
-            stale.append(name)
-            record['components'][name] = 'stale_pid'
+    live, stale, foreign, unreadable = [], [], [], []
+    for name in PID_FILES:
+        identity, classification = verified_pid(name)
+        record['components'][name] = classification
+        buckets = {'running': live, 'stale_pid': stale, 'foreign_pid': foreign, 'unreadable_pid': unreadable}
+        if classification in buckets:
+            buckets[classification].append(name)
     if unreadable:
         record['detail'] = 'unreadable PID file: ' + ','.join(unreadable)
         return record
-    foreign = [name for name, on in listening.items() if on and name not in live]
-    if foreign:
-        record['detail'] = 'lab port in use by something other than the marked component: ' + ','.join(foreign)
+    busy = [name for name, on in listening.items() if on and name not in live]
+    if busy:
+        record['detail'] = 'lab port in use by something other than the marked component: ' + ','.join(busy)
         return record
     if live:
         record['state'] = 'running'
         record['detail'] = 'components running: ' + ','.join(live)
     else:
         record['state'] = 'stopped'
-        record['detail'] = 'no component running' + ('; stale PID file: ' + ','.join(stale) if stale else '')
+        record['detail'] = 'no component running' + ('; stale PID file: ' + ','.join(stale) if stale else '') + (
+            '; PID file names a process the lab did not record (never signalled): ' + ','.join(foreign) if foreign else '')
     return record
 
 
@@ -260,64 +393,87 @@ def schema_sql(schema: Path) -> bytes:
     return schema.read_bytes()
 
 
-def psql(paths: dict[str, Path], database: str, sql: str, *, stdin: bytes | None = None) -> subprocess.CompletedProcess:
-    command = [str(paths['pg_bin'] / 'psql'), '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-p', str(PG_PORT),
-               '-U', 'lab_admin', '-d', database]
+def psql_command(paths: dict[str, Path], user: str, database: str, *arguments: str) -> list[str]:
+    return [str(paths['pg_bin'] / 'psql'), '-X', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-p', str(PG_PORT),
+            '-U', user, '-d', database, *arguments]
+
+
+def psql_env(user: str) -> dict[str, str]:
+    """psql authenticates with the stored role password; it never appears on a command line."""
+    return {'PGPASSWORD': password(user), 'PATH': os.environ.get('PATH', '/usr/sbin:/usr/bin:/sbin:/bin')}
+
+
+def psql(paths: dict[str, Path], database: str, sql: str | None = None, *, user: str = ADMIN_USER,
+         stdin: bytes | None = None) -> subprocess.CompletedProcess:
     if stdin is None:
-        return run([*command, '-c', sql])
-    return subprocess.run(unprivileged([*command, '-f', '-']), input=stdin, check=True, capture_output=True)
+        return run(psql_command(paths, user, database, '-q', '-c', sql or ''), env=psql_env(user))
+    return subprocess.run(unprivileged(psql_command(paths, user, database, '-q', '-f', '-')), input=stdin, check=True,
+                          capture_output=True, env=psql_env(user))
+
+
+def query(paths: dict[str, Path], user: str, database: str, sql: str) -> str:
+    return run(psql_command(paths, user, database, '-At', '-c', sql), env=psql_env(user)).stdout.strip()
 
 
 def start_postgres(paths: dict[str, Path]) -> None:
     if not (PGDATA / 'PG_VERSION').exists():
+        # initdb reads the generated superuser password from a private file the
+        # service user can read; the cluster then accepts scram logins only.
+        pwfile = STATE / 'initdb.pwfile'
+        write_private(pwfile, password(ADMIN_USER, create=True) + '\n')
         try:
-            result = run([str(paths['pg_bin'] / 'initdb'), '-D', str(PGDATA), '-U', 'lab_admin', '--auth-local=trust',
-                          '--auth-host=trust', '--encoding=UTF8', '--locale=C.UTF-8'])
+            result = run([str(paths['pg_bin'] / 'initdb'), '-D', str(PGDATA), '-U', ADMIN_USER, f'--pwfile={pwfile}',
+                          '--auth-local=scram-sha-256', '--auth-host=scram-sha-256', '--encoding=UTF8', '--locale=C.UTF-8'])
         except subprocess.CalledProcessError as error:
             (STATE / 'initdb.log').write_text((error.stdout or '') + (error.stderr or ''))
             raise SystemExit('Zabbix lab initdb failed:\n' + ((error.stdout or '') + (error.stderr or ''))[-2000:]) from error
+        finally:
+            pwfile.unlink(missing_ok=True)
         (STATE / 'initdb.log').write_text(result.stdout + result.stderr)
         own(STATE / 'initdb.log')
         with (PGDATA / 'postgresql.conf').open('a') as handle:
-            handle.write(f"\n# Isolated Zabbix lab only; never copy authentication to production.\nlisten_addresses='127.0.0.1'\n"
-                         f"port={PG_PORT}\nunix_socket_directories=''\nmax_connections=100\nshared_buffers='128MB'\n"
+            handle.write(f"\n# Isolated Zabbix lab only; loopback, scram logins; never copy authentication to production.\n"
+                         f"listen_addresses='127.0.0.1'\nport={PG_PORT}\nunix_socket_directories=''\n"
+                         "password_encryption='scram-sha-256'\nmax_connections=100\nshared_buffers='128MB'\n"
                          "logging_collector=off\nlog_statement='none'\n")
-    if run([str(paths['pg_bin'] / 'pg_ctl'), '-D', str(PGDATA), 'status'], check=False).returncode != 0:
+    verify_authentication(PGDATA)
+    identity, classification = verified_pid('postgres')
+    if identity is None:
+        if classification == 'foreign_pid':
+            raise SystemExit('Zabbix lab postmaster.pid names a process that is not the recorded lab postmaster; '
+                             'it is never signalled: stop it yourself or reset --wipe')
         result = run([str(paths['pg_bin'] / 'pg_ctl'), '-D', str(PGDATA), '-l', str(STATE / 'postgres.log'),
                       '-o', '-c unix_socket_directories=', '-w', 'start'], check=False)
         if result.returncode:
             raise SystemExit('Zabbix lab PostgreSQL start failed:\n' + (result.stdout + result.stderr)[-2000:])
+        pid = read_pid(PID_FILES['postgres'])
+        if pid is None or record_identity('postgres', pid) is None or verified_pid('postgres')[0] is None:
+            raise SystemExit('Zabbix lab PostgreSQL started but its postmaster.pid does not name the lab postmaster')
     if not wait_until(lambda: port_listening(PG_PORT), 30):
         raise SystemExit('Zabbix lab PostgreSQL is not listening')
 
 
 def ensure_database(paths: dict[str, Path]) -> bool:
     """Create role and database when absent and load the schema once; True when loaded now."""
-    roles = run([str(paths['pg_bin'] / 'psql'), '-X', '-At', '-h', '127.0.0.1', '-p', str(PG_PORT), '-U', 'lab_admin', '-d', 'postgres',
-                 '-c', f"SELECT 1 FROM pg_roles WHERE rolname='{DB_USER}'"]).stdout.strip()
-    if roles != '1':
-        psql(paths, 'postgres', f'CREATE ROLE {DB_USER} LOGIN')
-    databases = run([str(paths['pg_bin'] / 'psql'), '-X', '-At', '-h', '127.0.0.1', '-p', str(PG_PORT), '-U', 'lab_admin', '-d', 'postgres',
-                     '-c', f"SELECT 1 FROM pg_database WHERE datname='{DATABASE}'"]).stdout.strip()
-    if databases != '1':
+    if query(paths, ADMIN_USER, 'postgres', f"SELECT 1 FROM pg_roles WHERE rolname='{DB_USER}'") != '1':
+        # The role password travels on psql's stdin, never on a command line.
+        statement = f"CREATE ROLE {DB_USER} LOGIN PASSWORD '{password(DB_USER, create=True)}';\n"
+        psql(paths, 'postgres', stdin=statement.encode())
+    if query(paths, ADMIN_USER, 'postgres', f"SELECT 1 FROM pg_database WHERE datname='{DATABASE}'") != '1':
         psql(paths, 'postgres', f'CREATE DATABASE {DATABASE} OWNER {DB_USER} ENCODING UTF8')
-    loaded = run([str(paths['pg_bin'] / 'psql'), '-X', '-At', '-h', '127.0.0.1', '-p', str(PG_PORT), '-U', DB_USER, '-d', DATABASE,
-                  '-c', "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='config'"]).stdout.strip()
-    if loaded == '1':
+    if query(paths, DB_USER, DATABASE, "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='config'") == '1':
         return False
     sql = schema_sql(paths['schema'])
     (STATE / 'schema.sha256').write_text(hashlib.sha256(sql).hexdigest() + '\n')
-    command = [str(paths['pg_bin'] / 'psql'), '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-p', str(PG_PORT),
-               '-U', DB_USER, '-d', DATABASE, '-f', '-']
-    result = subprocess.run(unprivileged(command), input=sql, capture_output=True)
+    result = subprocess.run(unprivileged(psql_command(paths, DB_USER, DATABASE, '-q', '-f', '-')), input=sql,
+                            capture_output=True, env=psql_env(DB_USER))
     (STATE / 'schema-load.log').write_bytes(result.stdout + result.stderr)
     if result.returncode:
         raise SystemExit('Zabbix lab schema load failed; see .zabbix-lab/schema-load.log')
     # zabbix_server refuses a database whose users table is empty; a bare
     # schema.sql (tables only) is not an input, the packaged server.sql.gz or
     # the schema directory with images.sql and data.sql is.
-    users = run([str(paths['pg_bin'] / 'psql'), '-X', '-At', '-h', '127.0.0.1', '-p', str(PG_PORT), '-U', DB_USER, '-d', DATABASE,
-                 '-c', 'SELECT count(*) FROM users']).stdout.strip()
+    users = query(paths, DB_USER, DATABASE, 'SELECT count(*) FROM users')
     if users in ('', '0'):
         raise SystemExit('Zabbix schema loaded without its initial data (users table empty): ZABALACK_ZABBIX_SCHEMA must be the '
                          'packaged server.sql.gz or the directory holding schema.sql, images.sql and data.sql')
@@ -325,8 +481,7 @@ def ensure_database(paths: dict[str, Path]) -> bool:
 
 
 def component_alive(name: str) -> bool:
-    pid = read_pid(PID_FILES[name])
-    return pid is not None and pid_alive(pid)
+    return verified_pid(name)[0] is not None
 
 
 def start_server(paths: dict[str, Path]) -> None:
@@ -335,20 +490,24 @@ def start_server(paths: dict[str, Path]) -> None:
     (STATE / 'run').mkdir(exist_ok=True)
     own(STATE / 'run')
     conf = STATE / 'zabbix_server.conf'
-    conf.write_text(SERVER_CONF.format(server_port=SERVER_PORT, pg_port=PG_PORT, database=DATABASE, db_user=DB_USER, state=STATE))
-    own(conf)
+    write_private(conf, SERVER_CONF.format(server_port=SERVER_PORT, pg_port=PG_PORT, database=DATABASE, db_user=DB_USER,
+                                           db_password=password(DB_USER), state=STATE))
     result = run([str(paths['zabbix_server']), '-c', str(conf)], check=False, env=service_env())
     if result.returncode:
         raise SystemExit('zabbix_server failed to start:\n' + (result.stdout + result.stderr)[-2000:])
     if not wait_until(lambda: port_listening(SERVER_PORT), 60):
         raise SystemExit('zabbix_server is not listening on the lab port; see .zabbix-lab/zabbix_server.log')
+    pid = read_pid(PID_FILES['zabbix_server'])
+    if pid is None or record_identity('zabbix_server', pid) is None or verified_pid('zabbix_server')[0] is None:
+        raise SystemExit('zabbix_server is listening but its PID file does not name the lab server process')
 
 
 def stage_frontend(paths: dict[str, Path]) -> None:
     if not (UI / 'api_jsonrpc.php').exists():
         shutil.copytree(paths['ui'], UI, symlinks=False, dirs_exist_ok=True)
     (UI / 'conf').mkdir(exist_ok=True)
-    (UI / 'conf/zabbix.conf.php').write_text(FRONTEND_CONF.format(pg_port=PG_PORT, database=DATABASE, db_user=DB_USER, server_port=SERVER_PORT))
+    write_private(UI / 'conf/zabbix.conf.php', FRONTEND_CONF.format(pg_port=PG_PORT, database=DATABASE, db_user=DB_USER,
+                                                                    db_password=password(DB_USER), server_port=SERVER_PORT))
     if os.geteuid() == 0:
         for path in (UI, *UI.rglob('*')):
             own(path)
@@ -358,10 +517,13 @@ def start_frontend(paths: dict[str, Path]) -> None:
     if component_alive('php'):
         return
     log = (STATE / 'php.log').open('a')
-    process = subprocess.Popen(unprivileged([str(paths['php']), *PHP_INI, '-S', f'{WEB_HOST}:{WEB_PORT}', '-t', str(UI)]),
-                               stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=service_env())
+    # Started directly as the service identity (no wrapper process), so the
+    # PID file names the PHP server itself and its identity can be recorded.
+    process = subprocess.Popen([str(paths['php']), *PHP_INI, '-S', f'{WEB_HOST}:{WEB_PORT}', '-t', str(UI)],
+                               stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=service_env(), **service_user())
     (STATE / 'php.pid').write_text(f'{process.pid}\n')
     own(STATE / 'php.pid')
+    record_identity('php', process.pid)
     if not wait_until(lambda: port_listening(WEB_PORT), 30):
         process.kill()
         raise SystemExit('PHP built-in server is not listening; see .zabbix-lab/php.log')
@@ -409,30 +571,45 @@ def status_record(paths: dict[str, Path], observed_api: str | None) -> dict:
     return record
 
 
+def unverified(classification: str) -> dict:
+    outcome = {'status': 'NOT_RUNNING', 'pid_file': classification}
+    if classification == 'foreign_pid':
+        outcome['detail'] = 'PID file names a process the lab did not record (reused PID or foreign process); not signalled'
+    return outcome
+
+
+def stop_component(name: str, timeout: float) -> dict:
+    """SIGTERM the verified component process and wait for it; an unverified PID file is never signalled."""
+    identity, classification = verified_pid(name)
+    if identity is None:
+        return unverified(classification)
+    try:
+        os.kill(identity['pid'], signal.SIGTERM)
+    except ProcessLookupError:
+        return {'status': 'STOPPED', 'pid': identity['pid']}
+    except PermissionError:
+        return {'status': 'FAILED', 'pid': identity['pid'], 'detail': 'not permitted to signal the component'}
+    stopped = wait_until(lambda: process_gone(identity), timeout)
+    return {'status': 'STOPPED' if stopped else 'FAILED', 'pid': identity['pid']}
+
+
 def stop_all(paths: dict[str, Path]) -> dict:
-    outcomes: dict[str, dict] = {}
-    pid = read_pid(STATE / 'php.pid')
-    if pid is not None and pid_alive(pid):
-        try:
-            os.killpg(pid, 15)
-        except (ProcessLookupError, PermissionError):
-            os.kill(pid, 15)
-        outcomes['php'] = {'status': 'STOPPED' if wait_until(lambda: not pid_alive(pid), 15) else 'FAILED'}
-    else:
-        outcomes['php'] = {'status': 'NOT_RUNNING'}
+    outcomes: dict[str, dict] = {'php': stop_component('php', 15)}
     if outcomes['php']['status'] != 'FAILED':
-        (STATE / 'php.pid').unlink(missing_ok=True)
-    pid = read_pid(STATE / 'zabbix_server.pid')
-    if pid is not None and pid_alive(pid):
-        os.kill(pid, 15)
-        outcomes['zabbix_server'] = {'status': 'STOPPED' if wait_until(lambda: not pid_alive(pid), 60) else 'FAILED'}
-    else:
-        outcomes['zabbix_server'] = {'status': 'NOT_RUNNING'}
-    if (PGDATA / 'PG_VERSION').exists() and run([str(paths['pg_bin'] / 'pg_ctl'), '-D', str(PGDATA), 'status'], check=False).returncode == 0:
+        PID_FILES['php'].unlink(missing_ok=True)
+        identity_file('php').unlink(missing_ok=True)
+    outcomes['zabbix_server'] = stop_component('zabbix_server', 60)
+    if outcomes['zabbix_server']['status'] == 'STOPPED':
+        identity_file('zabbix_server').unlink(missing_ok=True)
+    identity, classification = verified_pid('postgres')
+    if identity is not None:
         result = run([str(paths['pg_bin'] / 'pg_ctl'), '-D', str(PGDATA), '-m', 'fast', '-w', 'stop'], check=False)
-        outcomes['postgres'] = {'status': 'STOPPED' if result.returncode == 0 else 'FAILED', 'exit_code': result.returncode}
+        outcomes['postgres'] = {'status': 'STOPPED' if result.returncode == 0 else 'FAILED', 'exit_code': result.returncode,
+                                'pid': identity['pid']}
+        if result.returncode == 0:
+            identity_file('postgres').unlink(missing_ok=True)
     else:
-        outcomes['postgres'] = {'status': 'NOT_RUNNING'}
+        outcomes['postgres'] = unverified(classification)
     return outcomes
 
 
@@ -446,6 +623,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error('mutation requires --isolated-lab')
     if args.command == 'plan':
         print(json.dumps({'directory': str(STATE.relative_to(REPO)), 'postgres_port': PG_PORT, 'server_port': SERVER_PORT,
+                          'postgres_auth': 'scram-sha-256 only; generated passwords stay in the lab directory (mode 0600)',
                           'api_url': API_URL, 'reference': reference()['version'], 'starts_services': False}, indent=2))
         return 0
     if args.command == 'state':

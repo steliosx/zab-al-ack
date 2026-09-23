@@ -21,6 +21,21 @@ packaged frontend served by the PHP built-in server at the fixed lab API
 user (as `nobody` when started as root). The built-in server is a loopback lab
 convenience, not an official Zabbix deployment configuration.
 
+The cluster accepts `scram-sha-256` logins only. `initdb` takes the generated
+`lab_admin` password from a private file, the `zabbix` role is created with a
+second generated password, and both stay in the marked directory with mode 0600
+(`.zabbix-lab/pg-password`, `.zabbix-lab/zabbix-db-password`); the generated
+`zabbix_server.conf` and `zabbix.conf.php` carrying the role password are mode
+0600 too, psql receives the password through its environment and never on a
+command line, and a cluster whose `pg_hba.conf` allows `trust` or a non-scram
+method is refused at start. Each component the lab starts is recorded
+(`.zabbix-lab/<component>.identity.json`: PID, `comm`, start time and uid from
+`/proc`); `stop` signals a PID only when the live process still matches that
+record, runs as the service identity and carries the lab's own arguments.
+Anything else is reported as `foreign_pid` (a reused PID, a process another
+checkout started), is never signalled, and `start` refuses a `postmaster.pid`
+in that state; the lab never signals a process group.
+
 ```bash
 export ACK_LAB_PG_BIN=/usr/lib/postgresql/18/bin
 export ZABALACK_ZABBIX_SERVER=/usr/sbin/zabbix_server ZABALACK_ZABBIX_UI=/usr/share/zabbix

@@ -1,16 +1,22 @@
-"""lab/zabbix_native_lab.py: state classification, refusals and generated configuration (R27).
+"""lab/zabbix_native_lab.py: state classification, refusals, generated configuration, scram authentication
+and PID identity verification (R27, R29).
 
-Every service, PID and port is mocked; no PostgreSQL, zabbix_server or PHP starts.
+Every service and port is mocked; no PostgreSQL, zabbix_server or PHP starts. The PID identity tests
+use real throwaway sleeper processes so `/proc` is read for real.
 """
 import importlib.util
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
+import sys
+import time
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+SLEEPER = 'import time\ntime.sleep(120)\n'
 
 
 @pytest.fixture
@@ -33,13 +39,42 @@ def lab(tmp_path, monkeypatch):
 def marked(lab, *, initialised=True):
     lab.STATE.mkdir()
     lab.MARKER.write_text('marker\n')
+    lab.password('lab_admin', create=True)
+    lab.password('zabbix', create=True)
     if initialised:
         lab.PGDATA.mkdir()
         (lab.PGDATA / 'PG_VERSION').write_text('18\n')
+        (lab.PGDATA / 'pg_hba.conf').write_text('# lab\nlocal all all scram-sha-256\nhost all all 127.0.0.1/32 scram-sha-256\n')
 
 
 def tree(root):
     return sorted((str(path.relative_to(root)), path.read_bytes() if path.is_file() else None) for path in root.rglob('*'))
+
+
+def live(lab, monkeypatch, name, pid=None):
+    """Make `name` a verified running component: PID file, recorded identity, and the lab's expectations met."""
+    pid = os.getpid() if pid is None else pid
+    lab.PID_FILES[name].write_text(f'{pid}\n')
+    assert lab.record_identity(name, pid) is not None
+    monkeypatch.setattr(lab, 'expected_uid', lambda: lab.process_identity(pid)['uid'])
+    monkeypatch.setattr(lab, 'expected_argv', lambda component: [])
+
+
+@pytest.fixture
+def sleeper():
+    """A real process in its own session, with the lab's PHP arguments on its command line."""
+    started = []
+
+    def start(*extra):
+        process = subprocess.Popen([sys.executable, '-c', SLEEPER, *extra], start_new_session=True,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        started.append(process)
+        return process
+    yield start
+    for process in started:
+        if process.poll() is None:
+            process.kill()
+        process.wait(10)
 
 
 @pytest.mark.parametrize('layout,pids,listening,expected', [
@@ -53,16 +88,28 @@ def tree(root):
     ('marked', {'zabbix_server': 'dead'}, {'zabbix_server': True}, 'ambiguous'),
     ('marked', {'php': 'garbage'}, {}, 'ambiguous'),
     ('marked', {}, {'postgres': True}, 'ambiguous'),
+    ('marked', {'php': 'reused'}, {}, 'stopped'),
+    ('marked', {'php': 'reused'}, {'php': True}, 'ambiguous'),
+    ('marked', {'zabbix_server': 'unrecorded'}, {'zabbix_server': True}, 'ambiguous'),
 ], ids=['absent', 'port-without-lab', 'unmarked', 'stopped', 'server-running', 'two-running', 'stale-pid',
-        'stale-pid-port-busy', 'unreadable-pid', 'foreign-listener'])
-def test_inspect_classifies_the_lab_without_touching_it(lab, tmp_path, monkeypatch, layout, pids, listening, expected):
+        'stale-pid-port-busy', 'unreadable-pid', 'foreign-listener', 'reused-pid', 'reused-pid-port-busy', 'unrecorded-pid'])
+def test_inspect_classifies_the_lab_without_touching_it(lab, tmp_path, monkeypatch, sleeper, layout, pids, listening, expected):
     if layout == 'unmarked':
         lab.STATE.mkdir()
         (lab.STATE / 'stranger').write_text('not ours')
     elif layout == 'marked':
         marked(lab)
+    foreign = []
     for name, kind in pids.items():
-        lab.PID_FILES[name].write_text({'alive': f'{os.getpid()}\n', 'dead': '999999\n', 'garbage': 'x\n'}[kind])
+        if kind == 'alive':
+            live(lab, monkeypatch, name)
+        elif kind == 'reused':
+            foreign.append(sleeper())                      # a live process the lab never recorded holds the PID
+            lab.PID_FILES[name].write_text(f'{foreign[-1].pid}\n')
+        elif kind == 'unrecorded':
+            lab.PID_FILES[name].write_text(f'{os.getpid()}\n')  # live, but no recorded identity
+        else:
+            lab.PID_FILES[name].write_text({'dead': '999999\n', 'garbage': 'x\n'}[kind])
     monkeypatch.setattr(lab, 'port_listening', lambda port: listening.get(next(n for n, p in lab.PORTS.items() if p == port), False))
     before = tree(tmp_path)
     observed = lab.inspect()
@@ -71,6 +118,11 @@ def test_inspect_classifies_the_lab_without_touching_it(lab, tmp_path, monkeypat
     assert tree(tmp_path) == before
     if expected == 'running':
         assert all(observed['components'][name] == 'running' for name in pids)
+    for name, kind in pids.items():
+        if kind in ('reused', 'unrecorded'):
+            assert observed['components'][name] == 'foreign_pid'
+    for process in foreign:
+        assert process.poll() is None, 'inspect must not signal a foreign process'
 
 
 def test_state_and_plan_need_no_inputs_and_start_nothing(lab, monkeypatch, capsys):
@@ -130,7 +182,7 @@ def test_start_and_stop_refuse_unowned_or_ambiguous_state(lab, paths, monkeypatc
 
 def test_reset_refuses_a_running_lab_and_wipes_only_a_stopped_one(lab, paths, monkeypatch, capsys):
     marked(lab)
-    (lab.STATE / 'zabbix_server.pid').write_text(f'{os.getpid()}\n')
+    live(lab, monkeypatch, 'zabbix_server')
     monkeypatch.setattr(lab, 'port_listening', lambda port: port == lab.SERVER_PORT)
     monkeypatch.setattr(lab, 'inputs', lambda: paths)
     with pytest.raises(SystemExit, match='Refusing reset from state running'):
@@ -156,31 +208,134 @@ def test_stop_exit_code_reflects_the_observed_state_after_cleanup(lab, paths, mo
     monkeypatch.setattr(lab, 'run', run)
     assert lab.main(['stop', '--isolated-lab']) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out['cleanup'] == {'php': {'status': 'NOT_RUNNING'}, 'zabbix_server': {'status': 'NOT_RUNNING'},
-                              'postgres': {'status': 'NOT_RUNNING'}} and out['state']['state'] == 'stopped'
-    assert not (lab.STATE / 'php.pid').exists()
-    # A component that pg_ctl still reports running after the stop leaves exit 5.
+    assert out['cleanup'] == {'php': {'status': 'NOT_RUNNING', 'pid_file': 'stale_pid'},
+                              'zabbix_server': {'status': 'NOT_RUNNING', 'pid_file': 'stale_pid'},
+                              'postgres': {'status': 'NOT_RUNNING', 'pid_file': 'stopped'}} and out['state']['state'] == 'stopped'
+    assert not (lab.STATE / 'php.pid').exists() and calls == []
+    # The lab port still held after the stop leaves exit 5.
     monkeypatch.setattr(lab, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 0, '', ''))
     monkeypatch.setattr(lab, 'port_listening', lambda port: port == lab.PG_PORT)
-    (lab.PGDATA / 'postmaster.pid').write_text(f'{os.getpid()}\n')
+    live(lab, monkeypatch, 'postgres')
     assert lab.main(['stop', '--isolated-lab']) == 5
 
 
-def test_generated_configurations_are_loopback_only_and_keep_the_database_policy_default(lab, paths, monkeypatch):
+def mode(path):
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def test_generated_configurations_are_loopback_only_private_and_keep_the_database_policy_default(lab, paths, monkeypatch):
     marked(lab)
     monkeypatch.setattr(lab, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 0, '', ''))
     monkeypatch.setattr(lab, 'port_listening', lambda port: True)
+    # zabbix_server writes its PID file when it starts; the lab then records that process.
+    lab.PID_FILES['zabbix_server'].write_text(f'{os.getpid()}\n')
+    monkeypatch.setattr(lab, 'expected_uid', lambda: os.getuid())
+    monkeypatch.setattr(lab, 'expected_argv', lambda component: [])
     lab.start_server(paths)
     conf = (lab.STATE / 'zabbix_server.conf').read_text()
     assert 'ListenIP=127.0.0.1' in conf and f'ListenPort={lab.SERVER_PORT}' in conf and 'DBHost=127.0.0.1' in conf
     assert f'DBPort={lab.PG_PORT}' in conf and 'AllowRoot=0' in conf and 'AllowUnsupportedDBVersions' not in conf
-    assert 'DBPassword' not in conf
+    db_password = lab.password('zabbix')
+    assert f'DBPassword={db_password}\n' in conf and mode(lab.STATE / 'zabbix_server.conf') == 0o600
+    assert lab.password('lab_admin') not in conf, 'the services never carry the superuser password'
+    assert json.loads((lab.STATE / 'zabbix_server.identity.json').read_text())['pid'] == os.getpid()
     lab.stage_frontend(paths)
     front = (lab.UI / 'conf/zabbix.conf.php').read_text()
     assert "$DB['SERVER']   = '127.0.0.1';" in front and f"$DB['PORT']     = '{lab.PG_PORT}';" in front
+    assert f"$DB['PASSWORD'] = '{db_password}';" in front and mode(lab.UI / 'conf/zabbix.conf.php') == 0o600
     assert f"$ZBX_SERVER_PORT = '{lab.SERVER_PORT}';" in front and "$ZBX_SERVER      = '127.0.0.1';" in front
     assert (lab.UI / 'api_jsonrpc.php').exists() and (lab.UI / 'include/defines.inc.php').exists()
     assert lab.PHP_INI[lab.PHP_INI.index('-d') + 1] == 'memory_limit=128M' and 'max_execution_time=300' in lab.PHP_INI
+    for role in ('lab_admin', 'zabbix'):
+        assert mode(lab.password_file(role)) == 0o600 and lab.password_file(role).parent == lab.STATE
+    assert lab.password('lab_admin') != db_password
+
+
+def test_initdb_requires_scram_logins_and_keeps_the_generated_password_in_the_lab_directory(lab, paths, monkeypatch):
+    marked(lab, initialised=False)
+    calls, seen = [], {}
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        if command[0].endswith('initdb'):
+            pwfile = next(arg for arg in command if arg.startswith('--pwfile=')).split('=', 1)[1]
+            seen['pwfile'] = Path(pwfile).read_text()
+            seen['pwfile_mode'] = mode(Path(pwfile))
+            lab.PGDATA.mkdir()
+            (lab.PGDATA / 'PG_VERSION').write_text('18\n')
+            (lab.PGDATA / 'postgresql.conf').write_text('# generated\n')
+            (lab.PGDATA / 'pg_hba.conf').write_text('local all all scram-sha-256\nhost all all 127.0.0.1/32 scram-sha-256\n')
+        if command[-1] == 'start':
+            lab.PID_FILES['postgres'].write_text(f'{os.getpid()}\n')
+        return subprocess.CompletedProcess(command, 0, '', '')
+    monkeypatch.setattr(lab, 'run', run)
+    monkeypatch.setattr(lab, 'port_listening', lambda port: True)
+    monkeypatch.setattr(lab, 'expected_uid', lambda: os.getuid())
+    monkeypatch.setattr(lab, 'expected_argv', lambda component: [])
+    lab.start_postgres(paths)
+    initdb = calls[0][0]
+    assert initdb[0].endswith('initdb') and '--auth-host=scram-sha-256' in initdb and '--auth-local=scram-sha-256' in initdb
+    assert not any('trust' in arg for arg in initdb) and 'env' not in calls[0][1]
+    assert seen['pwfile'] == lab.password('lab_admin') + '\n' and seen['pwfile_mode'] == 0o600
+    assert not (lab.STATE / 'initdb.pwfile').exists(), 'the initdb password file is removed after use'
+    assert "password_encryption='scram-sha-256'" in (lab.PGDATA / 'postgresql.conf').read_text()
+    assert mode(lab.password_file('lab_admin')) == 0o600
+    assert [command[-1] for command, _ in calls] == ['--locale=C.UTF-8', 'start']
+    assert json.loads((lab.STATE / 'postgres.identity.json').read_text())['pid'] == os.getpid()
+
+
+@pytest.mark.parametrize('hba', ['host all all 127.0.0.1/32 trust', 'local all all trust', 'host all all 127.0.0.1/32 md5',
+                                 'host all all 127.0.0.1/32 scram-sha-256 # ok\nhost zabbix zabbix 127.0.0.1/32 trust'])
+def test_start_refuses_a_cluster_that_allows_unauthenticated_local_access(lab, paths, monkeypatch, hba):
+    marked(lab)
+    (lab.PGDATA / 'pg_hba.conf').write_text(hba + '\n')
+    monkeypatch.setattr(lab, 'run', lambda command, **kwargs: pytest.fail('nothing may start: ' + str(command)))
+    with pytest.raises(SystemExit, match='unauthenticated or non-scram'):
+        lab.start_postgres(paths)
+    (lab.PGDATA / 'pg_hba.conf').write_text('local all all scram-sha-256\nhost all all 127.0.0.1/32 scram-sha-256\n'
+                                             'host all all ::1/128 reject\n')
+    lab.verify_authentication(lab.PGDATA)
+
+
+def test_every_database_call_authenticates_with_the_stored_password_off_the_command_line(lab, paths, monkeypatch):
+    marked(lab)
+    calls, stdin_calls = [], []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        sql = command[-1]
+        if 'pg_roles' in sql or 'pg_database' in sql or 'pg_tables' in sql:
+            return subprocess.CompletedProcess(command, 0, '', '')
+        if 'FROM users' in sql:
+            return subprocess.CompletedProcess(command, 0, '3\n', '')
+        return subprocess.CompletedProcess(command, 0, '', '')
+
+    def subprocess_run(command, **kwargs):
+        stdin_calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, b'', b'')
+    monkeypatch.setattr(lab, 'run', run)
+    monkeypatch.setattr(lab.subprocess, 'run', subprocess_run)
+    assert lab.ensure_database(paths) is True
+    admin, zabbix = lab.password('lab_admin'), lab.password('zabbix')
+    for command, kwargs in calls:
+        user = command[command.index('-U') + 1]
+        assert set(kwargs['env']) == {'PGPASSWORD', 'PATH'} and kwargs['env']['PGPASSWORD'] == {'lab_admin': admin, 'zabbix': zabbix}[user]
+        assert admin not in ' '.join(command) and zabbix not in ' '.join(command)
+    role_creation, schema_load = stdin_calls
+    assert role_creation[1]['input'] == f"CREATE ROLE zabbix LOGIN PASSWORD '{zabbix}';\n".encode()
+    assert zabbix not in ' '.join(role_creation[0]) and role_creation[1]['env']['PGPASSWORD'] == admin
+    assert schema_load[0][schema_load[0].index('-U') + 1] == 'zabbix' and schema_load[1]['env']['PGPASSWORD'] == zabbix
+    users = [command[command.index('-U') + 1] for command, _ in calls]
+    assert users == ['lab_admin', 'lab_admin', 'lab_admin', 'zabbix', 'zabbix']  # role, database, create, tables, users
+
+
+def test_a_missing_password_file_is_named_not_regenerated(lab, paths, monkeypatch):
+    marked(lab)
+    lab.password_file('lab_admin').unlink()
+    monkeypatch.setattr(lab, 'run', lambda command, **kwargs: pytest.fail('psql must not run without its password'))
+    with pytest.raises(SystemExit, match='password file missing'):
+        lab.ensure_database(paths)
+    assert not lab.password_file('lab_admin').exists()
 
 
 def test_status_record_names_versions_identities_and_reference_match(lab, paths, monkeypatch):
@@ -242,6 +397,9 @@ def test_services_start_with_a_minimal_environment_without_inherited_proxy_setti
     marked(lab)
     for key in ('HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'NO_PROXY', 'ALL_PROXY', 'PGPASSWORD'):
         monkeypatch.setenv(key, 'inherited-value')
+    lab.PID_FILES['zabbix_server'].write_text(f'{os.getpid()}\n')   # written by zabbix_server once started
+    monkeypatch.setattr(lab, 'expected_uid', lambda: os.getuid())
+    monkeypatch.setattr(lab, 'expected_argv', lambda component: [])
     launched = {}
 
     def run(command, **kwargs):
@@ -267,6 +425,31 @@ def test_services_start_with_a_minimal_environment_without_inherited_proxy_setti
         env = launched[name]['env']
         assert set(env) == {'PATH', 'TZ', 'LANG'} and env['TZ'] == 'UTC'
         assert not any('proxy' in key.lower() for key in env)
+    assert 'PGPASSWORD' not in launched['server']['env'] and 'PGPASSWORD' not in launched['php']['env']
+    assert 'user' not in launched['php'], 'not root: no identity switch'
+
+
+def test_the_php_server_starts_directly_as_the_service_identity_when_root(lab, paths, monkeypatch):
+    marked(lab)
+    monkeypatch.setattr(lab.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(lab.os, 'chown', lambda path, uid, gid: None)
+    launched = {}
+
+    class Process:
+        pid = 4242
+
+    def popen(command, **kwargs):
+        launched['command'] = command
+        launched.update(kwargs)
+        return Process()
+    monkeypatch.setattr(lab.subprocess, 'Popen', popen)
+    monkeypatch.setattr(lab, 'wait_until', lambda predicate, timeout: True)
+    monkeypatch.setattr(lab, 'record_identity', lambda name, pid: {'pid': pid})
+    lab.start_frontend(paths)
+    nobody = lab.pwd.getpwnam('nobody')
+    assert launched['command'][0] == str(paths['php']) and 'runuser' not in launched['command']
+    assert launched['user'] == nobody.pw_uid and launched['group'] == nobody.pw_gid and launched['extra_groups'] == []
+    assert launched['start_new_session'] is True
 
 
 def test_inputs_are_required_and_named_when_absent(lab, monkeypatch):
@@ -279,7 +462,7 @@ def test_inputs_are_required_and_named_when_absent(lab, monkeypatch):
 
 def test_start_continues_a_partially_started_lab_without_restarting_live_components(lab, paths, monkeypatch):
     marked(lab)
-    (lab.STATE / 'zabbix_server.pid').write_text(f'{os.getpid()}\n')   # server already up
+    live(lab, monkeypatch, 'zabbix_server')   # server already up, recorded by the lab
     monkeypatch.setattr(lab, 'port_listening', lambda port: port == lab.SERVER_PORT)
     monkeypatch.setattr(lab, 'inputs', lambda: paths)
     steps = []
@@ -293,3 +476,94 @@ def test_start_continues_a_partially_started_lab_without_restarting_live_compone
     assert lab.main(['start', '--isolated-lab']) == 0
     assert steps == ['postgres', 'database', 'frontend-files', 'php']
     assert (lab.STATE / 'zabbix_server.pid').read_text() == f'{os.getpid()}\n'
+
+
+def test_stop_never_signals_a_pid_the_lab_did_not_record(lab, paths, monkeypatch, sleeper, capsys):
+    """A stale php.pid or zabbix_server.pid whose PID a foreign process now holds is reported, not signalled."""
+    marked(lab)
+    php_impostor = sleeper('-S', f'127.0.0.1:{lab.WEB_PORT}', '-t', str(lab.UI))   # even carrying the lab's arguments
+    server_impostor = sleeper()
+    (lab.STATE / 'php.pid').write_text(f'{php_impostor.pid}\n')
+    (lab.STATE / 'zabbix_server.pid').write_text(f'{server_impostor.pid}\n')
+    monkeypatch.setattr(lab, 'expected_uid', lambda: os.getuid())
+    monkeypatch.setattr(lab, 'inputs', lambda: paths)
+    monkeypatch.setattr(lab, 'run', lambda command, **kwargs: pytest.fail('pg_ctl must not run: ' + str(command)))
+    signalled, real_kill = [], os.kill
+    monkeypatch.setattr(lab.os, 'kill', lambda pid, sig: signalled.append((pid, sig)) if sig != 9 else real_kill(pid, sig))
+    monkeypatch.setattr(lab.os, 'killpg', lambda *args: pytest.fail(f'os.killpg called with {args}'))
+    observed = lab.inspect()
+    assert observed['state'] == 'stopped' and observed['components'] == {'postgres': 'stopped', 'zabbix_server': 'foreign_pid',
+                                                                          'php': 'foreign_pid'}
+    assert 'did not record' in observed['detail']
+    outcomes = lab.stop_all(paths)
+    assert outcomes['php'] == {'status': 'NOT_RUNNING', 'pid_file': 'foreign_pid', 'detail': outcomes['php']['detail']}
+    assert 'not signalled' in outcomes['php']['detail'] and outcomes['zabbix_server']['pid_file'] == 'foreign_pid'
+    assert php_impostor.poll() is None and server_impostor.poll() is None
+    assert lab.main(['stop', '--isolated-lab']) == 0
+    assert json.loads(capsys.readouterr().out)['state']['state'] == 'stopped'
+    assert php_impostor.poll() is None and server_impostor.poll() is None, 'the foreign processes outlive the stop'
+    assert signalled == []
+
+
+def test_start_refuses_a_postmaster_pid_file_the_lab_did_not_record(lab, paths, monkeypatch, sleeper):
+    marked(lab)
+    impostor = sleeper('-D', str(lab.PGDATA))
+    lab.PID_FILES['postgres'].write_text(f'{impostor.pid}\n')
+    monkeypatch.setattr(lab, 'expected_uid', lambda: os.getuid())
+    monkeypatch.setattr(lab, 'run', lambda command, **kwargs: pytest.fail('pg_ctl must not run: ' + str(command)))
+    with pytest.raises(SystemExit, match='not the recorded lab postmaster'):
+        lab.start_postgres(paths)
+    assert impostor.poll() is None
+    outcomes = lab.stop_all(paths)
+    assert outcomes['postgres']['pid_file'] == 'foreign_pid' and impostor.poll() is None
+
+
+@pytest.mark.parametrize('case', ['recorded', 'no-record', 'other-process-record', 'wrong-arguments', 'wrong-uid', 'dead'])
+def test_only_the_recorded_process_with_the_lab_arguments_and_identity_is_signalled(lab, paths, monkeypatch, sleeper, case):
+    marked(lab)
+    arguments = ['-S', f'127.0.0.1:{lab.WEB_PORT}', '-t', str(lab.UI)]
+    recorded = None
+    if case == 'other-process-record':
+        earlier = sleeper(*arguments)
+        recorded = lab.record_identity('php', earlier.pid)       # the lab recorded a different process...
+        earlier.kill()
+        earlier.wait(10)
+        time.sleep(0.05)                                         # ...started in an earlier clock tick
+    process = sleeper(*(['--other'] if case == 'wrong-arguments' else arguments))
+    (lab.STATE / 'php.pid').write_text(f'{process.pid}\n')
+    identity = lab.process_identity(process.pid)
+    monkeypatch.setattr(lab, 'expected_uid', lambda: identity['uid'] + (1 if case == 'wrong-uid' else 0))
+    if recorded is not None:
+        recorded['pid'] = process.pid                            # ...whose PID the current one now holds
+        assert recorded['starttime'] < identity['starttime'] and recorded['comm'] == identity['comm']
+        lab.identity_file('php').write_text(json.dumps(recorded))
+    elif case != 'no-record':
+        lab.record_identity('php', process.pid)
+    if case == 'dead':
+        process.kill()
+        process.wait(10)
+    live_identity, classification = lab.verified_pid('php')
+    expected = {'recorded': 'running', 'no-record': 'foreign_pid', 'other-process-record': 'foreign_pid',
+                'wrong-arguments': 'foreign_pid', 'wrong-uid': 'foreign_pid', 'dead': 'stale_pid'}[case]
+    assert classification == expected
+    outcome = lab.stop_component('php', 10)
+    if case == 'recorded':
+        assert live_identity['pid'] == process.pid and live_identity['starttime'] > 0
+        assert outcome == {'status': 'STOPPED', 'pid': process.pid} and process.wait(10) == -15
+    else:
+        assert outcome['status'] == 'NOT_RUNNING' and outcome['pid_file'] == expected
+        if case != 'dead':
+            assert process.poll() is None, 'never signalled'
+
+
+def test_process_identity_reads_proc_start_time_comm_uid_and_arguments(lab, sleeper):
+    process = sleeper('--marker')
+    identity = lab.process_identity(process.pid)
+    assert identity['pid'] == process.pid and identity['comm'].startswith('python') and identity['uid'] == os.getuid()
+    assert identity['argv'][-1] == '--marker' and identity['state'] in ('S', 'R') and isinstance(identity['starttime'], int)
+    stat_fields = Path(f'/proc/{process.pid}/stat').read_text().rpartition(')')[2].split()
+    assert identity['starttime'] == int(stat_fields[19])
+    process.kill()
+    process.wait(10)
+    assert lab.process_gone(identity)
+    assert lab.process_identity(2 ** 22 - 1) is None
