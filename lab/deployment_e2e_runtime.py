@@ -91,7 +91,8 @@ def wait_for_projection(admin, identity, event_id, worker):
 @contextmanager
 def child(command, name, env=None):
     # Explicit small child environment prevents inherited app/proxy config.
-    environment = {"PATH": os.environ["PATH"], "TZ": "UTC", "PYTHONUNBUFFERED": "1", "HOME": "/tmp"}
+    # PYTHONDONTWRITEBYTECODE: the supplied-wheel check refuses bytecode in the installed package.
+    environment = {"PATH": os.environ["PATH"], "TZ": "UTC", "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "HOME": "/tmp"}
     environment.update(env or {})
     with (PRIVATE / (name + ".log")).open("w") as output:
         process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=output, stderr=subprocess.STDOUT)

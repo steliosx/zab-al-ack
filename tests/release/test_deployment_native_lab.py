@@ -647,3 +647,50 @@ def test_an_unexpected_error_after_services_started_is_a_fail_not_a_not_run(lab,
     assert lab.module.main(CYCLE) == 1
     value = record(lab)
     assert value['status'] == 'FAIL' and value['reason'] == 'lab_error: RuntimeError'
+
+
+@pytest.mark.parametrize('stop', ['exit-without-report', 'component-failed'])
+def test_a_failed_zabbix_stop_is_never_read_as_a_clean_stop(lab, monkeypatch, stop):
+    """Review of O11: a non-zero exit with no report read as NOT_RUNNING, and FAILED items were ignored."""
+    cycle_environment(lab, monkeypatch, runner_exit=0)
+    real = lab.module.zabbix
+
+    def zabbix(command, *args, check=True):
+        result = real(command, *args, check=check)
+        if command != 'stop':
+            return result
+        if stop == 'exit-without-report':
+            return subprocess.CompletedProcess(command, 1, '', 'Traceback ...')
+        return subprocess.CompletedProcess(command, 0, json.dumps({'cleanup': {'php': {'status': 'STOPPED'}, 'zabbix_server': {'status': 'FAILED'}}}), '')
+    monkeypatch.setattr(lab.module, 'zabbix', zabbix)
+    assert lab.module.main(CYCLE) == 5
+    value = record(lab)
+    assert value['status'] == 'FAIL' and value['native_lab']['cleanup_complete'] is False
+    zabbix_outcome = value['native_lab']['cleanup']['cleanup']['zabbix']
+    assert zabbix_outcome == ('STOP_FAILED: exit 1' if stop == 'exit-without-report' else {'php': {'status': 'STOPPED'}, 'zabbix_server': {'status': 'FAILED'}})
+    assert value['native_lab']['cleanup']['cleanup']['postgres'] == {'status': 'STOPPED', 'exit_code': 0}
+
+
+def test_an_error_from_the_run_command_after_the_runner_started_is_a_fail(lab, monkeypatch):
+    """Review of O11: the standalone run command recorded an error after the runner executed as NOT_RUN."""
+    ready_layout(lab, monkeypatch)
+    marked(lab)
+    lab.zabbix.state = 'running'
+    monkeypatch.setattr(lab.module, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 0, 'postgres (PostgreSQL) 18.3\n', ''))
+    monkeypatch.setattr(lab.module, 'port_listening', lambda port: port == lab.module.PG_PORT)
+
+    def run_child(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 3600)
+    monkeypatch.setattr(lab.module, 'run_child', run_child)
+    code = lab.module.main(['run', '--isolated-lab', '--runner-python', '/venv/bin/python', '--wheel', '/dist/zabalack-0.1.0a18-py3-none-any.whl',
+                            '--wheel-sha256', 'f' * 64])
+    assert code == 1 and record(lab)['status'] == 'FAIL' and record(lab)['reason'] == 'lab_error: TimeoutExpired'
+
+
+def test_the_runner_and_its_lab_children_never_write_bytecode():
+    """Review of O10: pytest and the Flask child wrote zabalack/__pycache__ after the check, so a second run on the
+    same runner environment was refused as installed_package_bytecode."""
+    runner = (ROOT / 'tools/run_deployment_e2e_local.py').read_text()
+    runtime = (ROOT / 'lab/deployment_e2e_runtime.py').read_text()
+    assert '"PYTHONDONTWRITEBYTECODE": "1", "ACK_DEPLOYMENT_E2E"' in runner
+    assert '"PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "HOME": "/tmp"}' in runtime

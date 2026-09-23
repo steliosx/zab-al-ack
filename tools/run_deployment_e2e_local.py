@@ -243,7 +243,7 @@ def main(argv=None):
             with (private_logs / "reset.log").open("w") as log:
                 subprocess.run(shlex.split(args.reset_command), cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
         env = {"PATH": str(runner_python.parent) + os.pathsep + os.environ["PATH"], "HOME": "/tmp", "TZ": "UTC",
-               "PYTHONUNBUFFERED": "1", "ACK_DEPLOYMENT_E2E": "GENERATED_ISOLATED_PROJECT"}
+               "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "ACK_DEPLOYMENT_E2E": "GENERATED_ISOLATED_PROJECT"}
         with (private_logs / "pytest.log").open("w") as log:
             # pytest and the lab processes it spawns (Alerta, worker, TLS proxy) share one
             # session: a cancellation terminates the whole group before it propagates.

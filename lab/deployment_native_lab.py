@@ -414,15 +414,21 @@ def stop_lab(binaries: Path, observed: dict) -> tuple[int, dict]:
     # Each component is stopped on its own: an unreadable report from the Zabbix
     # lab's stop never prevents the PostgreSQL stop, and it is not a clean stop.
     try:
-        reported = json.loads(zabbix('stop', '--isolated-lab', check=False).stdout or '{}')
+        stopped = zabbix('stop', '--isolated-lab', check=False)
+        reported = json.loads(stopped.stdout or '{}')
         zabbix_outcome = reported.get('cleanup', 'NOT_RUNNING') if isinstance(reported, dict) else 'UNREADABLE_OUTPUT'
+        if stopped.returncode != 0:
+            # A refusal or traceback in the Zabbix lab prints no report; never read that as NOT_RUNNING.
+            zabbix_outcome = 'STOP_FAILED: exit ' + str(stopped.returncode)
     except ValueError:
         zabbix_outcome = 'UNREADABLE_OUTPUT'
     except (subprocess.SubprocessError, OSError) as error:  # a stop that timed out or could not run
         zabbix_outcome = 'STOP_FAILED: ' + type(error).__name__
     outcomes = {'zabbix': zabbix_outcome, 'postgres': stop_postgres(binaries)}
     after = inspect(binaries)
-    failed = isinstance(zabbix_outcome, str) and (zabbix_outcome == 'UNREADABLE_OUTPUT' or zabbix_outcome.startswith('STOP_FAILED'))
+    failed = ((isinstance(zabbix_outcome, str) and (zabbix_outcome == 'UNREADABLE_OUTPUT' or zabbix_outcome.startswith('STOP_FAILED')))
+              or (isinstance(zabbix_outcome, dict) and any(isinstance(item, dict) and item.get('status') not in ('STOPPED', 'NOT_RUNNING')
+                                                           for item in zabbix_outcome.values())))
     clean = after['state'] in ('stopped', 'absent') and not failed
     return (0 if clean else 5), {'cleanup': outcomes, 'state': after['state']}
 
@@ -621,6 +627,7 @@ def guarded(args, parser) -> int:
                 code, summary = cycle_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256,
                                           cancellation=cancellation, summary=summary)
             else:
+                summary['start'] = 'running lab (run command)'  # services exist: an error from here on is a FAIL
                 code = run_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
                 summary = {'run_exit_code': code, 'final_state': inspect(binaries)['state']}
         except SystemExit as error:
