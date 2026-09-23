@@ -4,7 +4,9 @@ The reference instance is the one exact patch in `lab/zabbix_reference.json`
 (R27; 7.0.31 at the time of writing, with its verified source facts, the
 Ubuntu 24.04 package identities to confirm and the fallback rule). The suite
 accepts any 7.0.x patch release and records the observed version; the recorder
-refuses a lab services record that does not match the pin.
+refuses a run whose observed `apiinfo.version` is not the pin, with or without
+a lab services record, and `lab/real_zabbix_prepare.py` refuses to prepare a
+fixture on an instance that is not the pin.
 No mocked result is permission, macro or notification evidence.
 
 ## Native disposable instance (no Docker): `lab/zabbix_native_lab.py`

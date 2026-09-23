@@ -5,6 +5,9 @@ Only --run owns an execution: importing arbitrary old JUnit with --junit is
 rejected. The runner binds the pre-execution tree, uses a fresh private report,
 checks the final tree and pytest exit code, and publishes only validated evidence.
 No prior description, version, token, fixture path or free-text label is inherited.
+A qualifying run observes exactly the pinned reference version
+(`lab/zabbix_reference.json`): the JUnit `zabbix_api_version` property must be
+present and equal to the pin whether or not a `--services-file` is supplied.
 """
 from __future__ import annotations
 import argparse
@@ -310,7 +313,14 @@ def main() -> int:
         if any(re.fullmatch(r'7\.0\.[0-9]+', value) is None for value in versions):
             return finish('FAIL', 'junit_version_property_invalid')
         record['observed_api_versions'] = versions
-        if 'services' in record and versions and versions != [record['services']['observed_api_version']]:
+        # The pin is enforced on the execution itself, with or without a
+        # services record: no version property, or any version other than the
+        # reference, is not a run against the reference.
+        if not versions:
+            return finish('FAIL', 'junit_version_property_missing')
+        if versions != [REFERENCE_VERSION]:
+            return finish('FAIL', 'observed_version_differs_from_pin')
+        if 'services' in record and versions != [record['services']['observed_api_version']]:
             return finish('FAIL', 'observed_version_differs_from_lab_services')
         record['status'] = 'PASS' if result.returncode == 0 and counts['passed'] == len(rows) else 'FAIL'
         record['recorded_at'] = utc_now()

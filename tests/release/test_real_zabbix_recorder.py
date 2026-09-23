@@ -14,9 +14,10 @@ import record_real_zabbix as recorder
 
 _REAL_SUBPROCESS_RUN = subprocess.run
 
+PIN = recorder.REFERENCE_VERSION
 PASS_XML = ('<testsuites><testsuite hostname="synthetic-host"><testcase '
             'classname="tests.real_zabbix.test_contract" name="test_T13_real_exact_original_event_read">'
-            '<properties><property name="zabbix_api_version" value="7.0.10"/></properties>'
+            '<properties><property name="zabbix_api_version" value="' + PIN + '"/></properties>'
             '</testcase></testsuite></testsuites>')
 
 
@@ -96,7 +97,7 @@ def test_recorder_owns_execution_uses_preexecution_digests_and_drops_old_claims(
     assert code == 0 and record['status'] == 'PASS' and record['pytest_exit_code'] == 0
     assert len(state['calls']) == 1 and record['code_digests'] == expected
     assert record['counts'] == {'passed': 1, 'failed': 0, 'skipped': 0}
-    assert record['observed_api_versions'] == ['7.0.10']
+    assert record['observed_api_versions'] == [PIN]
     assert not {'zabbix', 'fixture', 'executed', 'code_under_test'} & record.keys()
     assert 'hostname' not in (root / recorder.PUBLIC).read_text()
 
@@ -151,7 +152,7 @@ def test_no_xml_or_json_export_on_forbidden_material(run_lab, which):
     root, state, run, fixture, token, witness = run_lab
     value = {'fixture-path': fixture.name, 'token-path': token.name,
              'token-value': token.read_text().strip(), 'witness-value': witness.read_text().strip(),
-             'literal': 'forbidden-test-string', 'json-version': '7.0.10'}[which]
+             'literal': 'forbidden-test-string', 'json-version': PIN}[which]
     # The version lives in both the staged XML and the JSON metadata derived from it.
     if which != 'json-version':
         state['xml'] = PASS_XML.replace('</testcase>', '<system-out>' + value + '</system-out></testcase>')
@@ -434,7 +435,6 @@ def lab_status(reference='7.0.31', observed='7.0.31', match=True, **overrides):
 
 def test_lab_services_file_is_recorded_as_bounded_identities(run_lab, tmp_path):
     root, state, run, *_ = run_lab
-    state['xml'] = PASS_XML.replace('7.0.10', '7.0.31')
     services = tmp_path / 'lab-status.json'
     services.write_text(json.dumps(lab_status()))
     code, record = run('--run', '--services-file', str(services))
@@ -475,10 +475,27 @@ def test_invalid_lab_services_file_fails_before_any_execution(run_lab, tmp_path,
     assert state['calls'] == [] and 'services' not in record and not (root / recorder.PUBLIC).exists()
 
 
-def test_observed_version_must_agree_with_the_lab_services_record(run_lab, tmp_path):
+@pytest.mark.parametrize('with_services', [False, True], ids=['no-services-file', 'services-file'])
+@pytest.mark.parametrize('observed', ['other-patch', 'mixed', 'absent'])
+def test_the_pin_is_enforced_on_the_execution_itself(run_lab, tmp_path, observed, with_services):
+    """A run that did not observe exactly the pinned reference is FAIL, whether or not a services record was given."""
     root, state, run, *_ = run_lab
-    services = tmp_path / 'lab-status.json'
-    services.write_text(json.dumps(lab_status()))
-    code, record = run('--run', '--services-file', str(services))   # PASS_XML observed 7.0.10
-    assert code == 1 and record['status'] == 'FAIL' and record['reason'] == 'observed_version_differs_from_lab_services'
-    assert not (root / recorder.PUBLIC).exists()
+    other = PASS_XML.replace(PIN, '7.0.30')
+    if observed == 'other-patch':
+        state['xml'] = other
+    elif observed == 'mixed':
+        second = other[other.index('<testcase'):other.index('</testsuite>')].replace('T13', 'T14')
+        state['xml'] = PASS_XML.replace('</testsuite>', second + '</testsuite>')
+    else:
+        state['xml'] = PASS_XML.replace('<properties><property name="zabbix_api_version" value="' + PIN + '"/></properties>', '')
+    arguments = ['--run']
+    if with_services:
+        services = tmp_path / 'lab-status.json'
+        services.write_text(json.dumps(lab_status()))
+        arguments += ['--services-file', str(services)]
+    code, record = run(*arguments)
+    assert code == 1 and record['status'] == 'FAIL' and record['pytest_exit_code'] == 0
+    assert record['reason'] == ('junit_version_property_missing' if observed == 'absent' else 'observed_version_differs_from_pin')
+    assert not (root / recorder.PUBLIC).exists() and 'junit' not in record
+    assert record['observed_api_versions'] == {'other-patch': ['7.0.30'], 'mixed': ['7.0.30', PIN], 'absent': []}[observed]
+    assert len(state['calls']) == 1, 'the execution happened; its result is what was refused'

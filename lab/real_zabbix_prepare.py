@@ -2,7 +2,9 @@
 """Prepare the synthetic fixture for tests/real_zabbix on the disposable instance (R27).
 
 Runs only against the fixed lab API (`lab/real_zabbix_safety.LAB_API_URL`) with
-the instance's default `Admin` account, and refuses an instance that already
+the instance's default `Admin` account. Before logging in it reads
+`apiinfo.version` and refuses an instance that is not the pinned reference
+(`lab/zabbix_reference.json`); it also refuses an instance that already
 carries the synthetic host or an enabled action. It creates, in this order:
 
   * a cohort host group, a monitored host without interfaces, two trapper items
@@ -33,6 +35,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lab.real_zabbix_safety import LAB_API_URL  # noqa: E402
+from lab.zabbix_reference import VERSION as REFERENCE_VERSION  # noqa: E402
 from lab.zabbix_roles import role_rules, verify_role  # noqa: E402
 
 HOST = 'zabalack-real-lab-synthetic'
@@ -119,7 +122,18 @@ def raise_problem(rpc: Rpc, item_id: str, trigger_id: str, timeout: float = 120)
     raise PrepareError('problem not observed for trigger ' + trigger_id)
 
 
+def observed_reference(rpc: Rpc) -> str:
+    """The instance's apiinfo.version; anything but the pinned reference is refused before login."""
+    version = rpc('apiinfo.version', {}, authenticated=False)
+    if not isinstance(version, str) or re.fullmatch(r'7\.0\.[0-9]+', version) is None:
+        raise PrepareError('apiinfo.version result rejected')
+    if version != REFERENCE_VERSION:
+        raise PrepareError(f'instance reports Zabbix {version}, not the pinned reference {REFERENCE_VERSION}; not a qualifying lab')
+    return version
+
+
 def prepare(rpc: Rpc, private: Path) -> dict:
+    version = observed_reference(rpc)
     session = rpc('user.login', {'username': 'Admin', 'password': 'zabbix'}, authenticated=False)
     if not isinstance(session, str) or not re.fullmatch(r'[a-f0-9]{32}', session):
         raise PrepareError('login result rejected')
@@ -167,6 +181,7 @@ def prepare(rpc: Rpc, private: Path) -> dict:
         os.chmod(path, 0o600)
     fixture = {
         'isolated_lab': True, 'fresh_instance_no_notifications': True, 'url': LAB_API_URL, 'token_file': str(token_file),
+        'prepared_against_api_version': version,
         'source': {'zabbix_instance': 'isolated-real-zabbix', 'zabbix_event_id': source_event, 'zabbix_trigger_id': source_trigger},
         'cohort': {'host_ids': [host_id], 'group_ids': [group_id]},
         'outside_scope_source': {'zabbix_event_id': outside_event, 'group_ids': [outside_group], 'witness_token_file': str(witness_file)},
@@ -188,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({'status': 'FAIL', 'reason': str(error)[:300]}))
         return 1
     print(json.dumps({'status': 'PREPARED', 'fixture': str(args.private / 'fixture.json'),
+                      'api_version': fixture['prepared_against_api_version'], 'reference': REFERENCE_VERSION,
                       'source_event': fixture['source']['zabbix_event_id'],
                       'outside_event': fixture['outside_scope_source']['zabbix_event_id'],
                       'end_to_end_event': fixture['end_to_end']['zabbix_event_id']}))

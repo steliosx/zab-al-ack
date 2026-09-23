@@ -6,8 +6,11 @@ except the manifest itself, verifies each entry against the bytes on disk,
 creates `<name>.tar.gz` next to the directory and a detached `<name>.tar.gz.sha256`.
 `verify` re-reads a directory's manifest (every entry must match, every file
 must be listed, the manifest must not list itself) or an archive against its
-detached checksum. Symlinks and special files are refused, so a bundle never
-carries a path that points outside itself.
+detached checksum. Symlinks (files and directories) and special files are
+refused, so a bundle never carries a path that points outside itself. Inside an
+archive every member must sit under the one root directory that holds the
+manifest, member names must be unique, and the manifest is parsed with the same
+rules as on disk (no duplicate, absolute or traversing entries).
 """
 from __future__ import annotations
 
@@ -35,6 +38,10 @@ def regular_files(directory: Path) -> list[Path]:
     files = []
     for root, dirs, names in os.walk(directory):
         dirs.sort()
+        for name in dirs:
+            path = Path(root) / name
+            if stat.S_ISLNK(path.lstat().st_mode):
+                raise BundleError('symlink refused: ' + path.relative_to(directory).as_posix())
         for name in sorted(names):
             path = Path(root) / name
             info = path.lstat()
@@ -58,9 +65,10 @@ def write_manifest(directory: Path) -> Path:
     return manifest
 
 
-def read_manifest(manifest: Path) -> dict[str, str]:
+def parse_manifest(text: str) -> dict[str, str]:
+    """The one parser for a manifest on disk or inside an archive."""
     entries = {}
-    for number, line in enumerate(manifest.read_text().splitlines(), 1):
+    for number, line in enumerate(text.splitlines(), 1):
         if not line.strip():
             continue
         value, sep, name = line.partition('  ')
@@ -70,6 +78,10 @@ def read_manifest(manifest: Path) -> dict[str, str]:
             raise BundleError('duplicate manifest entry: ' + name)
         entries[name] = value
     return entries
+
+
+def read_manifest(manifest: Path) -> dict[str, str]:
+    return parse_manifest(manifest.read_text())
 
 
 def verify_directory(directory: Path) -> dict[str, str]:
@@ -118,6 +130,9 @@ def verify_archive(archive: Path) -> dict:
         raise BundleError('archive digest mismatch')
     with tarfile.open(archive, 'r:gz') as tar:
         members = tar.getmembers()
+        names = [member.name for member in members]
+        if len(set(names)) != len(names):
+            raise BundleError('duplicate archive member: ' + next(name for name in names if names.count(name) > 1))
         for member in members:
             if not (member.isfile() or member.isdir()) or member.name.startswith('/') or '..' in member.name.split('/'):
                 raise BundleError('unsafe archive member: ' + member.name)
@@ -125,12 +140,14 @@ def verify_archive(archive: Path) -> dict:
         if len(manifests) != 1:
             raise BundleError('archive must contain exactly one top-level manifest')
         root = manifests[0].name.split('/')[0]
-        entries = {}
-        for number, line in enumerate(tar.extractfile(manifests[0]).read().decode().splitlines(), 1):
-            value, sep, entry = line.partition('  ')
-            if not sep or len(value) != 64:
-                raise BundleError(f'malformed manifest line {number}')
-            entries[entry] = value
+        if not root or root == '.':
+            raise BundleError('archive root directory missing')
+        # Every member lives under the root that holds the manifest; a file
+        # beside that root can never satisfy an entry.
+        outside = [m.name for m in members if m.name != root and not m.name.startswith(root + '/')]
+        if outside:
+            raise BundleError('archive member outside the root ' + root + ': ' + outside[0])
+        entries = parse_manifest(tar.extractfile(manifests[0]).read().decode())
         if MANIFEST in entries:
             raise BundleError('manifest lists itself')
         files = {m.name[len(root) + 1:]: m for m in members if m.isfile() and m.name != manifests[0].name}

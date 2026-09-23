@@ -13,13 +13,15 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from lab import real_zabbix_prepare as prepare  # noqa: E402
 from lab.real_zabbix_safety import LAB_API_URL  # noqa: E402
+from lab.zabbix_reference import VERSION as PIN  # noqa: E402
 
 
 class FakeZabbix:
     """Answers the provisioning calls in order and records every request."""
 
-    def __init__(self, *, enabled_actions=False, existing_hosts=False, tokens=('a' * 64, 'b' * 64)):
+    def __init__(self, *, enabled_actions=False, existing_hosts=False, tokens=('a' * 64, 'b' * 64), version=PIN):
         self.calls = []
+        self.version = version
         self.enabled_actions = enabled_actions
         self.existing_hosts = existing_hosts
         self.tokens = list(tokens)
@@ -39,6 +41,8 @@ class FakeZabbix:
         return {'jsonrpc': '2.0', 'id': request['id'], 'result': result}
 
     def answer(self, method, params):
+        if method == 'apiinfo.version':
+            return self.version
         if method == 'user.login':
             return 'c' * 32
         if method == 'action.get':
@@ -73,13 +77,15 @@ def test_prepare_provisions_cohort_outside_scope_roles_tokens_and_problems_priva
     private = tmp_path / 'private'
     fixture = prepare.prepare(prepare.Rpc(LAB_API_URL, transport=zabbix), private)
     methods = [call[0] for call in zabbix.calls]
-    assert methods[:3] == ['user.login', 'action.get', 'host.get']
+    assert methods[:4] == ['apiinfo.version', 'user.login', 'action.get', 'host.get']
     assert methods.count('hostgroup.create') == 2 and methods.count('host.create') == 2
     assert methods.count('item.create') == 3 and methods.count('trigger.create') == 3
     assert methods.count('role.create') == 2 and methods.count('role.get') == 2
     assert methods.count('user.create') == 2 and methods.count('token.create') == 2 and methods.count('token.generate') == 2
     assert methods.count('history.push') == 3 and len(zabbix.pushed) == 3
-    assert zabbix.calls[0][2] is None and all(call[2] == 'Bearer ' + 'c' * 32 for call in zabbix.calls[1:])
+    assert zabbix.calls[0][2] is None and zabbix.calls[1][2] is None
+    assert all(call[2] == 'Bearer ' + 'c' * 32 for call in zabbix.calls[2:])
+    assert fixture['prepared_against_api_version'] == PIN
     # The restricted role is the shared source rule set; the witness has reads only and no action.
     roles = [call[1] for call in zabbix.calls if call[0] == 'role.create']
     assert roles[0]['rules']['api'] == ['event.get', 'event.acknowledge', 'host.get']
@@ -146,5 +152,21 @@ def test_cli_prints_identifiers_but_never_a_token(tmp_path, monkeypatch, capsys)
     out = capsys.readouterr().out
     record = json.loads(out)
     assert record['status'] == 'PREPARED' and record['fixture'].endswith('fixture.json')
+    assert record['api_version'] == PIN == record['reference']
     assert 'a' * 64 not in out and 'b' * 64 not in out
+
+
+@pytest.mark.parametrize('version', ['7.0.30', '7.2.0', '6.0.31', '', None, 7])
+def test_prepare_refuses_an_instance_that_is_not_the_pinned_reference_before_logging_in(tmp_path, monkeypatch, capsys, version):
+    zabbix = FakeZabbix(version=version)
+    monkeypatch.setattr(prepare.time, 'sleep', lambda seconds: None)
+    with pytest.raises(prepare.PrepareError, match='pinned reference|result rejected'):
+        prepare.prepare(prepare.Rpc(LAB_API_URL, transport=zabbix), tmp_path / 'private')
+    assert [call[0] for call in zabbix.calls] == ['apiinfo.version'], 'nothing after the version check, not even the login'
+    assert not (tmp_path / 'private').exists()
+    real = prepare.Rpc
+    monkeypatch.setattr(prepare, 'Rpc', lambda url: real(url, transport=FakeZabbix(version=version)))
+    assert prepare.main(['--isolated-lab', '--private', str(tmp_path / 'private')]) == 1
+    record = json.loads(capsys.readouterr().out)
+    assert record['status'] == 'FAIL' and ('pinned reference' in record['reason'] or 'result rejected' in record['reason'])
 
