@@ -44,6 +44,13 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Invalidate the checkout's deployment record before any other step can fail
+        run: |
+          # The checkout carries a tracked historical record. Every later step can
+          # fail before the cycle writes its own record (setup, inputs, the
+          # candidate check, the download, the digest, the lock); the always()
+          # upload must then carry this NOT_RUN record, never the historical PASS.
+          printf '%s\n' '{"layer": "native_deployment_e2e", "status": "NOT_RUN", "reason": "deployment_job_not_started"}' > evidence/deployment-e2e-run.json
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
@@ -82,9 +89,19 @@ jobs:
           python - "$RUNNER_TEMP/candidate-run.json" "$CANDIDATE_REVISION" "$REPOSITORY" <<'PY'
           import json, sys
           run = json.load(open(sys.argv[1]))
-          assert run["head_sha"] == sys.argv[2], "the candidate run built another revision"
-          assert run["repository"]["full_name"] == sys.argv[3], "the candidate run belongs to another repository"
-          assert run["conclusion"] == "success", "the candidate run did not succeed: " + str(run["conclusion"])
+          # Explicit checks (not assert, which python -O would remove). A
+          # pull_request run builds a merge commit, not head_sha, so only runs
+          # that build the named revision itself qualify, and only of ci.yml.
+          checks = [
+              (run.get("head_sha") == sys.argv[2], "the candidate run built another revision"),
+              ((run.get("repository") or {}).get("full_name") == sys.argv[3], "the candidate run belongs to another repository"),
+              (run.get("path") == ".github/workflows/ci.yml", "the candidate run is not an Alpha reference checks run: " + str(run.get("path"))),
+              (run.get("event") in ("workflow_dispatch", "push", "schedule"), "the candidate run's event does not build head_sha itself: " + str(run.get("event"))),
+              (run.get("status") == "completed" and run.get("conclusion") == "success", "the candidate run did not succeed: " + str(run.get("conclusion"))),
+          ]
+          failed = [message for ok, message in checks if not ok]
+          if failed:
+              sys.exit("; ".join(failed))
           PY
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -125,7 +142,9 @@ jobs:
           # preflight it enables proves the wheel payload equals this checkout and
           # every installed file equals the wheel (tools/supplied_wheel.py).
           WHEEL="$(ls "$RUNNER_TEMP"/dist/zabalack-*-py3-none-any.whl)"
-          flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock python lab/deployment_native_lab.py cycle --isolated-lab --runner-python "$RUNNER_TEMP/e2e-runner/bin/python" --wheel "$WHEEL" --wheel-sha256 "$WHEEL_SHA256"
+          # exec + flock -F: python replaces this shell and holds the lock itself,
+          # so a job cancellation signals python and its cleanup path runs.
+          exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock python lab/deployment_native_lab.py cycle --isolated-lab --runner-python "$RUNNER_TEMP/e2e-runner/bin/python" --wheel "$WHEEL" --wheel-sha256 "$WHEEL_SHA256"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:

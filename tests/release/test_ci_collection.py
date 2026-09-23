@@ -557,7 +557,7 @@ def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_re
     assert all(item['required'] == 'true' and item['type'] == 'string' for item in inputs.values())
     job = value['jobs']['service-lab']
     assert job['if'] == "${{ vars.ZABALACK_DEPLOYMENT_E2E_ENABLED == 'true' }}"
-    assert any(line.strip().startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
+    assert any(line.strip().startswith('exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock '
                                        'python lab/deployment_native_lab.py cycle --isolated-lab ')
                for step in job['steps'] for line in step.get('run', '').splitlines())
     uploads = [step for step in job['steps'] if step.get('uses', '').startswith('actions/upload-artifact@')]
@@ -580,13 +580,17 @@ def test_deployment_job_consumes_the_verified_candidate_wheel_and_cycles_the_nat
     confirm = next(i for i, line in enumerate(commands) if 'actions/runs/$CANDIDATE_RUN_ID' in line)
     verify = next(i for i, line in enumerate(commands) if line == 'printf \'%s  %s\\n\' "$WHEEL_SHA256" "$WHEEL" | sha256sum -c --strict -')
     prepare = next(i for i, line in enumerate(commands) if line.startswith('python lab/deployment_native_lab.py prepare-runner --isolated-lab'))
-    cycle = next(i for i, line in enumerate(commands) if line.startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '))
+    cycle = next(i for i, line in enumerate(commands) if line.startswith('exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock '))
     assert bind < confirm < verify < prepare < cycle
     # The inputs are validated as fixed shapes before anything uses them.
     assert commands[bind - 3:bind] == ['printf \'%s\' "$CANDIDATE_RUN_ID" | grep -Eq \'^[0-9]{1,20}$\'',
                                        'printf \'%s\' "$CANDIDATE_REVISION" | grep -Eq \'^[0-9a-f]{40}$\'',
                                        'printf \'%s\' "$WHEEL_SHA256" | grep -Eq \'^[0-9a-f]{64}$\'']
-    assert 'assert run["head_sha"] == sys.argv[2]' in ' '.join(commands) and 'assert run["conclusion"] == "success"' in ' '.join(commands)
+    joined = ' '.join(commands)
+    assert '(run.get("head_sha") == sys.argv[2]' in joined and 'run.get("conclusion") == "success"' in joined
+    assert 'run.get("path") == ".github/workflows/ci.yml"' in joined
+    assert 'run.get("event") in ("workflow_dispatch", "push", "schedule")' in joined
+    assert not any(line.startswith('assert ') for line in commands), 'python -O would strip an assert'
     # The candidate artifact is downloaded from the named run, then exactly one wheel is copied into the fixed dist directory.
     download = next(step for step in steps if step.get('uses', '').startswith('actions/download-artifact@'))
     assert download['with']['run-id'] == '${{ inputs.candidate_run_id }}'
@@ -654,7 +658,7 @@ def test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner
         # Every line that starts services (the runner invocation, not its prepare step) holds the lock.
         lines = [line.strip() for script in scripts for line in script.splitlines()
                  if invocation in line and not line.strip().startswith('#')]
-        assert len(lines) == 1 and lines[0].startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock ' + invocation)
+        assert len(lines) == 1 and lines[0].startswith('exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock ' + invocation)
         assert not any('docker system prune' in script or 'down --volumes' in script for script in scripts)
 
 
@@ -669,7 +673,7 @@ def test_routine_native_job_runs_the_local_form_on_reviewed_service_paths_withou
     native = next(step for step in steps if 'tools/native_local.py' in step.get('run', ''))
     assert native['env'] == {'ACK_LAB_PG_BIN': '/usr/lib/postgresql/18/bin', 'ACK_LAB_PGBOUNCER_BIN': '/usr/sbin/pgbouncer'}
     # The whole service/test/cleanup invocation still runs under the shared host lab lock.
-    assert native['run'].startswith('flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock ')
+    assert native['run'].startswith('exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock ')
 
 
 def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():
@@ -709,3 +713,53 @@ def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():
     # ungated would leave the exposure open through that workflow instead.
     assert guarded == 8, guarded
 
+
+
+def test_deployment_job_invalidates_the_tracked_record_before_any_step_that_can_fail():
+    """R13: the checkout carries a historical PASS record; the always() upload must never carry it."""
+    workflow = yaml.load((ROOT / '.github/workflows/deployment-e2e.yml').read_text(), Loader=yaml.BaseLoader)
+    steps = workflow['jobs']['service-lab']['steps']
+    checkout = next(i for i, step in enumerate(steps) if step.get('uses', '').startswith('actions/checkout@'))
+    invalidate = steps[checkout + 1]
+    lines = [line.strip() for line in invalidate['run'].splitlines() if line.strip() and not line.strip().startswith('#')]
+    assert len(lines) == 1 and lines[0].endswith('> evidence/deployment-e2e-run.json')
+    written = json.loads(lines[0].split("'")[3])
+    assert written['status'] == 'NOT_RUN' and written['reason'] == 'deployment_job_not_started'
+    # Only the untrusted-revision guard runs before it, and it touches no evidence.
+    assert [i for i, step in enumerate(steps) if 'run' in step and i < checkout] == [0]
+
+
+@pytest.mark.parametrize('form, reaches_python', [
+    ('exec flock -n -F {lock} {python} {script}', True),
+    ('flock -n {lock} {python} {script}', False),
+], ids=['exec-no-fork', 'forked-wrapper'])
+def test_a_signal_to_the_step_shell_reaches_the_locked_python_only_in_the_exec_no_fork_form(tmp_path, form, reaches_python):
+    """The runner signals the step's shell on cancellation. Under `flock` (forking) python never hears it and
+    its cleanup never runs; with `exec flock -F` python is the step process and receives it."""
+    import signal
+    import subprocess
+    import time
+    if not shutil.which('flock'):
+        pytest.skip('flock unavailable')
+    marker = tmp_path / 'signalled'
+    ready = tmp_path / 'ready'
+    script = tmp_path / 'child.py'
+    script.write_text(
+        'import pathlib, signal, sys, time\n'
+        f'def handler(number, frame):\n    pathlib.Path({str(marker)!r}).write_text(str(number))\n    sys.exit(130)\n'
+        'signal.signal(signal.SIGTERM, handler)\n'
+        f'pathlib.Path({str(ready)!r}).write_text("1")\n'
+        'time.sleep(20)\n')
+    command = form.format(lock=tmp_path / 'lab.lock', python=sys.executable, script=script)
+    shell = subprocess.Popen(['bash', '-e', '-c', command], start_new_session=True)
+    try:
+        deadline = time.monotonic() + 10
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert ready.exists()
+        os.kill(shell.pid, signal.SIGTERM)
+        time.sleep(1.0)
+        assert marker.exists() is reaches_python
+    finally:
+        os.killpg(shell.pid, signal.SIGKILL)
+        shell.wait()

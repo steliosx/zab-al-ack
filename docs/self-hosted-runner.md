@@ -198,7 +198,10 @@ service unit or hook: `ci.yml` wraps `tools/native_local.py --isolated-lab`
 (R26; previously `tools/native_ci.py` with its network-retention arguments) and
 `deployment-e2e.yml` wraps `lab/deployment_native_lab.py cycle --isolated-lab`
 (R29; previously `tools/run_deployment_e2e.py`) with
-`flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock`.
+`exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock`. The
+`exec` and `-F` (no fork) make Python the step's own process holding the lock,
+so the runner's cancellation signal reaches it and its cleanup path runs; a
+forking `flock` would absorb the signal and leave Python running unsignalled.
 A stopped hook/process does not prove services stopped; retain the
 attempt and inspect exact owned resources before another service lab starts.
 Never reset resources belonging to another agent or job.

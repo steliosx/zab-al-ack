@@ -187,11 +187,15 @@ verification result.
 For a hosted isolated run, the supplied `deployment-e2e.yml` workflow is manual
 and requires `ZABALACK_DEPLOYMENT_E2E_ENABLED=true` after repository policy review.
 It uses no custom secrets, has read-only repository and Actions permissions,
-and uploads only the fixed public result JSON even on failure. Since R29 it runs
+and uploads only the fixed public result JSON even on failure; its first step
+after the checkout replaces the checkout's tracked historical record with a
+NOT_RUN record, so a failure before the cycle can never upload a stale PASS. Since R29 it runs
 the native form on the exact candidate wheel: the dispatcher supplies the
 candidate's CI run ID, its full revision and the wheel's SHA-256; the job is
 dispatched on that revision (`git rev-parse HEAD` must equal it), confirms
-through the Actions API that the run is a successful run of that revision,
+through the Actions API that the run is a completed, successful `ci.yml` run of
+that revision triggered by `workflow_dispatch`, `push` or `schedule` (a
+`pull_request` run builds a merge commit, not the named revision),
 downloads that run's `zabalack-candidate-*` artifact, verifies the wheel's
 digest with `sha256sum -c` before anything installs it, prepares the runner
 environment from that wheel only, and runs `lab/deployment_native_lab.py cycle
