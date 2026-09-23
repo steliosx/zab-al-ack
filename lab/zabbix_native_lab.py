@@ -221,19 +221,74 @@ HBA_HOST_TYPES = ('host', 'hostssl', 'hostnossl', 'hostgssenc', 'hostnogssenc')
 IP_MASK = re.compile(r'[0-9]{1,3}(?:\.[0-9]{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:]*')
 
 
-def hba_method(tokens: list[str]) -> str | None:
+def hba_fields(line: str) -> list[tuple[str, bool]] | None:
+    """PostgreSQL's pg_hba.conf field rules: (text, quoted) per field; None when the line cannot be read safely.
+
+    Fields are separated by whitespace outside double quotes; a quoted part may
+    contain whitespace, '#' and '""' (a literal quote); a field may join quoted
+    and unquoted parts (comma lists); '#' outside quotes starts a comment. A
+    trailing backslash (continuation) or an unterminated quote is refused.
+    """
+    fields: list[tuple[str, bool]] = []
+    text, quoted, in_field, index = '', False, False, 0
+    while index < len(line):
+        char = line[index]
+        if char == '"':
+            closing = index + 1
+            part = ''
+            while True:
+                end = line.find('"', closing)
+                if end < 0:
+                    return None  # unterminated quote
+                part += line[closing:end]
+                if line[end + 1:end + 2] == '"':
+                    part += '"'
+                    closing = end + 2
+                    continue
+                break
+            text, quoted, in_field, index = text + part, True, True, end + 1
+            continue
+        if char == '#':
+            break
+        if char.isspace():
+            if in_field:
+                fields.append((text, quoted))
+                text, quoted, in_field = '', False, False
+        else:
+            text, in_field = text + char, True
+        index += 1
+    if in_field:
+        fields.append((text, quoted))
+    if fields and not fields[-1][1] and fields[-1][0].endswith('\\'):
+        return None  # a continuation line: not read here
+    return fields
+
+
+def hba_method(fields: list[tuple[str, bool]]) -> str | None:
     """The METHOD field of one pg_hba.conf record, by position; None when the record is not understood.
 
     local  DATABASE USER METHOD [OPTIONS]
     host*  DATABASE USER ADDRESS METHOD [OPTIONS], or ADDRESS as an address and a separate mask
+    The connection type and the method must be single unquoted keywords (a quoted keyword loses its
+    meaning in PostgreSQL); anything else refuses.
     """
-    if tokens[0] == 'local' and len(tokens) >= 4:
-        return tokens[3]
-    if tokens[0] in HBA_HOST_TYPES and len(tokens) >= 5:
-        if '/' not in tokens[3] and IP_MASK.fullmatch(tokens[4]) and len(tokens) >= 6:
-            return tokens[5]
-        return tokens[4]
-    return None  # include directives, unknown connection types, short records
+    if not fields or fields[0][1]:
+        return None
+    kind = fields[0][0]
+    if kind == 'local' and len(fields) >= 4:
+        method = fields[3]
+    elif kind in HBA_HOST_TYPES and len(fields) >= 5:
+        address, next_field = fields[3], fields[4]
+        if not address[1] and '/' not in address[0] and not next_field[1] and IP_MASK.fullmatch(next_field[0]) and len(fields) >= 6:
+            method = fields[5]
+        else:
+            method = next_field
+    else:
+        return None  # include directives, unknown connection types, short records
+    text, was_quoted = method
+    if was_quoted or ',' in text:
+        return None
+    return text
 
 
 def verify_authentication(pgdata: Path) -> None:
@@ -248,13 +303,13 @@ def verify_authentication(pgdata: Path) -> None:
     except OSError as error:
         raise SystemExit(f'Zabbix lab cluster authentication unreadable: {error}') from error
     for line in lines:
-        tokens = line.split('#', 1)[0].split()
-        if not tokens:
+        fields = hba_fields(line)
+        if fields == []:
             continue
-        method = hba_method(tokens)
+        method = hba_method(fields) if fields is not None else None
         if method not in ACCEPTED_AUTH_METHODS:
             raise SystemExit('Zabbix lab cluster allows unauthenticated or non-scram local access (pg_hba.conf: '
-                             + ' '.join(tokens) + '); reset --wipe and start again')
+                             + line.strip() + '); reset --wipe and start again')
 
 
 def port_listening(port: int) -> bool:

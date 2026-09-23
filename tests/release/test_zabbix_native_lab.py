@@ -589,3 +589,43 @@ def test_the_pg_hba_method_is_read_by_position(lab, hba, accepted):
     else:
         with pytest.raises(SystemExit, match='unauthenticated or non-scram'):
             lab.verify_authentication(lab.PGDATA)
+
+
+@pytest.mark.parametrize('hba, accepted', [
+    ('local all "a scram-sha-256 b" trust', False),
+    ('local all all "scram-sha-256"', False),
+    ('host all all 127.0.0.1/32 "scram-sha-256"', False),
+    ('local "trust" all trust', False),
+    ('local all all trust # scram-sha-256', False),
+    ('local all "user""with""quotes scram-sha-256" md5', False),
+    ('local all all scram-sha-256,trust', False),
+    ('local all "unterminated scram-sha-256', False),
+    ('local all all \\', False),
+    ('"local" all all scram-sha-256', False),
+    ('local all "trust" scram-sha-256', True),
+    ('local "all" all scram-sha-256', True),
+    ('local "db one","db two" "user one" scram-sha-256', True),
+    ('host all "a#b" 127.0.0.1/32 scram-sha-256 # comment', True),
+    ('local all "x ""scram-sha-256"" y" scram-sha-256', True),
+], ids=['quoted-user-contains-method', 'quoted-method', 'quoted-method-host', 'quoted-database-named-trust-method-trust',
+        'method-in-comment', 'escaped-quotes-then-md5', 'method-list', 'unterminated-quote', 'continuation', 'quoted-connection-type',
+        'user-named-trust-scram', 'quoted-all-database', 'quoted-lists', 'hash-inside-quotes', 'escaped-quotes-then-scram'])
+def test_pg_hba_fields_follow_postgresql_quoting_rules(lab, hba, accepted):
+    """Review of O9: a whitespace split read quoted values as fields ('local all "a scram-sha-256 b" trust' passed).
+
+    Fields follow PostgreSQL's rules: quotes group whitespace, '""' is a literal quote, '#' starts a comment
+    only outside quotes, and the method must be one unquoted keyword; anything unreadable refuses."""
+    marked(lab)
+    (lab.PGDATA / 'pg_hba.conf').write_text(hba + '\n')
+    if accepted:
+        lab.verify_authentication(lab.PGDATA)
+    else:
+        with pytest.raises(SystemExit, match='unauthenticated or non-scram'):
+            lab.verify_authentication(lab.PGDATA)
+
+
+def test_pg_hba_fields_tokenise_like_postgresql(lab):
+    assert lab.hba_fields('local all "a b" scram-sha-256') == [('local', False), ('all', False), ('a b', True), ('scram-sha-256', False)]
+    assert lab.hba_fields('local all "x ""y"" z" md5 # c') == [('local', False), ('all', False), ('x "y" z', True), ('md5', False)]
+    assert lab.hba_fields('   # only a comment') == []
+    assert lab.hba_fields('local all "open') is None
