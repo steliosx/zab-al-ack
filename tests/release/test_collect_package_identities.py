@@ -38,8 +38,19 @@ POLICY = '''zabbix-server-pgsql:
 '''
 
 
+# The repository (base URI, suite/component) each synthetic origin host publishes the installed version from.
+REPOSITORY = {'apt.postgresql.org': ('https://apt.postgresql.org/pub/repos/apt', 'noble-pgdg/main'),
+              'repo.zabbix.com': ('https://repo.zabbix.com/zabbix/7.0/ubuntu', 'noble/main'),
+              'archive.ubuntu.com': ('http://archive.ubuntu.com/ubuntu', 'noble-updates/main'),
+              'security.ubuntu.com': ('http://security.ubuntu.com/ubuntu', 'noble-security/main')}
+
+
+def repository(host):
+    return REPOSITORY.get(host, ('https://' + host + '/x', 'noble/main'))
+
+
 def signature(host, fingerprint, verified=True):
-    return {'uri': 'https://' + host + '/x', 'suite': 'noble/main', 'architecture': 'amd64', 'priority': 500,
+    return {'uri': repository(host)[0], 'suite': repository(host)[1], 'architecture': 'amd64', 'priority': 500,
             'signature': {'status': 'OBSERVED', 'inrelease': host + '_x_dists_noble_InRelease', 'verified': verified,
                           'keys': [{'long_id': fingerprint[-16:], 'fingerprint': fingerprint, 'user_id': 'synthetic', 'keyring': 'k.gpg'}] if verified else [],
                           'keyrings_tried': 1}}
@@ -56,9 +67,9 @@ def component(version_line, package, version, host, fingerprint, *, kind='dpkg',
     item['dpkg'] = {'status': 'OBSERVED', 'kind': 'dpkg', 'package': package, 'version': version, 'architecture': architecture,
                     'package_status': 'install ok installed',
                     'file_verification': {'status': 'OBSERVED', 'clean': True, 'payload_verified': True, 'conffiles_changed': [], 'changed_files': []}}
-    item['apt'] = {'status': 'OBSERVED', 'installed': version, 'origins': [{'priority': 500, 'uri': 'https://' + host + '/x', 'suite': 'noble/main', 'architecture': 'amd64'}]}
+    item['apt'] = {'status': 'OBSERVED', 'installed': version, 'origins': [{'priority': 500, 'uri': repository(host)[0], 'suite': repository(host)[1], 'architecture': 'amd64'}]}
     item['signatures'] = [signature(host, fingerprint)]
-    item['index'] = {'status': 'OBSERVED', 'origin_uri': 'https://' + host + '/x', 'origin_suite': 'noble/main', 'list_file': host + '_x_dists_noble_main_binary-' + architecture + '_Packages',
+    item['index'] = {'status': 'OBSERVED', 'origin_uri': repository(host)[0], 'origin_suite': repository(host)[1], 'list_file': host + '_x_dists_noble_main_binary-' + architecture + '_Packages',
                      'index_signed': True, 'index_relative_path': 'main/binary-' + architecture + '/Packages', 'stanza_architecture': architecture,
                      'deb_sha256': 'c' * 64, 'filename': 'pool/main/x/' + package + '_' + version + '_' + architecture + '.deb', 'size': '1'}
     item['cached_deb'] = {'status': 'OBSERVED', 'present': False}
@@ -72,6 +83,8 @@ def conforming_record():
         'components': {
             'postgres': component('postgres (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2)', 'postgresql-18', '18.6-1.pgdg24.04+2', 'apt.postgresql.org', PGDG,
                                   members={'pg_ctl': 'postgresql-18', 'initdb': 'postgresql-18', 'psql': 'postgresql-client-18'}),
+            'postgres_client': component('psql (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2)', 'postgresql-client-18', '18.6-1.pgdg24.04+2',
+                                         'apt.postgresql.org', PGDG),
             'pgbouncer': component('PgBouncer 1.25.2', 'pgbouncer', '1.25.2-1.pgdg24.04+1', 'apt.postgresql.org', PGDG),
             'zabbix_server': component('zabbix_server (Zabbix) ' + PIN, 'zabbix-server-pgsql', ZVER, 'repo.zabbix.com', ZABBIX_FPR),
             'zabbix_frontend': component(PIN, 'zabbix-frontend-php', ZVER, 'repo.zabbix.com', ZABBIX_FPR, architecture='all'),
@@ -183,7 +196,7 @@ def test_a_failed_dpkg_verification_is_never_clean(returncode, stdout, stderr):
     (lambda r: r['components']['zabbix_server'].__setitem__('apt', {'status': 'NOT_OBSERVED', 'reason': 'apt-cache policy unavailable'}), 'zabbix_server.apt'),
     (lambda r: r['components']['zabbix_server'].pop('apt'), 'zabbix_server.apt: absent'),
     (lambda r: r['components']['php']['dpkg'].update(file_verification={'status': 'NOT_OBSERVED', 'reason': 'dpkg -V unavailable'}), 'php.dpkg.file_verification'),
-    (lambda r: r['components']['php'].__setitem__('signatures', []), 'php.signature[https://archive.ubuntu.com/x]: absent'),
+    (lambda r: r['components']['php'].__setitem__('signatures', []), 'php.signature[http://archive.ubuntu.com/ubuntu]: absent'),
     (lambda r: r['components']['php']['signatures'][0].__setitem__('signature', {'status': 'NOT_OBSERVED', 'reason': 'gpgv unavailable'}), 'gpgv unavailable'),
     (lambda r: r['components']['zabbix_server'].pop('index'), 'zabbix_server.index: absent'),
     (lambda r: r['components']['zabbix_server'].__setitem__('index', {'status': 'NOT_OBSERVED', 'reason': 'no signed index entry'}), 'no signed index entry'),
@@ -218,7 +231,7 @@ def test_every_origin_of_the_installed_version_must_be_allowed_and_verified_by_t
     # Two allowed origins, both verified: conforms. One of them unverified: deviates, whichever it is.
     record = conforming_record()
     php = record['components']['php']
-    php['apt']['origins'].append({'priority': 500, 'uri': 'https://security.ubuntu.com/x', 'suite': 'noble-security/main', 'architecture': 'amd64'})
+    php['apt']['origins'].append({'priority': 500, 'uri': 'http://security.ubuntu.com/ubuntu', 'suite': 'noble-security/main', 'architecture': 'amd64'})
     php['signatures'].append(signature('security.ubuntu.com', UBUNTU))
     assert evaluate(record) == ('CONFORMS', [], [])
     php['signatures'][1] = signature('security.ubuntu.com', UBUNTU, verified=False)
@@ -269,7 +282,8 @@ def test_the_signed_index_entry_binds_the_deb_digest_to_the_inrelease(tmp_path):
     cache = tmp_path / 'cache'
     cache.mkdir()
     (cache / 'zabbix-server-pgsql_7.0.31-1+ubuntu24.04_amd64.deb').write_bytes(b'deb')
-    assert cpi.cached_deb_observation(server, cache) == {'status': 'OBSERVED', 'present': True, 'matches_index': False}
+    assert cpi.cached_deb_observation(server, cache) == {'status': 'OBSERVED', 'present': True, 'matches_index': False,
+                                                         'file': 'zabbix-server-pgsql_7.0.31-1+ubuntu24.04_amd64.deb'}
     assert cpi.cached_deb_observation(scripts, cache) == {'status': 'OBSERVED', 'present': False}
 
 
@@ -312,7 +326,9 @@ def test_collect_records_dpkg_apt_signature_and_index_observations_for_a_package
         return subprocess.CompletedProcess(argv, code, out, err)
     monkeypatch.setattr(cpi, 'command', command)
     monkeypatch.setattr(cpi.shutil, 'which', lambda name: '/usr/bin/' + name)
-    gpgv_output = '[GNUPG:] GOODSIG ' + ZABBIX_FPR[-16:] + ' Zabbix LLC (Apr 2024) <packager@zabbix.com>\n[GNUPG:] VALIDSIG ' + ZABBIX_FPR + ' 2026-09-22 1 0 4 0 1 10 01 X\n'
+    # gpgv's real status format (observed on the runner host): NEWSIG, GOODSIG, VALIDSIG ending with the primary key.
+    gpgv_output = ('[GNUPG:] NEWSIG\n[GNUPG:] GOODSIG ' + ZABBIX_FPR[-16:] + ' Zabbix LLC (Apr 2024) <packager@zabbix.com>\n'
+                   '[GNUPG:] VALIDSIG ' + ZABBIX_FPR + ' 2026-09-22 1790067776 0 4 0 1 10 01 ' + ZABBIX_FPR + '\n')
     monkeypatch.setattr(cpi.subprocess, 'run', lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, gpgv_output, ''))
     record = cpi.collect('synthetic', tmp_path / 'scratch')
     item = record['components']['zabbix_server']
@@ -429,3 +445,90 @@ def test_a_held_package_conforms_and_a_package_marked_for_removal_deviates(statu
     result, deviations, _ = evaluate(record)
     assert result == verdict
     assert (verdict == 'CONFORMS') == (deviations == [])
+
+
+@pytest.mark.parametrize('extra', [
+    '        990 file:/srv/localrepo  Packages',
+    '        -10 https://repo.zabbix.com/zabbix/7.0/ubuntu noble/main amd64 Packages',
+], ids=['flat-repository', 'negative-priority'])
+def test_an_origin_line_the_parser_cannot_attribute_makes_apt_not_observed(monkeypatch, extra):
+    """Re-review N1: such a line supplying the installed version was dropped, and the record could conform."""
+    text = POLICY.replace('        100 /var/lib/dpkg/status', extra + '\n        100 /var/lib/dpkg/status')
+    assert cpi.parse_policy(text)['unparsed'] == [extra.strip()]
+    monkeypatch.setattr(cpi, 'command', lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, text, ''))
+    observation = cpi.apt_observation('zabbix-server-pgsql')
+    assert observation['status'] == 'NOT_OBSERVED' and 'origin lines not understood' in observation['reason']
+    monkeypatch.setattr(cpi, 'command', lambda argv, **kwargs: subprocess.CompletedProcess(argv, 0, POLICY, ''))
+    assert cpi.apt_observation('zabbix-server-pgsql')['status'] == 'OBSERVED'
+
+
+@pytest.mark.parametrize('component, uri, suite', [
+    ('php', 'http://archive.ubuntu.com/ubuntu', 'noble-proposed/main'),
+    ('postgres', 'https://apt.postgresql.org/pub/repos/apt', 'noble-pgdg-testing/main'),
+    ('zabbix_server', 'https://repo.zabbix.com/zabbix/7.0/ubuntu', 'jammy/main'),
+    ('zabbix_server', 'https://repo.zabbix.com/zabbix/7.2/ubuntu', 'noble/main'),
+], ids=['ubuntu-proposed', 'pgdg-testing', 'zabbix-other-release', 'zabbix-other-series'])
+def test_only_the_pinned_repository_and_suite_of_an_allowed_host_conform(component, uri, suite):
+    """Re-review N2: the host name alone admitted proposed/testing suites and other series."""
+    record = conforming_record()
+    item = record['components'][component]
+    item['apt']['origins'][0].update(uri=uri, suite=suite)
+    item['signatures'][0].update(uri=uri, suite=suite)
+    result, deviations, _ = evaluate(record)
+    assert result == 'DEVIATES' and any('is not an allowed repository and suite' in line for line in deviations), deviations
+
+
+def test_a_revoked_pinned_key_does_not_verify_even_beside_another_good_signature():
+    """Re-review N3: GOODSIG and VALIDSIG lines were paired by position across signatures."""
+    other = 'E' * 40
+    status = ('[GNUPG:] NEWSIG\n[GNUPG:] REVKEYSIG ' + ZABBIX_FPR[-16:] + ' Zabbix LLC\n'
+              '[GNUPG:] VALIDSIG ' + ZABBIX_FPR + ' 2026-09-22 1 0 4 0 1 10 01 ' + ZABBIX_FPR + '\n'
+              '[GNUPG:] NEWSIG\n[GNUPG:] GOODSIG ' + other[-16:] + ' Someone Else\n'
+              '[GNUPG:] VALIDSIG ' + other + ' 2026-09-22 1 0 4 0 1 10 01 ' + other + '\n')
+    assert [key['fingerprint'] for key in cpi.good_signatures(status)] == [other]
+    subkey = 'F' * 40
+    signed_by_subkey = ('[GNUPG:] NEWSIG\n[GNUPG:] GOODSIG ' + subkey[-16:] + ' Zabbix LLC\n'
+                        '[GNUPG:] VALIDSIG ' + subkey + ' 2026-09-22 1 0 4 0 1 10 01 ' + ZABBIX_FPR + '\n')
+    assert cpi.good_signatures(signed_by_subkey) == [{'long_id': subkey[-16:], 'fingerprint': ZABBIX_FPR,
+                                                      'signing_fingerprint': subkey, 'user_id': 'Zabbix LLC'}]
+
+
+def test_the_cached_deb_is_found_under_apt_s_epoch_encoded_name(tmp_path):
+    """Re-review N4: apt caches 'zabbix-server-pgsql_1%3a7.0.31-…'; the pool name has no epoch."""
+    data = b'synthetic deb'
+    (tmp_path / 'zabbix-server-pgsql_1%3a7.0.31-1+ubuntu24.04_amd64.deb').write_bytes(data)
+    index = {'filename': 'pool/main/z/zabbix/zabbix-server-pgsql_7.0.31-1+ubuntu24.04_amd64.deb', 'deb_sha256': hashlib.sha256(data).hexdigest()}
+    assert cpi.cached_deb_observation(index, tmp_path) == {'status': 'OBSERVED', 'present': False}
+    observed = cpi.cached_deb_observation(index, tmp_path, package='zabbix-server-pgsql', version=ZVER, architecture='amd64')
+    assert observed == {'status': 'OBSERVED', 'present': True, 'matches_index': True,
+                        'file': 'zabbix-server-pgsql_1%3a7.0.31-1+ubuntu24.04_amd64.deb'}
+
+
+def test_approve_refuses_to_write_over_a_policy_file(tmp_path):
+    """Re-review N6: approve --output lab/native_service_identities.json overwrote the policy file."""
+    record = tmp_path / 'record.json'
+    record.write_text(json.dumps(conforming_record()))
+    for target in (tmp_path / 'identities.json', tmp_path / 'reference.json'):
+        (tmp_path / 'identities.json').write_text(json.dumps(IDENTITIES))
+        (tmp_path / 'reference.json').write_text(json.dumps(REFERENCE))
+        before = target.read_bytes()
+        with pytest.raises(SystemExit, match='refusing to write the proposal over a policy file'):
+            cpi.main(['approve', str(record), '--reviewer', 'r', '--amendment', 'A', '--output', str(target),
+                      '--reference', str(tmp_path / 'reference.json'), '--identities', str(tmp_path / 'identities.json')])
+        assert target.read_bytes() == before
+
+
+@pytest.mark.parametrize('mutate, fragment', [
+    (lambda r: r['components']['postgres_client']['dpkg'].update(package='postgresql-client-16'), 'postgres_client: package postgresql-client-16'),
+    (lambda r: r['components']['postgres_client']['dpkg'].update(version='18.4-1.pgdg24.04+1'), "is not the server's 18.6-1.pgdg24.04+2"),
+    (lambda r: r['components']['postgres_client']['dpkg']['file_verification'].update(payload_verified=False, changed_files=[{'flags': '??5??????', 'path': '/usr/lib/postgresql/18/bin/psql', 'kind': 'payload'}]), 'postgres_client: dpkg -V reports changed'),
+], ids=['other-package', 'other-version', 'changed-payload'])
+def test_the_postgresql_client_package_is_verified_like_the_server(mutate, fragment):
+    """Re-review R19 remainder: psql's package was identified but never verified or bound to its origin."""
+    record = conforming_record()
+    mutate(record)
+    result, deviations, _ = evaluate(record)
+    assert result == 'DEVIATES' and any(fragment in line for line in deviations), deviations
+    record = conforming_record()
+    del record['components']['postgres_client']
+    assert 'postgres_client: not collected' in evaluate(record)[2]

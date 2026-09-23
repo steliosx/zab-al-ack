@@ -253,7 +253,7 @@ the job is enabled:
 | Private directory | `/run/zabalack-e2e`, mode 0700, owned by the runner account, holding `pg-password` (`/run` is volatile: a `tmpfiles.d` rule or the service's pre-start recreates it) |
 | Ports | 5432, 8080, 20051 and 55434 (lab services) and 58081/58443 (application and TLS proxy) free on loopback while the job runs |
 | Account | the runner account runs every service itself; no Docker group membership is needed for this job |
-| Build tooling | `build`, `setuptools` and `wheel` from `requirements.lock` build the job's wheel in `$RUNNER_TEMP/dist` |
+| Candidate wheel | none is built: the job downloads the candidate run's `zabalack-candidate-*` artifact and installs its verified wheel from `$RUNNER_TEMP/dist` |
 
 The job creates `.deployment-lab/`, `.zabbix-lab/` and `build/private/` inside
 the workspace; the hooks archive them and a live service there refuses the next
@@ -269,7 +269,9 @@ python tools/collect_package_identities.py validate /path/private/package-identi
 ```
 
 `collect` records each component's executable digest and version line (for
-PostgreSQL also `pg_ctl`, `initdb` and `psql` with their owning packages), the
+PostgreSQL also `pg_ctl`, `initdb` and `psql` with their owning packages; the
+client package `postgresql-client-18` is a component of its own, verified like
+the server), the
 dpkg identity, `dpkg -V` with conffiles and documentation classified apart from
 the payload, every apt origin of the installed version with its InRelease
 signature, the signed index entry of the installed version (the Packages index
@@ -278,12 +280,20 @@ name; Arch:all packages are found in `binary-all`) and the cached `.deb` when
 apt still holds it. `validate` derives the missing observations itself and
 reports CONFORMS, DEVIATES (a source build or a directory in place of an
 executable, an origin other than `repo.zabbix.com`, `apt.postgresql.org` or the
-Ubuntu archive, an origin whose InRelease is not verified by the pinned full
+Ubuntu archive, or other than their pinned repository and suite
+(`https://repo.zabbix.com/zabbix/7.0/ubuntu` `noble/main`,
+`https://apt.postgresql.org/pub/repos/apt` `noble-pgdg/main`, the Ubuntu
+archive's `noble`, `noble-updates` and `noble-security`), an origin whose InRelease is not verified by the pinned full
 fingerprint from `lab/zabbix_reference.json`, an `Architecture` other than
 `all` for `zabbix-frontend-php` and `zabbix-sql-scripts` or other than `amd64`
 for everything else, a changed payload file, a signed index entry not bound to
 the InRelease, or a version outside the pin and the policy) or INCOMPLETE (any
-missing observation, a failed `dpkg -V` included; never a pass). After review,
+missing observation, a failed `dpkg -V` or an `apt-cache policy` origin line it
+cannot attribute, such as a flat repository, included; never a pass). A
+signature counts only when one gpgv signature block holds both GOODSIG and
+VALIDSIG and no revoked, expired or bad signature; the pinned fingerprint is
+the primary key's. The cached `.deb` is found under apt's epoch-encoded name.
+`approve` refuses to write over either policy file. After review,
 `approve --reviewer … --amendment … --output …` writes the reviewed entries,
 each with its `.deb` digest, origin and signing fingerprint, as a separate
 proposal; the reviewer copies them into `lab/native_service_identities.json`
