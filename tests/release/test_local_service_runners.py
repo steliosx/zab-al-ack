@@ -437,6 +437,7 @@ def test_runner_site_paths_use_the_venv_scheme_not_the_platform_default(monkeypa
 
 @pytest.mark.parametrize('case, label', [
     ('pth-added-to-a-pinned-record', 'unapproved_startup_hook'),
+    ('editable-pth-owned', 'unapproved_startup_hook'),
     ('approved-name-other-bytes-consistent-record', 'unapproved_startup_hook'),
     ('genuine-setuptools-hook', None),
 ], ids=lambda value: value if isinstance(value, str) else '')
@@ -453,6 +454,16 @@ def test_a_startup_hook_is_accepted_only_by_its_pinned_name_and_bytes_not_by_its
     if case == 'pth-added-to-a-pinned-record':
         # click is pinned by requirements.lock; its RECORD is rewritten consistently to own the new .pth
         owned_distribution(site, 'click-8.5.0.dist-info', {'zz_owned.pth': hook, 'click-8.5.0.dist-info/METADATA': b'Name: click\n'})
+    elif case == 'editable-pth-owned':
+        # Fable's case exactly: an environment with the genuine setuptools hook and an installed click; a .pth is
+        # written and one line with its valid sha256 is appended to click's existing RECORD (b57bebb: ACCEPTED
+        # ['distutils-precedence.pth', 'zz_owned.pth']).
+        owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': GENUINE_DISTUTILS_PTH,
+                                                                 'setuptools-83.0.0.dist-info/METADATA': b'Name: setuptools\n'})
+        owned_distribution(site, 'click-8.5.0.dist-info', {'click/__init__.py': b'', 'click-8.5.0.dist-info/METADATA': b'Name: click\n'})
+        (site / 'zz_owned.pth').write_bytes(hook)
+        with (site / 'click-8.5.0.dist-info/RECORD').open('a') as record:
+            record.write(f'zz_owned.pth,{record_hash(hook)},{len(hook)}\n')
     elif case == 'approved-name-other-bytes-consistent-record':
         owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': hook,
                                                                  'setuptools-83.0.0.dist-info/METADATA': b'Name: setuptools\n'})
