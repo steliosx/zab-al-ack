@@ -49,6 +49,12 @@ def repository(host):
     return REPOSITORY.get(host, ('https://' + host + '/x', 'noble/main'))
 
 
+def cleartext(body):
+    """An InRelease in its cleartext-signed shape (the signature itself is checked by gpgv, not here)."""
+    return ('-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n' + body
+            + '-----BEGIN PGP SIGNATURE-----\n\nsynthetic\n-----END PGP SIGNATURE-----\n')
+
+
 def signature(host, fingerprint, verified=True):
     return {'uri': repository(host)[0], 'suite': repository(host)[1], 'architecture': 'amd64', 'priority': 500,
             'signature': {'status': 'OBSERVED', 'inrelease': host + '_x_dists_noble_InRelease', 'verified': verified,
@@ -196,7 +202,7 @@ def test_a_failed_dpkg_verification_is_never_clean(returncode, stdout, stderr):
     (lambda r: r['components']['zabbix_server'].__setitem__('apt', {'status': 'NOT_OBSERVED', 'reason': 'apt-cache policy unavailable'}), 'zabbix_server.apt'),
     (lambda r: r['components']['zabbix_server'].pop('apt'), 'zabbix_server.apt: absent'),
     (lambda r: r['components']['php']['dpkg'].update(file_verification={'status': 'NOT_OBSERVED', 'reason': 'dpkg -V unavailable'}), 'php.dpkg.file_verification'),
-    (lambda r: r['components']['php'].__setitem__('signatures', []), 'php.signature[http://archive.ubuntu.com/ubuntu]: absent'),
+    (lambda r: r['components']['php'].__setitem__('signatures', []), 'php.signature[http://archive.ubuntu.com/ubuntu noble-updates/main]: absent'),
     (lambda r: r['components']['php']['signatures'][0].__setitem__('signature', {'status': 'NOT_OBSERVED', 'reason': 'gpgv unavailable'}), 'gpgv unavailable'),
     (lambda r: r['components']['zabbix_server'].pop('index'), 'zabbix_server.index: absent'),
     (lambda r: r['components']['zabbix_server'].__setitem__('index', {'status': 'NOT_OBSERVED', 'reason': 'no signed index entry'}), 'no signed index entry'),
@@ -262,7 +268,7 @@ def signed_lists(tmp_path, stanza_arch='all', tamper=False):
     (lists / (prefix + 'main_binary-all_Packages')).write_bytes(gzip.compress(allidx.encode()))
     digests = {'main/binary-amd64/Packages': hashlib.sha256(amd64.encode()).hexdigest(),
                'main/binary-all/Packages': hashlib.sha256(allidx.encode()).hexdigest() if not tamper else '0' * 64}
-    (lists / (prefix + 'InRelease')).write_text('Origin: Zabbix\nSHA256:\n' + ''.join(f' {value} 10 {path}\n' for path, value in digests.items()) + 'Date: x\n')
+    (lists / (prefix + 'InRelease')).write_text(cleartext('Origin: Zabbix\nSHA256:\n' + ''.join(f' {value} 10 {path}\n' for path, value in digests.items()) + 'Date: x\n'))
     return lists
 
 
@@ -532,3 +538,47 @@ def test_the_postgresql_client_package_is_verified_like_the_server(mutate, fragm
     record = conforming_record()
     del record['components']['postgres_client']
     assert 'postgres_client: not collected' in evaluate(record)[2]
+
+
+@pytest.mark.parametrize('first', ['unverified', 'not-observed'])
+def test_an_unverified_origin_is_not_hidden_by_another_suite_on_the_same_uri(first):
+    """Review of O6 (issue 1): signatures were keyed by URI only; the second suite overwrote the first."""
+    record = conforming_record()
+    php = record['components']['php']
+    uri = 'http://archive.ubuntu.com/ubuntu'
+    php['apt']['origins'] = [{'priority': 500, 'uri': uri, 'suite': 'noble-updates/main', 'architecture': 'amd64'},
+                             {'priority': 500, 'uri': uri, 'suite': 'noble-security/main', 'architecture': 'amd64'}]
+    good = signature('archive.ubuntu.com', UBUNTU)
+    good['suite'] = 'noble-security/main'
+    bad = signature('archive.ubuntu.com', UBUNTU, verified=first == 'unverified')
+    if first == 'unverified':
+        bad['signature'].update(verified=False, keys=[])
+    else:
+        bad['signature'] = {'status': 'NOT_OBSERVED', 'reason': 'InRelease list file missing'}
+    php['signatures'] = [bad, good]
+    result, deviations, incomplete = evaluate(record)
+    assert result != 'CONFORMS', (deviations, incomplete)
+    # Two observations for one origin are never resolved by picking one.
+    record = conforming_record()
+    record['components']['php']['signatures'].append(signature('archive.ubuntu.com', UBUNTU))
+    assert any('more than one observation' in line for line in evaluate(record)[2])
+
+
+@pytest.mark.parametrize('placement', ['appended', 'prepended'])
+def test_only_digests_inside_the_signed_message_bind_an_index(tmp_path, placement):
+    """Review of O6 (issue 2): an unsigned SHA256 block outside the armour still bound a Packages index."""
+    lists = signed_lists(tmp_path)
+    inrelease = next(lists.glob('*_InRelease'))
+    text = inrelease.read_text()
+    forged = 'SHA256:\n ' + '2' * 64 + ' 10 main/binary-amd64/Packages\n'
+    inrelease.write_text(text + forged if placement == 'appended' else forged + text)
+    origin = {'uri': 'https://repo.zabbix.com/zabbix/7.0/ubuntu', 'suite': 'noble/main'}
+    observation = cpi.index_observation(origin, 'zabbix-server-pgsql', ZVER, 'amd64', lists)
+    assert observation['status'] == 'NOT_OBSERVED' and 'outside its signed message' in observation['reason']
+
+
+def test_the_signed_body_undoes_dash_escaping_and_ignores_the_armour_headers():
+    body = cpi.cleartext_signed_body('-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nOrigin: x\n- -----not armour\nSHA256:\n'
+                                     '-----BEGIN PGP SIGNATURE-----\n\nabc\n-----END PGP SIGNATURE-----\n')
+    assert body == 'Origin: x\n-----not armour\nSHA256:'
+    assert cpi.cleartext_signed_body('Origin: x\nSHA256:\n') is None

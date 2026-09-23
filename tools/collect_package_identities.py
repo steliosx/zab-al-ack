@@ -354,8 +354,29 @@ def read_index(path: Path) -> bytes:
     return gzip.decompress(data) if data[:2] == b'\x1f\x8b' else data
 
 
+def cleartext_signed_body(text: str) -> str | None:
+    """The signed part of a cleartext-signed InRelease; None when anything lies outside the signature.
+
+    gpgv verifies only the text between the armour lines, so bytes before
+    '-----BEGIN PGP SIGNED MESSAGE-----' or after '-----END PGP SIGNATURE-----'
+    are unsigned and must not contribute a digest. Dash-escaping is undone.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0] != '-----BEGIN PGP SIGNED MESSAGE-----':
+        return None
+    try:
+        body_start = lines.index('', 1) + 1                   # after the Hash: armour headers
+        signature = lines.index('-----BEGIN PGP SIGNATURE-----', body_start)
+        end = lines.index('-----END PGP SIGNATURE-----', signature)
+    except ValueError:
+        return None
+    if any(line.strip() for line in lines[end + 1:]) or '-----BEGIN PGP SIGNED MESSAGE-----' in lines[body_start:signature]:
+        return None
+    return '\n'.join(line[2:] if line.startswith('- ') else line for line in lines[body_start:signature])
+
+
 def inrelease_digests(text: str) -> dict[str, str]:
-    """`SHA256:` block of an InRelease file: relative index path -> digest."""
+    """`SHA256:` block of the signed part of an InRelease file: relative index path -> digest."""
     digests: dict[str, str] = {}
     active = False
     for line in text.splitlines():
@@ -394,7 +415,10 @@ def index_observation(origin: dict, package: str, version: str, host_architectur
     inrelease = lists / (prefix + '_dists_' + dist + '_InRelease')
     if not inrelease.is_file():
         return not_observed('InRelease list file missing: ' + inrelease.name)
-    digests = inrelease_digests(inrelease.read_text(errors='replace'))
+    body = cleartext_signed_body(inrelease.read_text(errors='replace'))
+    if body is None:
+        return not_observed('InRelease carries content outside its signed message: ' + inrelease.name)
+    digests = inrelease_digests(body)
     if not digests:
         return not_observed('InRelease carries no SHA256 digest list: ' + inrelease.name)
     tried = []
@@ -485,6 +509,19 @@ def collect(label: str, scratch: Path) -> dict:
 
 # ------------------------------------------------------------------ validation
 
+def signatures_by_origin(signatures: list) -> tuple[dict, set]:
+    """Signature observations keyed by (uri, suite): one base URI can serve several suites, each with its own InRelease."""
+    keyed: dict = {}
+    duplicates: set = set()
+    for entry in signatures:
+        if isinstance(entry, dict):
+            key = (entry.get('uri'), entry.get('suite'))
+            if key in keyed:
+                duplicates.add(key)
+            keyed[key] = entry
+    return keyed, duplicates
+
+
 def missing_observations(record: dict) -> list[str]:
     """Every required observation a record lacks, derived from the record itself, never from its own claim."""
     missing: list[str] = []
@@ -521,14 +558,17 @@ def missing_observations(record: dict) -> list[str]:
             continue
         origins = [origin for origin in apt.get('origins', []) if isinstance(origin, dict) and not str(origin.get('uri', '/')).startswith('/')]
         signatures = item.get('signatures') if isinstance(item.get('signatures'), list) else []
-        by_uri = {entry.get('uri'): entry for entry in signatures if isinstance(entry, dict)}
+        by_origin, duplicated = signatures_by_origin(signatures)
         if not origins:
             missing.append(name + '.apt: no repository origin for the installed version')
         for origin in origins:
-            entry = by_uri.get(origin.get('uri'))
+            if (origin.get('uri'), origin.get('suite')) in duplicated:
+                missing.append(f'{name}.signature[{origin.get("uri")} {origin.get("suite")}]: more than one observation')
+                continue
+            entry = by_origin.get((origin.get('uri'), origin.get('suite')))
             signature = entry.get('signature') if isinstance(entry, dict) and isinstance(entry.get('signature'), dict) else None
             if signature is None or signature.get('status') != 'OBSERVED':
-                missing.append(f'{name}.signature[{origin.get("uri")}]: ' + (signature.get('reason', 'not observed') if signature else 'absent'))
+                missing.append(f'{name}.signature[{origin.get("uri")} {origin.get("suite")}]: ' + (signature.get('reason', 'not observed') if signature else 'absent'))
         index = item.get('index') if isinstance(item.get('index'), dict) else None
         if index is None or index.get('status') != 'OBSERVED':
             missing.append(f'{name}.index: ' + (index.get('reason', 'not observed') if index else 'absent'))
@@ -605,7 +645,7 @@ def evaluate(record: dict, reference: dict, identities: dict) -> tuple[str, list
         if apt.get('installed') != dpkg.get('version'):
             deviations.append(f'{name}: apt installed {apt.get("installed")} differs from dpkg {dpkg.get("version")}')
         origins = [origin for origin in apt.get('origins', []) if isinstance(origin, dict) and not str(origin.get('uri', '/')).startswith('/')]
-        signatures = {entry.get('uri'): entry for entry in item.get('signatures', []) if isinstance(entry, dict)} if isinstance(item.get('signatures'), list) else {}
+        signatures = signatures_by_origin(item.get('signatures') if isinstance(item.get('signatures'), list) else [])[0]
         for origin in origins:
             host = origin_host(str(origin.get('uri')))
             allowed = allowed_fingerprints(host, reference)
@@ -616,7 +656,7 @@ def evaluate(record: dict, reference: dict, identities: dict) -> tuple[str, list
             if repository not in ALLOWED_REPOSITORIES.get(host, set()):
                 deviations.append(f'{name}: origin {repository[0]} {repository[1]} is not an allowed repository and suite of {host}')
                 continue
-            signature = (signatures.get(origin.get('uri')) or {}).get('signature')
+            signature = (signatures.get((origin.get('uri'), origin.get('suite'))) or {}).get('signature')
             if not isinstance(signature, dict) or signature.get('status') != 'OBSERVED':
                 continue  # listed as missing
             fingerprints = [key.get('fingerprint') for key in signature.get('keys', []) if isinstance(key, dict)] if signature.get('verified') else []
@@ -680,7 +720,8 @@ def proposal(record: dict, record_digest: str, reviewer: str, amendment: str) ->
     def entry(name: str) -> dict:
         item = record['components'][name]
         dpkg, index, executable = item['dpkg'], item['index'], item['executable']
-        signature = next((e['signature'] for e in item.get('signatures', []) if e.get('uri') == index.get('origin_uri')), {})
+        signature = next((e['signature'] for e in item.get('signatures', [])
+                          if (e.get('uri'), e.get('suite')) == (index.get('origin_uri'), index.get('origin_suite'))), {})
         return {'kind': 'dpkg', 'package': dpkg['package'], 'version': dpkg['version'], 'architecture': dpkg['architecture'],
                 'deb_sha256': index['deb_sha256'], 'deb_filename': index.get('filename'),
                 'origin': {'uri': index.get('origin_uri'), 'suite': index.get('origin_suite'), 'index': index.get('index_relative_path'),
