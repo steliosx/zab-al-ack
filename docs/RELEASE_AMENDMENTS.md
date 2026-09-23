@@ -1151,7 +1151,7 @@ content bound to the pinned signature, finds epoch-named cached `.deb` files
 and verifies `postgresql-client-18`; the group escalation keeps one deadline
 and the first cause and cannot signal a reused group id; bundle paths must
 be canonical; `pg_hba.conf` is read with PostgreSQL's quoting rules. The runner-host observations then ran on
-`zabalack-omarchy-x64` (R30).
+`zabalack-omarchy-x64`; their review and any identity approval are recorded separately (not yet).
 
 ## R28 — Docker requirements inventory and runner-account verification (prepared handoff)
 
