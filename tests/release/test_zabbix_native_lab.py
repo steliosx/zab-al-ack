@@ -629,3 +629,36 @@ def test_pg_hba_fields_tokenise_like_postgresql(lab):
     assert lab.hba_fields('local all "x ""y"" z" md5 # c') == [('local', False), ('all', False), ('x "y" z', True), ('md5', False)]
     assert lab.hba_fields('   # only a comment') == []
     assert lab.hba_fields('local all "open') is None
+
+
+# The results PostgreSQL 18 reports in pg_hba_file_rules for these lines (observed with the packaged
+# 18.6 on the runner host and with 18.3 in the review): only space, TAB and CR are blanks; U+00A0, VT
+# and FF stay inside the token, so the method is the next field.
+@pytest.mark.parametrize('hba, fields, accepted', [
+    ('local all all scram-sha-256', ['local', 'all', 'all', 'scram-sha-256'], True),
+    ('local\tall\tall\tscram-sha-256', ['local', 'all', 'all', 'scram-sha-256'], True),
+    ('local all all scram-sha-256\r', ['local', 'all', 'all', 'scram-sha-256'], True),
+    ('local all all scram-sha-256 trust', ['local', 'all', 'all scram-sha-256', 'trust'], False),
+    ('local all all\x0bscram-sha-256 trust', ['local', 'all', 'all\x0bscram-sha-256', 'trust'], False),
+    ('local all all\x0cscram-sha-256 trust', ['local', 'all', 'all\x0cscram-sha-256', 'trust'], False),
+    ('local all all x scram-sha-256', ['local', 'all', 'all x', 'scram-sha-256'], True),
+], ids=['space', 'tab', 'cr', 'nbsp', 'vertical-tab', 'form-feed', 'nbsp-inside-a-user-then-scram'])
+def test_pg_hba_blanks_are_postgresql_blanks_only(lab, hba, fields, accepted):
+    """Review of b57bebb (LOW): str.isspace() split on U+00A0, VT and FF, where PostgreSQL 18 does not,
+    so a record PostgreSQL applies as trust was accepted as scram-sha-256."""
+    assert [text for text, _ in lab.hba_fields(hba)] == fields
+    marked(lab)
+    (lab.PGDATA / 'pg_hba.conf').write_bytes((hba + '\n').encode())
+    if accepted:
+        lab.verify_authentication(lab.PGDATA)
+    else:
+        with pytest.raises(SystemExit, match='unauthenticated or non-scram'):
+            lab.verify_authentication(lab.PGDATA)
+
+
+def test_pg_hba_lines_end_at_newline_only(lab):
+    """Python's splitlines() also ends lines at VT, FF, U+2028 and others; PostgreSQL does not."""
+    marked(lab)
+    (lab.PGDATA / 'pg_hba.conf').write_bytes('local all all scram-sha-256 local all all trust\n'.encode())
+    with pytest.raises(SystemExit, match='unauthenticated or non-scram'):
+        lab.verify_authentication(lab.PGDATA)

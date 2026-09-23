@@ -217,6 +217,10 @@ def password(role: str, *, create: bool = False) -> str:
     return value
 
 
+# PostgreSQL's pg_isblank (src/backend/libpq/hba.c): only space, TAB and CR separate
+# pg_hba.conf tokens. Other characters Python calls whitespace (U+00A0, VT, FF, ...)
+# are part of a token for PostgreSQL, and so here.
+HBA_BLANKS = ' \t\r'
 HBA_HOST_TYPES = ('host', 'hostssl', 'hostnossl', 'hostgssenc', 'hostnogssenc')
 IP_MASK = re.compile(r'[0-9]{1,3}(?:\.[0-9]{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:]*')
 
@@ -250,7 +254,7 @@ def hba_fields(line: str) -> list[tuple[str, bool]] | None:
             continue
         if char == '#':
             break
-        if char.isspace():
+        if char in HBA_BLANKS:
             if in_field:
                 fields.append((text, quoted))
                 text, quoted, in_field = '', False, False
@@ -299,7 +303,7 @@ def verify_authentication(pgdata: Path) -> None:
     must use scram-sha-256 or reject, and a record that cannot be read refuses.
     """
     try:
-        lines = (pgdata / 'pg_hba.conf').read_text().splitlines()
+        lines = (pgdata / 'pg_hba.conf').read_text().split('\n')  # PostgreSQL ends a line at '\n' only
     except OSError as error:
         raise SystemExit(f'Zabbix lab cluster authentication unreadable: {error}') from error
     for line in lines:
