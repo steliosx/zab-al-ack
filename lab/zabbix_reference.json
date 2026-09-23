@@ -10,9 +10,9 @@
     "tag_date": "2026-09-22",
     "release_candidate": "7.0.31rc1 (2026-09-15) was released as 7.0.31 without any changes (ChangeLog at the tag)",
     "fallback": {
-      "version": "7.0.30",
-      "tag_commit": "406d3a4b8b2ce1f06f271d9f874ea0e6015fa18e",
-      "rule": "Only if the Ubuntu 24.04 package index does not list 7.0.31. A substitution is a new pin recorded here and in the amendment; never mix package versions."
+      "version": null,
+      "rule": "none: 7.0.31 is confirmed available in the signed noble index (2026-09-23); a substitution would be a new pin recorded here and in an amendment, never a silent fallback",
+      "historical_note": "until 2026-09-23 this entry named 7.0.30 (tag commit 406d3a4b8b2ce1f06f271d9f874ea0e6015fa18e) as the fallback if the index did not list 7.0.31"
     }
   },
   "verified_from_source": {
@@ -67,16 +67,17 @@
     }
   },
   "ubuntu_packages": {
-    "status": "NOT_VERIFIED_FROM_THE_PREPARING_ENVIRONMENT: repo.zabbix.com was blocked; the runner host must pass the verification gate before this pin is treated as an installed identity",
+    "status": "7.0.31 availability and Debian revision -1 confirmed from the signed noble index (Opus, 2026-09-23, InRelease dated 2026-09-22 09:02:56 UTC); the installed identities are still to be collected on the runner host with tools/collect_package_identities.py and reviewed before any list is filled",
     "distribution": "Ubuntu 24.04 (noble) amd64",
     "repository": "deb https://repo.zabbix.com/zabbix/7.0/ubuntu noble main",
     "release_package": "https://repo.zabbix.com/zabbix/7.0/ubuntu/pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb",
     "expected_signing_key": {
       "long_id": "D913219AB5333005",
-      "fingerprint_third_party_only": "4C3D6F2CC75F5146754FC374D913219AB5333005",
-      "note": "the April 2024 key; confirm the fingerprint from the installed keyring before trusting the index"
+      "note": "RSA key created 2024-04-30, expiring 2034-04-28; verified by the non-author reviewer (Opus, 2026-09-23) from the official zabbix-official-repo.key and the noble InRelease (GOODSIG D913219AB5333005, VALIDSIG of this fingerprint). The validator matches this full fingerprint, never the long id alone.",
+      "fingerprint": "4C3D6F2CC75F5146754FC374D913219AB5333005",
+      "user_id": "Zabbix LLC (Apr 2024) <packager@zabbix.com>"
     },
-    "expected_version_string": "1:7.0.31-1+ubuntu24.04 (inferred from the 7.0.24 and 7.0.29 patterns; the Debian revision is unconfirmed)",
+    "expected_version_string": "1:7.0.31-1+ubuntu24.04 (confirmed in the signed noble index for zabbix-server-pgsql, zabbix-frontend-php and zabbix-sql-scripts)",
     "packages": [
       "zabbix-server-pgsql",
       "zabbix-frontend-php",
@@ -93,13 +94,48 @@
       "tool": "tools/collect_package_identities.py",
       "procedure": "collect on the runner host as the runner account (read-only), validate against this file and lab/native_service_identities.json, review the record, approve into a proposal file, then record the reviewed values in the policy files with an amendment",
       "reachability_from_the_preparing_environment_2026-09-22": {
-        "https://repo.zabbix.com/zabbix/7.0/release/ubuntu/dists/noble/InRelease": "blocked (no HTTP status)",
-        "https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/InRelease": "blocked (no HTTP status)",
-        "https://www.zabbix.com/rn/rn7.0.31": "blocked (no HTTP status)",
+        "https://repo.zabbix.com/zabbix/7.0/ubuntu/dists/noble/InRelease": "blocked from the preparing container (no HTTP status); HTTP 200 from the runner host (Opus, 2026-09-23)",
+        "https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/InRelease": "blocked from the preparing container; HTTP 200 from the runner host (Opus, 2026-09-23)",
+        "https://www.zabbix.com/rn/rn7.0.31": "blocked from the preparing container",
         "https://api.github.com/repos/zabbix/zabbix/git/ref/tags/7.0.31": "403 from the proxy; the tag commit was read with git ls-remote (see selected.tag_commit_source)",
         "https://archive.ubuntu.com/ubuntu/dists/noble-updates/main/binary-amd64/Packages.gz": "200",
-        "https://archive.ubuntu.com/ubuntu/dists/noble-security/main/binary-amd64/Packages.gz": "200"
+        "https://archive.ubuntu.com/ubuntu/dists/noble-security/main/binary-amd64/Packages.gz": "200",
+        "correction": "the first probe used …/zabbix/7.0/release/ubuntu/…, which is not the repository path (HTTP 404); the repository is …/zabbix/7.0/ubuntu"
       }
+    },
+    "architectures": {
+      "zabbix-server-pgsql": "amd64",
+      "zabbix-frontend-php": "all",
+      "zabbix-sql-scripts": "all",
+      "zabbix-nginx-conf": "all"
+    },
+    "index_observation_2026-09-23": {
+      "source": "signed noble index fetched by the non-author reviewer (Opus) from repo.zabbix.com; each Packages.gz digest found in the InRelease",
+      "zabbix-server-pgsql": {
+        "version": "1:7.0.31-1+ubuntu24.04",
+        "architecture": "amd64",
+        "filename": "pool/main/z/zabbix/zabbix-server-pgsql_7.0.31-1+ubuntu24.04_amd64.deb",
+        "sha256": "1fa7e8925e078180845efddaba0e48e6f854a63c25d5a2ddcbbdbeebf7f3a1ca"
+      },
+      "zabbix-frontend-php": {
+        "version": "1:7.0.31-1+ubuntu24.04",
+        "architecture": "all",
+        "filename": "pool/main/z/zabbix/zabbix-frontend-php_7.0.31-1+ubuntu24.04_all.deb",
+        "sha256": "6ae4675bc778ce0f66994bdd26aa7b1df23d1bc2e9d7feb486fd6a374261dc91"
+      },
+      "zabbix-sql-scripts": {
+        "version": "1:7.0.31-1+ubuntu24.04",
+        "architecture": "all",
+        "filename": "pool/main/z/zabbix/zabbix-sql-scripts_7.0.31-1+ubuntu24.04_all.deb",
+        "sha256": "f1c06f2b1e438b7b5248d56f4319092ee05896ca04ba76cbdb64ee251cb92a3a"
+      },
+      "zabbix-release": {
+        "version": "1:7.0-5+ubuntu24.04",
+        "architecture": "all",
+        "filename": "pool/main/z/zabbix-release/zabbix-release_latest_7.0+ubuntu24.04_all.deb",
+        "sha256": "4f206504c2bc1cff36edf762e2274d0686b0e796b772533c95d04bbe265654de"
+      },
+      "note": "index observations, not installed identities; the host record is collected on the runner after installation and reviewed"
     }
   },
   "dependencies": {
@@ -107,7 +143,25 @@
       "major": 18,
       "package": "postgresql-18 from PGDG noble-pgdg (Ubuntu's archive stops at 16)",
       "pgdg_key_fingerprint": "B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8",
-      "zabbix_supported_range": "13.0 to 18.x"
+      "zabbix_supported_range": "13.0 to 18.x",
+      "pgdg_key_note": "\"PostgreSQL Debian Repository\" B97B0AFC…ACCC4CF8, created 2011-10-13, no expiry; verified by the non-author reviewer from the noble-pgdg InRelease (2026-09-23). The signed index lists postgresql-18 18.6-1.pgdg24.04+2 (also 18.4, 18.3) and pgbouncer 1.25.2-1.pgdg24.04+1 (also 1.25.1); exact pins are an owner decision recorded with the host collection.",
+      "index_observation_2026-09-23": {
+        "postgresql-18": {
+          "version": "18.6-1.pgdg24.04+2",
+          "architecture": "amd64",
+          "sha256": "c0773357df8769abb70e92722196d9b53422d71c0f29a4f39c834b94276cfa3d"
+        },
+        "postgresql-client-18": {
+          "version": "18.6-1.pgdg24.04+2",
+          "architecture": "amd64",
+          "sha256": "b9d10d99a73bf7aa375be2fe36626c40499cfdf553d0ad174674a88a1b256b43"
+        },
+        "pgbouncer": {
+          "version": "1.25.2-1.pgdg24.04+1",
+          "architecture": "amd64",
+          "sha256": "660146d7e434f1a74b3514dffd29519cb9c7882dd4aa40ac1d47ad8a42e7c47e"
+        }
+      }
     },
     "php": {
       "minimum": "8.0.0",
@@ -133,7 +187,12 @@
           "sha256": "b0feef8b103e76c05108eb49e97caa098d2c04fe54bfe75b90c094fc295356ff"
         },
         "note": "an index observation of the official archive, not an installed identity of the runner host; the host record is collected there"
-      }
+      },
+      "ubuntu_archive_key_fingerprints": [
+        "F6ECB3762474EDA9D21B7022871920D1991BC93C",
+        "790BC7277767219C42C86F933B4FE6ACC0B21F32"
+      ],
+      "ubuntu_archive_keys_note": "Ubuntu Archive Automatic Signing Key (2018) F6ECB376…91BC93C, observed verifying the noble-updates InRelease with ubuntu-archive-keyring on 2026-09-22; and the 2012 key 790BC727…C0B21F32 from the same keyring. The validator requires the Ubuntu origins of php8.3 to be verified by one of these full fingerprints."
     },
     "web": "official packages pair nginx + php8.3-fpm (zabbix-nginx-conf) or Apache; the disposable lab serves the packaged frontend files from a private copy with the PHP built-in server on 127.0.0.1:58080, which is a loopback lab convenience and not an official deployment configuration"
   },
@@ -146,12 +205,10 @@
     "token, role and history API classes have no functional change since January 2025"
   ],
   "not_verified": [
-    "U1 availability and exact Debian revision of the 7.0.31 (and 7.0.30) noble packages (repo.zabbix.com still blocked on 2026-09-22; the validator accepts any Debian revision of the pinned upstream version and records it)",
-    "U2 the official release-notes, requirements and download pages (zabbix.com blocked)",
+    "U2 the official release-notes, requirements and download pages (zabbix.com blocked from the preparing container; not fetched by the reviewer)",
     "U3 the current payload of the zabbix-release package",
-    "U4 the full fingerprint, user id and expiry of the April 2024 signing key from an official source (the collector records the GOODSIG/VALIDSIG of the host's InRelease against its installed keyrings)",
-    "U5 package dependencies and installed file paths (confirm with apt-cache show and dpkg -L; the collector records dpkg -V for the used packages)",
-    "U6 the exact PGDG postgresql-18 Debian version and the PGDG key expiry (apt.postgresql.org blocked)",
-    "U7 the 7.0 support end dates"
+    "U5 package dependencies and installed file paths: the frontend depends on php-mysql|php-pgsql, php-mbstring, php-bcmath, php-xml, php-gd, php-ldap, php-curl and fonts-dejavu (signed index, 2026-09-23); installed paths are confirmed with dpkg -L on the host",
+    "U7 the 7.0 support end dates",
+    "resolved: U1 availability and Debian revision (1:7.0.31-1+ubuntu24.04, signed index 2026-09-23); U4 the signing key fingerprint, user id and expiry (official key file); U6 the PGDG postgresql-18 version and the PGDG key (no expiry)"
   ]
 }

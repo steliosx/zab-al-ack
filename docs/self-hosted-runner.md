@@ -261,14 +261,26 @@ python tools/collect_package_identities.py collect --output /path/private/packag
 python tools/collect_package_identities.py validate /path/private/package-identities.json
 ```
 
-`validate` reports CONFORMS, DEVIATES (a source build, an origin other than
-`repo.zabbix.com`, `apt.postgresql.org` or the Ubuntu archive, an InRelease
-signature that does not match the expected key, changed package files, or a
-version outside the pin and the policy) or INCOMPLETE (a missing observation;
-never a pass). After review, `approve --reviewer … --amendment … --output …`
-writes the reviewed entries as a separate proposal; the reviewer copies them
-into `lab/native_service_identities.json` (`reviewed`) and
-`lab/zabbix_reference.json` and records the review in
+`collect` records each component's executable digest and version line (for
+PostgreSQL also `pg_ctl`, `initdb` and `psql` with their owning packages), the
+dpkg identity, `dpkg -V` with conffiles and documentation classified apart from
+the payload, every apt origin of the installed version with its InRelease
+signature, the signed index entry of the installed version (the Packages index
+must hash to the InRelease digest; the entry gives the `.deb` digest and file
+name; Arch:all packages are found in `binary-all`) and the cached `.deb` when
+apt still holds it. `validate` derives the missing observations itself and
+reports CONFORMS, DEVIATES (a source build or a directory in place of an
+executable, an origin other than `repo.zabbix.com`, `apt.postgresql.org` or the
+Ubuntu archive, an origin whose InRelease is not verified by the pinned full
+fingerprint from `lab/zabbix_reference.json`, an `Architecture` other than
+`all` for `zabbix-frontend-php` and `zabbix-sql-scripts` or other than `amd64`
+for everything else, a changed payload file, a signed index entry not bound to
+the InRelease, or a version outside the pin and the policy) or INCOMPLETE (any
+missing observation, a failed `dpkg -V` included; never a pass). After review,
+`approve --reviewer … --amendment … --output …` writes the reviewed entries,
+each with its `.deb` digest, origin and signing fingerprint, as a separate
+proposal; the reviewer copies them into `lab/native_service_identities.json`
+(`reviewed`) and `lab/zabbix_reference.json` and records the review in
 `docs/RELEASE_AMENDMENTS.md`. The tool edits neither file.
 
 ### Successful native phase network retirement (Compose form only)
