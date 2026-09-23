@@ -119,6 +119,14 @@ def validate_report(record: object, root: Path) -> None:
     require(all(type(record.get(key)) is int and record[key] == 0
                 for key in ('runner_shutdown_exit_code', 'shutdown_exit_code')),
             'cleanup did not explicitly succeed')
+    native_lab = record.get('native_lab')
+    if native_lab is not None:
+        # A record produced through lab/deployment_native_lab.py passes only when the
+        # cycle left nothing behind: both services stopped, diagnostics preserved,
+        # lab directories removed. Anything else was rewritten to FAIL by the cycle.
+        require(isinstance(native_lab, dict) and native_lab.get('final_state') == 'absent'
+                and native_lab.get('cleanup_complete') is True and native_lab.get('run_exit_code') == 0,
+                'native lab cycle did not end with the lab absent')
     require(not any(record.get(key) for key in ('reason', 'shutdown_reason', 'runner_shutdown_reason')),
             'passing record retains a failure reason')
     try:

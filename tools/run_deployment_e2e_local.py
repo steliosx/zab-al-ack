@@ -183,7 +183,6 @@ def main(argv=None):
                 save()
             print(json.dumps(report))
             return 2
-        report["artifact_mode"] = "supplied_wheel"
     try:
         components = services(args.services_file)
         check_host_layout()
@@ -192,14 +191,17 @@ def main(argv=None):
         runner = check_runner(runner_python, args.wheel.resolve())
         require(supplied is None or runner["wheel_sha256"] == supplied["sha256"], "supplied_wheel_identity_mismatch")
     except (RuntimeError, OSError, ValueError, KeyError, StopIteration) as error:
+        # The artifact was not exercised: a NOT_RUN record carries no artifact-mode or wheel metadata.
         report.update(status="NOT_RUN", reason=str(error)[:300], finished_at=stamp())
-        report.pop("code_digests", None)
+        for key in ("code_digests", "artifact_mode", "supplied_wheel"):
+            report.pop(key, None)
         if not args.plan:
             save()
         print(json.dumps(report))
         return 2
     if supplied is not None:
         # check_runner verified every installed package file against the wheel bytes.
+        report["artifact_mode"] = "supplied_wheel"
         report["supplied_wheel"] = {**supplied, "installed_bytes_verified": True}
     # Public description: no interpreter or site-packages path leaves the host.
     components["runner"] = ("this host: a Python 3.12 environment with requirements.lock and the built zabalack "

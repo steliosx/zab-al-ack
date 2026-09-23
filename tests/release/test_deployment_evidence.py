@@ -183,3 +183,27 @@ def test_a_local_record_may_carry_the_supplied_wheel_receipt(tmp_path):
     value['supplied_wheel']['installed_bytes_verified'] = False
     with pytest.raises(ValueError):
         validate_report(value, root)
+
+
+@pytest.mark.parametrize('native_lab,accepted', [
+    ({'command': 'cycle', 'final_state': 'absent', 'cleanup_complete': True, 'run_exit_code': 0}, True),
+    ({'command': 'cycle', 'final_state': 'stopped', 'cleanup_complete': False, 'run_exit_code': 0}, False),
+    ({'command': 'cycle', 'final_state': 'absent', 'cleanup_complete': False, 'run_exit_code': 0}, False),
+    ({'command': 'run', 'final_state': 'running', 'cleanup_complete': False, 'run_exit_code': 0}, False),
+    ({'command': 'cycle', 'final_state': 'absent', 'cleanup_complete': True, 'run_exit_code': 5}, False),
+    ('not a dict', False),
+], ids=['absent', 'stopped', 'absent-but-incomplete', 'run-left-running', 'nonzero-run', 'malformed'])
+def test_a_native_lab_record_passes_only_when_the_cycle_left_the_lab_absent(tmp_path, native_lab, accepted):
+    """R1: a PASS produced through the native lab orchestrator requires the final lab state absent."""
+    from deployment_evidence import validate_report
+    root = tmp_path / 'checkout'
+    (root / 'src/zabalack').mkdir(parents=True)
+    (root / 'src/zabalack/__init__.py').write_text('')
+    (root / 'tests').mkdir()
+    value = passing(root, local=True)
+    value['native_lab'] = native_lab
+    if accepted:
+        validate_report(value, root)
+    else:
+        with pytest.raises(ValueError, match='native lab cycle did not end with the lab absent'):
+            validate_report(value, root)

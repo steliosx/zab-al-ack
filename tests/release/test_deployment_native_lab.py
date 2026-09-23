@@ -21,7 +21,7 @@ def lab(tmp_path, monkeypatch):
     spec.loader.exec_module(module)
     state = tmp_path / '.deployment-lab'
     for key, value in [('REPO', tmp_path), ('STATE', state), ('MARKER', state / 'ISOLATED_DEPLOYMENT_LAB'), ('PGDATA', state / 'pgdata'),
-                       ('PRIVATE', tmp_path / 'private'), ('LINK', tmp_path / 'link')]:
+                       ('PRIVATE', tmp_path / 'private'), ('LINK', tmp_path / 'link'), ('RECORD', tmp_path / 'evidence/deployment-e2e-run.json')]:
         monkeypatch.setattr(module, key, value)
     monkeypatch.setattr(module, 'port_listening', lambda port: False)
     monkeypatch.setattr(module.os, 'geteuid', lambda: 1001)
@@ -202,8 +202,9 @@ def test_reset_and_run_require_the_running_lab(lab, monkeypatch):
     monkeypatch.setattr(lab.module, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 3, '', ''))
     with pytest.raises(SystemExit, match='reset requires the running deployment lab'):
         lab.module.main(['reset', '--isolated-lab'])
-    with pytest.raises(SystemExit, match='run requires the running deployment lab'):
-        lab.module.main(['run', '--isolated-lab', '--runner-python', '/venv/bin/python', '--wheel', 'zabalack-0.1.0a18-py3-none-any.whl'])
+    # run is guarded: the refusal becomes the public NOT_RUN record and exit 2.
+    assert lab.module.main(['run', '--isolated-lab', '--runner-python', '/venv/bin/python', '--wheel', 'zabalack-0.1.0a18-py3-none-any.whl']) == 2
+    assert record(lab)['status'] == 'NOT_RUN' and record(lab)['reason'] == 'lab_not_running'
 
 
 def test_services_file_describes_the_four_components_with_identities(lab, monkeypatch, capsys):
@@ -239,6 +240,10 @@ def test_run_writes_services_then_invokes_the_local_runner_with_reset_and_wheel_
     assert reset.endswith('deployment_native_lab.py reset --isolated-lab')
     assert command[command.index('--services-file') + 1] == str(lab.module.STATE / 'services.json')
     assert (lab.module.STATE / 'services.json').exists() and kwargs['cwd'] == lab.tmp
+    # `run` leaves the lab running by design; its record says so and cannot pass as a cycle artifact.
+    record = json.loads(lab.module.RECORD.read_text())
+    assert record['native_lab']['command'] == 'run' and record['native_lab']['final_state'] == 'running'
+    assert record['native_lab']['cleanup_complete'] is False
 
 
 def test_stop_reports_both_cleanups_and_exit_code_from_the_observed_state(lab, monkeypatch, capsys):
@@ -268,9 +273,12 @@ def test_wipe_refuses_while_any_component_runs(lab, monkeypatch, zabbix_state, c
 def test_a_root_verifier_without_a_usable_unprivileged_identity_is_blocked_before_any_service_command(lab, monkeypatch):
     monkeypatch.setattr(lab.module, 'unprivileged_helper_available', lambda: False)
     monkeypatch.setattr(lab.module, 'run', lambda command, **kwargs: pytest.fail('nothing may run'))
-    for argv in (['stop', '--isolated-lab'], ['services'], ['cycle', '--isolated-lab', '--runner-python', '/v/bin/python', '--wheel', 'zabalack-0.1.0a18-py3-none-any.whl']):
+    for argv in (['stop', '--isolated-lab'], ['services']):
         with pytest.raises(SystemExit, match='BLOCKED_ENVIRONMENT'):
             lab.module.main(argv)
+    # run and cycle produce the public NOT_RUN record and exit 2 instead of a bare traceback.
+    assert lab.module.main(['cycle', '--isolated-lab', '--runner-python', '/v/bin/python', '--wheel', 'zabalack-0.1.0a18-py3-none-any.whl']) == 2
+    assert record(lab)['reason'] == 'blocked_environment'
     assert lab.zabbix.calls == []
 
 
@@ -314,8 +322,36 @@ def cycle_environment(lab, monkeypatch, *, runner_exit=0, stop_exit=0):
     monkeypatch.setattr(lab.module, 'port_listening', lambda port: port == lab.module.PG_PORT and live['postgres'])
     monkeypatch.setattr(lab.module, 'psql', lambda binaries, database, sql, **kwargs: '1')
     launched = []
-    monkeypatch.setattr(lab.module.subprocess, 'run', lambda command, **kwargs: launched.append(command) or subprocess.CompletedProcess(command, runner_exit))
+
+    def inner_record(status, **extra):
+        """What the inner runner leaves behind: a record like tools/run_deployment_e2e_local.py writes."""
+        lab.module.RECORD.parent.mkdir(exist_ok=True)
+        lab.module.RECORD.write_text(json.dumps({'layer': 'native_deployment_e2e', 'status': status, 'not_docker': True,
+                                                 'counts': {'passed': 4, 'failed': 0, 'skipped': 0}, 'tree_unchanged': True,
+                                                 'artifact_mode': 'supplied_wheel', 'code_digests': {'source': 'a' * 64, 'harness': 'b' * 64},
+                                                 'started_at': '2026-09-23T00:00:00+00:00', **extra}))
+
+    def runner(command, **kwargs):
+        launched.append(command)
+        inner_record('PASS' if runner_exit == 0 else ('NOT_RUN' if runner_exit == 2 else 'FAIL'), reason=None if runner_exit == 0 else 'synthetic')
+        return subprocess.CompletedProcess(command, runner_exit)
+    monkeypatch.setattr(lab.module.subprocess, 'run', runner)
+    lab.inner_record = inner_record
     return launched
+
+
+def stale_pass_record(lab):
+    """The tracked historical PASS record a checkout carries before any run."""
+    lab.module.RECORD.parent.mkdir(exist_ok=True)
+    lab.module.RECORD.write_text(json.dumps({'layer': 'native_deployment_e2e', 'status': 'PASS', 'not_docker': True, 'tree_unchanged': True,
+                                             'counts': {'passed': 4, 'failed': 0, 'skipped': 0}, 'checks': {'x': True}, 'components': {'postgres': 'old'},
+                                             'supplied_wheel': {'sha256': 'f' * 64}, 'artifact_mode': 'supplied_wheel',
+                                             'code_digests': {'source': 'c' * 64, 'harness': 'd' * 64}, 'project': 'old-project',
+                                             'started_at': '2026-01-01T00:00:00+00:00', 'finished_at': '2026-01-01T00:10:00+00:00'}))
+
+
+def record(lab):
+    return json.loads(lab.module.RECORD.read_text())
 
 
 CYCLE = ['cycle', '--isolated-lab', '--runner-python', '/venv/bin/python', '--wheel', '/dist/zabalack-0.1.0a18-py3-none-any.whl', '--wheel-sha256', 'f' * 64]
@@ -327,7 +363,7 @@ def test_cycle_starts_runs_stops_and_wipes_and_reports_the_run_exit_code(lab, mo
     out = json.loads(capsys.readouterr().out)
     assert out['start']['state'] == 'running' and out['run_exit_code'] == 3
     assert out['cleanup'] == {'cleanup': {'zabbix': {'php': {'status': 'STOPPED'}}, 'postgres': {'status': 'STOPPED', 'exit_code': 0}}, 'state': 'stopped'}
-    assert out['wipe'] == {'wipe': 'done', 'state': 'absent'} and out['final_state'] == 'absent'
+    assert out['wipe'] == {'wipe': 'done', 'zabbix_exit_code': 0, 'state': 'absent'} and out['final_state'] == 'absent'
     assert not lab.module.STATE.exists()
     assert lab.zabbix.calls == ['start', 'status', 'stop', 'reset']
     # Both labs' diagnostics were preserved with digests before the wipe removed them.
@@ -346,8 +382,8 @@ def test_cycle_refuses_unless_the_lab_is_absent_and_touches_nothing(lab, monkeyp
     marked(lab)
     monkeypatch.setattr(lab.module, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 3, '', ''))
     monkeypatch.setattr(lab.module, 'start_postgres', lambda binaries: pytest.fail('nothing may start'))
-    with pytest.raises(SystemExit, match='cycle requires an absent deployment lab \\(state stopped\\)'):
-        lab.module.main(CYCLE)
+    assert lab.module.main(CYCLE) == 2
+    assert record(lab)['status'] == 'NOT_RUN' and record(lab)['reason'] == 'lab_state_not_absent'
     assert lab.zabbix.calls == [] and lab.module.MARKER.exists()
 
 
@@ -370,12 +406,111 @@ def test_cycle_refuses_the_wipe_when_diagnostics_are_not_preserved(lab, monkeypa
     assert lab.zabbix.calls == ['start', 'status', 'stop']
 
 
+def test_a_passing_cycle_binds_the_absent_final_state_to_the_record(lab, monkeypatch, capsys):
+    cycle_environment(lab, monkeypatch, runner_exit=0)
+    assert lab.module.main(CYCLE) == 0
+    value = record(lab)
+    assert value['status'] == 'PASS' and value['native_lab']['final_state'] == 'absent' and value['native_lab']['cleanup_complete'] is True
+    assert value['native_lab']['run_exit_code'] == 0 and value['native_lab']['wipe']['wipe'] == 'done' and 'finished_at' in value
+    assert json.loads(capsys.readouterr().out)['status'] == 'PASS'
+
+
+@pytest.mark.parametrize('failure', ['stop', 'retention', 'wipe'])
+def test_a_non_zero_cycle_after_an_inner_pass_rewrites_the_record_to_fail(lab, monkeypatch, capsys, failure):
+    """R1: the uploaded artifact can never read PASS when stop, retention or the wipe failed."""
+    cycle_environment(lab, monkeypatch, runner_exit=0, stop_exit=1 if failure == 'stop' else 0)
+    if failure == 'retention':
+        monkeypatch.setattr(lab.module, 'preserve', lambda *args, **kwargs: (_ for _ in ()).throw(lab.module.RetentionError('disk full')))
+    if failure == 'wipe':
+        real = lab.module.zabbix
+
+        def zabbix(command, *args, check=True):
+            result = real(command, *args, check=check)
+            return subprocess.CompletedProcess(command, 7, '{}', '') if command == 'reset' else result
+        monkeypatch.setattr(lab.module, 'zabbix', zabbix)
+    assert lab.module.main(CYCLE) == 5
+    value = record(lab)
+    assert value['status'] == 'FAIL'
+    assert value['reason'] == {'stop': 'lab_cleanup_incomplete: final state partial', 'retention': 'lab_retention_failed', 'wipe': 'lab_wipe_failed'}[failure]
+    native = value['native_lab']
+    assert native['run_exit_code'] == 0 and native['cleanup_complete'] is False
+    assert failure != 'stop' or native['final_state'] != 'absent'
+    assert native['cleanup'] is not None and 'retention' in native and 'wipe' in native
+    out = json.loads(capsys.readouterr().out)
+    assert out['status'] == 'FAIL'
+
+
+@pytest.mark.parametrize('refusal', ['layout', 'occupied', 'blocked', 'binaries', 'zabbix-start'])
+def test_a_fresh_not_run_record_replaces_the_stale_pass_before_any_service_work(lab, monkeypatch, capsys, refusal):
+    """R13: an early refusal must never upload the tracked historical PASS record."""
+    stale_pass_record(lab)
+    expected = {'layout': 'layout_not_ready', 'occupied': 'lab_state_not_absent', 'blocked': 'blocked_environment',
+                'binaries': 'postgres_binaries_missing', 'zabbix-start': 'zabbix_start_failed'}[refusal]
+    if refusal == 'layout':
+        monkeypatch.setattr(lab.module.socket, 'getaddrinfo', lambda name, port: (_ for _ in ()).throw(lab.module.socket.gaierror()))
+        monkeypatch.setattr(lab.module, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 3, '', ''))
+    elif refusal == 'occupied':
+        marked(lab)
+        monkeypatch.setattr(lab.module, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 3, '', ''))
+    elif refusal == 'blocked':
+        monkeypatch.setattr(lab.module, 'unprivileged_helper_available', lambda: False)
+    elif refusal == 'binaries':
+        monkeypatch.delenv('ACK_LAB_PG_BIN')
+    else:
+        cycle_environment(lab, monkeypatch)
+        real = lab.module.zabbix
+        monkeypatch.setattr(lab.module, 'zabbix', lambda command, *args, check=True: subprocess.CompletedProcess(command, 1, '', 'boom')
+                            if command == 'start' else real(command, *args, check=check))
+    monkeypatch.setattr(lab.module.subprocess, 'run', lambda command, **kwargs: pytest.fail('the runner must not start: ' + str(command)))
+    assert lab.module.main(CYCLE) == 2
+    value = record(lab)
+    assert value['status'] == 'NOT_RUN' and value['reason'] == expected
+    assert value['native_lab']['run_exit_code'] is None
+    for key in ('counts', 'checks', 'components', 'supplied_wheel', 'artifact_mode', 'code_digests', 'tree_unchanged', 'project'):
+        assert key not in value, key
+    out = json.loads(capsys.readouterr().out)
+    assert out['status'] == 'NOT_RUN' and out['reason'] == expected
+
+
+def test_the_record_is_invalidated_before_the_first_service_command(lab, monkeypatch):
+    stale_pass_record(lab)
+    seen = {}
+
+    def helper():
+        seen['record_at_first_check'] = record(lab)['status']
+        return False
+    monkeypatch.setattr(lab.module, 'unprivileged_helper_available', helper)
+    assert lab.module.main(CYCLE) == 2
+    assert seen['record_at_first_check'] == 'NOT_RUN'
+
+
+def test_a_failed_inner_run_keeps_its_own_record_with_the_lab_summary_attached(lab, monkeypatch, capsys):
+    cycle_environment(lab, monkeypatch, runner_exit=1)
+    assert lab.module.main(CYCLE) == 1
+    value = record(lab)
+    assert value['status'] == 'FAIL' and value['reason'] == 'synthetic' and value['native_lab']['final_state'] == 'absent'
+    assert value['native_lab']['run_exit_code'] == 1
+
+
+def test_wipe_reports_a_failed_zabbix_wipe(lab, monkeypatch, capsys):
+    marked(lab)
+    lab.zabbix.state = 'stopped'
+    monkeypatch.setattr(lab.module, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 3, '', ''))
+    real = lab.module.zabbix
+    monkeypatch.setattr(lab.module, 'zabbix', lambda command, *args, check=True: subprocess.CompletedProcess(command, 7, '{}', '')
+                        if command == 'reset' else real(command, *args, check=check))
+    assert lab.module.main(['wipe', '--isolated-lab']) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out['wipe'] == 'failed' and out['zabbix_exit_code'] == 7
+
+
 def test_cycle_cleans_up_after_a_start_refusal_and_keeps_the_failure(lab, monkeypatch, capsys):
     cycle_environment(lab, monkeypatch)
     monkeypatch.setattr(lab.module, 'start_postgres', lambda binaries: (_ for _ in ()).throw(SystemExit('deployment lab PostgreSQL start failed')))
-    assert lab.module.main(CYCLE) == 1
+    assert lab.module.main(CYCLE) == 2
     out = json.loads(capsys.readouterr().out)
     assert out['refusal'] == 'deployment lab PostgreSQL start failed' and out['run_exit_code'] is None
+    assert record(lab)['status'] == 'NOT_RUN' and record(lab)['reason'] == 'postgres_start_failed'
     # PostgreSQL failed before the Zabbix lab started; cleanup still stops and wipes both.
     assert out['final_state'] == 'absent' and lab.zabbix.calls == ['stop', 'reset']
 

@@ -33,6 +33,7 @@ script; `plan` prints what is missing.
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
@@ -60,6 +61,17 @@ HOSTNAMES = ('postgres', 'zabbix-web', 'runner')
 DATABASE = 'alerta'
 LAB_ROLES = ('alerta_app', 'migrator', 'zabalack_worker', 'zabalack_probe', 'zabalack_operator', 'zabalack_owner')
 ZABBIX_LAB = REPO / 'lab/zabbix_native_lab.py'
+RECORD = REPO / 'evidence/deployment-e2e-run.json'
+RUNNER_DESCRIPTION = ('lab/deployment_native_lab.py: services from installed artifacts on this host for '
+                      'tools/run_deployment_e2e_local.py; the public record is invalidated before any service work and '
+                      'bound to the cycle outcome afterwards (R29)')
+# Public reason codes for refusals; the full message goes to the job log, never into the record.
+REFUSAL_CODES = (('BLOCKED_ENVIRONMENT', 'blocked_environment'), ('ACK_LAB_PG_BIN', 'postgres_binaries_missing'),
+                 ('host layout not ready', 'layout_not_ready'), ('cycle requires an absent', 'lab_state_not_absent'),
+                 ('run requires the running', 'lab_not_running'), ('Refusing to start', 'lab_state_refused'),
+                 ('private directory not ready', 'private_directory_not_ready'), ('Zabbix lab start failed', 'zabbix_start_failed'),
+                 ('deployment lab initdb failed', 'postgres_initdb_failed'), ('deployment lab PostgreSQL', 'postgres_start_failed'),
+                 ('the Zabbix lab is not running at the pinned reference', 'zabbix_reference_mismatch'), ('interrupted', 'interrupted'))
 # Diagnostics of both labs, preserved under build/private/retained-phases before a cycle's wipe.
 CYCLE_LOGS = ('.deployment-lab/initdb.log', '.deployment-lab/postgres.log', '.deployment-lab/services.json',
               '.zabbix-lab/initdb.log', '.zabbix-lab/postgres.log', '.zabbix-lab/schema-load.log',
@@ -398,10 +410,100 @@ def stop_lab(binaries: Path, observed: dict) -> tuple[int, dict]:
 def wipe_lab(binaries: Path, observed: dict) -> dict:
     if observed['state'] not in ('stopped', 'absent'):
         raise SystemExit(f"Refusing wipe from state {observed['state']}")
-    zabbix('reset', '--isolated-lab', '--wipe', check=False)
+    wiped = zabbix('reset', '--isolated-lab', '--wipe', check=False)
     if STATE.exists():
         shutil.rmtree(STATE, ignore_errors=False)
-    return {'wipe': 'done', 'state': inspect(binaries)['state']}
+    after = inspect(binaries)['state']
+    return {'wipe': 'done' if wiped.returncode == 0 and after == 'absent' else 'failed', 'zabbix_exit_code': wiped.returncode, 'state': after}
+
+
+def stamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+
+
+def write_record(record: dict) -> None:
+    RECORD.parent.mkdir(exist_ok=True)
+    temporary = RECORD.with_name(RECORD.name + '.tmp')
+    temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
+    os.replace(temporary, RECORD)
+
+
+def fresh_record(command: str) -> dict:
+    """Invalidate the checkout's record before any service work.
+
+    The tracked historical PASS, or a previous run's record, must never be
+    uploaded as this run's artifact: an early refusal leaves this NOT_RUN
+    record in place, with its reason, instead.
+    """
+    record = {'layer': 'native_deployment_e2e', 'status': 'NOT_RUN', 'reason': 'lab_' + command + '_not_started', 'not_docker': True,
+              'started_at': stamp(), 'runner': RUNNER_DESCRIPTION, 'deployment_gates': 'MANUAL_GATE_PENDING',
+              'native_lab': {'command': command, 'final_state': None, 'cleanup_complete': False}}
+    write_record(record)
+    return record
+
+
+def load_record() -> dict | None:
+    try:
+        data = json.loads(RECORD.read_text())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def refusal_code(message: str) -> str:
+    for needle, code in REFUSAL_CODES:
+        if needle in message:
+            return code
+    return 'lab_refused'
+
+
+EXECUTION_KEYS = ('counts', 'checks', 'components', 'junit', 'supplied_wheel', 'artifact_mode', 'code_digests', 'tree_unchanged',
+                  'image_ids', 'versions', 'project', 'runner_shutdown_exit_code', 'shutdown_exit_code', 'observations')
+
+
+def finalize_record(command: str, code: int, summary: dict) -> dict:
+    """Bind the outcome to the public record. A non-zero outcome can never leave PASS behind.
+
+    The runner never ran (a refusal or an early failure): the record is NOT_RUN
+    with the refusal's public code and carries no execution evidence. The
+    runner ran: its own record stays, with the lab summary attached; when the
+    runner passed but cleanup, retention or the wipe failed, the record becomes
+    FAIL with that reason. A passing record carries the final lab state, which
+    the validator requires to be `absent`.
+    """
+    record = load_record() or {'layer': 'native_deployment_e2e', 'not_docker': True, 'started_at': stamp(), 'runner': RUNNER_DESCRIPTION,
+                               'deployment_gates': 'MANUAL_GATE_PENDING'}
+    native = {'command': command, **{key: summary.get(key) for key in ('run_id', 'run_exit_code', 'cleanup', 'retention', 'wipe', 'final_state')}}
+    wipe, retention = summary.get('wipe'), summary.get('retention')
+    native['cleanup_complete'] = (summary.get('final_state') == 'absent' and isinstance(wipe, dict) and wipe.get('wipe') == 'done'
+                                  and isinstance(retention, dict) and retention.get('status') == 'RETAINED')
+    if summary.get('refusal'):
+        native['refusal'] = refusal_code(str(summary['refusal']))
+    record['native_lab'] = native
+    if summary.get('run_exit_code') is None:
+        for key in EXECUTION_KEYS:
+            record.pop(key, None)
+        record.update(status='NOT_RUN', reason=native.get('refusal', 'lab_' + command + '_not_started'))
+    elif code != 0 and record.get('status') == 'PASS':
+        record.update(status='FAIL', reason=cleanup_reason(summary))
+    elif code != 0 and command == 'cycle' and summary.get('final_state') != 'absent' and record.get('status') not in ('NOT_RUN', 'FAIL'):
+        record.update(status='FAIL', reason=cleanup_reason(summary))
+    record['finished_at'] = stamp()
+    write_record(record)
+    return record
+
+
+def cleanup_reason(summary: dict) -> str:
+    retention = summary.get('retention') or {}
+    if isinstance(retention, dict) and retention.get('error'):
+        return 'lab_retention_failed'
+    wipe = summary.get('wipe') or {}
+    if isinstance(wipe, dict) and wipe.get('wipe') == 'failed':
+        return 'lab_wipe_failed'
+    cleanup = summary.get('cleanup') or {}
+    if isinstance(cleanup, dict) and cleanup.get('refusal'):
+        return 'lab_cleanup_refused'
+    return 'lab_cleanup_incomplete: final state ' + str(summary.get('final_state'))
 
 
 def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, services_path: Path, wheel_sha256: str | None) -> tuple[int, dict]:
@@ -425,8 +527,9 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
         code = run_lab(binaries, inspect(binaries), runner_python, wheel, services_path, wheel_sha256)
         summary['run_exit_code'] = code
     except SystemExit as error:
-        summary['refusal'] = str(error)
-        code = error.code if isinstance(error.code, int) and error.code else 1
+        # A refusal or start failure before the runner ran: NOT_RUN semantics (exit 2).
+        summary['refusal'] = str(error) if not isinstance(error.code, int) else f'exit {error.code}'
+        code = 2
     except KeyboardInterrupt:
         summary['refusal'] = 'interrupted'
         code = 130
@@ -443,9 +546,35 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
         except SystemExit as error:
             summary['cleanup'] = {'refusal': str(error)}
         summary['final_state'] = inspect(binaries)['state']
-    if code == 0 and summary['final_state'] != 'absent':
+    wipe = summary.get('wipe')
+    if code == 0 and (summary['final_state'] != 'absent' or not isinstance(wipe, dict) or wipe.get('wipe') != 'done'):
         code = 5
     return code, summary
+
+
+def guarded(args, parser) -> int:
+    """run/cycle: a fresh NOT_RUN record first, then the environment checks, then the command; every refusal is NOT_RUN exit 2."""
+    fresh_record(args.command)
+    services_path = args.services_file or STATE / 'services.json'
+    summary: dict = {}
+    try:
+        if not unprivileged_helper_available():
+            raise SystemExit('BLOCKED_ENVIRONMENT: the deployment lab requires a non-root OS identity')
+        binaries = pg_bin()
+        observed = inspect(binaries)
+        if args.command == 'cycle':
+            code, summary = cycle_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
+        else:
+            code = run_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
+            summary = {'run_exit_code': code, 'final_state': inspect(binaries)['state']}
+    except SystemExit as error:
+        message = str(error) if not isinstance(error.code, int) else f'exit {error.code}'
+        record = finalize_record(args.command, 2, {**summary, 'refusal': message})
+        print(json.dumps({'status': record['status'], 'reason': record['reason'], **summary, 'refusal': message[:300]}))
+        return 2
+    record = finalize_record(args.command, code, summary)
+    print(json.dumps({'status': record.get('status'), 'reason': record.get('reason'), **summary}))
+    return code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -476,6 +605,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error('prepare-runner requires --wheel and --venv')
         print(json.dumps(prepare_runner(args.wheel.resolve(), args.venv.resolve())))
         return 0
+    if args.command in ('run', 'cycle'):
+        return guarded(args, parser)
     if not unprivileged_helper_available():
         raise SystemExit('BLOCKED_ENVIRONMENT: the deployment lab requires a non-root OS identity')
     binaries = pg_bin()
@@ -497,11 +628,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == 'reset':
         print(json.dumps(reset_lab(binaries, observed)))
         return 0
-    if args.command == 'cycle':
-        code, summary = cycle_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
-        print(json.dumps(summary))
-        return code
-    return run_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
+    parser.error('unhandled command ' + args.command)
 
 
 if __name__ == '__main__':

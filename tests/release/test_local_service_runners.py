@@ -181,3 +181,11 @@ def test_local_e2e_runner_records_a_supplied_wheel_identity_only_after_the_exact
                            '--services-file', str(services), '--wheel-sha256', digest])
     record = json.loads((tmp_path / 'evidence/deployment-e2e-run.json').read_text())
     assert code == 2 and record['reason'] == 'supplied_wheel_identity_mismatch'
+    # The artifact was not exercised: no artifact-mode or wheel metadata may suggest otherwise on a NOT_RUN record.
+    assert 'artifact_mode' not in record and 'supplied_wheel' not in record
+    monkeypatch.setattr(local_e2e, 'check_host_layout', lambda: (_ for _ in ()).throw(RuntimeError('lab_link_missing')))
+    code = local_e2e.main(['--isolated-lab', '--runner-python', os.fspath(tmp_path / 'python'), '--wheel', str(wheel),
+                           '--services-file', str(services), '--wheel-sha256', digest])
+    record = json.loads((tmp_path / 'evidence/deployment-e2e-run.json').read_text())
+    assert code == 2 and record['status'] == 'NOT_RUN' and record['reason'] == 'lab_link_missing'
+    assert 'artifact_mode' not in record and 'supplied_wheel' not in record
