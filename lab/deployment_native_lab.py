@@ -63,6 +63,7 @@ DATABASE = 'alerta'
 LAB_ROLES = ('alerta_app', 'migrator', 'zabalack_worker', 'zabalack_probe', 'zabalack_operator', 'zabalack_owner')
 ZABBIX_LAB = REPO / 'lab/zabbix_native_lab.py'
 RECORD = REPO / 'evidence/deployment-e2e-run.json'
+NATIVE_LAB_BINDING = 'ZABALACK_NATIVE_LAB_BINDING'
 RUNNER_DESCRIPTION = ('lab/deployment_native_lab.py: services from installed artifacts on this host for '
                       'tools/run_deployment_e2e_local.py; the public record is invalidated before any service work and '
                       'bound to the cycle outcome afterwards (R29)')
@@ -397,17 +398,27 @@ def run_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, se
         command += ['--wheel-sha256', wheel_sha256]
     # The runner handles SIGTERM itself (its pytest group, its lab processes); a
     # cancellation here terminates it and waits for that cleanup, bounded.
-    return run_child(command, cwd=REPO, timeout=3600, grace=90)
+    # NATIVE_LAB_BINDING makes the runner mark its record as pending this
+    # command's outcome, so a record left behind by an abrupt end (SIGKILL,
+    # power loss) can never validate as a passing native-lab record.
+    return run_child(command, cwd=REPO, timeout=3600, grace=90, env={**os.environ, NATIVE_LAB_BINDING: '1'})
 
 
 def stop_lab(binaries: Path, observed: dict) -> tuple[int, dict]:
     """Stop both components; exit 0 only when every component is observed stopped."""
     if observed['state'] in ('unmarked', 'ambiguous'):
         raise SystemExit('Refusing to stop: ' + details(observed))
-    outcomes = {'zabbix': json.loads(zabbix('stop', '--isolated-lab', check=False).stdout or '{}').get('cleanup', 'NOT_RUNNING'),
-                'postgres': stop_postgres(binaries)}
+    # Each component is stopped on its own: an unreadable report from the Zabbix
+    # lab's stop never prevents the PostgreSQL stop, and it is not a clean stop.
+    try:
+        reported = json.loads(zabbix('stop', '--isolated-lab', check=False).stdout or '{}')
+        zabbix_outcome = reported.get('cleanup', 'NOT_RUNNING') if isinstance(reported, dict) else 'UNREADABLE_OUTPUT'
+    except ValueError:
+        zabbix_outcome = 'UNREADABLE_OUTPUT'
+    outcomes = {'zabbix': zabbix_outcome, 'postgres': stop_postgres(binaries)}
     after = inspect(binaries)
-    return (0 if after['state'] in ('stopped', 'absent') else 5), {'cleanup': outcomes, 'state': after['state']}
+    clean = after['state'] in ('stopped', 'absent') and zabbix_outcome != 'UNREADABLE_OUTPUT'
+    return (0 if clean else 5), {'cleanup': outcomes, 'state': after['state']}
 
 
 def wipe_lab(binaries: Path, observed: dict) -> dict:
@@ -491,6 +502,15 @@ def finalize_record(command: str, code: int, summary: dict) -> dict:
             for key in EXECUTION_KEYS:
                 record.pop(key, None)
         record.update(status='FAIL', reason=native['interrupted'])
+    elif summary.get('error'):
+        # An unexpected error in this command: never a PASS, whatever the runner wrote.
+        native['error'] = str(summary['error'])
+        if summary.get('run_exit_code') is None:
+            for key in EXECUTION_KEYS:
+                record.pop(key, None)
+            record.update(status='NOT_RUN', reason=native['error'])
+        else:
+            record.update(status='FAIL', reason=native['error'])
     elif summary.get('run_exit_code') is None:
         for key in EXECUTION_KEYS:
             record.pop(key, None)
@@ -514,6 +534,8 @@ def cleanup_reason(summary: dict) -> str:
     cleanup = summary.get('cleanup') or {}
     if isinstance(cleanup, dict) and cleanup.get('refusal'):
         return 'lab_cleanup_refused'
+    if isinstance(cleanup, dict) and cleanup.get('error'):
+        return 'lab_cleanup_error: ' + str(cleanup['error'])
     return 'lab_cleanup_incomplete: final state ' + str(summary.get('final_state'))
 
 
@@ -563,6 +585,8 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
                 summary['cleanup'] = {'refusal': str(error)}
             except KeyboardInterrupt as error:
                 summary['cleanup'] = {'interrupted': describe(error), **(summary.get('cleanup') or {})}
+            except Exception as error:  # noqa: BLE001 - any cleanup failure must reach the record, never escape it
+                summary['cleanup'] = {'error': type(error).__name__, **(summary.get('cleanup') or {})}
             summary['final_state'] = inspect(binaries)['state']
     wipe = summary.get('wipe')
     if code == 0 and (summary['final_state'] != 'absent' or not isinstance(wipe, dict) or wipe.get('wipe') != 'done'):
@@ -606,6 +630,12 @@ def guarded(args, parser) -> int:
                 record = finalize_record(args.command, 130, {**summary, 'refusal': describe(error), 'interrupted': True})
                 print(json.dumps({'status': record['status'], 'reason': record['reason'], **summary, 'refusal': describe(error)}))
             return 130
+        except Exception as error:  # noqa: BLE001 - an unexpected error is recorded, never left behind a runner's PASS
+            message = 'lab_error: ' + type(error).__name__
+            with cancellation.critical():
+                record = finalize_record(args.command, 1, {**summary, 'error': message})
+                print(json.dumps({'status': record['status'], 'reason': record['reason'], **summary, 'error': message}))
+            return 1
         with cancellation.critical():
             record = finalize_record(args.command, code, summary)
             print(json.dumps({'status': record.get('status'), 'reason': record.get('reason'), **summary}))

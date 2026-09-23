@@ -165,6 +165,10 @@ def main(argv=None):
     record_path = evidence / "deployment-e2e-run.json"
     report = {"layer": "native_deployment_e2e", "status": "RUNNING", "started_at": stamp(), "not_docker": True,
               "code_digests": code_digests(ROOT), "deployment_gates": "MANUAL_GATE_PENDING"}
+    if os.environ.get("ZABALACK_NATIVE_LAB_BINDING") == "1":
+        # Run by lab/deployment_native_lab.py: the record stays pending until that
+        # command binds its cleanup outcome; left pending, it cannot validate.
+        report["native_lab"] = {"pending": True, "final_state": None, "cleanup_complete": False}
 
     def save():
         record_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

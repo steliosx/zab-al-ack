@@ -562,3 +562,59 @@ def test_cycle_cleans_up_after_a_start_refusal_and_keeps_the_failure(lab, monkey
 def test_prepare_runner_requires_a_named_zabalack_wheel(lab, tmp_path):
     with pytest.raises(SystemExit, match='built zabalack wheel'):
         lab.module.prepare_runner(tmp_path / 'other.whl', tmp_path / 'venv')
+
+
+@pytest.mark.parametrize('how', ['wipe-permission-error', 'zabbix-stop-malformed-output'])
+def test_an_unexpected_cleanup_error_after_a_passing_run_is_recorded_as_fail(lab, monkeypatch, how):
+    """Only SystemExit and KeyboardInterrupt were handled: any other cleanup error escaped and left the runner's PASS."""
+    cycle_environment(lab, monkeypatch, runner_exit=0)
+    if how == 'wipe-permission-error':
+        def rmtree(path, ignore_errors=False):
+            raise PermissionError(13, 'Permission denied', str(path))
+        monkeypatch.setattr(lab.module.shutil, 'rmtree', rmtree)
+        error = 'PermissionError'
+    else:
+        real = lab.module.zabbix
+
+        def zabbix(command, *args, check=True):
+            result = real(command, *args, check=check)
+            return subprocess.CompletedProcess(command, 0, 'warning: not json\n{', '') if command == 'stop' else result
+        monkeypatch.setattr(lab.module, 'zabbix', zabbix)
+        error = None
+    code = lab.module.main(CYCLE)
+    value = record(lab)
+    assert code == 5
+    assert value['status'] == 'FAIL' and value['native_lab']['cleanup_complete'] is False
+    if error:
+        assert value['reason'] == 'lab_cleanup_error: ' + error and value['native_lab']['cleanup']['error'] == error
+    else:
+        # An unreadable Zabbix stop report still lets PostgreSQL stop, and is not a clean cleanup.
+        assert value['native_lab']['cleanup']['cleanup'] == {'zabbix': 'UNREADABLE_OUTPUT', 'postgres': {'status': 'STOPPED', 'exit_code': 0}}
+        assert value['reason'] == 'lab_cleanup_incomplete: final state stopped'
+
+
+def test_an_unexpected_error_before_the_run_is_recorded_and_never_leaves_pass(lab, monkeypatch):
+    cycle_environment(lab, monkeypatch, runner_exit=0)
+    stale_pass_record(lab)
+
+    def start_postgres(binaries):
+        raise RuntimeError('synthetic start failure')
+    monkeypatch.setattr(lab.module, 'start_postgres', start_postgres)
+    assert lab.module.main(CYCLE) == 1
+    value = record(lab)
+    assert value['status'] == 'NOT_RUN' and value['reason'] == 'lab_error: RuntimeError'
+    assert 'supplied_wheel' not in value and 'artifact_mode' not in value and 'counts' not in value
+
+
+def test_the_inner_runner_is_told_to_leave_its_record_pending_until_the_cycle_binds_it(lab, monkeypatch):
+    launched = cycle_environment(lab, monkeypatch, runner_exit=0)
+    seen = {}
+    runner = lab.module.run_child
+
+    def capture(command, **kwargs):
+        seen.update(kwargs.get('env') or {})
+        return runner(command, **kwargs)
+    monkeypatch.setattr(lab.module, 'run_child', capture)
+    assert lab.module.main(CYCLE) == 0
+    assert launched and seen.get('ZABALACK_NATIVE_LAB_BINDING') == '1'
+    assert 'pending' not in record(lab)['native_lab'] and record(lab)['native_lab']['final_state'] == 'absent'

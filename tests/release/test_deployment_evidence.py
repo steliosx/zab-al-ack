@@ -207,3 +207,15 @@ def test_a_native_lab_record_passes_only_when_the_cycle_left_the_lab_absent(tmp_
     else:
         with pytest.raises(ValueError, match='native lab cycle did not end with the lab absent'):
             validate_report(value, root)
+
+
+def test_a_record_still_pending_its_native_lab_binding_is_not_a_pass():
+    """A cycle killed abruptly (SIGKILL) after the runner wrote PASS leaves the pending marker, never a valid record."""
+    from deployment_evidence import validate_report
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    value = passing(root, local=True)
+    validate_report(copy.deepcopy(value), root)
+    value['native_lab'] = {'pending': True, 'final_state': None, 'cleanup_complete': False}
+    with pytest.raises(ValueError, match='native lab cycle did not end with the lab absent'):
+        validate_report(value, root)

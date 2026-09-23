@@ -292,3 +292,32 @@ def test_local_e2e_runner_records_a_supplied_wheel_identity_only_after_the_exact
     record = json.loads((tmp_path / 'evidence/deployment-e2e-run.json').read_text())
     assert code == 2 and record['status'] == 'NOT_RUN' and record['reason'] == 'lab_link_missing'
     assert 'artifact_mode' not in record and 'supplied_wheel' not in record
+
+
+@pytest.mark.parametrize('bound', [True, False], ids=['run-by-native-lab', 'run-directly'])
+def test_the_runner_marks_its_record_pending_when_the_native_lab_will_bind_it(tmp_path, monkeypatch, bound):
+    """Run by lab/deployment_native_lab.py the record stays pending until the cycle writes its cleanup outcome."""
+    monkeypatch.setattr(local_e2e, 'ROOT', tmp_path)
+    monkeypatch.setattr(local_e2e, 'LINK', tmp_path / 'missing-link')
+    monkeypatch.setattr(local_e2e, 'code_digests', lambda root: {'source': 'x', 'harness': 'y'})
+    if bound:
+        monkeypatch.setenv('ZABALACK_NATIVE_LAB_BINDING', '1')
+    else:
+        monkeypatch.delenv('ZABALACK_NATIVE_LAB_BINDING', raising=False)
+    seen = []
+    real_write = Path.write_text
+
+    def write_text(self, data, *args, **kwargs):
+        if self.name == 'deployment-e2e-run.json':
+            seen.append(json.loads(data))
+        return real_write(self, data, *args, **kwargs)
+    monkeypatch.setattr(Path, 'write_text', write_text)
+    services = tmp_path / 'services.json'
+    services.write_text(json.dumps({name: 'synthetic ' + name for name in local_e2e.IMAGE_COMPONENTS}))
+    wheel = synthetic_wheel(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl')
+    (tmp_path / 'evidence').mkdir()
+    local_e2e.main(['--isolated-lab', '--runner-python', os.fspath(tmp_path / 'absent'), '--wheel', str(wheel), '--services-file', str(services)])
+    assert seen and seen[0]['status'] == 'RUNNING'
+    assert all(('native_lab' in value) is bound for value in seen)
+    if bound:
+        assert seen[0]['native_lab'] == {'pending': True, 'final_state': None, 'cleanup_complete': False}
