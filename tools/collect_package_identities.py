@@ -302,7 +302,8 @@ def good_signatures(status: str) -> list[dict]:
     (VALIDSIG's last field), which is what the reference pins; the signing
     (sub)key's fingerprint is kept alongside.
     """
-    blocks, current = [], None
+    blocks: list[list[str]] = []
+    current: list[str] | None = None
     for line in status.splitlines():
         if line.startswith('[GNUPG:] NEWSIG'):
             current = []
@@ -315,9 +316,8 @@ def good_signatures(status: str) -> list[dict]:
     for block in blocks:
         if any(line.split(' ', 1)[0] in ('BADSIG', 'EXPKEYSIG', 'REVKEYSIG', 'EXPSIG', 'ERRSIG') for line in block):
             continue
-        goods = [re.fullmatch(r'GOODSIG ([0-9A-F]{16}) (.*)', line) for line in block]
+        goods = [match for match in (re.fullmatch(r'GOODSIG ([0-9A-F]{16}) (.*)', line) for line in block) if match is not None]
         valids = [line.split() for line in block if line.startswith('VALIDSIG ')]
-        goods = [match for match in goods if match]
         if len(goods) != 1 or len(valids) != 1 or len(valids[0]) < 11:
             continue
         signing, primary = valids[0][1], valids[0][10]
@@ -537,11 +537,11 @@ def collect(label: str, scratch: Path) -> dict:
 
 # ------------------------------------------------------------------ validation
 
-def signatures_by_origin(signatures: list) -> tuple[dict, set]:
+def signatures_by_origin(signatures: list | None) -> tuple[dict, set]:
     """Signature observations keyed by (uri, suite): one base URI can serve several suites, each with its own InRelease."""
     keyed: dict = {}
     duplicates: set = set()
-    for entry in signatures:
+    for entry in signatures or []:
         if isinstance(entry, dict):
             key = (entry.get('uri'), entry.get('suite'))
             if key in keyed:
@@ -646,7 +646,8 @@ def evaluate(record: dict, reference: dict, identities: dict) -> tuple[str, list
         if executable.get('status') != 'OBSERVED':
             continue
         versions[name] = executable.get('version_line')
-        dpkg = item.get('dpkg') if isinstance(item.get('dpkg'), dict) else {}
+        raw_dpkg = item.get('dpkg')
+        dpkg: dict = raw_dpkg if isinstance(raw_dpkg, dict) else {}
         if dpkg.get('status') != 'OBSERVED':
             continue
         if dpkg.get('kind') != 'dpkg':
@@ -695,7 +696,8 @@ def evaluate(record: dict, reference: dict, identities: dict) -> tuple[str, list
             if not any(fingerprint in allowed for fingerprint in fingerprints):
                 deviations.append(f'{name}: origin {host} InRelease not verified by the pinned key '
                                   f'(observed {fingerprints or "no valid signature"}, expected {allowed})')
-        index = item.get('index') if isinstance(item.get('index'), dict) else {}
+        raw_index = item.get('index')
+        index: dict = raw_index if isinstance(raw_index, dict) else {}
         if index.get('status') == 'OBSERVED':
             if not index.get('index_signed'):
                 deviations.append(f'{name}: Packages index not bound to the InRelease digest')
@@ -708,7 +710,7 @@ def evaluate(record: dict, reference: dict, identities: dict) -> tuple[str, list
                 pass  # a missing observation (missing_observations names it): INCOMPLETE, never CONFORMS
             elif not (bound_keys and any(key in allowed_fingerprints(origin_host(str(index.get('origin_uri', ''))), reference) for key in bound_keys)
                     and isinstance(index.get('inrelease_verified_sha256'), str)
-                    and index['inrelease_verified_sha256'] == bound.get('verified_body_sha256')):
+                    and index.get('inrelease_verified_sha256') == bound.get('verified_body_sha256')):
                 deviations.append(f'{name}: index digests not taken from the InRelease content the pinned signature verified')
             index_host = origin_host(str(index.get('origin_uri', '')))
             if index_host not in spec['origins'] or (str(index.get('origin_uri', '')).rstrip('/'), str(index.get('origin_suite'))) not in ALLOWED_REPOSITORIES.get(index_host, set()):
