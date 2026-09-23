@@ -217,8 +217,32 @@ def password(role: str, *, create: bool = False) -> str:
     return value
 
 
+HBA_HOST_TYPES = ('host', 'hostssl', 'hostnossl', 'hostgssenc', 'hostnogssenc')
+IP_MASK = re.compile(r'[0-9]{1,3}(?:\.[0-9]{1,3}){3}|[0-9A-Fa-f:]*:[0-9A-Fa-f:]*')
+
+
+def hba_method(tokens: list[str]) -> str | None:
+    """The METHOD field of one pg_hba.conf record, by position; None when the record is not understood.
+
+    local  DATABASE USER METHOD [OPTIONS]
+    host*  DATABASE USER ADDRESS METHOD [OPTIONS], or ADDRESS as an address and a separate mask
+    """
+    if tokens[0] == 'local' and len(tokens) >= 4:
+        return tokens[3]
+    if tokens[0] in HBA_HOST_TYPES and len(tokens) >= 5:
+        if '/' not in tokens[3] and IP_MASK.fullmatch(tokens[4]) and len(tokens) >= 6:
+            return tokens[5]
+        return tokens[4]
+    return None  # include directives, unknown connection types, short records
+
+
 def verify_authentication(pgdata: Path) -> None:
-    """Refuse a cluster whose pg_hba.conf allows a login without a scram password."""
+    """Refuse a cluster whose pg_hba.conf allows a login without a scram password.
+
+    Each record's METHOD field is read by position (a method name elsewhere on
+    the line, as a database, user or option, proves nothing); every record
+    must use scram-sha-256 or reject, and a record that cannot be read refuses.
+    """
     try:
         lines = (pgdata / 'pg_hba.conf').read_text().splitlines()
     except OSError as error:
@@ -227,7 +251,8 @@ def verify_authentication(pgdata: Path) -> None:
         tokens = line.split('#', 1)[0].split()
         if not tokens:
             continue
-        if 'trust' in tokens or not any(method in tokens for method in ACCEPTED_AUTH_METHODS):
+        method = hba_method(tokens)
+        if method not in ACCEPTED_AUTH_METHODS:
             raise SystemExit('Zabbix lab cluster allows unauthenticated or non-scram local access (pg_hba.conf: '
                              + ' '.join(tokens) + '); reset --wipe and start again')
 

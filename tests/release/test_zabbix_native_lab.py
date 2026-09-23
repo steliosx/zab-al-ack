@@ -567,3 +567,25 @@ def test_process_identity_reads_proc_start_time_comm_uid_and_arguments(lab, slee
     process.wait(10)
     assert lab.process_gone(identity)
     assert lab.process_identity(2 ** 22 - 1) is None
+
+
+@pytest.mark.parametrize('hba, accepted', [
+    ('host scram-sha-256 all 127.0.0.1/32 password', False),
+    ('host all reject 0.0.0.0/0 md5', False),
+    ('local all all peer map=scram-sha-256', False),
+    ('host all all 127.0.0.1 255.255.255.255 trust', False),
+    ('include_dir conf.d', False),
+    ('host all all 127.0.0.1 255.255.255.255 scram-sha-256', True),
+    ('hostssl all all ::1/128 scram-sha-256 clientcert=verify-full', True),
+    ('local replication all scram-sha-256', True),
+], ids=['method-name-as-database', 'method-name-as-user', 'method-name-as-option', 'address-and-mask-trust', 'include',
+        'address-and-mask-scram', 'hostssl-with-options', 'replication'])
+def test_the_pg_hba_method_is_read_by_position(lab, hba, accepted):
+    """Re-review New-3: a line was accepted when 'scram-sha-256' or 'reject' appeared anywhere on it."""
+    marked(lab)
+    (lab.PGDATA / 'pg_hba.conf').write_text(hba + '\n')
+    if accepted:
+        lab.verify_authentication(lab.PGDATA)
+    else:
+        with pytest.raises(SystemExit, match='unauthenticated or non-scram'):
+            lab.verify_authentication(lab.PGDATA)
