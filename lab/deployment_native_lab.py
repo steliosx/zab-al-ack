@@ -484,7 +484,7 @@ def refusal_code(message: str) -> str:
     return 'lab_refused'
 
 
-EXECUTION_KEYS = ('counts', 'checks', 'components', 'junit', 'supplied_wheel', 'artifact_mode', 'code_digests', 'tree_unchanged',
+EXECUTION_KEYS = ('counts', 'checks', 'components', 'junit', 'supplied_wheel', 'artifact_mode', 'runner_environment', 'code_digests', 'tree_unchanged',
                   'image_ids', 'versions', 'project', 'runner_shutdown_exit_code', 'shutdown_exit_code', 'observations')
 
 

@@ -29,6 +29,12 @@ import zipfile
 MAX_BYTES = 32 * 1024 * 1024
 PIP_ADDED = ("INSTALLER", "REQUESTED", "RECORD", "direct_url.json")
 SITE_CUSTOMISATION = ("sitecustomize", "usercustomize")
+# The only startup hook the runner environment may carry, with its exact bytes: setuptools'
+# distutils-precedence.pth from the setuptools 83.0.0 wheel that requirements.lock pins (PyPI
+# wheel sha256 29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3). A dependency's
+# RECORD is written by pip into the same writable site-packages, so it cannot authenticate a
+# .pth it lists; this allow-list does not rely on it.
+APPROVED_STARTUP_HOOKS = {"distutils-precedence.pth": "2638ce9e2500e572a5e0de7faed6661eb569d1b696fcba07b0dd223da5f5d224"}
 BOOTSTRAP = {"pip"}  # the venv's own installer, not a requirements.lock pin
 
 
@@ -215,9 +221,15 @@ def check_installed(path, expected, checkout):
     require(not site_customisation(location), "site_customisation_present")
     unowned = [name for name in startup_hooks(location) if name not in owned]
     require(not unowned, "unowned_startup_hook")
+    unapproved = [name for name in startup_hooks(location)
+                  if APPROVED_STARTUP_HOOKS.get(name) != hashlib.sha256((location / name).read_bytes()).hexdigest()]
+    require(not unapproved, "unapproved_startup_hook")
     # Nothing at the top of site-packages that no installed distribution owns.
     unowned_entries = {path.name for path in location.iterdir()} - top_level - {"zabalack", dist_dir, "__pycache__"}
     require(not unowned_entries, "unowned_installed_entry")
     module = importlib.import_module("zabalack")
     require(Path(module.__file__).resolve() == location / "zabalack/__init__.py", "wrong_import_origin")
-    return {**identity, "installed_bytes_verified": True, "startup_hooks": startup_hooks(location)}
+    # installed_bytes_verified covers the supplied wheel's own files, anchored by its digest.
+    # Dependency files are only checked against their installed RECORD, which is not anchored.
+    return {**identity, "installed_bytes_verified": True, "startup_hooks": startup_hooks(location),
+            "dependency_verification": "record_consistency_only"}

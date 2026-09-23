@@ -101,6 +101,11 @@ def runner_environment(tmp_path: Path):
     return env / 'bin/python', site
 
 
+# setuptools 83.0.0's distutils-precedence.pth, byte for byte (from the PyPI wheel).
+GENUINE_DISTUTILS_PTH = (b"import os; var = 'SETUPTOOLS_USE_DISTUTILS'; enabled = os.environ.get(var, 'local') == 'local'; "
+                         b"enabled and __import__('_distutils_hack').add_shim(); \n")
+
+
 def record_hash(data: bytes) -> str:
     return 'sha256=' + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()
 
@@ -180,7 +185,7 @@ def test_local_e2e_runner_verifies_the_whole_installation_inside_the_runner_inte
         (site / 'sitecustomize.py').write_text('import os\n')
     elif case == 'owned-pth-hook':
         # setuptools as requirements.lock pins it, its RECORD hashes matching the installed bytes.
-        owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': b'import _distutils_hack\n',
+        owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': GENUINE_DISTUTILS_PTH,
                                                                  'setuptools-83.0.0.dist-info/METADATA': b'Name: setuptools\nVersion: 83.0.0\n'})
     expected = 'f' * 64 if case == 'wrong-digest' else digest
     if case == 'nothing-installed':
@@ -362,7 +367,7 @@ def test_installed_file_verification_refuses_the_reviewers_bypasses(tmp_path, mo
     if case == 'pth-owned-by-a-fabricated-distribution':
         owned_distribution(site, 'zz_owner-1.0.dist-info', {'zz_hook.pth': hook, 'zz_owner-1.0.dist-info/METADATA': b'Name: zz-owner\n'})
     elif case == 'owned-pth-with-changed-content':
-        owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': b'import _distutils_hack\n',
+        owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': GENUINE_DISTUTILS_PTH,
                                                                  'setuptools-83.0.0.dist-info/METADATA': b'Name: setuptools\n'})
         (site / 'distutils-precedence.pth').write_bytes(hook)
     elif case == 'sitecustomize-package-directory':
@@ -428,3 +433,45 @@ def test_runner_site_paths_use_the_venv_scheme_not_the_platform_default(monkeypa
     paths = supplied_wheel.runner_site_paths()
     assert seen and set(seen) == {'venv'}
     assert all(Path(path).is_dir() and 'dist-packages' not in path for path in paths)
+
+
+@pytest.mark.parametrize('case, label', [
+    ('pth-added-to-a-pinned-record', 'unapproved_startup_hook'),
+    ('approved-name-other-bytes-consistent-record', 'unapproved_startup_hook'),
+    ('genuine-setuptools-hook', None),
+], ids=lambda value: value if isinstance(value, str) else '')
+def test_a_startup_hook_is_accepted_only_by_its_pinned_name_and_bytes_not_by_its_record(tmp_path, monkeypatch, case, label):
+    """Review of b57bebb (LOW, Fable's reproduction): a .pth appended to a pinned distribution's installed RECORD with
+    a valid hash was accepted. RECORD sits in the same writable site-packages and cannot authenticate it."""
+    monkeypatch.setattr(local_e2e, 'ROOT', ROOT)
+    wheel, members = candidate_wheel(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl')
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    python, site = runner_environment(tmp_path)
+    install(site, members)
+    ran = tmp_path / 'pth-ran'
+    hook = f'import pathlib; pathlib.Path({str(ran)!r}).write_text("ran")\n'.encode()
+    if case == 'pth-added-to-a-pinned-record':
+        # click is pinned by requirements.lock; its RECORD is rewritten consistently to own the new .pth
+        owned_distribution(site, 'click-8.5.0.dist-info', {'zz_owned.pth': hook, 'click-8.5.0.dist-info/METADATA': b'Name: click\n'})
+    elif case == 'approved-name-other-bytes-consistent-record':
+        owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': hook,
+                                                                 'setuptools-83.0.0.dist-info/METADATA': b'Name: setuptools\n'})
+    else:
+        owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': GENUINE_DISTUTILS_PTH,
+                                                                 'setuptools-83.0.0.dist-info/METADATA': b'Name: setuptools\n'})
+    if label:
+        with pytest.raises(RuntimeError, match='runner_installed_wheel_check_failed: ' + label + '$'):
+            local_e2e.check_runner(python, wheel, digest)
+    else:
+        result = local_e2e.check_runner(python, wheel, digest)
+        assert result['startup_hooks'] == ['distutils-precedence.pth'] and result['dependency_verification'] == 'record_consistency_only'
+    assert not ran.exists()
+
+
+def test_the_approved_startup_hook_is_pinned_to_the_setuptools_version_the_lock_installs():
+    """If requirements.lock moves setuptools, the pinned .pth bytes must be re-derived from that wheel."""
+    import supplied_wheel
+    lock = (ROOT / 'requirements.lock').read_text()
+    assert 'setuptools==83.0.0' in lock.splitlines()
+    assert supplied_wheel.APPROVED_STARTUP_HOOKS == {
+        'distutils-precedence.pth': hashlib.sha256(GENUINE_DISTUTILS_PTH).hexdigest()}

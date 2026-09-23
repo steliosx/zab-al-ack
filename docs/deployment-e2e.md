@@ -217,9 +217,16 @@ entry named after the project) and the rest of the environment (only the
 distributions `requirements.lock` pins, plus pip; every hashed RECORD entry
 equal to its file; no top-level entry that no RECORD owns; no
 `sitecustomize`/`usercustomize` in any form; a `.pth` only when a verified
-RECORD entry owns it). Anyone able to write the runner environment could
-still forge a matching RECORD; the job creates that environment fresh in its
-own temporary directory. A missing prerequisite (services,
+RECORD entry owns it). What is anchored: the supplied wheel's own files are
+compared byte for byte with the wheel whose digest the dispatcher supplied
+(`installed_bytes_verified`), and the only startup hook allowed is
+setuptools' `distutils-precedence.pth` with the exact bytes of the setuptools
+83.0.0 wheel that `requirements.lock` pins. What is not anchored: dependency
+files are checked only against their installed RECORD, which pip writes into
+the same site-packages; `requirements.lock` carries no hashes, so a dependency
+file changed together with its RECORD is not detected. The record states this
+(`runner_environment`). The job creates that environment fresh in its own
+temporary directory. A missing prerequisite (services,
 layout, packages at the pinned patch) fails the step: NOT_RUN is exit 2, never
 a passing job. It is separate from the required
 quality/reference/native/mutation packaging workflow; a service result is not

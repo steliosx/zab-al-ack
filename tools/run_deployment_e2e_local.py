@@ -118,7 +118,8 @@ def check_runner(python: Path, wheel: Path, expected: str) -> dict:
     require(identity.get("installed_bytes_verified") is True and identity.get("sha256") == expected, "runner_installed_wheel_check_incomplete")
     require(set(identity.get("entry_points", [])) == ENTRY_POINTS, "runner_installed_wheel_check_failed: installed_entry_points_missing")
     return {"python": str(python), "version": identity["version"], "wheel_sha256": identity["sha256"],
-            "installed_bytes_verified": True, "startup_hooks": identity.get("startup_hooks", [])}
+            "installed_bytes_verified": True, "startup_hooks": identity.get("startup_hooks", []),
+            "dependency_verification": identity.get("dependency_verification")}
 
 
 def services(path: Path) -> dict[str, str]:
@@ -228,7 +229,7 @@ def main(argv=None):
     except (RuntimeError, OSError, ValueError, KeyError, StopIteration) as error:
         # The artifact was not exercised: a NOT_RUN record carries no artifact-mode or wheel metadata.
         report.update(status="NOT_RUN", reason=str(error)[:300], finished_at=stamp())
-        for key in ("code_digests", "artifact_mode", "supplied_wheel"):
+        for key in ("code_digests", "artifact_mode", "supplied_wheel", "runner_environment"):
             report.pop(key, None)
         if not args.plan:
             save()
@@ -238,6 +239,13 @@ def main(argv=None):
         # check_runner verified the whole installation against the wheel inside the runner interpreter.
         report["artifact_mode"] = "supplied_wheel"
         report["supplied_wheel"] = {**supplied, "installed_bytes_verified": True}
+        # What that verification does and does not establish, stated in the record.
+        report["runner_environment"] = {
+            "supplied_wheel_files": "equal to the supplied wheel, whose digest the dispatcher supplied",
+            "dependency_files": "pinned distributions only; each file consistent with its installed RECORD, "
+                                "which is not anchored to trusted digests (requirements.lock carries none)",
+            "startup_hooks": runner.get("startup_hooks", []),
+            "startup_hook_policy": "only setuptools' distutils-precedence.pth with its pinned bytes"}
     # Public description: no interpreter or site-packages path leaves the host.
     components["runner"] = ("this host: a Python 3.12 environment with requirements.lock and the zabalack "
                             + runner["version"] + " wheel installed non-editably (sha256 " + runner["wheel_sha256"]
