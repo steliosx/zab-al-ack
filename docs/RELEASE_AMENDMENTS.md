@@ -1154,10 +1154,11 @@ be canonical; `pg_hba.conf` is read with PostgreSQL's quoting rules. The runner-
 `zabalack-omarchy-x64`; their review and any identity approval are recorded separately (not yet).
 
 Corrections after the non-author review of `b57bebb` (2026-09-23; five
-commits O17–O21 layered on it, each with a regression that fails with its fix
-removed; author verification only): inside a cycle the runner writes
-`PENDING_BINDING` and only the cycle sets and validates the final PASS, so a
-pending record never validates and a real cycle can pass; `pg_hba.conf`
+commits O17–O21 and a test commit O22 layered on it, each correction with a
+regression that fails with its fix removed; author verification only): inside
+a cycle the runner writes `PENDING_BINDING` and only the cycle sets and
+validates the final PASS, so a pending record never validates and a real
+cycle can pass (pinned through the `cycle` command and the real runner); `pg_hba.conf`
 blanks and record ends follow PostgreSQL; the only startup hook allowed is
 setuptools' pinned `distutils-precedence.pth`, and the record states that
 dependency files are checked for RECORD consistency only; the packaged

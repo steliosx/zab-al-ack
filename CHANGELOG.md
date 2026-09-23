@@ -2,9 +2,10 @@
 
 ## Unreleased — corrections after the non-author review of `b57bebb` (Opus)
 
-Five corrective commits (O17–O21) layered on the reviewed `b57bebb`, which
-is not rewritten; each carries a regression that fails with its fix removed.
-Author verification only, not independent review or approval.
+Five corrective commits (O17–O21) and a test commit (O22, with its lint
+follow-up) layered on the reviewed `b57bebb`, which is not rewritten; each
+correction carries a regression that fails with its fix removed. Author
+verification only, not independent review or approval.
 
 - O17 (HIGH): inside a cycle the runner validates its execution evidence and
   writes `PENDING_BINDING` (`provisional_status: PASS`, `native_lab.pending`),
@@ -12,6 +13,9 @@ Author verification only, not independent review or approval.
   left the lab absent, sets PASS and validates the final bound record
   (`final_evidence_validation_failed` and a non-zero exit otherwise). A
   pending record, or a plain PASS from a bound runner, never validates.
+- O22: the lifecycle is pinned through the cycle command itself: `cycle`
+  runs the real runner `main` with the binding and its real final
+  validation, with only host effects replaced.
 - O18: `pg_hba.conf` blanks are PostgreSQL's (space, TAB, CR) and records end
   at `\n` only, matching PostgreSQL 18's `pg_hba_file_rules`.
 - O19: the only startup hook the runner check accepts is setuptools'
