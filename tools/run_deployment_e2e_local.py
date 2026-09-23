@@ -81,8 +81,14 @@ def check_host_layout():
             require(sock.connect_ex(("127.0.0.1", port)) != 0, "lab_port_in_use_before_run: " + str(port))
 
 
-RUNNER_CHECK = ("import json, sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; import importlib.metadata as m; "
-                "from supplied_wheel import check_installed; "
+# Run as `python -I -S`: no PYTHON* environment, no user site and no .pth
+# processing, so nothing installed runs before the check. Without the site
+# module the venv prefix is not applied, so the runner environment's
+# site-packages is derived from its interpreter and pyvenv.cfg and added
+# explicitly (the runner environment is always a venv).
+RUNNER_CHECK = ("import json, sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); "
+                "from supplied_wheel import check_installed, runner_site_paths; sys.path.extend(runner_site_paths()); "
+                "import importlib.metadata as m; "
                 "identity = check_installed(Path(sys.argv[2]), sys.argv[3], Path(sys.argv[4])); "
                 "identity['entry_points'] = sorted(e.name for e in m.distribution('zabalack').entry_points if e.group == 'alerta.plugins'); "
                 "print(json.dumps(identity))")
@@ -101,7 +107,7 @@ def check_runner(python: Path, wheel: Path, expected: str) -> dict:
     """
     require(python.is_file() and os.access(python, os.X_OK), "runner_python_missing")
     require(isinstance(expected, str) and re.fullmatch(r"[0-9a-f]{64}", expected), "invalid_wheel_digest")
-    result = subprocess.run([str(python), "-c", RUNNER_CHECK, str(ROOT / "tools"), str(wheel), expected, str(ROOT)],
+    result = subprocess.run([str(python), "-I", "-S", "-c", RUNNER_CHECK, str(ROOT / "tools"), str(wheel), expected, str(ROOT)],
                             cwd="/", env={"PATH": os.environ["PATH"], "TZ": "UTC"}, text=True, capture_output=True, timeout=120)
     if result.returncode != 0:
         last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else ""

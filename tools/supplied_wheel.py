@@ -2,14 +2,19 @@
 
 `check_installed` runs inside the interpreter that installed the wheel and
 compares the whole installation with the wheel: every wheel member's bytes,
-the package directory's inventory (nothing added), the dist-info inventory
-(only what pip itself adds), no other top-level entry carrying the project's
-name, and every startup hook in site-packages (`.pth`, `sitecustomize`,
-`usercustomize`) owned by another installed distribution's RECORD.
+the package directory's inventory (nothing added, no compiled bytecode), the
+dist-info inventory (only what pip itself adds), no other top-level entry
+carrying the project's name, only the distributions `requirements.lock` pins
+(plus pip and the project), every hashed RECORD entry of those distributions
+equal to its file, no `sitecustomize`/`usercustomize` in any form, and every
+`.pth` file owned by a verified RECORD entry. The runner probe calls it with
+`python -I -S`, so no `.pth` file runs before the check.
 """
 from __future__ import annotations
 
 from email.parser import BytesParser
+import base64
+import csv
 import hashlib
 import importlib
 import importlib.metadata
@@ -23,7 +28,8 @@ import zipfile
 
 MAX_BYTES = 32 * 1024 * 1024
 PIP_ADDED = ("INSTALLER", "REQUESTED", "RECORD", "direct_url.json")
-STARTUP_HOOKS = ("sitecustomize.py", "usercustomize.py")
+SITE_CUSTOMISATION = ("sitecustomize", "usercustomize")
+BOOTSTRAP = {"pip"}  # the venv's own installer, not a requirements.lock pin
 
 
 def require(condition, reason):
@@ -65,12 +71,15 @@ def wheel_bytes(path, expected):
     return data, contents, {"filename": path.name, "sha256": expected, "version": version}
 
 
-def package_files(directory):
+def package_files(directory, bytecode_allowed=True):
     require(directory.is_dir() and not directory.is_symlink(), "package_directory_missing")
     files = {}
     for path in directory.rglob("*"):
         require(not path.is_symlink(), "linked_package_member")
-        if "__pycache__" in path.relative_to(directory).parts:
+        if "__pycache__" in path.relative_to(directory).parts or path.suffix in (".pyc", ".pyo"):
+            # Bytecode would run instead of the verified source; the runner
+            # environment installs the wheel with --no-compile, so none may exist.
+            require(bytecode_allowed or path.is_dir(), "installed_package_bytecode")
             continue
         if path.is_file():
             files["zabalack/" + path.relative_to(directory).as_posix()] = path.read_bytes()
@@ -96,26 +105,79 @@ def dist_info_files(directory):
     return files
 
 
-def owned_files(location, except_dist):
-    """Every file the other installed distributions' RECORDs claim, relative to site-packages."""
-    owned = set()
-    for candidate in location.glob("*.dist-info"):
-        if candidate.name == except_dist or candidate.is_symlink():
+def canonical(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def locked_distributions(checkout):
+    """name -> version pinned by the checkout's requirements.lock (the runner environment installs exactly these)."""
+    pins = {}
+    for line in (checkout / "requirements.lock").read_text().splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            name, sep, version = line.partition("==")
+            require(sep and name and version, "requirements_lock_unreadable")
+            pins[canonical(name)] = version.strip()
+    return pins
+
+
+def verified_records(location, except_dist, pins):
+    """Every other distribution is pinned (or pip) and each hashed RECORD entry equals its file.
+
+    Returns the site-packages-relative files those RECORDs own with a verified
+    hash, and every top-level site-packages name any of those RECORDs lists.
+    """
+    owned, top_level = set(), set()
+    for candidate in sorted(location.glob("*.dist-info")):
+        if candidate.name == except_dist:
             continue
+        require(candidate.is_dir() and not candidate.is_symlink(), "linked_dist_info")
+        name, _, version = candidate.name[:-len(".dist-info")].rpartition("-")
+        require(canonical(name) in BOOTSTRAP or pins.get(canonical(name)) == version, "unexpected_installed_distribution")
         record = candidate / "RECORD"
-        if not record.is_file():
-            continue
-        for line in record.read_text(encoding="utf-8").splitlines():
-            name = line.split(",")[0]
-            if name:
-                owned.add(PurePosixPath(name).as_posix())
-    return owned
+        require(record.is_file() and not record.is_symlink(), "installed_distribution_record_missing")
+        for row in csv.reader(record.read_text(encoding="utf-8").splitlines()):
+            if not row or not row[0]:
+                continue
+            relative = PurePosixPath(row[0])
+            if relative.parts[0] == ".." or relative.is_absolute():
+                continue  # launchers outside site-packages (bin/)
+            top_level.add(relative.parts[0])
+            hashspec = row[1] if len(row) > 1 else ""
+            if not hashspec:
+                continue  # RECORD itself and generated bytecode carry no hash
+            algorithm, _, value = hashspec.partition("=")
+            require(algorithm == "sha256", "installed_record_hash_algorithm")
+            target = location / relative
+            require(target.is_file() and not any(p.is_symlink() for p in (target, *target.parents)), "installed_distribution_file_missing")
+            actual = base64.urlsafe_b64encode(hashlib.sha256(target.read_bytes()).digest()).rstrip(b"=").decode()
+            require(actual == value, "installed_distribution_file_modified")
+            owned.add(relative.as_posix())
+    return owned, top_level
+
+
+def site_customisation(location):
+    """sitecustomize/usercustomize in any form (module, package, bytecode): Python imports them at start."""
+    found = [path.name for path in location.iterdir() if path.name.split(".")[0] in SITE_CUSTOMISATION]
+    cache = location / "__pycache__"
+    if cache.is_dir():
+        found += [path.name for path in cache.iterdir() if path.name.split(".")[0] in SITE_CUSTOMISATION]
+    return sorted(found)
 
 
 def startup_hooks(location):
-    """`.pth` files and site customisation modules directly in site-packages: the interpreter runs them at start."""
-    return sorted(path.name for path in location.iterdir()
-                  if path.is_file() and (path.suffix == ".pth" or path.name in STARTUP_HOOKS))
+    """`.pth` files directly in site-packages: the site module runs their import lines at start."""
+    return sorted(path.name for path in location.iterdir() if path.suffix == ".pth")
+
+
+def runner_site_paths():
+    """The venv's site-packages for a probe run with -I -S (which skips the site module and its venv prefix)."""
+    import sys
+    import sysconfig
+    env = Path(sys.executable).parent.parent
+    require((env / "pyvenv.cfg").is_file(), "runner_not_a_venv")
+    paths = [sysconfig.get_path(key, vars={"base": str(env), "platbase": str(env)}) for key in ("purelib", "platlib")]
+    return list(dict.fromkeys(paths))
 
 
 def check_installed(path, expected, checkout):
@@ -133,17 +195,24 @@ def check_installed(path, expected, checkout):
         target = location / name
         require(not any(p.is_symlink() for p in (target, *target.parents))
                 and target.read_bytes() == value, "installed_wheel_bytes_mismatch")
-    require(package_files(location / "zabalack") == {n: v for n, v in contents.items() if n.startswith("zabalack/")},
-            "installed_package_inventory_mismatch")
+    require(package_files(location / "zabalack", bytecode_allowed=False)
+            == {n: v for n, v in contents.items() if n.startswith("zabalack/")}, "installed_package_inventory_mismatch")
     # The dist-info holds the wheel's metadata members and what pip adds on install, nothing else.
     allowed = {n for n in contents if n.startswith(dist_dir + "/")} | {dist_dir + "/" + n for n in PIP_ADDED}
     require(dist_info_files(location / dist_dir) <= allowed, "installed_dist_info_inventory_mismatch")
     # No other top-level entry carries the project's name (a second package, a .pth, a stray dist-info).
     require({p.name for p in location.iterdir() if p.name.lower().startswith("zabalack")} == {"zabalack", dist_dir},
             "unexpected_installed_entries")
-    # Every startup hook belongs to another installed distribution (for example setuptools' distutils-precedence.pth).
-    unowned = [name for name in startup_hooks(location) if name not in owned_files(location, dist_dir)]
+    # Only the pinned distributions, each file equal to its RECORD hash; no site
+    # customisation at all; a .pth only when a verified RECORD entry owns it
+    # (for example setuptools' distutils-precedence.pth).
+    owned, top_level = verified_records(location, dist_dir, locked_distributions(checkout))
+    require(not site_customisation(location), "site_customisation_present")
+    unowned = [name for name in startup_hooks(location) if name not in owned]
     require(not unowned, "unowned_startup_hook")
+    # Nothing at the top of site-packages that no installed distribution owns.
+    unowned_entries = {path.name for path in location.iterdir()} - top_level - {"zabalack", dist_dir, "__pycache__"}
+    require(not unowned_entries, "unowned_installed_entry")
     module = importlib.import_module("zabalack")
     require(Path(module.__file__).resolve() == location / "zabalack/__init__.py", "wrong_import_origin")
     return {**identity, "installed_bytes_verified": True, "startup_hooks": startup_hooks(location)}

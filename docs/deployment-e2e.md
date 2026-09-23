@@ -202,10 +202,17 @@ environment from that wheel only, and runs `lab/deployment_native_lab.py cycle
 --isolated-lab --wheel-sha256 "$WHEEL_SHA256"` under the shared host lab lock
 with the installed services named by the step environment; nothing is built in
 the job and no Docker daemon is involved. Inside the runner interpreter
-`tools/supplied_wheel.check_installed` compares the whole installation with
-the wheel (every member's bytes, the package and dist-info inventories, no
-other entry named after the project, every `.pth` or site customisation hook
-owned by another installed distribution). A missing prerequisite (services,
+`tools/supplied_wheel.check_installed`, run as `python -I -S` so no installed
+`.pth` runs first, compares the whole installation with the wheel (every
+member's bytes, the package and dist-info inventories, no compiled bytecode in
+the package, which `prepare-runner` installs with `--no-compile`, and no other
+entry named after the project) and the rest of the environment (only the
+distributions `requirements.lock` pins, plus pip; every hashed RECORD entry
+equal to its file; no top-level entry that no RECORD owns; no
+`sitecustomize`/`usercustomize` in any form; a `.pth` only when a verified
+RECORD entry owns it). Anyone able to write the runner environment could
+still forge a matching RECORD; the job creates that environment fresh in its
+own temporary directory. A missing prerequisite (services,
 layout, packages at the pinned patch) fails the step: NOT_RUN is exit 2, never
 a passing job. It is separate from the required
 quality/reference/native/mutation packaging workflow; a service result is not

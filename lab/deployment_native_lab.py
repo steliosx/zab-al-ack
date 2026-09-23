@@ -322,7 +322,9 @@ def prepare_runner(wheel: Path, venv: Path) -> dict:
     subprocess.run([sys.executable, '-m', 'venv', str(venv)], check=True, timeout=300)
     pip = [str(venv / 'bin/python'), '-m', 'pip', '--disable-pip-version-check', '-q']
     subprocess.run([*pip, 'install', '-r', str(REPO / 'requirements.lock')], check=True, timeout=1800)
-    subprocess.run([*pip, 'install', '--no-deps', str(wheel)], check=True, timeout=300)
+    # --no-compile: the installed-file check refuses bytecode in the package,
+    # which would otherwise run instead of the verified source.
+    subprocess.run([*pip, 'install', '--no-deps', '--no-compile', str(wheel)], check=True, timeout=300)
     probe = subprocess.run([str(venv / 'bin/python'), '-c', 'import zabalack, json; print(json.dumps(zabalack.__file__))'],
                            cwd='/', capture_output=True, text=True, check=True, timeout=60)
     location = Path(json.loads(probe.stdout)).resolve()

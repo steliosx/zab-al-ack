@@ -1,6 +1,9 @@
 """Offline checks of the non-Docker service runners (R14). No service is started."""
+import base64
 import hashlib
+import importlib.util
 import json
+import subprocess
 import os
 from pathlib import Path
 import shutil
@@ -98,6 +101,20 @@ def runner_environment(tmp_path: Path):
     return env / 'bin/python', site
 
 
+def record_hash(data: bytes) -> str:
+    return 'sha256=' + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()
+
+
+def owned_distribution(site: Path, dist: str, files: dict):
+    """Another installed distribution as pip leaves it: its files and a RECORD with their real hashes."""
+    for name, data in files.items():
+        (site / name).parent.mkdir(parents=True, exist_ok=True)
+        (site / name).write_bytes(data)
+    (site / dist).mkdir(exist_ok=True)
+    (site / dist / 'RECORD').write_text(''.join(f'{name},{record_hash(data)},{len(data)}\n' for name, data in files.items())
+                                        + f'{dist}/RECORD,,\n')
+
+
 def install(site: Path, members: dict, *, editable=False):
     """What pip leaves behind after `pip install --no-deps wheel`: the members, plus INSTALLER, REQUESTED,
     direct_url.json and a rewritten RECORD."""
@@ -122,7 +139,7 @@ CASES = {
     'extra-dist-info-file': 'installed_dist_info_inventory_mismatch',
     'second-entry-named-after-the-project': 'unexpected_installed_entries',
     'unowned-pth-hook': 'unowned_startup_hook',
-    'unowned-sitecustomize': 'unowned_startup_hook',
+    'unowned-sitecustomize': 'site_customisation_present',
     'owned-pth-hook': None,
     'editable-install': 'editable_install',
     'wrong-digest': 'wheel_digest_mismatch',
@@ -162,11 +179,9 @@ def test_local_e2e_runner_verifies_the_whole_installation_inside_the_runner_inte
     elif case == 'unowned-sitecustomize':
         (site / 'sitecustomize.py').write_text('import os\n')
     elif case == 'owned-pth-hook':
-        (site / 'distutils-precedence.pth').write_text('import _distutils_hack\n')
-        (site / 'setuptools-80.0.0.dist-info').mkdir()
-        (site / 'setuptools-80.0.0.dist-info/RECORD').write_text('distutils-precedence.pth,sha256=synthetic,26\n'
-                                                                 'setuptools-80.0.0.dist-info/METADATA,sha256=synthetic,1\n')
-        (site / 'setuptools-80.0.0.dist-info/METADATA').write_text('Name: setuptools\nVersion: 80.0.0\n')
+        # setuptools as requirements.lock pins it, its RECORD hashes matching the installed bytes.
+        owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': b'import _distutils_hack\n',
+                                                                 'setuptools-83.0.0.dist-info/METADATA': b'Name: setuptools\nVersion: 83.0.0\n'})
     expected = 'f' * 64 if case == 'wrong-digest' else digest
     if case == 'nothing-installed':
         with pytest.raises(RuntimeError, match='runner_installed_wheel_check_failed'):
@@ -321,3 +336,62 @@ def test_the_runner_marks_its_record_pending_when_the_native_lab_will_bind_it(tm
     assert all(('native_lab' in value) is bound for value in seen)
     if bound:
         assert seen[0]['native_lab'] == {'pending': True, 'final_state': None, 'cleanup_complete': False}
+
+
+BYPASSES = {
+    'pth-owned-by-a-fabricated-distribution': 'unexpected_installed_distribution',
+    'owned-pth-with-changed-content': 'installed_distribution_file_modified',
+    'sitecustomize-package-directory': 'site_customisation_present',
+    'sitecustomize-bytecode-only': 'site_customisation_present',
+    'pth-that-would-hide-itself': 'unowned_startup_hook',
+    'bytecode-in-the-package': 'installed_package_bytecode',
+    'stray-top-level-module': 'unowned_installed_entry',
+}
+
+
+@pytest.mark.parametrize('case', list(BYPASSES))
+def test_installed_file_verification_refuses_the_reviewers_bypasses(tmp_path, monkeypatch, case):
+    """Re-review of 19d0fc7 (N3): each of these passed check_runner with installed_bytes_verified True."""
+    monkeypatch.setattr(local_e2e, 'ROOT', ROOT)
+    wheel, members = candidate_wheel(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl')
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    python, site = runner_environment(tmp_path)
+    install(site, members)
+    ran = tmp_path / 'pth-ran'
+    hook = f'import pathlib; pathlib.Path({str(ran)!r}).write_text("ran")\n'.encode()
+    if case == 'pth-owned-by-a-fabricated-distribution':
+        owned_distribution(site, 'zz_owner-1.0.dist-info', {'zz_hook.pth': hook, 'zz_owner-1.0.dist-info/METADATA': b'Name: zz-owner\n'})
+    elif case == 'owned-pth-with-changed-content':
+        owned_distribution(site, 'setuptools-83.0.0.dist-info', {'distutils-precedence.pth': b'import _distutils_hack\n',
+                                                                 'setuptools-83.0.0.dist-info/METADATA': b'Name: setuptools\n'})
+        (site / 'distutils-precedence.pth').write_bytes(hook)
+    elif case == 'sitecustomize-package-directory':
+        (site / 'sitecustomize').mkdir()
+        (site / 'sitecustomize/__init__.py').write_text('import os\n')
+    elif case == 'sitecustomize-bytecode-only':
+        (site / '__pycache__').mkdir()
+        (site / '__pycache__/sitecustomize.cpython-312.pyc').write_bytes(b'\x00' * 16)
+    elif case == 'pth-that-would-hide-itself':
+        # Executed at interpreter start it could patch the checker; under -I -S it never runs.
+        (site / 'zz_hide.pth').write_bytes(hook)
+    elif case == 'bytecode-in-the-package':
+        (site / 'zabalack/__pycache__').mkdir()
+        (site / 'zabalack/__pycache__/__init__.cpython-312.pyc').write_bytes(b'\x00' * 16)
+    elif case == 'stray-top-level-module':
+        (site / 'requests_shim.py').write_text('import os\n')
+    with pytest.raises(RuntimeError, match='runner_installed_wheel_check_failed: ' + BYPASSES[case] + '$'):
+        local_e2e.check_runner(python, wheel, digest)
+    assert not ran.exists(), 'no .pth may run before or during the check'
+
+
+def test_prepare_runner_installs_the_wheel_without_bytecode(monkeypatch, tmp_path):
+    spec = importlib.util.spec_from_file_location('prepare_lab', ROOT / 'lab/deployment_native_lab.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    calls = []
+    (tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl').write_bytes(b'synthetic')
+    monkeypatch.setattr(module, 'require_wheel', lambda wheel: None)
+    monkeypatch.setattr(module.subprocess, 'run', lambda argv, **kwargs: calls.append(argv) or subprocess.CompletedProcess(argv, 0, '"/elsewhere/zabalack/__init__.py"', ''))
+    module.prepare_runner(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl', tmp_path / 'venv')
+    wheel_install = next(argv for argv in calls if str(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl') in argv)
+    assert '--no-compile' in wheel_install and '--no-deps' in wheel_install

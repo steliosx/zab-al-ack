@@ -33,6 +33,7 @@ def artifact(tmp_path, change=None):
             target.write_bytes(data)
     root.mkdir(exist_ok=True)
     (root / 'pyproject.toml').write_text('[project]\nname="zabalack"\nversion="1.0"\n')
+    (root / 'requirements.lock').write_text('setuptools==83.0.0\n')
     return path, digest, root, files
 
 
