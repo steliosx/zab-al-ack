@@ -89,36 +89,65 @@ class Cancellation:
                 raise Cancelled(signum)
 
 
-def terminate_group(process: subprocess.Popen, grace: float) -> None:
+def leader_state(pid: int) -> str:
+    """'running', 'exited' (a zombie, not reaped) or 'reaped', observed without reaping.
+
+    waitid(WNOWAIT) leaves an exited leader as a zombie: its pid stays
+    allocated, and the kernel does not reuse a pid while any process, zombie
+    included, holds it.
+    """
+    try:
+        info = os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        return 'reaped'
+    return 'running' if info is None else 'exited'
+
+
+def terminate_group(process: subprocess.Popen, grace: float, *, reraise: bool = True) -> str:
     """SIGTERM the child's process group, wait up to grace seconds, then SIGKILL what is left.
 
-    The child leads its own session (run_child), so its process group id is
-    its pid, valid even after the leader has been reaped while members remain.
-    A second signal during the escalation (GitHub escalates a cancel from
-    SIGINT to SIGTERM) is held until the escalation has finished, then
-    re-raised, so the SIGKILL step is never skipped. Members that outlive the
-    leader are killed too.
+    Group identity without a reuse race: the child leads its own session
+    (every caller starts it with start_new_session=True), so the group id is
+    the leader's pid. The leader is never reaped here before the final
+    SIGKILL; its exit is observed with waitid(WNOWAIT), so up to the reap at
+    the end it is alive or a zombie, its pid (the group id) cannot belong to
+    any other process, and every killpg reaches only this group. The group is
+    signalled only after leader_state() confirms the leader is still ours and
+    unreaped; nothing in this process reaps it in between. If the leader had
+    already been reaped before or during the call (outside this function),
+    the group id is no longer provable and the group is not signalled: the
+    returned outcome says so.
+
+    The grace deadline is fixed once. A further signal during the escalation
+    (GitHub escalates a cancel from SIGINT to SIGTERM) neither restarts nor
+    extends it: the interrupted step resumes, and the SIGKILL step always
+    runs. The first such interrupt is re-raised at the end when `reraise` is
+    set; a caller that re-raises its own original cause passes reraise=False,
+    so the original remains the recorded reason.
     """
     pgid = process.pid
     held: BaseException | None = None
+    end = time.monotonic() + grace
 
     def step(action):
         nonlocal held
         while True:
             try:
                 return action()
-            except KeyboardInterrupt as error:  # a further cancellation: finish first
+            except KeyboardInterrupt as error:  # a further cancellation: finish first, keep the first one
                 held = held or error
 
-    def signal_group(signum):
+    def signal_group(signum) -> bool:
+        if process.returncode is not None or leader_state(pgid) == 'reaped':
+            return False  # the group id can no longer be proven; never signal it
         try:
             os.killpg(pgid, signum)
         except ProcessLookupError:
             pass
+        return True
 
     def wait_for_leader():
-        end = time.monotonic() + grace
-        while time.monotonic() < end and process.poll() is None:
+        while time.monotonic() < end and leader_state(pgid) == 'running':
             time.sleep(0.2)
 
     def reap():
@@ -127,12 +156,17 @@ def terminate_group(process: subprocess.Popen, grace: float) -> None:
         except subprocess.TimeoutExpired:
             pass
 
-    step(lambda: signal_group(signal.SIGTERM))
-    step(wait_for_leader)
-    step(lambda: signal_group(signal.SIGKILL))  # the leader if still alive, and any member left behind
-    step(reap)
-    if held is not None:
+    outcome = 'terminated'
+    if not step(lambda: signal_group(signal.SIGTERM)):
+        outcome = 'leader_already_reaped'
+    else:
+        step(wait_for_leader)
+        if not step(lambda: signal_group(signal.SIGKILL)):  # the leader if still alive, and any member left behind
+            outcome = 'leader_reaped_elsewhere'
+        step(reap)
+    if held is not None and reraise:
         raise held
+    return outcome
 
 
 def run_child(command: list[str], *, grace: float = 20.0, timeout: float | None = None, **popen_kwargs) -> int:
@@ -140,9 +174,8 @@ def run_child(command: list[str], *, grace: float = 20.0, timeout: float | None 
     process = subprocess.Popen(command, start_new_session=True, **popen_kwargs)
     try:
         return process.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        terminate_group(process, grace)
-        raise
     except BaseException:
-        terminate_group(process, grace)
+        # The original cause (the first signal, or the timeout) is what the caller
+        # records; a further signal during the escalation does not replace it.
+        terminate_group(process, grace, reraise=False)
         raise

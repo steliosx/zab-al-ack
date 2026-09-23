@@ -285,7 +285,7 @@ def pgbouncer_start(pool: Path, state: Path, holder: dict | None = None) -> subp
     try:
         listening = wait_port(POOL_PORT)
     except BaseException:
-        terminate_group(process, 5)
+        terminate_group(process, 5, reraise=False)  # the original interrupt stays the recorded cause
         raise
     if not listening:
         terminate_group(process, 5)
