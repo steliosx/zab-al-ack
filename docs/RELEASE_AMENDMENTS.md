@@ -1094,7 +1094,8 @@ empty until that review. `tools/run_quality.py` adds `ruff-infrastructure`,
 a bounded lint of the listed Docker-free lab and runner files.
 
 Corrections after the non-author review of the delivered `32c8268`
-(2026-09-23; seven commits layered on it, none rewriting delivered history,
+(2026-09-23; eight corrective commits in seven groups and two documentation
+commits layered on it, none rewriting delivered history,
 each with a regression that fails with its fix removed):
 
 - R1, R13: the deployment record is invalidated (NOT_RUN with a public reason
@@ -1131,6 +1132,26 @@ each with a regression that fails with its fix removed):
 Still NOT_RUN from the preparing environment: every host observation that
 needs the x64 runner (checker and collector runs on the guest, the packaged
 Zabbix instance, the hosted deployment dispatch).
+
+Integration corrections after the re-review of `19d0fc7` (Opus, 2026-09-23;
+sixteen commits O1–O15 and O13b layered on it, each with a regression that
+fails with its fix removed; author verification and same-session technical
+review only, not independent review or approval): held
+qualification packages accepted; the checker reads systemd's real `Listen`
+format and never connects to an activated socket; every unexpected cycle
+error is recorded and the runner's record stays pending until the cycle
+binds it; the deployment job invalidates the tracked record first, runs the
+lab under `exec flock -n -F` so cancellation reaches Python, and requires a
+`ci.yml` candidate run that built the revision itself; the installed
+environment is verified with `python -I -S -B` against the venv scheme,
+`requirements.lock` pins and RECORD hashes; the identity collector pins
+repositories and suites, reads gpgv per signature block, matches signatures
+by repository and suite, reads index digests only from gpgv-verified
+content bound to the pinned signature, finds epoch-named cached `.deb` files
+and verifies `postgresql-client-18`; the group escalation keeps one deadline
+and the first cause and cannot signal a reused group id; bundle paths must
+be canonical; `pg_hba.conf` is read with PostgreSQL's quoting rules. The runner-host observations then ran on
+`zabalack-omarchy-x64` (R30).
 
 ## R28 — Docker requirements inventory and runner-account verification (prepared handoff)
 

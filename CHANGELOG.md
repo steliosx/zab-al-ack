@@ -1,9 +1,63 @@
 # Zab-al-ack changelog
 
+## Unreleased — integration corrections after the re-review of `19d0fc7` (Opus)
+
+Sixteen corrective commits on Fable's corrected delivery `19d0fc7` (O1–O15
+and O13b), each with a regression that fails with its fix removed; no
+delivered commit is rewritten. Author verification and same-session
+technical review only, not independent review or approval.
+
+- Held packages: `tools/native_local.py` and the identity collector accept
+  `hold ok installed` (the qualification host holds its exact versions) and
+  refuse a package selected for removal.
+- Runner-account checker: systemd's real `Listen=PATH (Type)` format is
+  read, so an active `docker.socket` is recognised and never connected to;
+  an unreadable `Listen` value or an unlocated runner `.env` is
+  NOT_OBSERVED; a non-root run cannot conform (sudo enumeration).
+- Deployment evidence: any unexpected error during or after the cycle is
+  recorded (FAIL, or NOT_RUN before anything started); the inner runner's
+  record stays `native_lab.pending` until the cycle binds its cleanup
+  outcome; PostgreSQL is stopped even when the Zabbix lab's stop fails, and
+  a failed or unreadable Zabbix stop is never a clean stop.
+- Workflows: the deployment job replaces the tracked historical record with
+  NOT_RUN before any step that can fail; the lab steps run as
+  `exec flock -n -F <lock> python …` so a job cancellation reaches Python;
+  the candidate run must be a completed, successful `ci.yml` run of the
+  revision by `workflow_dispatch`, `push` or `schedule` (explicit checks, not
+  `assert`).
+- Installed-environment verification: the runner probe runs as
+  `python -I -S -B` and finds the venv's site-packages with the `venv`
+  scheme (Debian's default scheme named a non-existent `local/…/dist-packages`
+  under `-S`); only `requirements.lock` distributions (plus pip) with RECORD
+  hashes matching their files; no site customisation; a `.pth` only when a
+  verified RECORD owns it; no unowned top-level entry; no bytecode in the
+  package (installed with `--no-compile`; the lab never writes it).
+- Identity collector: unattributable `apt-cache policy` lines are
+  NOT_OBSERVED; each origin host has pinned repositories and suites; gpgv
+  signatures are read per signature block with the primary fingerprint and
+  matched to origins by repository and suite (never by URI alone; duplicate
+  observations are missing); index digests come only from the content
+  `gpgv --output` verified, whose digest must match the pinned signature of
+  the same repository and suite, and an InRelease with content outside its
+  signed message is refused; cached `.deb` files are found under apt's
+  epoch-encoded names; `approve` refuses to write over a policy file;
+  `postgresql-client-18` is verified as a component of its own.
+- Cancellation: the process-group escalation keeps one fixed deadline,
+  completes despite further signals, keeps the first interrupt as the cause,
+  kills members that outlive the leader, and never reaps the leader before
+  the final SIGKILL (its exit is observed with `waitid(WNOWAIT)`), so the
+  group id cannot be reused; an already-reaped leader's group is never
+  signalled.
+- Evidence bundles accept only the canonical spelling of a path; the Zabbix
+  lab reads `pg_hba.conf` with PostgreSQL's quoting rules and requires one
+  unquoted method keyword per record.
+
 ## Unreleased — corrections from the non-author review of the Docker-removal delivery (R29 corrections)
 
-Seven corrective commits on the delivered `32c8268`, each with a regression
-that fails with its fix removed; no delivered commit is rewritten.
+Eight corrective commits in seven correction groups, and two documentation
+commits, on the delivered `32c8268`, each correction with a regression that
+fails with its fix removed; no delivered commit is rewritten. (First
+recorded as "seven corrective commits"; corrected during integration.)
 
 - Deployment evidence (R1, R13): `lab/deployment_native_lab.py` writes a
   fresh NOT_RUN record before any service work, rewrites it on every refusal
