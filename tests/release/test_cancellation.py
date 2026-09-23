@@ -95,3 +95,33 @@ def test_run_child_returns_the_exit_code_and_stops_the_group_on_timeout(tmp_path
     with pytest.raises(subprocess.TimeoutExpired):
         cancellation.run_child(['sh', '-c', f'sleep 60 & echo $! > {pidfile}; wait'], timeout=0.8, grace=2)
     assert wait_terminated(int(pidfile.read_text().strip()))
+
+
+def test_a_second_signal_during_escalation_does_not_skip_the_kill_step(tmp_path):
+    """Re-review New-1: SIGINT then SIGTERM 1 s later (GitHub's escalation) aborted the grace wait and the
+    SIGKILL was never sent; a child and a grandchild that ignore SIGTERM stayed alive."""
+    pids = tmp_path / 'pids'
+    script = f"trap '' TERM INT; (trap '' TERM INT; sleep 60) & echo $$ $! > {pids}; while :; do sleep 0.2; done"
+    control = cancellation.Cancellation().install()
+    try:
+        threading.Timer(0.8, lambda: os.kill(os.getpid(), signal.SIGINT)).start()
+        threading.Timer(1.8, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+        with pytest.raises(KeyboardInterrupt):
+            cancellation.run_child(['sh', '-c', script], grace=3)
+    finally:
+        control.restore()
+    child, grandchild = (int(pid) for pid in pids.read_text().split())
+    assert wait_terminated(child) and wait_terminated(grandchild)
+
+
+def test_group_members_that_outlive_the_leader_are_killed(tmp_path):
+    """Re-review New-2: terminate_group returned once the leader exited; a member ignoring SIGTERM survived."""
+    pidfile = tmp_path / 'member.pid'
+    process = subprocess.Popen(['sh', '-c', f"(trap '' TERM; sleep 60) & echo $! > {pidfile}; sleep 60"], start_new_session=True)
+    deadline = time.monotonic() + 5
+    while not pidfile.exists() or not pidfile.read_text().strip():
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    cancellation.terminate_group(process, grace=2)
+    assert process.poll() is not None
+    assert wait_terminated(int(pidfile.read_text().strip()))

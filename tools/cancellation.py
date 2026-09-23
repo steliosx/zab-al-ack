@@ -90,22 +90,49 @@ class Cancellation:
 
 
 def terminate_group(process: subprocess.Popen, grace: float) -> None:
-    """SIGTERM the child's process group, wait up to grace seconds, then SIGKILL what is left."""
-    try:
-        pgid = os.getpgid(process.pid)
-    except ProcessLookupError:
-        return
-    for signum, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
+    """SIGTERM the child's process group, wait up to grace seconds, then SIGKILL what is left.
+
+    The child leads its own session (run_child), so its process group id is
+    its pid, valid even after the leader has been reaped while members remain.
+    A second signal during the escalation (GitHub escalates a cancel from
+    SIGINT to SIGTERM) is held until the escalation has finished, then
+    re-raised, so the SIGKILL step is never skipped. Members that outlive the
+    leader are killed too.
+    """
+    pgid = process.pid
+    held: BaseException | None = None
+
+    def step(action):
+        nonlocal held
+        while True:
+            try:
+                return action()
+            except KeyboardInterrupt as error:  # a further cancellation: finish first
+                held = held or error
+
+    def signal_group(signum):
         try:
             os.killpg(pgid, signum)
         except ProcessLookupError:
-            return
-        end = time.monotonic() + wait
-        while time.monotonic() < end:
-            if process.poll() is not None:
-                return
+            pass
+
+    def wait_for_leader():
+        end = time.monotonic() + grace
+        while time.monotonic() < end and process.poll() is None:
             time.sleep(0.2)
-    process.wait(5)
+
+    def reap():
+        try:
+            process.wait(5)
+        except subprocess.TimeoutExpired:
+            pass
+
+    step(lambda: signal_group(signal.SIGTERM))
+    step(wait_for_leader)
+    step(lambda: signal_group(signal.SIGKILL))  # the leader if still alive, and any member left behind
+    step(reap)
+    if held is not None:
+        raise held
 
 
 def run_child(command: list[str], *, grace: float = 20.0, timeout: float | None = None, **popen_kwargs) -> int:
