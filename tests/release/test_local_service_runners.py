@@ -475,3 +475,57 @@ def test_the_approved_startup_hook_is_pinned_to_the_setuptools_version_the_lock_
     assert 'setuptools==83.0.0' in lock.splitlines()
     assert supplied_wheel.APPROVED_STARTUP_HOOKS == {
         'distutils-precedence.pth': hashlib.sha256(GENUINE_DISTUTILS_PTH).hexdigest()}
+
+
+def relocatable_interpreter(tmp_path, with_libpython=True):
+    """An actions/setup-python-shaped prefix whose interpreter records the LD_LIBRARY_PATH it was started with."""
+    prefix = tmp_path / 'toolcache/Python/3.12.14/x64'
+    (prefix / 'bin').mkdir(parents=True)
+    (prefix / 'lib').mkdir()
+    if with_libpython:
+        (prefix / 'lib/libpython3.12.so.1.0').write_bytes(b'')
+    seen = tmp_path / 'seen-ld-library-path'
+    interpreter = prefix / 'bin/python3.12'
+    interpreter.write_text(f'#!/bin/sh\nprintf %s "${{LD_LIBRARY_PATH-UNSET}}" > {seen}\nexit 1\n')
+    interpreter.chmod(0o755)
+    (tmp_path / 'venv/bin').mkdir(parents=True)
+    (tmp_path / 'venv/bin/python').symlink_to(interpreter)
+    return tmp_path / 'venv/bin/python', prefix / 'lib', seen
+
+
+@pytest.mark.parametrize('with_libpython', [True, False])
+def test_the_runner_check_starts_a_relocatable_interpreter_with_its_own_libpython(tmp_path, monkeypatch, with_libpython):
+    """Live cycle at ff0b3e2: the setup-python interpreter links libpython3.12.so.1.0; the minimal child environments
+    dropped LD_LIBRARY_PATH, the loader chose the system 3.12.3 libpython and _ctypes failed to import (undefined
+    _PyErr_SetLocaleString). The library directory comes from the interpreter's own prefix, never from the caller."""
+    monkeypatch.setattr(local_e2e, 'ROOT', ROOT)
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/caller/lib')
+    python, library, seen = relocatable_interpreter(tmp_path, with_libpython)
+    wheel, _ = candidate_wheel(tmp_path / 'zabalack-0.1.0a0-py3-none-any.whl')
+    with pytest.raises(RuntimeError, match='runner_installed_wheel_check_failed$'):
+        local_e2e.check_runner(python, wheel, 'a' * 64)
+    assert seen.read_text() == (str(library) if with_libpython else 'UNSET')
+
+
+def test_every_minimal_deployment_environment_carries_the_interpreter_library():
+    """The runner check, the pytest child, the runtime's service children and the migration all start the runner
+    interpreter from a minimal environment; each one carries the derived library directory."""
+    import ast
+    runner = (ROOT / 'tools/run_deployment_e2e_local.py').read_text()
+    runtime = (ROOT / 'lab/deployment_e2e_runtime.py').read_text()
+    assert runner.count('**interpreter_library_env(str(python))}') == 1
+    assert runner.count('**interpreter_library_env(str(runner_python))}') == 1
+    assert runtime.count('**interpreter_library_env(sys.executable)}') == 2
+    # tools/ and lab/ run in different interpreters; the two copies must stay identical.
+    copies = [next(ast.get_source_segment(source, node) for node in ast.parse(source).body
+                   if isinstance(node, ast.FunctionDef) and node.name == 'interpreter_library_env') for source in (runner, runtime)]
+    assert copies[0] == copies[1]
+
+
+def test_the_interpreter_library_is_derived_through_the_venv_symlink(tmp_path, monkeypatch):
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/caller/lib')
+    python, library, _ = relocatable_interpreter(tmp_path)
+    assert local_e2e.interpreter_library_env(str(python)) == {'LD_LIBRARY_PATH': str(library)}
+    (library / 'libpython3.12.so.1.0').unlink()
+    assert local_e2e.interpreter_library_env(str(python)) == {}
+    assert local_e2e.interpreter_library_env(str(tmp_path / 'absent/bin/python')) == {}

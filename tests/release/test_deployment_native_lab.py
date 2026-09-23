@@ -703,7 +703,7 @@ def test_the_runner_and_its_lab_children_never_write_bytecode():
     runner = (ROOT / 'tools/run_deployment_e2e_local.py').read_text()
     runtime = (ROOT / 'lab/deployment_e2e_runtime.py').read_text()
     assert '"PYTHONDONTWRITEBYTECODE": "1", "ACK_DEPLOYMENT_E2E"' in runner
-    assert '"PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "HOME": "/tmp"}' in runtime
+    assert '"PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "HOME": "/tmp",' in runtime
 
 
 def test_a_cycle_whose_final_bound_record_does_not_validate_exits_non_zero(lab, monkeypatch):

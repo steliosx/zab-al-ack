@@ -95,6 +95,28 @@ RUNNER_CHECK = ("import json, sys; from pathlib import Path; sys.path.insert(0, 
 ENTRY_POINTS = {"zabalack_zabbix_normalise", "zabalack_zabbix_ack"}
 
 
+def interpreter_library_env(python: str) -> dict[str, str]:
+    """LD_LIBRARY_PATH for a relocatable interpreter that carries its own libpython.
+
+    actions/setup-python's interpreter links libpython3.12.so.1.0 and relies on
+    LD_LIBRARY_PATH to find its own copy; the minimal child environments here
+    drop that variable, and the dynamic loader then picks the system libpython
+    (3.12.3 on the runner host), whose symbols the interpreter's extension
+    modules do not match (_ctypes: undefined _PyErr_SetLocaleString). The
+    library directory is derived from the interpreter itself, not from the
+    caller's environment (an inherited LD_LIBRARY_PATH is not carried over); an
+    interpreter without its own libpython gets nothing.
+    """
+    library = Path(os.path.realpath(python)).parent.parent / "lib"
+    try:
+        carries_libpython = any(library.glob("libpython3*.so*"))
+    except OSError:
+        carries_libpython = False
+    if not carries_libpython:
+        return {}
+    return {"LD_LIBRARY_PATH": str(library)}
+
+
 def check_runner(python: Path, wheel: Path, expected: str) -> dict:
     """The runner must hold exactly the wheel, verified inside its own interpreter, and never import this checkout.
 
@@ -109,7 +131,8 @@ def check_runner(python: Path, wheel: Path, expected: str) -> dict:
     require(isinstance(expected, str) and re.fullmatch(r"[0-9a-f]{64}", expected), "invalid_wheel_digest")
     # -B: the check imports the package; it must not write the bytecode it refuses.
     result = subprocess.run([str(python), "-I", "-S", "-B", "-c", RUNNER_CHECK, str(ROOT / "tools"), str(wheel), expected, str(ROOT)],
-                            cwd="/", env={"PATH": os.environ["PATH"], "TZ": "UTC"}, text=True, capture_output=True, timeout=120)
+                            cwd="/", env={"PATH": os.environ["PATH"], "TZ": "UTC", **interpreter_library_env(str(python))},
+                            text=True, capture_output=True, timeout=120)
     if result.returncode != 0:
         last = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else ""
         label = last[len("ValueError: "):] if last.startswith("ValueError: ") and re.fullmatch(r"ValueError: [a-z_]+", last) else None
@@ -273,7 +296,8 @@ def main(argv=None):
             with (private_logs / "reset.log").open("w") as log:
                 subprocess.run(shlex.split(args.reset_command), cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=600)
         env = {"PATH": str(runner_python.parent) + os.pathsep + os.environ["PATH"], "HOME": "/tmp", "TZ": "UTC",
-               "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "ACK_DEPLOYMENT_E2E": "GENERATED_ISOLATED_PROJECT"}
+               "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "ACK_DEPLOYMENT_E2E": "GENERATED_ISOLATED_PROJECT",
+               **interpreter_library_env(str(runner_python))}
         with (private_logs / "pytest.log").open("w") as log:
             # pytest and the lab processes it spawns (Alerta, worker, TLS proxy) share one
             # session: a cancellation terminates the whole group before it propagates.

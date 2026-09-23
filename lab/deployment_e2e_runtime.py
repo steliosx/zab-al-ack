@@ -88,11 +88,34 @@ def wait_for_projection(admin, identity, event_id, worker):
     return wait_until(projected)
 
 
+def interpreter_library_env(python: str) -> dict[str, str]:
+    """LD_LIBRARY_PATH for a relocatable interpreter that carries its own libpython.
+
+    actions/setup-python's interpreter links libpython3.12.so.1.0 and relies on
+    LD_LIBRARY_PATH to find its own copy; the minimal child environments here
+    drop that variable, and the dynamic loader then picks the system libpython
+    (3.12.3 on the runner host), whose symbols the interpreter's extension
+    modules do not match (_ctypes: undefined _PyErr_SetLocaleString). The
+    library directory is derived from the interpreter itself, not from the
+    caller's environment (an inherited LD_LIBRARY_PATH is not carried over); an
+    interpreter without its own libpython gets nothing.
+    """
+    library = Path(os.path.realpath(python)).parent.parent / "lib"
+    try:
+        carries_libpython = any(library.glob("libpython3*.so*"))
+    except OSError:
+        carries_libpython = False
+    if not carries_libpython:
+        return {}
+    return {"LD_LIBRARY_PATH": str(library)}
+
+
 @contextmanager
 def child(command, name, env=None):
     # Explicit small child environment prevents inherited app/proxy config.
     # PYTHONDONTWRITEBYTECODE: the supplied-wheel check refuses bytecode in the installed package.
-    environment = {"PATH": os.environ["PATH"], "TZ": "UTC", "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "HOME": "/tmp"}
+    environment = {"PATH": os.environ["PATH"], "TZ": "UTC", "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "HOME": "/tmp",
+                   **interpreter_library_env(sys.executable)}
     environment.update(env or {})
     with (PRIVATE / (name + ".log")).open("w") as output:
         process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=output, stderr=subprocess.STDOUT)
@@ -172,7 +195,8 @@ def provision_database(passwords):
     # Shipped versioned migration runner, isolated installer login, explicit role.
     with (PRIVATE / "migration.log").open("w") as log:
         subprocess.run([sys.executable, "sql/migrate.py", "--set-role", "zabalack_owner"], cwd=ROOT,
-                       env={"PATH": os.environ["PATH"], "TZ": "UTC", "ZABALACK_MIGRATION_DSN": dsns["migrator"]},
+                       env={"PATH": os.environ["PATH"], "TZ": "UTC", "ZABALACK_MIGRATION_DSN": dsns["migrator"],
+                            **interpreter_library_env(sys.executable)},
                        check=True, timeout=60, stdout=log, stderr=subprocess.STDOUT)
     # The application role's single entry point into zabalack, granted by the
     # schema owner. psql would substitute the variable; the runtime splices it.
