@@ -49,7 +49,7 @@ import time
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'tools'))
-from cancellation import Cancellation, Cancelled, describe, run_child  # noqa: E402
+from cancellation import Cancellation, describe, run_child  # noqa: E402
 from lab_retention import RetentionError, preserve  # noqa: E402
 STATE = REPO / '.deployment-lab'
 MARKER = STATE / 'ISOLATED_DEPLOYMENT_LAB'

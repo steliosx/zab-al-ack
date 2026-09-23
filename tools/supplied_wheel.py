@@ -146,6 +146,4 @@ def check_installed(path, expected, checkout):
     require(not unowned, "unowned_startup_hook")
     module = importlib.import_module("zabalack")
     require(Path(module.__file__).resolve() == location / "zabalack/__init__.py", "wrong_import_origin")
-    entry_points = {entry.name for entry in dist.entry_points if entry.group == "alerta.plugins"}
-    require(entry_points == {"zabalack_zabbix_normalise", "zabalack_zabbix_ack"}, "installed_entry_points_missing")
     return {**identity, "installed_bytes_verified": True, "startup_hooks": startup_hooks(location)}

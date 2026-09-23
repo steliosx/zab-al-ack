@@ -64,10 +64,12 @@ def test_live_publish_workflow_absent_and_ci_permissions_are_narrow():
     assert workflows
     for path in workflows:
         value = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-        assert value['permissions'] == {'contents': 'read'}
+        # The manual deployment job reads another run's candidate artifact: read-only actions scope, nothing else.
+        narrow = {'contents': 'read', 'actions': 'read'} if path.name == 'deployment-e2e.yml' else {'contents': 'read'}
+        assert value['permissions'] == narrow
         assert 'pull_request_target' not in value['on']
         for name, job in value['jobs'].items():
-            expected = {'contents': 'read', 'security-events': 'write'} if (path.name, name) == ('codeql.yml', 'analyze') else {'contents': 'read'}
+            expected = {'contents': 'read', 'security-events': 'write'} if (path.name, name) == ('codeql.yml', 'analyze') else narrow
             assert job.get('permissions', value['permissions']) == expected
             if expected.get('security-events') == 'write':
                 assert job['if'] == "${{ vars.ZABALACK_CODEQL_ENABLED == 'true' }}"

@@ -510,10 +510,12 @@ def test_a_cancellation_during_the_run_records_fail_interrupted_after_a_full_cle
     launched = cycle_environment(lab, monkeypatch, runner_exit=0)
     cancelled = lab.module.Cancellation()
 
+    from cancellation import Cancelled   # on sys.path once the lab module has loaded
+
     def runner(command, **kwargs):
         launched.append(command)
         lab.inner_record('RUNNING')
-        raise lab.module.Cancelled(signal_module.SIGTERM)
+        raise Cancelled(signal_module.SIGTERM)
     monkeypatch.setattr(lab.module, 'run_child', runner)
     monkeypatch.setattr(lab.module, 'Cancellation', lambda: cancelled)
     assert lab.module.main(CYCLE) == 130

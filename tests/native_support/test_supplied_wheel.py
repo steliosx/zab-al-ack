@@ -62,7 +62,8 @@ def test_rejects_wrong_artifact_identity(tmp_path, flaw):
         wheel.check_source(path, digest, root)
 
 
-@pytest.mark.parametrize('flaw', ['none', 'resource', 'extra_module', 'entry_target', 'version', 'origin', 'editable'])
+@pytest.mark.parametrize('flaw', ['none', 'resource', 'extra_module', 'entry_target', 'version', 'origin', 'editable',
+                                  'dist_info_extra', 'shadow_entry', 'pth_hook', 'sitecustomize'])
 def test_installed_inventory_and_metadata_must_match(tmp_path, monkeypatch, flaw):
     path, digest, root, files = artifact(tmp_path)
     installed = tmp_path / 'site-packages'
@@ -76,6 +77,14 @@ def test_installed_inventory_and_metadata_must_match(tmp_path, monkeypatch, flaw
         (installed / 'zabalack/unexpected.py').write_bytes(b'bad')
     if flaw == 'entry_target':
         (installed / 'zabalack-1.0.dist-info/entry_points.txt').write_bytes(b'[console_scripts]\nzabalack = other:main\n')
+    if flaw == 'dist_info_extra':
+        (installed / 'zabalack-1.0.dist-info/EXTRA').write_bytes(b'not from the wheel or pip')
+    if flaw == 'shadow_entry':
+        (installed / 'zabalack.pth').write_bytes(b'/elsewhere\n')
+    if flaw == 'pth_hook':
+        (installed / 'zz_hook.pth').write_bytes(b'import os; os.environ["INJECTED"] = "1"\n')
+    if flaw == 'sitecustomize':
+        (installed / 'sitecustomize.py').write_bytes(b'import os\n')
     distribution = SimpleNamespace(version='2.0' if flaw == 'version' else '1.0',
         locate_file=lambda _: installed,
         read_text=lambda _: '{"dir_info":{"editable":true}}' if flaw == 'editable' else None)

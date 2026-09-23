@@ -81,9 +81,12 @@ def check_host_layout():
             require(sock.connect_ex(("127.0.0.1", port)) != 0, "lab_port_in_use_before_run: " + str(port))
 
 
-RUNNER_CHECK = ("import json, sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; "
+RUNNER_CHECK = ("import json, sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path; import importlib.metadata as m; "
                 "from supplied_wheel import check_installed; "
-                "print(json.dumps(check_installed(Path(sys.argv[2]), sys.argv[3], Path(sys.argv[4]))))")
+                "identity = check_installed(Path(sys.argv[2]), sys.argv[3], Path(sys.argv[4])); "
+                "identity['entry_points'] = sorted(e.name for e in m.distribution('zabalack').entry_points if e.group == 'alerta.plugins'); "
+                "print(json.dumps(identity))")
+ENTRY_POINTS = {"zabalack_zabbix_normalise", "zabalack_zabbix_ack"}
 
 
 def check_runner(python: Path, wheel: Path, expected: str) -> dict:
@@ -106,6 +109,7 @@ def check_runner(python: Path, wheel: Path, expected: str) -> dict:
         require(False, "runner_installed_wheel_check_failed" + (": " + label if label else ""))
     identity = json.loads(result.stdout)
     require(identity.get("installed_bytes_verified") is True and identity.get("sha256") == expected, "runner_installed_wheel_check_incomplete")
+    require(set(identity.get("entry_points", [])) == ENTRY_POINTS, "runner_installed_wheel_check_failed: installed_entry_points_missing")
     return {"python": str(python), "version": identity["version"], "wheel_sha256": identity["sha256"],
             "installed_bytes_verified": True, "startup_hooks": identity.get("startup_hooks", [])}
 
