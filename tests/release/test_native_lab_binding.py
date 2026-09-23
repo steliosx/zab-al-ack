@@ -113,7 +113,9 @@ def test_the_runner_run_directly_still_validates_its_pass_as_final():
 # PostgreSQL/Zabbix processes (the cycle's service stubs), the runner's host layout
 # and installed-environment probes, and the inner pytest, which writes the private
 # observations and JUnit a passing tests/deployment_e2e session writes.
-from tests.release.test_deployment_native_lab import CYCLE, cycle_environment, lab, record  # noqa: E402,F401
+from tests.release.test_deployment_native_lab import CYCLE, cycle_environment, record  # noqa: E402
+from tests.release import test_deployment_native_lab as native_lab_tests  # noqa: E402
+native_lab = native_lab_tests.lab  # the native-lab fixture, shared under this name
 from evidence_utils import HARNESS_SCOPE, SOURCE_SCOPE  # noqa: E402
 from run_deployment_e2e import EXPECTED_CASES  # noqa: E402
 from deployment_evidence import CHECK_NAMES, REFERENCE_VERSIONS  # noqa: E402
@@ -162,7 +164,8 @@ def command_path(lab, monkeypatch, *, stop_exit=0):
     return seen
 
 
-def test_the_cycle_command_binds_the_real_runner_record_and_the_final_record_validates(lab, monkeypatch):
+def test_the_cycle_command_binds_the_real_runner_record_and_the_final_record_validates(native_lab, monkeypatch):
+    lab = native_lab
     seen = command_path(lab, monkeypatch)
     code = lab.module.main(CYCLE)
     intermediate, final = seen['runner_record'], record(lab)
@@ -182,7 +185,8 @@ def test_the_cycle_command_binds_the_real_runner_record_and_the_final_record_val
     assert code == 0 and final['status'] == 'PASS' and 'provisional_status' not in final
 
 
-def test_the_cycle_command_never_passes_when_cleanup_fails_after_a_passing_runner(lab, monkeypatch):
+def test_the_cycle_command_never_passes_when_cleanup_fails_after_a_passing_runner(native_lab, monkeypatch):
+    lab = native_lab
     seen = command_path(lab, monkeypatch, stop_exit=1)
     code = lab.module.main(CYCLE)
     final = record(lab)
