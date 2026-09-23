@@ -1,5 +1,75 @@
 # Zab-al-ack changelog
 
+## Unreleased — corrections from the non-author review of the Docker-removal delivery (R29 corrections)
+
+Seven corrective commits on the delivered `32c8268`, each with a regression
+that fails with its fix removed; no delivered commit is rewritten.
+
+- Deployment evidence (R1, R13): `lab/deployment_native_lab.py` writes a
+  fresh NOT_RUN record before any service work, rewrites it on every refusal
+  with a public reason code, binds it to the cycle outcome afterwards (a
+  failed stop, retention or wipe, or a lab left behind, turns a PASS into
+  FAIL with `cleanup_reason`; an interruption is FAIL), and
+  `tools/deployment_evidence.py` accepts a native-lab record only when the
+  lab ended absent with the run at exit 0. `tools/run_deployment_e2e_local.py`
+  sets `artifact_mode` and the supplied-wheel receipt only after the runner
+  check; a NOT_RUN record carries neither. The tracked
+  `evidence/deployment-e2e-run.json` can no longer be uploaded as a stale
+  PASS.
+- Runner-account checker (R2, R3, R6, R15, R16):
+  `tools/runner_account_check.py` observes the exact transient unit named by
+  `--unit` (no glob) through `systemctl show`, takes its processes from the
+  unit's cgroup, compares every uid and gid field, groups, capabilities and
+  `NoNewPrivs` of every candidate (ambiguity is INCOMPLETE), resolves socket
+  symlinks, classifies a connect as `ok`, `errno:N` or `unknown`, and skips
+  the demonstrated connect on a socket-activated unit instead of starting the
+  daemon; docker-free rules for an inferred write path. Record schema 3.
+- Package identity collector and validator (R4, R5, R7, R18, R19):
+  `tools/collect_package_identities.py` derives its missing-observation list
+  from the record, pins every origin (Zabbix, PGDG, Ubuntu archive) by full
+  key fingerprint, treats a failed or erroring `dpkg -V` as a payload
+  deviation, accepts `Architecture: all` only for the frontend and SQL
+  scripts, verifies the PostgreSQL client binaries as members of their
+  packages, and binds each package to the signed index (InRelease digest of
+  the Packages index, stanza SHA256 and filename, cached `.deb` digest);
+  `lab/zabbix_reference.json` carries the corrected repository URL, the
+  Zabbix and PGDG fingerprints, the reviewer's index observation of
+  2026-09-23 and retires the 7.0.30 fallback (historical note kept) now that
+  7.0.31 is confirmed in the noble index.
+- Cancellation (R8, R9, R20): `tools/cancellation.py` routes SIGTERM, SIGHUP
+  and SIGINT into one `Cancelled` interrupt raised at a safe point, defers a
+  further signal during cleanup and the record write, and stops a child's
+  whole process group on cancellation or timeout; `tools/native_local.py`,
+  `lab/deployment_native_lab.py` and `tools/run_deployment_e2e_local.py` use
+  it (whole-run guard, per-phase cleanup, PgBouncer's group, exit 130).
+- Zabbix lab (R12, R14): `lab/zabbix_native_lab.py` initialises its cluster
+  with `scram-sha-256` logins only from generated passwords kept in the
+  marked lab directory at mode 0600, refuses a cluster whose `pg_hba.conf`
+  allows trust, and signals a component PID only when the live process
+  matches the identity recorded at start (`/proc` comm, start time, uid and
+  the lab's own arguments); a reused or unrecorded PID is `foreign_pid`,
+  reported and never signalled; no process group is signalled; the PHP
+  server starts directly as the service identity.
+- Recorder and bundle (R17, R21): `tools/record_real_zabbix.py` requires the
+  JUnit version property and exactly the pinned version with or without a
+  services record; `lab/real_zabbix_prepare.py` reads `apiinfo.version`
+  before logging in and refuses a non-pin instance;
+  `tools/evidence_bundle.py verify` requires every archive member under the
+  one root holding the manifest, parses the archive manifest with the on-disk
+  rules (no duplicates), refuses duplicate members and symlinked directories.
+- Exact candidate wheel (R10, R11): `deployment-e2e.yml` consumes the
+  candidate run's already-produced wheel, bound by dispatch inputs (run ID,
+  revision, SHA-256), confirmed through the Actions API and verified with
+  `sha256sum -c` before installation; nothing is built in the job; gate,
+  lock, upload and artifact naming unchanged. `tools/supplied_wheel.py`
+  `check_installed` also checks the dist-info inventory, other entries named
+  after the project and the ownership of every `.pth` or site customisation
+  hook, and `tools/run_deployment_e2e_local.py` runs it inside the runner
+  interpreter with the supplied digest.
+- Housekeeping: an unused import left by the cancellation change in
+  `lab/deployment_native_lab.py` and `tools/run_deployment_e2e_local.py` is
+  removed so `tools/run_quality.py ruff-infrastructure` passes.
+
 ## Unreleased — native deployment path and Docker-free deployment job (R29)
 
 - `lab/deployment_native_lab.py`: disposable PostgreSQL 18 cluster (loopback
@@ -18,9 +88,11 @@
   recorded with reason `interrupted`, cleaned up and retained like any
   failure, and the run record ends as FAIL (exit 130) instead of staying at
   RUNNING with the phase missing.
-- `deployment-e2e.yml` (proposed, unchanged trigger, gate and artifact): build
-  the wheel, prepare the runner environment, `cycle` under the shared lab lock
-  on installed services; no Docker.
+- `deployment-e2e.yml` (proposed, unchanged trigger, gate and artifact):
+  prepare the runner environment from the wheel, `cycle` under the shared
+  lab lock on installed services; no Docker. (Originally the job built the
+  wheel itself; the corrections above make it consume the exact candidate
+  wheel instead.)
 - `tools/self_hosted_job.py`: the live-service guard covers the deployment and
   Zabbix lab PID files. `Makefile` gains `deployment-e2e-native`.
 - `lab/zabbix_native_lab.py`: `zabbix_server` and the PHP server start with a
@@ -42,7 +114,8 @@
 ## Unreleased — one exact native Zabbix 7.0 reference (R27)
 
 - `lab/zabbix_reference.json` pins Zabbix 7.0.31 with verified source facts,
-  the Ubuntu 24.04 package verification gate and the fallback rule; every
+  the Ubuntu 24.04 package verification gate and a fallback rule (retired in
+  the corrections above once 7.0.31 was confirmed in the noble index); every
   producer, validator and mocked test reads the pin instead of a `7.0.10` literal.
 - `lab/zabbix_native_lab.py`: disposable package-installed Zabbix instance
   without Docker (own PostgreSQL 18 cluster, loopback-only server, packaged

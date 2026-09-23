@@ -1065,13 +1065,15 @@ the killed pytest child was cleaned up but the record stayed at RUNNING
 without the phase.
 
 The manual `deployment-e2e.yml` job is proposed in the Docker-free form:
-build one wheel from the checkout, prepare the runner environment from it,
-then `lab/deployment_native_lab.py cycle --isolated-lab` under the shared
-host lab lock with the installed services named by the step environment. The
-trigger, enablement variable, runner labels, permissions, artifact name,
-record path and upload-on-failure rule are unchanged; a missing prerequisite
-fails the step (NOT_RUN is exit 2), so the gate is neither removed nor made
-optional. The Compose runner remains the optional Docker form. Host
+prepare the runner environment from the candidate wheel, then
+`lab/deployment_native_lab.py cycle --isolated-lab` under the shared host
+lab lock with the installed services named by the step environment. As first
+delivered the job built a wheel of its own; the corrections below make it
+consume the exact candidate wheel instead. The trigger, enablement variable,
+runner labels, artifact name, record path and upload-on-failure rule are
+unchanged (the permissions gain read-only `actions` access for the artifact
+download); a missing prerequisite fails the step (NOT_RUN is exit 2), so the
+gate is neither removed nor made optional. The Compose runner remains the optional Docker form. Host
 prerequisites are verification items for the runner handoff
 (`docs/self-hosted-runner.md`); none is provisioned by this change, and no
 hosted run of the native form has been recorded.
@@ -1090,6 +1092,45 @@ foreign origin, unverified signature or off-pin version DEVIATES), and
 proposed for review from a CONFORMS record only; the reviewed lists stay
 empty until that review. `tools/run_quality.py` adds `ruff-infrastructure`,
 a bounded lint of the listed Docker-free lab and runner files.
+
+Corrections after the non-author review of the delivered `32c8268`
+(2026-09-23; seven commits layered on it, none rewriting delivered history,
+each with a regression that fails with its fix removed):
+
+- R1, R13: the deployment record is invalidated (NOT_RUN with a public reason
+  code) before any service work and on every refusal, and bound to the cycle
+  outcome afterwards; a failed stop, retention or wipe, a lab left behind or
+  an interruption is FAIL, never an uploaded PASS; the validator requires a
+  native-lab record to end with the lab absent and the run at exit 0; a
+  NOT_RUN record carries no artifact-mode or supplied-wheel metadata.
+- R2, R3, R6, R15, R16: the runner-account checker observes the exact
+  transient unit and its cgroup processes, compares every uid, gid, group and
+  capability field of every candidate, resolves socket links, classifies
+  connects, and never socket-activates the daemon it is checking.
+- R4, R5, R7, R18, R19: the identity collector derives INCOMPLETE from the
+  record, pins each origin by full fingerprint, treats a failed `dpkg -V` as
+  a deviation, accepts `Architecture: all` only where the package is, checks
+  the PostgreSQL client members, and binds identities to the signed index;
+  the reference records the corrected repository URL and the reviewer's index
+  observation; the 7.0.30 fallback is retired now that 7.0.31 is confirmed
+  in the noble index (its former rule stays as a historical note).
+- R8, R9, R20: SIGTERM and SIGHUP join SIGINT in one cancellation path with
+  deferral during cleanup and process-group termination of the children.
+- R12, R14: the Zabbix lab cluster accepts scram logins only, from generated
+  passwords kept in the marked lab directory; a PID file is signalled only
+  when the live process matches the identity recorded at start, and never a
+  process group.
+- R17, R21: the recorder enforces the pin on the execution itself and the
+  prepare script checks `apiinfo.version` before login; archive verification
+  enforces the root prefix and refuses duplicate entries and members.
+- R10, R11: the deployment job qualifies the exact candidate wheel named by
+  its dispatch inputs (run, revision, digest) and verifies the whole
+  installation inside the runner interpreter; `artifact_mode: supplied_wheel`
+  now describes what the job does.
+
+Still NOT_RUN from the preparing environment: every host observation that
+needs the x64 runner (checker and collector runs on the guest, the packaged
+Zabbix instance, the hosted deployment dispatch).
 
 ## R28 — Docker requirements inventory and runner-account verification (prepared handoff)
 
@@ -1118,8 +1159,10 @@ reference lab, the deployment-path lab and their validators target, with the
 facts verified at the tag (frontend and API version 7.0.31; PostgreSQL 13.0 to
 18.x supported since 7.0.20; `AllowUnsupportedDBVersions` default 0; PHP 8.0
 minimum and the frontend's ini minima), the Ubuntu 24.04 package identities and
-signing key still to confirm on the runner host, the verification gate, the
-7.0.30 fallback rule and the changes since 7.0.10 that touch the lab.
+signing key still to confirm on the runner host, the verification gate, a
+7.0.30 fallback rule (retired on 2026-09-23 once 7.0.31's presence in the
+Zabbix noble index was independently confirmed; the rule remains as a
+historical note) and the changes since 7.0.10 that touch the lab.
 
 Producers and validators read the pin instead of carrying `7.0.10` literals:
 `tools/deployment_evidence.REFERENCE_VERSIONS`, the deployment provisioner's
@@ -1132,8 +1175,9 @@ PostgreSQL 18 cluster and the packaged schema, a loopback-only
 API; state classification, refusals of unmarked, ambiguous or running state,
 a verified stop, a fresh-database reset and a status record of component
 versions and package identities. `tools/record_real_zabbix.py --services-file`
-records those identities and refuses a run whose observed version differs from
-the pin.
+records those identities; since the 2026-09-23 corrections the recorder
+refuses any run whose observed version is not the pin, with or without that
+file, and `lab/real_zabbix_prepare.py` refuses an instance that is not the pin.
 
 Historical results are preserved: the 7.0.0 reference-source inspection, the
 7.0.10 deployment-path and real-Zabbix records and their manifests keep their
