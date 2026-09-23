@@ -393,6 +393,15 @@ def systemctl_show(unit, properties):
     return values
 
 
+LISTEN_ENTRY = re.compile(r'(?P<address>\S(?:.*\S)?) \((?P<type>[A-Za-z]+)\)')
+
+
+def listen_address(entry):
+    """The address of one `systemctl show -p Listen` value, e.g. '/run/docker.sock (Stream)'; None if not understood."""
+    match = LISTEN_ENTRY.fullmatch(entry.strip())
+    return match.group('address') if match else None
+
+
 def socket_activation(path, show=None):
     """Whether a systemd .socket unit owns the path: a connect would then start the daemon."""
     show = show or systemctl_show
@@ -410,8 +419,15 @@ def socket_activation(path, show=None):
             return observed(active=False, note='no systemd init; socket activation impossible')
         if not values or values.get('LoadState', [''])[0] != 'loaded':
             continue
-        listens = [entry.split(':', 1)[-1] for entry in values.get('Listen', []) if ':' in entry]
-        if any(os.path.realpath(entry) == real for entry in listens):
+        listens = []
+        for entry in values.get('Listen', []):
+            address = listen_address(entry)
+            if address is None:
+                # A loaded socket unit whose listen address cannot be read might own
+                # this path; a connect could then start its daemon.
+                return not_observed(f'socket activation state unknown: {unit} Listen entry not understood')
+            listens.append(address)
+        if any(address.startswith('/') and os.path.realpath(address) == real for address in listens):
             seen.append({'unit': unit, 'active': values.get('ActiveState', [''])[0] == 'active'})
     active = [item for item in seen if item['active']]
     if active:
@@ -533,7 +549,19 @@ def service_observation(unit, runner_root, show=None):
             return not_observed('environment file unreadable: ' + str(target))
         except OSError as error:
             return not_observed('environment file unreadable: ' + type(error).__name__)
-    root = Path(runner_root) if runner_root is not None else (Path(record['working_directory']) if record['working_directory'] else None)
+    if runner_root is not None:
+        root = Path(runner_root)
+    else:
+        # systemd prints WorkingDirectory with its '-' (ignore missing) and '!'
+        # prefixes; '~' is the user's home. Without an absolute directory the
+        # runner .env cannot be located, and a Docker setting there would go
+        # unseen, so the service observation is incomplete rather than silent.
+        directory = (record['working_directory'] or '').lstrip('-!')
+        if not directory.startswith('/'):
+            return not_observed('runner .env location unknown: WorkingDirectory is '
+                                + (repr(record['working_directory']) if record['working_directory'] else 'unset')
+                                + '; pass --runner-root')
+        root = Path(directory)
     if root is not None:
         env_path = root / '.env'
         try:

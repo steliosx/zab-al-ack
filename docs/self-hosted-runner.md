@@ -362,7 +362,8 @@ of the exact unit named by `--unit` (transient `systemd-run` units under
 `/run/systemd/transient` included; globs are refused): fragment, drop-ins,
 `User`/`Group`/`SupplementaryGroups`, `Environment=`, `EnvironmentFiles=`, the
 control group, plus the runner's `.env` (from `--runner-root` or the unit's
-`WorkingDirectory`) and the running process's environment, keeping only
+`WorkingDirectory`, whose `-`/`!` prefixes are stripped; any other non-absolute
+value is NOT_OBSERVED) and the running process's environment, keeping only
 `DOCKER_*` keys. The intended account's Docker configuration (`DOCKER_CONFIG`
 from the effective service environment, else its `~/.docker`) is read as files:
 `currentContext`, the number of stored auths and the context store's endpoints;
@@ -371,7 +372,9 @@ remote endpoint is contacted. Sudo rules are listed as root.
 
 A required observation that cannot be made (no root for sudo or identity
 switching, an unreadable file, an absent or ambiguous runner process, an
-unclassifiable connect, an unknown socket-activation state) is reported as
+unclassifiable connect, an unknown socket-activation state, including a loaded
+socket unit whose `Listen` value, printed by systemd as `PATH (Type)`, cannot be
+read) is reported as
 NOT_OBSERVED and makes the verdict INCOMPLETE; it never becomes "absent" and
 CONFORMS. Any deviation makes it DEVIATES, with the incomplete observations
 listed alongside. `--policy docker-allowed` describes the host as provisioned
@@ -385,7 +388,9 @@ sudo python3 tools/runner_account_check.py --unit actions.runner.zabalack-attend
 ```
 
 Run it as root while the runner service is running; a stopped runner yields
-INCOMPLETE because the running identity cannot be verified. The operational
+INCOMPLETE because the running identity cannot be verified. Run as the runner
+account it can still report deviations, but the sudo observation is
+NOT_OBSERVED by design, so only a root run can conform. The operational
 change itself (removing `zabalack-runner` from the `docker` group or removing
 Docker from the guest, then rewording the "root-equivalent Docker access"
 statements) is a separately reviewed host step. Nothing in the repository

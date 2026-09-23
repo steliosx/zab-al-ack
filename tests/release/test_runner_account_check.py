@@ -370,7 +370,7 @@ def test_no_connect_is_attempted_while_systemd_socket_activation_owns_the_path(t
     listener.bind(str(path))
     listener.listen(1)
     identity = {'uid': os.geteuid(), 'gid': os.getegid(), 'groups': sorted(set(os.getgroups()))}
-    show = show_of({'docker.socket': {'LoadState': ['loaded'], 'ActiveState': ['active'], 'Listen': [f'Stream:{path}']}})
+    show = show_of({'docker.socket': {'LoadState': ['loaded'], 'ActiveState': ['active'], 'Listen': [f'{path} (Stream)']}})
     try:
         record = check.socket_observation(str(path), identity, activation=lambda target: check.socket_activation(target, show=show))
         assert record['activation'] == {'status': 'OBSERVED', 'active': True, 'unit': 'docker.socket', 'units': [{'unit': 'docker.socket', 'active': True}]}
@@ -388,7 +388,7 @@ def test_no_connect_is_attempted_while_systemd_socket_activation_owns_the_path(t
     finally:
         listener.close()
     # An inactive or unrelated socket unit does not stop the demonstration.
-    inactive = show_of({'docker.socket': {'LoadState': ['loaded'], 'ActiveState': ['inactive'], 'Listen': [f'Stream:{path}']}})
+    inactive = show_of({'docker.socket': {'LoadState': ['loaded'], 'ActiveState': ['inactive'], 'Listen': [f'{path} (Stream)']}})
     assert check.socket_activation(str(path), show=inactive) == {'status': 'OBSERVED', 'active': False, 'units': [{'unit': 'docker.socket', 'active': False}]}
     assert check.socket_activation(str(path), show=show_of({}))['active'] is False
     # No systemctl under a systemd init: the state is unknown and the connect is not attempted.
@@ -553,3 +553,61 @@ def test_a_stale_permissive_socket_is_a_latent_grant_not_a_disagreement(monkeypa
     assert result == 'DEVIATES' and deviations == ['runner identity holds inferred write permission on the container socket /var/run/docker.sock',
                                                    'runner identity may open the container socket /var/run/docker.sock (no daemon listening now)']
     assert check.evaluate(report, 'docker-allowed') == ('CONFORMS', [], [])
+
+
+def test_socket_activation_reads_the_listen_format_systemctl_actually_prints(tmp_path, monkeypatch):
+    """systemctl show prints 'Listen=/run/docker.sock (Stream)', not 'Stream:/run/docker.sock'.
+
+    The runner host's docker.socket is active; a connect there would start dockerd.
+    """
+    path = tmp_path / 'docker.sock'
+    path.touch()
+    link = tmp_path / 'var-run-docker.sock'
+    link.symlink_to(path)
+
+    def fake_run(argv, **kwargs):
+        unit = argv[-1]
+        stdout = (f'Listen={path} (Stream)\nActiveState=active\nLoadState=loaded\n' if unit == 'docker.socket'
+                  else 'LoadState=not-found\n')
+        return subprocess.CompletedProcess(argv, 0, stdout, '')
+
+    monkeypatch.setattr(check.shutil, 'which', lambda name: '/usr/bin/' + name)
+    monkeypatch.setattr(check.subprocess, 'run', fake_run)
+    for target in (path, link):
+        assert check.socket_activation(str(target)) == {
+            'status': 'OBSERVED', 'active': True, 'unit': 'docker.socket', 'units': [{'unit': 'docker.socket', 'active': True}]}
+
+
+@pytest.mark.parametrize('entries, expected', [
+    (['[::]:2375 (Stream)'], 'inactive'),
+    (['/run/other.sock (Stream)', '/run/docker.sock (Stream)'], 'active'),
+    (['Stream:/run/docker.sock'], 'unknown'),
+    (['/run/docker.sock'], 'unknown'),
+], ids=['tcp-listener-only', 'second-listen-entry', 'unrecognised-format', 'missing-type'])
+def test_an_unreadable_listen_entry_of_a_loaded_socket_unit_is_not_observed(entries, expected):
+    show = show_of({'docker.socket': {'LoadState': ['loaded'], 'ActiveState': ['active'], 'Listen': entries}})
+    result = check.socket_activation('/run/docker.sock', show=show)
+    if expected == 'unknown':
+        assert result['status'] == 'NOT_OBSERVED' and 'Listen entry not understood' in result['reason']
+    else:
+        assert result['status'] == 'OBSERVED' and result['active'] is (expected == 'active')
+
+
+@pytest.mark.parametrize('working_directory, located', [
+    ('!{root}', True), ('-{root}', True), ('{root}', True), ('~', False), ('', False), ('relative/dir', False),
+], ids=['bang-prefix', 'dash-prefix', 'plain', 'home', 'unset', 'relative'])
+def test_the_runner_env_is_located_from_the_working_directory_or_the_observation_is_incomplete(tmp_path, working_directory, located):
+    """A DOCKER_HOST in the runner .env reaches the listener; an unlocated .env must not pass silently."""
+    runner_root = tmp_path / 'runner'
+    runner_root.mkdir()
+    (runner_root / '.env').write_text('DOCKER_HOST=tcp://127.0.0.1:2375\n')
+    unit = {**TRANSIENT_UNIT, 'WorkingDirectory': [working_directory.format(root=runner_root)]}
+    show = show_of({'actions.runner.zabalack-attended.service': unit})
+    record = check.service_observation('actions.runner.zabalack-attended', None, show=show)
+    if located:
+        assert record['status'] == 'OBSERVED' and record['environment'] == {'DOCKER_HOST': 'tcp://127.0.0.1:2375'}
+    else:
+        assert record['status'] == 'NOT_OBSERVED' and record['reason'].startswith('runner .env location unknown')
+        # An explicit runner root still locates it.
+        explicit = check.service_observation('actions.runner.zabalack-attended', runner_root, show=show)
+        assert explicit['status'] == 'OBSERVED' and explicit['environment'] == {'DOCKER_HOST': 'tcp://127.0.0.1:2375'}
