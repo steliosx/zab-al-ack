@@ -124,7 +124,7 @@ def validate_report(record: object, root: Path) -> None:
         # A record produced through lab/deployment_native_lab.py passes only when the
         # cycle left nothing behind: both services stopped, diagnostics preserved,
         # lab directories removed. Anything else was rewritten to FAIL by the cycle.
-        require(isinstance(native_lab, dict) and native_lab.get('final_state') == 'absent'
+        require(isinstance(native_lab, dict) and not native_lab.get('pending') and native_lab.get('final_state') == 'absent'
                 and native_lab.get('cleanup_complete') is True and native_lab.get('run_exit_code') == 0,
                 'native lab cycle did not end with the lab absent')
     require(not any(record.get(key) for key in ('reason', 'shutdown_reason', 'runner_shutdown_reason')),

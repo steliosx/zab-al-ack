@@ -178,7 +178,14 @@ orchestrator's own `reset` as the reset command and the supplied-wheel
 identity, and stops and wipes both services after every outcome, including a
 refusal or an interruption. The run's exit code is reported unchanged (2 is
 NOT_RUN, 1 a failed execution or validation); a run that passed but left a
-component running or a lab directory behind exits 5. With `--wheel-sha256`
+component running or a lab directory behind exits 5. Inside a cycle the runner
+never writes PASS: after validating its execution evidence it writes
+`PENDING_BINDING` (`provisional_status: PASS`, `native_lab.pending`). Only the
+cycle, once the run exited 0 and cleanup, retention and the wipe left the lab
+absent, binds its outcome, sets PASS and validates that final record with
+`tools/deployment_evidence.py`; a failure there is FAIL
+`final_evidence_validation_failed` and a non-zero exit. A cycle cut short
+before binding leaves `PENDING_BINDING`, which never validates. With `--wheel-sha256`
 the local runner performs the same supplied-wheel preflight as the Compose
 form (exact bytes, project identity, payload equal to the checkout) and the
 record carries `artifact_mode: supplied_wheel` with the installed-bytes

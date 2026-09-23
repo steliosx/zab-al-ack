@@ -51,6 +51,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'tools'))
 from cancellation import Cancellation, describe, run_child  # noqa: E402
 from lab_retention import RetentionError, preserve  # noqa: E402
+from deployment_evidence import validate_report  # noqa: E402
 STATE = REPO / '.deployment-lab'
 MARKER = STATE / 'ISOLATED_DEPLOYMENT_LAB'
 PGDATA = STATE / 'pgdata'
@@ -527,13 +528,39 @@ def finalize_record(command: str, code: int, summary: dict) -> dict:
         for key in EXECUTION_KEYS:
             record.pop(key, None)
         record.update(status='NOT_RUN', reason=native.get('refusal', 'lab_' + command + '_not_started'))
-    elif code != 0 and record.get('status') == 'PASS':
-        record.update(status='FAIL', reason=cleanup_reason(summary))
+    elif record.get('status') == 'PENDING_BINDING':
+        # The runner passed provisionally. Only a cycle whose run exited 0 and whose
+        # cleanup completed (stopped, retained, wiped, lab absent) turns that into a
+        # PASS, and only if the final bound record then validates.
+        if command == 'cycle' and code == 0 and summary.get('run_exit_code') == 0 and native['cleanup_complete']:
+            final = {key: value for key, value in record.items() if key != 'provisional_status'}
+            final.update(status='PASS', reason=None, finished_at=stamp())
+            try:
+                validate_final(final)
+            except ValueError:
+                record.update(status='FAIL', reason='final_evidence_validation_failed')
+            else:
+                record = final
+        elif command == 'cycle':
+            record.update(status='FAIL', reason=cleanup_reason(summary))
+        else:
+            record.update(status='NOT_BOUND', reason='only a cycle binds a final PASS')
+        if record.get('status') != 'PASS':
+            record.pop('provisional_status', None)
+    elif record.get('status') == 'PASS':
+        # The runner is told to leave its record pending; a plain PASS here was never
+        # provisionally validated under this binding and is not accepted as final.
+        record.update(status='FAIL', reason=cleanup_reason(summary) if code != 0 else 'runner_record_not_pending')
     elif code != 0 and command == 'cycle' and summary.get('final_state') != 'absent' and record.get('status') not in ('NOT_RUN', 'FAIL'):
         record.update(status='FAIL', reason=cleanup_reason(summary))
     record['finished_at'] = stamp()
     write_record(record)
     return record
+
+
+def validate_final(record: dict) -> None:
+    """The bound record, validated as the final evidence of this checkout (tools/deployment_evidence.py)."""
+    validate_report(record, REPO)
 
 
 def cleanup_reason(summary: dict) -> str:
@@ -652,6 +679,8 @@ def guarded(args, parser) -> int:
         with cancellation.critical():
             record = finalize_record(args.command, code, summary)
             print(json.dumps({'status': record.get('status'), 'reason': record.get('reason'), **summary}))
+        if code == 0 and args.command == 'cycle' and record.get('status') != 'PASS':
+            return 1  # the run and cleanup succeeded but the final bound record did not validate
         return code
     finally:
         cancellation.restore()

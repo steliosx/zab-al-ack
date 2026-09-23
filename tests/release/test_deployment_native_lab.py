@@ -333,9 +333,19 @@ def cycle_environment(lab, monkeypatch, *, runner_exit=0, stop_exit=0):
 
     def runner(command, **kwargs):
         launched.append(command)
-        inner_record('PASS' if runner_exit == 0 else ('NOT_RUN' if runner_exit == 2 else 'FAIL'), reason=None if runner_exit == 0 else 'synthetic')
+        if runner_exit == 0:
+            # What the bound runner writes after its provisional validation: never PASS.
+            inner_record('PENDING_BINDING', reason=None, provisional_status='PASS',
+                         native_lab={'pending': True, 'final_state': None, 'cleanup_complete': False})
+        else:
+            inner_record('NOT_RUN' if runner_exit == 2 else 'FAIL', reason='synthetic')
         return runner_exit
     monkeypatch.setattr(lab.module, 'run_child', runner)
+    # The final bound record is validated by tools/deployment_evidence.py against the
+    # checkout; this synthetic checkout has no real evidence, so record the call here
+    # (the real validator is exercised by the integration tests).
+    lab.final_validations = []
+    monkeypatch.setattr(lab.module, 'validate_final', lambda record: lab.final_validations.append(dict(record)))
     lab.inner_record = inner_record
     return launched
 
@@ -694,3 +704,23 @@ def test_the_runner_and_its_lab_children_never_write_bytecode():
     runtime = (ROOT / 'lab/deployment_e2e_runtime.py').read_text()
     assert '"PYTHONDONTWRITEBYTECODE": "1", "ACK_DEPLOYMENT_E2E"' in runner
     assert '"PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1", "HOME": "/tmp"}' in runtime
+
+
+def test_a_cycle_whose_final_bound_record_does_not_validate_exits_non_zero(lab, monkeypatch):
+    """Review of b57bebb (HIGH): the final validation belongs to the cycle; its failure is a FAIL and a non-zero exit."""
+    cycle_environment(lab, monkeypatch, runner_exit=0)
+
+    def refuse(record):
+        raise ValueError('synthetic final validation failure')
+    monkeypatch.setattr(lab.module, 'validate_final', refuse)
+    assert lab.module.main(CYCLE) == 1
+    assert record(lab)['status'] == 'FAIL' and record(lab)['reason'] == 'final_evidence_validation_failed'
+
+
+def test_a_successful_cycle_validates_its_final_bound_record_once(lab, monkeypatch):
+    cycle_environment(lab, monkeypatch, runner_exit=0)
+    assert lab.module.main(CYCLE) == 0
+    (validated,) = lab.final_validations
+    assert validated['status'] == 'PASS' and validated['native_lab']['final_state'] == 'absent'
+    assert validated['native_lab']['cleanup_complete'] is True and 'pending' not in validated['native_lab']
+    assert record(lab)['status'] == 'PASS' and 'provisional_status' not in record(lab)

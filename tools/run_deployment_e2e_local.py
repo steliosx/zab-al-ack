@@ -157,6 +157,28 @@ def lab_ports_free() -> bool:
     return True
 
 
+def conclude(report: dict, root: Path) -> None:
+    """The runner's last word on a passing record.
+
+    Run directly, a PASS must validate as final evidence of this checkout. Run by
+    lab/deployment_native_lab.py (a `native_lab` pending marker is present), the
+    record is not final: its execution evidence is validated without the binding
+    and the record becomes PENDING_BINDING with provisional_status PASS, never
+    PASS. Only the cycle, after its cleanup, binds the outcome, sets PASS and
+    validates the final record; a record left pending is never a PASS.
+    """
+    if report.get("status") != "PASS":
+        return
+    try:
+        if "native_lab" in report:
+            validate_report({key: value for key, value in report.items() if key != "native_lab"}, root)
+            report.update(status="PENDING_BINDING", provisional_status="PASS")
+        else:
+            validate_report(report, root)
+    except ValueError:
+        report.update(status="FAIL", reason="final_evidence_validation_failed")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--isolated-lab", action="store_true", required=True)
@@ -269,15 +291,11 @@ def main(argv=None):
             if not report["tree_unchanged"]:
                 report.update(status="FAIL", reason="source_changed_during_run")
             report["finished_at"] = stamp()
-            if report["status"] == "PASS":
-                try:
-                    validate_report(report, ROOT)
-                except ValueError:
-                    report.update(status="FAIL", reason="final_evidence_validation_failed")
+            conclude(report, ROOT)
             save()
         cancellation.restore()
     print(json.dumps({key: report.get(key) for key in ("status", "counts", "tree_unchanged", "reason", "project")}))
-    return 0 if report["status"] == "PASS" else (130 if report.get("reason") == "lab_interrupted" else 1)
+    return 0 if report["status"] in ("PASS", "PENDING_BINDING") else (130 if report.get("reason") == "lab_interrupted" else 1)
 
 
 if __name__ == "__main__":

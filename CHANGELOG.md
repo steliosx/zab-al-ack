@@ -17,7 +17,9 @@ technical review only, not independent review or approval.
 - Deployment evidence: any unexpected error during or after the cycle is
   recorded (FAIL, or NOT_RUN before anything started); the inner runner's
   record stays `native_lab.pending` until the cycle binds its cleanup
-  outcome; PostgreSQL is stopped even when the Zabbix lab's stop fails, and
+  outcome (as first delivered, the runner then self-validated that pending
+  record and every real cycle ended FAIL; corrected by O17: the runner writes
+  `PENDING_BINDING` and the cycle sets and validates the final PASS); PostgreSQL is stopped even when the Zabbix lab's stop fails, and
   a failed or unreadable Zabbix stop is never a clean stop.
 - Workflows: the deployment job replaces the tracked historical record with
   NOT_RUN before any step that can fail; the lab steps run as
