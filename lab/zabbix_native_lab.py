@@ -588,7 +588,15 @@ def start_server(paths: dict[str, Path]) -> None:
 
 def stage_frontend(paths: dict[str, Path]) -> None:
     if not (UI / 'api_jsonrpc.php').exists():
-        shutil.copytree(paths['ui'], UI, symlinks=False, dirs_exist_ok=True)
+        # The packaged frontend (zabbix-frontend-php) ships conf/zabbix.conf.php as a
+        # link to /etc/zabbix/web/zabbix.conf.php, which exists only once the system
+        # frontend is configured. The lab writes its own private configuration there,
+        # so that one entry is not copied; every other link is followed as before.
+        source_conf = paths['ui'] / 'conf'
+
+        def packaged_configuration(directory: str, names: list[str]) -> list[str]:
+            return ['zabbix.conf.php'] if Path(directory) == source_conf and 'zabbix.conf.php' in names else []
+        shutil.copytree(paths['ui'], UI, symlinks=False, dirs_exist_ok=True, ignore=packaged_configuration)
     (UI / 'conf').mkdir(exist_ok=True)
     write_private(UI / 'conf/zabbix.conf.php', FRONTEND_CONF.format(pg_port=PG_PORT, database=DATABASE, db_user=DB_USER,
                                                                     db_password=password(DB_USER), server_port=SERVER_PORT))

@@ -662,3 +662,23 @@ def test_pg_hba_lines_end_at_newline_only(lab):
     (lab.PGDATA / 'pg_hba.conf').write_bytes('local all all scram-sha-256 local all all trust\n'.encode())
     with pytest.raises(SystemExit, match='unauthenticated or non-scram'):
         lab.verify_authentication(lab.PGDATA)
+
+
+def test_staging_the_packaged_frontend_skips_its_unconfigured_configuration_link(lab, paths, tmp_path):
+    """Live cycle on the runner host (O20): zabbix-frontend-php ships conf/zabbix.conf.php as a link to
+    /etc/zabbix/web/zabbix.conf.php, absent until the system frontend is configured; copytree failed on it
+    and the lab never started. The lab's own private configuration takes its place; other links are followed."""
+    marked(lab)
+    ui = paths['ui']
+    (ui / 'conf').mkdir()
+    (ui / 'conf/zabbix.conf.php').symlink_to(tmp_path / 'etc-zabbix-web' / 'zabbix.conf.php')  # dangling, as packaged
+    font = tmp_path / 'alternatives-font.ttf'
+    font.write_bytes(b'font bytes')
+    (ui / 'assets/fonts').mkdir(parents=True)
+    (ui / 'assets/fonts/graphfont.ttf').symlink_to(font)  # resolvable, as packaged via /etc/alternatives
+    lab.stage_frontend(paths)
+    staged = lab.UI / 'conf/zabbix.conf.php'
+    assert staged.is_file() and not staged.is_symlink() and "$DB['TYPE']" in staged.read_text()
+    assert (staged.stat().st_mode & 0o777) == 0o600
+    copied = lab.UI / 'assets/fonts/graphfont.ttf'
+    assert copied.is_file() and not copied.is_symlink() and copied.read_bytes() == b'font bytes'
