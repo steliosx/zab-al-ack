@@ -418,9 +418,12 @@ def stop_lab(binaries: Path, observed: dict) -> tuple[int, dict]:
         zabbix_outcome = reported.get('cleanup', 'NOT_RUNNING') if isinstance(reported, dict) else 'UNREADABLE_OUTPUT'
     except ValueError:
         zabbix_outcome = 'UNREADABLE_OUTPUT'
+    except (subprocess.SubprocessError, OSError) as error:  # a stop that timed out or could not run
+        zabbix_outcome = 'STOP_FAILED: ' + type(error).__name__
     outcomes = {'zabbix': zabbix_outcome, 'postgres': stop_postgres(binaries)}
     after = inspect(binaries)
-    clean = after['state'] in ('stopped', 'absent') and zabbix_outcome != 'UNREADABLE_OUTPUT'
+    failed = isinstance(zabbix_outcome, str) and (zabbix_outcome == 'UNREADABLE_OUTPUT' or zabbix_outcome.startswith('STOP_FAILED'))
+    clean = after['state'] in ('stopped', 'absent') and not failed
     return (0 if clean else 5), {'cleanup': outcomes, 'state': after['state']}
 
 
@@ -508,7 +511,7 @@ def finalize_record(command: str, code: int, summary: dict) -> dict:
     elif summary.get('error'):
         # An unexpected error in this command: never a PASS, whatever the runner wrote.
         native['error'] = str(summary['error'])
-        if summary.get('run_exit_code') is None:
+        if summary.get('run_exit_code') is None and not summary.get('start'):
             for key in EXECUTION_KEYS:
                 record.pop(key, None)
             record.update(status='NOT_RUN', reason=native['error'])

@@ -618,3 +618,32 @@ def test_the_inner_runner_is_told_to_leave_its_record_pending_until_the_cycle_bi
     assert lab.module.main(CYCLE) == 0
     assert launched and seen.get('ZABALACK_NATIVE_LAB_BINDING') == '1'
     assert 'pending' not in record(lab)['native_lab'] and record(lab)['native_lab']['final_state'] == 'absent'
+
+
+def test_a_zabbix_stop_that_times_out_still_stops_postgres_and_is_not_clean(lab, monkeypatch):
+    """Review of O3: a TimeoutExpired or OSError from the Zabbix stop skipped the PostgreSQL stop."""
+    cycle_environment(lab, monkeypatch, runner_exit=0)
+    real = lab.module.zabbix
+
+    def zabbix(command, *args, check=True):
+        if command == 'stop':
+            real(command, *args, check=check)
+            raise subprocess.TimeoutExpired(['zabbix_native_lab.py', 'stop'], 900)
+        return real(command, *args, check=check)
+    monkeypatch.setattr(lab.module, 'zabbix', zabbix)
+    assert lab.module.main(CYCLE) == 5
+    value = record(lab)
+    assert value['status'] == 'FAIL' and value['native_lab']['cleanup_complete'] is False
+    assert value['native_lab']['cleanup']['cleanup'] == {'zabbix': 'STOP_FAILED: TimeoutExpired', 'postgres': {'status': 'STOPPED', 'exit_code': 0}}
+
+
+def test_an_unexpected_error_after_services_started_is_a_fail_not_a_not_run(lab, monkeypatch):
+    """Review of O3: an error after start but before the runner exited was recorded as NOT_RUN."""
+    cycle_environment(lab, monkeypatch, runner_exit=0)
+
+    def run_lab(*args, **kwargs):
+        raise RuntimeError('synthetic failure after start')
+    monkeypatch.setattr(lab.module, 'run_lab', run_lab)
+    assert lab.module.main(CYCLE) == 1
+    value = record(lab)
+    assert value['status'] == 'FAIL' and value['reason'] == 'lab_error: RuntimeError'
