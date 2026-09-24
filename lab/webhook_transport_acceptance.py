@@ -39,7 +39,7 @@ import urllib.request
 import zlib
 
 NAMES = {'ingest': 'ingest.s2.test', 'direct': 'direct.s2.test', 'other': 'other.s2.test', 'alerta': 'alerta.s2.test'}
-API = {'url': None}  # the lab reports its API URL when it starts
+API: dict[str, str] = {'url': ''}  # the lab reports its API URL when it starts
 TRAPPER = ('127.0.0.1', 20051)
 LAB_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/tmp', 'TZ': 'UTC', 'ACK_LAB_PG_BIN': '/usr/lib/postgresql/18/bin',
            'ZABALACK_ZABBIX_SERVER': '/usr/sbin/zabbix_server', 'ZABALACK_ZABBIX_UI': '/usr/share/zabbix',
@@ -114,6 +114,7 @@ class Receiver(http.server.ThreadingHTTPServer):
 
     def __init__(self, label, pki_dir=None, cert=None, behaviour=('ok',)):
         self.label, self.behaviour = label, behaviour
+        self.canary = ''
         self.log = {'connections': 0, 'handshake_failures': 0, 'requests': []}
         self.context = None
         if cert:
@@ -298,7 +299,7 @@ def main(argv=None) -> int:
     pki(work / 'pki')
     shutil.copytree(args.checkout, work / 'checkout', symlinks=True)
     sh('chown', '-R', f'{args.lab_user}:{args.lab_user}', str(work / 'checkout'))
-    identity = {'isolation': isolate(work)}
+    identity: dict[str, object] = {'isolation': isolate(work)}
     checkout = work / 'checkout'
     canary = 'S2-CANARY-' + secrets.token_hex(12)
     fixture = json.loads((checkout / 'zabbix/v1/fixtures/problem.params.json').read_text())
@@ -325,8 +326,9 @@ def main(argv=None) -> int:
         process, gw_port, gw_root = gateway(work, args.nginx, args.lab_user, receivers['upstream'].port)
         identity['gateway'] = {'nginx': sh(args.nginx, '-v').stderr.strip(), 'config_sha256': digest(gw_root / 'nginx.conf'),
                                'template_sha256': digest(checkout / 'deploy/ingress/alerta-ingest.nginx.conf.template')}
-        identity['lab_start'] = json.loads(lab.start().strip().splitlines()[-1])
-        API['url'] = identity['lab_start']['api_url']
+        lab_start = json.loads(lab.start().strip().splitlines()[-1])
+        identity['lab_start'] = lab_start
+        API['url'] = lab_start['api_url']
         assert API['url'].startswith('http://127.0.0.1:'), API['url']
         identity['executor'] = sh('/usr/sbin/zabbix_server', '-V').stdout.splitlines()[:2]
         identity['packages'] = sh('dpkg-query', '-W', '-f', '${Package} ${Version} ${Architecture}\n', 'zabbix-server-pgsql',
