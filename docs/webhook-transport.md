@@ -119,22 +119,17 @@ Until then these results qualify the webhook-to-route hop only, not both TLS hop
 
 ## Integration dependency: the deployment lab's own delivery
 
-The deployment lab (`tools/run_deployment_e2e_local.py`) delivers the webhook to `https://runner:58081/alert`.
-That uses a self-signed certificate generated for each run, and the lab's `zabbix_server` uses the host's
-normal trust store. **With S2, that delivery fails.** A native `cycle` at the S2 head on the x64 lab host ended
-FAIL: `synthetic_webhook_delivery_failed`, alert status 2, on all four inner tests.
+The deployment lab delivers the webhook to `https://runner:58081/alert`. At S2 `094fce4`, before any lab trust
+existed, a native `cycle` ended FAIL with `synthetic_webhook_delivery_failed`. That run's retained Zabbix log has no
+explicit TLS error, so missing lab trust is an inference about its cause.
 
-On that host, unprivileged user namespaces are refused (AppArmor), so the lab account cannot give its server
-a private store. Integrating S2 therefore needs one of these decisions:
+The candidate remedy is `docs/lab-trust.md`: a fixed root-owned unit that gives the lab's `zabbix_server` only the
+lab CA, in a private mount namespace, after dropping privilege.
+- **Pre-install validation passed** on the x64 lab (8 of 8; the host was unchanged).
+- **Without it, a cycle now refuses before any service starts** (`layout_not_ready`).
+- **Installation needs the owner's authorization.** The ordinary integrated cycle is pending that.
 
-- **(a) A provisioned lab CA** in the lab host's system store:
-  - name-constrained to `runner` and `127.0.0.1`;
-  - its key readable only by the lab account;
-  - the lab signs each run's server certificate with it.
-
-  This is reversible. It is a trust change on the dedicated lab host, and it needs owner authorization.
-- **(b) A root helper** that starts the lab's `zabbix_server` in a mount namespace carrying the lab CA. This is
-  a privilege change to the job.
-
-Neither is made by S2. Until one is decided, S2 stays a separate candidate. The qualification path at the
-correction head is unaffected.
+At `244cefc`, the extended real-engine acceptance passed **47 of 47**. It adds the four response-contract cases
+(non-2xx, malformed JSON, `status: error`, an over-limit body; each refused by the script) and the route's own
+upstream TLS (an untrusted certificate and one for another name; each answered 502, with no HTTP request at the
+bad upstream).

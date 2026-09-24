@@ -13,6 +13,15 @@
   zabbix_server in an isolated trust namespace; 41 of 41 cases on the x64
   lab. A2, G1 and G2 stay open. Integration needs a decision on the
   deployment lab's daemon trust (`docs/webhook-transport.md`).
+- Checker: every refusal is structured (an executor that does not exit 0,
+  an invalid port, a malformed export, an unreadable input).
+- Lab trust (`docs/lab-trust.md`): a fixed root-owned unit runs the packaged
+  zabbix_server, dropped to the lab account with no supplementary groups or
+  capabilities, with only a name-constrained lab CA as its trust; the lab
+  signs its certificate with that CA and refuses before any service without
+  it. Prepared and validated without installing; installation is the
+  owner's decision. The real-engine acceptance adds the response contract
+  and the route's upstream TLS (47 of 47).
 
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 
