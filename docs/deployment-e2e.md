@@ -197,11 +197,15 @@ signal after the commit likewise exits 130 with its own message. A death before
 the replace completes, including one after the cutoff, leaves the runner's
 `PENDING_BINDING`, which never validates; a death after it leaves the published
 record. A failed replace publishes nothing, removes the unpublished temporary
-file and exits 1. Before the wipe the cycle
-retains, privately under `build/private/retained-phases/<run>/deployment-cycle/`,
-both labs' service logs and the public record exactly as the runner left it
-(its original `PENDING_BINDING`, or its FAIL); the retention manifest's digest
-is bound into the final record. With `--wheel-sha256`
+file and exits 1. As soon as the run has
+ended, before any cleanup, the cycle retains the public record exactly as the
+runner left it (its original `PENDING_BINDING`, or its FAIL), privately under
+`build/private/retained-phases/<run>/runner-record/`, whatever cleanup then
+does: a failed stop or an interruption keeps it too, still ending FAIL with the
+lab left unwiped. A cycle whose runner record could not be retained never ends
+PASS. Both labs' service logs are retained (`…/deployment-cycle/`) only after
+every service has stopped, before the wipe; a lab that did not stop is not
+snapshotted. Both retention manifests' digests are bound into the final record. With `--wheel-sha256`
 the local runner performs the same supplied-wheel preflight as the Compose
 form (exact bytes, project identity, payload equal to the checkout) and the
 record carries `artifact_mode: supplied_wheel` with the installed-bytes

@@ -513,7 +513,8 @@ def bind_record(command: str, code: int, summary: dict) -> dict:
     """
     record = load_record() or {'layer': 'native_deployment_e2e', 'not_docker': True, 'started_at': stamp(), 'runner': RUNNER_DESCRIPTION,
                                'deployment_gates': 'MANUAL_GATE_PENDING'}
-    native = {'command': command, **{key: summary.get(key) for key in ('run_id', 'run_exit_code', 'cleanup', 'retention', 'wipe', 'final_state')}}
+    native = {'command': command, **{key: summary.get(key) for key in ('run_id', 'run_exit_code', 'runner_record', 'cleanup', 'retention', 'wipe',
+                                                                      'final_state')}}
     wipe, retention = summary.get('wipe'), summary.get('retention')
     native['cleanup_complete'] = (summary.get('final_state') == 'absent' and isinstance(wipe, dict) and wipe.get('wipe') == 'done'
                                   and isinstance(retention, dict) and retention.get('status') == 'RETAINED')
@@ -545,7 +546,12 @@ def bind_record(command: str, code: int, summary: dict) -> dict:
         # The runner passed provisionally. Only a cycle whose run exited 0 and whose
         # cleanup completed (stopped, retained, wiped, lab absent) turns that into a
         # PASS, and only if the final bound record then validates.
-        if command == 'cycle' and code == 0 and summary.get('run_exit_code') == 0 and native['cleanup_complete']:
+        runner_record = summary.get('runner_record')
+        runner_record_retained = isinstance(runner_record, dict) and runner_record.get('status') == 'RETAINED'
+        if command == 'cycle' and code == 0 and summary.get('run_exit_code') == 0 and native['cleanup_complete'] and not runner_record_retained:
+            # The original provisional record could not be retained: never a PASS.
+            record.update(status='FAIL', reason='runner_record_retention_failed')
+        elif command == 'cycle' and code == 0 and summary.get('run_exit_code') == 0 and native['cleanup_complete']:
             final = {key: value for key, value in record.items() if key != 'provisional_status'}
             final.update(status='PASS', reason=None, finished_at=stamp())
             try:
@@ -606,7 +612,8 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
     run_id = os.urandom(6).hex()
     cancellation = cancellation or Cancellation()
     summary = summary if summary is not None else {}
-    summary.update({'run_id': run_id, 'start': None, 'run_exit_code': None, 'cleanup': None, 'retention': None, 'wipe': None, 'final_state': None})
+    summary.update({'run_id': run_id, 'start': None, 'run_exit_code': None, 'runner_record': None, 'cleanup': None, 'retention': None,
+                    'wipe': None, 'final_state': None})
     code = 1
     try:
         summary['start'] = start_lab(binaries, observed)
@@ -623,13 +630,20 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
         # Cleanup, retention and the wipe are one critical section: a further
         # signal is deferred until the outcome is recorded.
         with cancellation.critical():
+            if summary['start'] is not None:
+                # The public record exactly as the runner left it (its original provisional
+                # record, or its FAIL), retained before cleanup whatever cleanup then does:
+                # the final publication replaces it. Its own label; the service logs below
+                # are retained only once the services are stopped.
+                try:
+                    summary['runner_record'] = preserve(REPO, run_id, 'runner-record', [RECORD])
+                except RetentionError as error:
+                    summary['runner_record'] = {'error': str(error)}
             try:
                 stop_code, summary['cleanup'] = stop_lab(binaries, inspect(binaries))
                 if stop_code == 0:
                     try:
-                        # The public record as the runner left it (its original provisional record), before
-                        # this command binds and replaces it, is retained with the service logs.
-                        summary['retention'] = preserve(REPO, run_id, 'deployment-cycle', [Path(name) for name in CYCLE_LOGS] + [RECORD])
+                        summary['retention'] = preserve(REPO, run_id, 'deployment-cycle', [Path(name) for name in CYCLE_LOGS])
                     except RetentionError as error:
                         summary['retention'] = {'error': str(error)}
                     else:
