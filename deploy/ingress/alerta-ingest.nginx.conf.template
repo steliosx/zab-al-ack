@@ -1,0 +1,63 @@
+# Ingestion-only route for the Zab-al-ack Zabbix webhook -> Alerta POST /alert (SPEC_AMENDMENTS A2, S2).
+# REVIEW CANDIDATE, tested with Ubuntu nginx 1.24.0-2ubuntu7.18 in the isolated lab (docs/webhook-transport.md);
+# not a statement about any installed NetScaler or Nginx configuration.
+#
+# Hops and what each enforces:
+#   Zabbix HttpRequest --TLS--> this listener: peer and host verified by the webhook (SSLVerifyPeer/SSLVerifyHost)
+#                                against the Zabbix server's CA store; certificate for @INGEST_NAME@ only.
+#   this route --TLS--> Alerta: fixed upstream, verified against @UPSTREAM_CA@ as @UPSTREAM_NAME@.
+# The property: this route never answers with a redirect. HttpRequest always follows redirects (7.0.31
+# hard-codes CURLOPT_FOLLOWLOCATION), so a 3xx reaching it would cause a second request; here an upstream
+# 3xx becomes 502 and this route emits none of its own. Only POST on the exact path is forwarded, once
+# (no retry to another upstream). A name other than @INGEST_NAME@ on the same address gets no TLS session.
+# Every layer in front of this listener (load balancer, VIP, WAF) must equally never redirect this path.
+#
+# Placeholders: @LISTEN@ (address:port), @INGEST_NAME@, @INGEST_PATH@ (ends in /alert), @CERT@, @KEY@,
+# @UPSTREAM_URL@ (https://…/alert of Alerta), @UPSTREAM_NAME@, @UPSTREAM_CA@.
+
+server {
+    listen @LISTEN@ ssl default_server;
+    server_name _;
+    ssl_reject_handshake on;
+}
+
+server {
+    listen @LISTEN@ ssl;
+    server_name @INGEST_NAME@;
+    ssl_certificate @CERT@;
+    ssl_certificate_key @KEY@;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+
+    # SNI selected this server; a different Host header is not this route.
+    if ($host != "@INGEST_NAME@") {
+        return 421;
+    }
+
+    location = @INGEST_PATH@ {
+        limit_except POST {
+            deny all;
+        }
+        client_max_body_size 64k;
+        proxy_pass @UPSTREAM_URL@;
+        proxy_ssl_server_name on;
+        proxy_ssl_name @UPSTREAM_NAME@;
+        proxy_ssl_verify on;
+        proxy_ssl_verify_depth 3;
+        proxy_ssl_trusted_certificate @UPSTREAM_CA@;
+        proxy_set_header Host @UPSTREAM_NAME@;
+        proxy_next_upstream off;
+        proxy_redirect off;
+        # The refusal: every upstream redirect is intercepted and answered with 502.
+        proxy_intercept_errors on;
+        error_page 300 301 302 303 304 305 307 308 = @refused_redirect;
+    }
+
+    location @refused_redirect {
+        return 502;
+    }
+
+    location / {
+        return 404;
+    }
+}
