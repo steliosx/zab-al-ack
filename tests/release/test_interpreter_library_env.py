@@ -20,6 +20,7 @@ import run_deployment_e2e_local as local_e2e
 ROOT = Path(__file__).resolve().parents[2]
 COPIES = {'tools': local_e2e.interpreter_library_env, 'lab': runtime.interpreter_library_env}
 RELOCATABLE = os.environ.get('ZABALACK_RELOCATABLE_PYTHON')
+REAL_RUN = subprocess.run  # the callers' subprocess.run is replaced while their environment is captured
 
 
 class Captured(Exception):
@@ -191,11 +192,11 @@ def test_each_minimal_environment_starts_the_interpreter_with_its_own_libpython(
     if not RELOCATABLE:
         return
     # The real interpreter, started with exactly the caller's environment, imports _ctypes.
-    started = subprocess.run([os.fspath(python), '-c', 'import _ctypes'], env=env, capture_output=True, text=True, timeout=60)
+    started = REAL_RUN([os.fspath(python), '-c', 'import _ctypes'], env=env, capture_output=True, text=True, timeout=60)
     assert started.returncode == 0, started.stderr
     # And the same environment without the variable is the failure the helper exists for (on a host whose
     # system libpython differs from the interpreter's; recorded, not required, elsewhere).
-    bare = subprocess.run([os.fspath(python), '-c', 'import _ctypes'], env={k: v for k, v in env.items() if k != 'LD_LIBRARY_PATH'},
+    bare = REAL_RUN([os.fspath(python), '-c', 'import _ctypes'], env={k: v for k, v in env.items() if k != 'LD_LIBRARY_PATH'},
                           capture_output=True, text=True, timeout=60)
     print(f'{caller}: with LD_LIBRARY_PATH exit {started.returncode}; without exit {bare.returncode} '
           f'{bare.stderr.strip().splitlines()[-1] if bare.returncode else ""}', file=sys.stderr)
