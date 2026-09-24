@@ -1,5 +1,19 @@
 # Zab-al-ack changelog
 
+## Unreleased — S2: webhook transport candidate for A2 (Opus; separate, not integrated)
+
+- The reference webhook constructs `HttpRequest` with `SSLVerifyPeer` and
+  `SSLVerifyHost` enabled (Zabbix 7.0.28+ in the 7.0 branch; 7.0.31 qualified).
+- `tools/webhook_transport_check.py`: per-node enablement precondition
+  (qualified executor build, reviewed script, verified trust anchor);
+  refuses otherwise.
+- `deploy/ingress/alerta-ingest.nginx.conf.template`: ingestion-only route
+  that refuses upstream redirects and emits none; a review candidate.
+- `lab/webhook_transport_acceptance.py`: acceptance through the packaged
+  zabbix_server in an isolated trust namespace; 41 of 41 cases on the x64
+  lab. A2, G1 and G2 stay open. Integration needs a decision on the
+  deployment lab's daemon trust (`docs/webhook-transport.md`).
+
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 
 Layered on the reviewed `e8ef82b`, which is not rewritten; each correction

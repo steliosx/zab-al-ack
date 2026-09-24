@@ -77,6 +77,13 @@ this limitation explicitly. Its topology and offline safety checks are not
 TLS-authentication evidence. No production endpoint or credential was accessed,
 and no G1–G8 gate is closed by the source inspection or the lab fixture.
 
+**Candidate remedy S2 (2026-09-24, not integrated; A2 remains open):** the webhook enables
+`SSLVerifyPeer`/`SSLVerifyHost`, which Zabbix 7.0.31 honours; an enablement precondition
+(`tools/webhook_transport_check.py`) requires the qualified executor build, the reviewed script and a
+verified trust anchor on every executing node; an ingestion-only route candidate refuses redirects, which
+HttpRequest otherwise always follows. The supported configuration, the real-engine lab results and the
+integration dependency are in `docs/webhook-transport.md`. Installed-path acceptance and G1/G2 remain.
+
 ## A3 — Reference Zabbix renders an absent cause event as `*UNKNOWN*`
 
 **Evidence:** inspected Zabbix 7.0.10, commit
