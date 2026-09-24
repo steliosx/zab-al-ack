@@ -39,7 +39,7 @@ import urllib.request
 import zlib
 
 NAMES = {'ingest': 'ingest.s2.test', 'direct': 'direct.s2.test', 'other': 'other.s2.test', 'alerta': 'alerta.s2.test'}
-API = 'http://127.0.0.1:8080/api_jsonrpc.php'
+API = {'url': None}  # the lab reports its API URL when it starts
 TRAPPER = ('127.0.0.1', 20051)
 LAB_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/tmp', 'TZ': 'UTC', 'ACK_LAB_PG_BIN': '/usr/lib/postgresql/18/bin',
            'ZABALACK_ZABBIX_SERVER': '/usr/sbin/zabbix_server', 'ZABALACK_ZABBIX_UI': '/usr/share/zabbix',
@@ -182,7 +182,7 @@ def rpc(method, params, auth=None):
     if auth:
         headers['Authorization'] = 'Bearer ' + auth
     body = json.dumps({'jsonrpc': '2.0', 'method': method, 'params': params, 'id': 1}).encode()
-    with urllib.request.urlopen(urllib.request.Request(API, data=body, headers=headers), timeout=30) as response:
+    with urllib.request.urlopen(urllib.request.Request(API['url'], data=body, headers=headers), timeout=30) as response:
         reply = json.loads(response.read())
     if 'error' in reply:
         raise RuntimeError(f"{method}: {reply['error']}")
@@ -326,6 +326,8 @@ def main(argv=None) -> int:
         identity['gateway'] = {'nginx': sh(args.nginx, '-v').stderr.strip(), 'config_sha256': digest(gw_root / 'nginx.conf'),
                                'template_sha256': digest(checkout / 'deploy/ingress/alerta-ingest.nginx.conf.template')}
         identity['lab_start'] = json.loads(lab.start().strip().splitlines()[-1])
+        API['url'] = identity['lab_start']['api_url']
+        assert API['url'].startswith('http://127.0.0.1:'), API['url']
         identity['executor'] = sh('/usr/sbin/zabbix_server', '-V').stdout.splitlines()[:2]
         identity['packages'] = sh('dpkg-query', '-W', '-f', '${Package} ${Version} ${Architecture}\n', 'zabbix-server-pgsql',
                                   'zabbix-frontend-php', 'libcurl4t64', 'openssl').stdout.splitlines()
