@@ -5,7 +5,6 @@ and a refused attempt kept only its driver summary. The collector runs before cl
 """
 import hashlib
 import json
-from pathlib import Path
 
 import pytest
 

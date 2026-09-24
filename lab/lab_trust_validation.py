@@ -211,7 +211,7 @@ def main(argv=None) -> int:
     lab = acceptance.Lab(checkout, ACCOUNT, acceptance.UNIT_LAB_ENV)  # never the harness's direct-launch override
     created: list[Path] = []
     started = False
-    error = None
+    run_error: str | None = None  # not 'error': an `except ... as error` below would delete it
     attempt = f'lab-trust-{args.mode}-' + time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
     collect = acceptance.collector(args.evidence, attempt, [('checkout', 'checkout', checkout)])
     try:
@@ -361,7 +361,7 @@ def main(argv=None) -> int:
         for receiver in receivers.values():
             receiver.shutdown()
     except Exception as failure:  # recorded, never hidden by the cases that passed
-        error = f'{type(failure).__name__}: {failure}'
+        run_error = f'{type(failure).__name__}: {failure}'
     finally:
         cleanup: dict = {}
         if started:
@@ -390,7 +390,7 @@ def main(argv=None) -> int:
         results['host_after'] = host_state()
         results['host_unchanged'] = results['host_after'] == results['host_before']
         results['cases'].append({'case': 'host-unchanged', 'pass': results['host_unchanged']})
-        results['summary'] = summarize(args.mode, results['cases'], error)
+        results['summary'] = summarize(args.mode, results['cases'], run_error)
         results['summary']['private_evidence'] = str(args.evidence.resolve() / attempt)
         args.out.write_text(json.dumps(results, indent=2) + '\n')
         result_collected = acceptance.collector(args.evidence, attempt, [('file', 'result', args.out)])()['status']

@@ -26,6 +26,7 @@ from pathlib import Path
 import re
 import shutil
 import sys
+from typing import Any
 
 CHECKOUT_PATTERNS = (
     'evidence/deployment-e2e-run.json',
@@ -71,7 +72,7 @@ def candidates(kind: str, root: Path) -> list[Path]:
     return sorted(found)
 
 
-def collect(bundle: Path, attempt: str, sources: list[tuple[str, str, Path]]) -> dict:
+def collect(bundle: Path, attempt: str, sources: list[tuple[str, str, Path]]) -> dict[str, Any]:
     """Copy what exists into bundle/attempt/NAME/..., merge MANIFEST.json, and return the manifest."""
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', attempt):
         raise CollectionError('attempt label must be 1-128 of [A-Za-z0-9._-]')
@@ -88,7 +89,7 @@ def collect(bundle: Path, attempt: str, sources: list[tuple[str, str, Path]]) ->
     target_root = bundle / attempt
     private_dir(target_root)
     manifest_path = target_root / 'MANIFEST.json'
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {
+    manifest: dict[str, Any] = json.loads(manifest_path.read_text()) if manifest_path.exists() else {
         'attempt': attempt, 'private': True, 'collections': [], 'files': [], 'absent': [], 'excluded': []}
     manifest['collections'].append({'at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                                     'sources': [{'kind': kind, 'name': name, 'path': str(root)} for kind, name, root in sources]})
