@@ -401,6 +401,69 @@ def trust_unit(verb: str) -> subprocess.CompletedProcess:
     return subprocess.run(['sudo', '-n', SYSTEMCTL, verb, TRUST_UNIT], text=True, capture_output=True, timeout=90, env=service_env())
 
 
+UNIT_BUSY = ('active', 'activating', 'deactivating', 'reloading', 'refreshing')
+UNIT_PROPERTIES = ('LoadState', 'ActiveState', 'SubState', 'MainPID', 'InvocationID', 'ControlGroup')
+
+
+def unit_status() -> dict | None:
+    """The fixed unit as systemd reports it (read-only `systemctl show`, no sudo); None when it cannot be observed."""
+    try:
+        result = subprocess.run([SYSTEMCTL, 'show', TRUST_UNIT, '--property=' + ','.join(UNIT_PROPERTIES)], text=True,
+                                capture_output=True, timeout=30, env=service_env())
+    except (OSError, subprocess.SubprocessError):
+        return None
+    values = dict(line.partition('=')[::2] for line in result.stdout.splitlines())
+    if result.returncode or not values.get('ActiveState') or not values.get('MainPID', '').isdigit():
+        return None
+    return {**values, 'MainPID': int(values['MainPID'])}
+
+
+def unit_owner_file() -> Path:
+    return STATE / 'trust-unit.owner.json'
+
+
+def unit_ownership() -> tuple[dict | None, str]:
+    """Whose invocation the fixed unit is running: inactive, owned, foreign or unverifiable.
+
+    Owned means the invocation this lab recorded when its own start made the unit
+    active: the same InvocationID and control group, for this lab directory, and,
+    while systemd still reports a main process, the same main PID and start time.
+    The lab starts, stops or reconfigures the unit only when it is inactive or owned.
+    """
+    status = unit_status()
+    if status is None:
+        return None, 'unverifiable'
+    if status['ActiveState'] not in UNIT_BUSY:
+        return status, 'inactive'
+    try:
+        owner = json.loads(unit_owner_file().read_text())
+    except (OSError, ValueError):
+        return status, 'foreign'
+    if (not isinstance(owner, dict) or not status.get('InvocationID') or owner.get('invocation_id') != status['InvocationID']
+            or owner.get('control_group') != status.get('ControlGroup') or owner.get('state') != str(STATE)):
+        return status, 'foreign'
+    if status['MainPID']:
+        identity = process_identity(status['MainPID'])
+        if (owner.get('main_pid') != status['MainPID'] or identity is None
+                or identity['starttime'] != owner.get('main_starttime')):
+            return status, 'foreign'
+    return status, 'owned'
+
+
+def record_unit_owner(status: dict) -> dict:
+    """Bind this lab to the invocation its start produced; written before anything else can fail."""
+    identity = process_identity(status['MainPID']) if status['MainPID'] else None
+    owner = {'invocation_id': status['InvocationID'], 'control_group': status.get('ControlGroup'), 'state': str(STATE),
+             'main_pid': status['MainPID'], 'main_starttime': identity['starttime'] if identity else None}
+    unit_owner_file().write_text(json.dumps(owner) + '\n')
+    return owner
+
+
+def unit_summary(status: dict | None, ownership: str) -> dict:
+    return {'ownership': ownership, **({key: status.get(key) for key in ('ActiveState', 'SubState', 'MainPID', 'InvocationID')}
+                                       if status else {})}
+
+
 def require_trust_runtime() -> None:
     """The unit reads its configuration from a fixed directory the lab account must own alone."""
     try:
@@ -457,6 +520,15 @@ def inspect() -> dict:
         record['state'] = 'unmarked'
         record['detail'] = 'existing .zabbix-lab directory without the isolated-lab marker'
         return record
+    unit_owned_busy = False
+    if trust_unit_installed():
+        status, ownership = unit_ownership()
+        record['trust_unit'] = unit_summary(status, ownership)
+        if ownership in ('foreign', 'unverifiable'):
+            record['detail'] = (f"the lab-trust unit is {status['ActiveState']} under an invocation this lab did not start"
+                                if status else 'the lab-trust unit cannot be observed') + '; it is not started, stopped or reconfigured'
+            return record
+        unit_owned_busy = ownership == 'owned'
     live, stale, foreign, unreadable = [], [], [], []
     for name in PID_FILES:
         identity, classification = verified_pid(name)
@@ -467,6 +539,8 @@ def inspect() -> dict:
     if unreadable:
         record['detail'] = 'unreadable PID file: ' + ','.join(unreadable)
         return record
+    if unit_owned_busy and 'zabbix_server' not in live:
+        live.append('trust_unit')  # this lab's invocation is still up (starting, or descendants after its main process)
     busy = [name for name, on in listening.items() if on and name not in live]
     if busy:
         record['detail'] = 'lab port in use by something other than the marked component: ' + ','.join(busy)
@@ -621,10 +695,18 @@ def start_server(paths: dict[str, Path]) -> None:
         if paths['zabbix_server'].resolve() != TRUST_EXECUTABLE.resolve():
             raise SystemExit(f'the lab-trust unit runs {TRUST_EXECUTABLE}; ZABALACK_ZABBIX_SERVER names {paths["zabbix_server"]}')
         require_trust_runtime()
+        status, ownership = unit_ownership()
+        if ownership != 'inactive':
+            raise SystemExit(f'Refusing to start: the lab-trust unit is {ownership}' + (f" ({status['ActiveState']})" if status else '')
+                             + '; its configuration is not rewritten and it is not started')
+        unit_owner_file().unlink(missing_ok=True)
     write_private(conf, SERVER_CONF.format(server_port=SERVER_PORT, pg_port=PG_PORT, database=DATABASE, db_user=DB_USER,
                                            db_password=password(DB_USER), state=STATE))
     if conf == TRUST_CONF:
         result = trust_unit('start')
+        status = unit_status()
+        if status is not None and status['ActiveState'] in UNIT_BUSY and status.get('InvocationID'):
+            record_unit_owner(status)  # before any later check can fail, so a stop can still end this invocation
     else:
         result = run([str(paths['zabbix_server']), '-c', str(conf)], check=False, env=service_env())
     if result.returncode:
@@ -634,6 +716,10 @@ def start_server(paths: dict[str, Path]) -> None:
     pid = read_pid(PID_FILES['zabbix_server'])
     if pid is None or record_identity('zabbix_server', pid) is None or verified_pid('zabbix_server')[0] is None:
         raise SystemExit('zabbix_server is listening but its PID file does not name the lab server process')
+    if conf == TRUST_CONF:
+        status, ownership = unit_ownership()
+        if ownership != 'owned' or status is None or status['MainPID'] != pid:
+            raise SystemExit(f'the lab-trust unit ({ownership}) does not run the lab server process named by its PID file')
 
 
 def stage_frontend(paths: dict[str, Path]) -> None:
@@ -740,15 +826,31 @@ def stop_all(paths: dict[str, Path]) -> dict:
     if outcomes['php']['status'] != 'FAILED':
         PID_FILES['php'].unlink(missing_ok=True)
         identity_file('php').unlink(missing_ok=True)
-    outcomes['zabbix_server'] = stop_component('zabbix_server', 60)
+    status, ownership = None, None
     if trust_unit_installed():
-        # The verified daemon was signalled above; stopping the unit also ends anything left in its control group.
+        status, ownership = unit_ownership()
+    if ownership in ('foreign', 'unverifiable'):
+        # Not this lab's invocation (or not observable): nothing is signalled and the unit is not stopped.
+        outcomes['zabbix_server'] = {'status': 'FAILED', 'trust_unit': unit_summary(status, ownership),
+                                     'detail': 'the lab-trust unit is not an invocation this lab started; not signalled, not stopped'}
+    else:
+        outcomes['zabbix_server'] = stop_component('zabbix_server', 60)
+    if ownership == 'owned':
+        # Only this lab's invocation: stopping it also ends anything left in its control group after the main process.
         stopped = trust_unit('stop')
+        after = unit_status()
         outcomes['zabbix_server']['trust_unit_stop_exit_code'] = stopped.returncode
-        if stopped.returncode != 0:
+        outcomes['zabbix_server']['trust_unit'] = unit_summary(after, 'owned')
+        if stopped.returncode != 0 or after is None or after['ActiveState'] in UNIT_BUSY:
             outcomes['zabbix_server']['status'] = 'FAILED'
+        elif outcomes['zabbix_server']['status'] != 'FAILED':
+            outcomes['zabbix_server']['status'] = 'STOPPED'
+    elif ownership == 'inactive':
+        outcomes['zabbix_server']['trust_unit'] = unit_summary(status, 'inactive')
     if outcomes['zabbix_server']['status'] == 'STOPPED':
         identity_file('zabbix_server').unlink(missing_ok=True)
+    if ownership in ('owned', 'inactive') and outcomes['zabbix_server']['status'] != 'FAILED':
+        unit_owner_file().unlink(missing_ok=True)
     identity, classification = verified_pid('postgres')
     if identity is not None:
         result = run([str(paths['pg_bin'] / 'pg_ctl'), '-D', str(PGDATA), '-m', 'fast', '-w', 'stop'], check=False)

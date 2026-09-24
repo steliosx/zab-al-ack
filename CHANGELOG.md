@@ -29,6 +29,13 @@
   limit and fails a body over it, a non-object (`[]`, `null`, a string) or
   invalid JSON, instead of passing or raising. Tested on T7 itself with the
   exact 1,048,577-byte R4 body.
+- R5-UNIT-OWNERSHIP (R5 review): the lab no longer stops the global
+  lab-trust unit whenever it is installed. It binds its own invocation
+  (InvocationID, control group, main PID and start time) when its start
+  returns. It refuses a foreign or unobservable active, activating or
+  deactivating unit (state `ambiguous`) without writing the configuration
+  or starting, signalling or stopping anything. It stops only its own
+  invocation, including descendants after the main process exits.
 
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 

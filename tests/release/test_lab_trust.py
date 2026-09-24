@@ -5,6 +5,7 @@ name-constrained CA exactly as install.sh does and verify real certificates with
 only the privileged `sudo systemctl` call. Execution on the lab host is recorded separately (docs/lab-trust.md).
 """
 import importlib.util
+import json
 import os
 from pathlib import Path
 import re
@@ -198,13 +199,23 @@ def zlab(tmp_path, monkeypatch):
     (state / 'zabbix-db-password').write_text('synthetic\n')
     monkeypatch.setattr(module, 'password', lambda role, create=False: 'synthetic')
     calls = []
+    # A model of systemd's view of the fixed unit; only the privileged start/stop change it.
+    unit = {'LoadState': 'loaded', 'ActiveState': 'inactive', 'SubState': 'dead', 'MainPID': 0, 'InvocationID': '',
+            'ControlGroup': ''}
+    invocations = iter(f'{n:032x}' for n in range(1, 100))
 
     def run(command, **kwargs):
         calls.append(command)
-        if command[:2] == ['sudo', '-n']:
+        if command[:2] == ['sudo', '-n'] and command[3] == 'start':
             module.PID_FILES['zabbix_server'].write_text(f'{os.getpid()}\n')
+            unit.update(ActiveState='active', SubState='running', MainPID=os.getpid(), InvocationID=next(invocations),
+                        ControlGroup='/system.slice/zabalack-lab-zabbix.service')
+        if command[:2] == ['sudo', '-n'] and command[3] == 'stop':
+            unit.update(ActiveState='inactive', SubState='dead', MainPID=0, ControlGroup='')
         return subprocess.CompletedProcess(command, 0, '', '')
     monkeypatch.setattr(module.subprocess, 'run', run)
+    monkeypatch.setattr(module, 'unit_status', lambda: dict(unit), raising=False)  # absent before R6
+    module.unit = unit
     monkeypatch.setattr(module, 'port_listening', lambda port: True)
     monkeypatch.setattr(module, 'component_alive', lambda name: False)
     monkeypatch.setattr(module, 'expected_uid', lambda: os.getuid())
@@ -248,9 +259,11 @@ def test_an_unsafe_runtime_directory_or_another_executable_is_refused_before_any
 def test_stopping_the_lab_also_stops_the_unit(zlab, monkeypatch):
     monkeypatch.setattr(zlab, 'stop_component', lambda name, timeout: {'status': 'STOPPED'})
     monkeypatch.setattr(zlab, 'verified_pid', lambda name: (None, 'stopped'))
+    zlab.unit.update(ActiveState='active', MainPID=os.getpid(), InvocationID='a' * 32, ControlGroup='/system.slice/x')
+    zlab.record_unit_owner(zlab.unit_status())
     outcomes = zlab.stop_all({'pg_bin': Path('/nonexistent')})
     assert ['sudo', '-n', '/usr/bin/systemctl', 'stop', 'zabalack-lab-zabbix.service'] in zlab.calls
-    assert outcomes['zabbix_server'] == {'status': 'STOPPED', 'trust_unit_stop_exit_code': 0}
+    assert outcomes['zabbix_server']['status'] == 'STOPPED' and outcomes['zabbix_server']['trust_unit_stop_exit_code'] == 0
 
 
 def test_without_the_unit_the_lab_is_unchanged(zlab, monkeypatch):
@@ -272,3 +285,110 @@ def test_the_deployment_runner_refuses_before_any_service_work_without_lab_trust
     monkeypatch.setattr(local_e2e, 'LAB_TRUST_UNIT', tmp_path / 'absent.service')
     with pytest.raises(RuntimeError, match='lab_trust_not_provisioned'):
         local_e2e.check_host_layout()
+
+
+# Review of 8211b1b (R5-UNIT-OWNERSHIP): stop_all stopped the global unit whenever it was installed, whoever's
+# invocation it was running. The lab now starts, stops or reconfigures it only when inactive or its own.
+SUDO_START = ['sudo', '-n', '/usr/bin/systemctl', 'start', 'zabalack-lab-zabbix.service']
+SUDO_STOP = ['sudo', '-n', '/usr/bin/systemctl', 'stop', 'zabalack-lab-zabbix.service']
+
+
+def mark(zlab):
+    zlab.MARKER.write_text('isolated\n')
+
+
+def foreign_invocation(zlab, state, main_pid, owner):
+    zlab.unit.update(ActiveState=state, SubState='start' if state == 'activating' else 'running', MainPID=main_pid,
+                     InvocationID='f' * 32, ControlGroup='/system.slice/zabalack-lab-zabbix.service')
+    if owner == 'other-run':  # this checkout once owned an earlier invocation, not this one
+        zlab.unit_owner_file().write_text(json.dumps({'invocation_id': 'e' * 32, 'control_group': zlab.unit['ControlGroup'],
+                                                      'state': str(zlab.STATE), 'main_pid': main_pid, 'main_starttime': 1}))
+
+
+@pytest.mark.parametrize('state', ['active', 'activating', 'deactivating'])
+@pytest.mark.parametrize('owner', ['no-record', 'other-run'])
+def test_a_foreign_unit_invocation_is_never_started_stopped_or_reconfigured(zlab, monkeypatch, capsys, state, owner):
+    mark(zlab)
+    monkeypatch.setattr(zlab, 'port_listening', lambda port: False)  # e.g. before listen: the port guard sees nothing
+    monkeypatch.setattr(zlab, 'verified_pid', lambda name: (None, 'stale_pid' if name == 'zabbix_server' else 'stopped'))
+    monkeypatch.setattr(zlab, 'inputs', lambda: {'pg_bin': Path('/nonexistent')})
+    foreign_invocation(zlab, state, 0 if state == 'deactivating' else os.getpid(), owner)
+    observed = zlab.inspect()
+    assert observed['state'] == 'ambiguous' and observed['trust_unit']['ownership'] == 'foreign'
+    with pytest.raises(SystemExit, match='Refusing to stop'):
+        zlab.main(['stop', '--isolated-lab'])
+    outcomes = zlab.stop_all({'pg_bin': Path('/nonexistent')})  # even called directly
+    assert outcomes['zabbix_server']['status'] == 'FAILED' and outcomes['zabbix_server']['trust_unit']['ownership'] == 'foreign'
+    with pytest.raises(SystemExit, match='Refusing to start'):
+        zlab.start_server({'zabbix_server': zlab.TRUST_EXECUTABLE})
+    assert zlab.calls == [] and not zlab.TRUST_CONF.exists() and zlab.unit['InvocationID'] == 'f' * 32
+
+
+def test_an_unobservable_unit_is_refused_like_a_foreign_one(zlab, monkeypatch):
+    mark(zlab)
+    monkeypatch.setattr(zlab, 'unit_status', lambda: None)
+    monkeypatch.setattr(zlab, 'verified_pid', lambda name: (None, 'stopped'))
+    assert zlab.inspect()['state'] == 'ambiguous'
+    assert zlab.stop_all({'pg_bin': Path('/nonexistent')})['zabbix_server']['status'] == 'FAILED'
+    with pytest.raises(SystemExit):
+        zlab.start_server({'zabbix_server': zlab.TRUST_EXECUTABLE})
+    assert zlab.calls == [] and not zlab.TRUST_CONF.exists()
+
+
+def test_the_lab_binds_its_own_invocation_and_stops_and_restarts_only_it(zlab, monkeypatch):
+    identity = zlab.process_identity(os.getpid())
+    monkeypatch.setattr(zlab, 'verified_pid', lambda name: (identity, 'running'))
+    zlab.start_server({'zabbix_server': zlab.TRUST_EXECUTABLE})
+    first = json.loads(zlab.unit_owner_file().read_text())
+    assert first['invocation_id'] == zlab.unit['InvocationID'] and first['main_pid'] == os.getpid()
+    assert first['main_starttime'] == identity['starttime'] and first['state'] == str(zlab.STATE)
+    assert zlab.unit_ownership()[1] == 'owned'
+    monkeypatch.setattr(zlab, 'stop_component', lambda name, timeout: {'status': 'STOPPED'})
+    outcomes = zlab.stop_all({'pg_bin': Path('/nonexistent')})
+    assert [call for call in zlab.calls if call[0] == 'sudo'] == [SUDO_START, SUDO_STOP]
+    assert outcomes['zabbix_server']['status'] == 'STOPPED'
+    assert not zlab.unit_owner_file().exists() and zlab.unit['ActiveState'] == 'inactive'
+    zlab.start_server({'zabbix_server': zlab.TRUST_EXECUTABLE})  # restart: a new invocation, bound afresh
+    assert json.loads(zlab.unit_owner_file().read_text())['invocation_id'] == zlab.unit['InvocationID'] != first['invocation_id']
+
+
+def test_an_own_invocation_that_never_listened_is_still_stopped(zlab, monkeypatch):
+    monkeypatch.setattr(zlab, 'port_listening', lambda port: False)
+    monkeypatch.setattr(zlab, 'wait_until', lambda predicate, timeout, interval=0.5: predicate())
+    with pytest.raises(SystemExit, match='not listening'):
+        zlab.start_server({'zabbix_server': zlab.TRUST_EXECUTABLE})
+    assert zlab.unit_ownership()[1] == 'owned'  # bound as soon as the start returned
+    monkeypatch.setattr(zlab, 'verified_pid', lambda name: (None, 'stopped'))
+    assert zlab.stop_all({'pg_bin': Path('/nonexistent')})['zabbix_server']['status'] == 'STOPPED'
+    assert zlab.calls == [SUDO_START, SUDO_STOP]
+
+
+def test_descendants_of_an_own_invocation_are_stopped_after_its_main_process_exits(zlab, monkeypatch):
+    mark(zlab)
+    zlab.unit.update(ActiveState='active', MainPID=os.getpid(), InvocationID='a' * 32, ControlGroup='/system.slice/x')
+    zlab.record_unit_owner(zlab.unit_status())
+    zlab.unit.update(MainPID=0, SubState='exited')  # main process gone; its control group still has processes
+    monkeypatch.setattr(zlab, 'port_listening', lambda port: False)
+    monkeypatch.setattr(zlab, 'verified_pid', lambda name: (None, 'stale_pid' if name == 'zabbix_server' else 'stopped'))
+    observed = zlab.inspect()
+    assert observed['state'] == 'running' and observed['trust_unit']['ownership'] == 'owned'
+    outcomes = zlab.stop_all({'pg_bin': Path('/nonexistent')})
+    assert zlab.calls == [SUDO_STOP] and outcomes['zabbix_server']['status'] == 'STOPPED'
+    assert zlab.unit['ActiveState'] == 'inactive' and not zlab.unit_owner_file().exists()
+
+
+def test_an_own_invocation_whose_stop_does_not_take_effect_fails(zlab, monkeypatch):
+    zlab.unit.update(ActiveState='active', MainPID=os.getpid(), InvocationID='a' * 32, ControlGroup='/system.slice/x')
+    zlab.record_unit_owner(zlab.unit_status())
+    monkeypatch.setattr(zlab, 'stop_component', lambda name, timeout: {'status': 'NOT_RUNNING'})
+    monkeypatch.setattr(zlab, 'verified_pid', lambda name: (None, 'stopped'))
+    monkeypatch.setattr(zlab, 'trust_unit', lambda verb: subprocess.CompletedProcess([], 0, '', ''))  # still active after
+    assert zlab.stop_all({'pg_bin': Path('/nonexistent')})['zabbix_server']['status'] == 'FAILED'
+    assert zlab.unit_owner_file().exists()
+
+
+def test_a_reused_main_pid_under_the_recorded_invocation_is_not_owned(zlab):
+    zlab.unit.update(ActiveState='active', MainPID=os.getpid(), InvocationID='a' * 32, ControlGroup='/system.slice/x')
+    owner = zlab.record_unit_owner(zlab.unit_status())
+    zlab.unit_owner_file().write_text(json.dumps({**owner, 'main_starttime': owner['main_starttime'] - 1}))
+    assert zlab.unit_ownership()[1] == 'foreign'

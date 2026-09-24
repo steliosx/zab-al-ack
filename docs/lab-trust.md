@@ -33,7 +33,16 @@ Installing it is a host change that needs the owner's authorization.
 - **Lab integration:**
   - When the unit is installed, `lab/zabbix_native_lab.py` starts `zabbix_server` only through it. First it checks
     that `/run/zabalack-lab-zabbix` is the lab account's own 0700 directory, not a link. It refuses any other
-    requested executable, verifies the daemon by the unit's argv, and also stops the unit.
+    requested executable, and verifies the daemon by the unit's argv.
+  - **Unit ownership.** The unit is global, so the lab acts on it only when it is inactive or is this lab's own
+    invocation. It reads systemd's view without privilege (`systemctl show`: ActiveState, MainPID, InvocationID,
+    ControlGroup). As soon as its own start returns, it records the invocation ID, control group, main PID and
+    that process's start time in `.zabbix-lab/trust-unit.owner.json`. An active, activating or deactivating unit
+    under any other invocation, or one systemd cannot report, makes the lab state `ambiguous`. The lab then does
+    not write the fixed configuration, start, signal or stop anything. The lab stops the unit only when the
+    invocation is its own, including after its main process has exited while descendants remain in the control
+    group (the stop ends the whole group). The stop succeeds only when systemd then reports the unit inactive.
+    The shared lab lock serializes cooperating jobs; the invocation binding is what identifies this run's unit.
   - `tools/run_deployment_e2e.py` signs the run's `runner`/127.0.0.1 certificate with the lab CA. `server.crt`
     holds the leaf followed by the CA, so the lab's own clients are unchanged.
   - Without the unit, the deployment lab's layout check refuses the cycle before any service starts
