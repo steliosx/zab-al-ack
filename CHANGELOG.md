@@ -14,6 +14,12 @@
 - S1: the runner's record is retained under its own label as soon as the run
   ends, before cleanup, on success, failed cleanup and interruption alike;
   a cycle whose runner record could not be retained never ends PASS.
+- R3-RETENTION: when that copy cannot be made, the runner's record is left
+  byte for byte as the canonical record, nothing is wiped, and the outcome
+  goes to a separate terminal diagnostic
+  (`evidence/deployment-e2e-run.retention-failure.json`, NOT_A_RESULT)
+  bound to this run and to the record's digest; it is removed when the next
+  run starts.
 
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 
