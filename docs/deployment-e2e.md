@@ -207,7 +207,16 @@ left exactly as it is as the canonical record (a `PENDING_BINDING` never
 validates), nothing is wiped, and the outcome is written instead to
 `evidence/deployment-e2e-run.retention-failure.json`: a terminal diagnostic
 (`result: NOT_A_RESULT`) naming the canonical record's digest and this run's
-identity, removed when the next run starts. Both labs' service logs are retained (`…/deployment-cycle/`) only after
+identity. A later command first retains that unresolved original and its
+diagnostic, byte for byte and verified by digest, under
+`build/private/retained-phases/<previous run>/unresolved-previous-attempt/`
+(bound into its own record as `native_lab.previous_attempt`); only then does it
+replace them. If that copy cannot be made, the command refuses (`REFUSED`,
+exit 2) with both files unchanged and nothing started, stopped or wiped. A
+`PENDING_BINDING` record left without a diagnostic (the diagnostic write itself
+failed) is treated the same way, and filesystem errors while retaining (for
+example a retention parent that is not a directory) take the same protected
+path as a refused copy. Both labs' service logs are retained (`…/deployment-cycle/`) only after
 every service has stopped, before the wipe; a lab that did not stop is not
 snapshotted. Both retention manifests' digests are bound into the final record. With `--wheel-sha256`
 the local runner performs the same supplied-wheel preflight as the Compose

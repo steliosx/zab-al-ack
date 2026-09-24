@@ -257,6 +257,7 @@ def test_an_interrupted_run_still_retains_the_runners_record(native_lab, monkeyp
 def refuse_retention(lab, monkeypatch, labels):
     """lab_retention refuses these labels before copying a byte; others retain normally."""
     real = lab.module.preserve
+    lab.real_preserve = real
 
     def preserve(root, run_id, label, sources):
         if label in labels:
@@ -335,3 +336,105 @@ def test_a_previous_runs_diagnostic_is_removed_when_the_next_run_starts(native_l
     lab.module.diagnostic_path().write_text('{"kind": "native_lab_terminal_diagnostic", "run_id": "previous"}\n')
     assert lab.module.main(CYCLE) == 0
     assert record(lab)['status'] == 'PASS' and not lab.module.diagnostic_path().exists()
+
+
+# Review of b5b8e95 (R3-RETENTION, refused retry): after a failed copy, the next cycle ran fresh_record before
+# anything else and replaced the sole original and deleted its diagnostic, then refused because the lab was stopped.
+
+def count_calls(lab, monkeypatch, name):
+    calls, real = [], getattr(lab.module, name)
+
+    def counted(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs)
+    monkeypatch.setattr(lab.module, name, counted)
+    return calls
+
+
+def first_attempt_with_copy_refused(lab, monkeypatch, capsys):
+    import hashlib
+    seen = command_path(lab, monkeypatch)
+    refuse_retention(lab, monkeypatch, {'runner-record', 'unresolved-previous-attempt'})
+    assert lab.module.main(CYCLE) == 5
+    capsys.readouterr()
+    original = (lab.tmp / 'evidence/deployment-e2e-run.json').read_bytes()
+    diagnostic = lab.module.diagnostic_path().read_bytes()
+    assert original == seen['runner_bytes'] and json.loads(diagnostic)['canonical_record']['sha256'] == hashlib.sha256(original).hexdigest()
+    return seen, original, diagnostic
+
+
+def test_a_retry_that_cannot_retain_the_unresolved_original_changes_nothing(native_lab, monkeypatch, capsys):
+    lab = native_lab
+    seen, original, diagnostic = first_attempt_with_copy_refused(lab, monkeypatch, capsys)
+    starts, runs, wipes = (count_calls(lab, monkeypatch, name) for name in ('start_lab', 'run_child', 'wipe_lab'))
+    code = lab.module.main(CYCLE)
+    # Behaviour first: the sole original and its diagnostic, byte for byte (so size and hash too).
+    assert (lab.tmp / 'evidence/deployment-e2e-run.json').read_bytes() == original
+    assert lab.module.diagnostic_path().read_bytes() == diagnostic
+    assert not starts and not runs and not wipes and code == 2
+    out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert out['status'] == 'REFUSED' and out['reason'] == 'unresolved_previous_original_not_retained'
+    with pytest.raises(ValueError):
+        validate_report(json.loads(original), lab.tmp)
+
+
+def test_a_retry_first_retains_the_unresolved_original_and_then_recovers(native_lab, monkeypatch, capsys):
+    import hashlib
+    lab = native_lab
+    seen, original, diagnostic = first_attempt_with_copy_refused(lab, monkeypatch, capsys)
+    previous_run = json.loads(diagnostic)['run_id']
+    monkeypatch.setattr(lab.module, 'preserve', lab.real_preserve)  # retention works again
+    # The lab is stopped, not absent: this retry retains the unresolved attempt, then refuses the cycle.
+    assert lab.module.main(CYCLE) == 2
+    # Behaviour first: the original and its diagnostic now exist, byte for byte, in private retention.
+    directory = lab.tmp / f'build/private/retained-phases/{previous_run}/unresolved-previous-attempt'
+    assert (directory / 'evidence__deployment-e2e-run.json').read_bytes() == original
+    assert (directory / 'evidence__deployment-e2e-run.retention-failure.json').read_bytes() == diagnostic
+    after_retry = record(lab)
+    carried = after_retry['native_lab']['previous_attempt']
+    assert lab.tmp / carried['directory'] == directory
+    assert hashlib.sha256((directory / 'manifest.json').read_bytes()).hexdigest() == carried['manifest_sha256']
+    assert after_retry['status'] == 'NOT_RUN' and not lab.module.diagnostic_path().exists()
+    # With the evidence retained, the stopped lab can be wiped and the next cycle passes.
+    assert lab.module.main(['wipe', '--isolated-lab']) == 0
+    assert lab.module.main(CYCLE) == 0 and record(lab)['status'] == 'PASS'
+
+
+def test_a_failed_diagnostic_write_still_protects_the_original_on_retry(native_lab, monkeypatch, capsys):
+    """No diagnostic could be written: the canonical record is still the runner's own, unbound; a retry that cannot
+    retain it refuses without touching it."""
+    lab = native_lab
+    seen = command_path(lab, monkeypatch)
+    refuse_retention(lab, monkeypatch, {'runner-record', 'unresolved-previous-attempt'})
+    real_write = lab.module.write_record
+
+    def write_record(record, target=None):
+        if target is not None and target == lab.module.diagnostic_path():
+            raise OSError('synthetic diagnostic write failure')
+        return real_write(record, target)
+    monkeypatch.setattr(lab.module, 'write_record', write_record)
+    assert lab.module.main(CYCLE) == 1
+    assert (lab.tmp / 'evidence/deployment-e2e-run.json').read_bytes() == seen['runner_bytes'] and not lab.module.diagnostic_path().exists()
+    starts = count_calls(lab, monkeypatch, 'start_lab')
+    assert lab.module.main(CYCLE) == 2 and not starts
+    assert (lab.tmp / 'evidence/deployment-e2e-run.json').read_bytes() == seen['runner_bytes']
+
+
+def test_a_filesystem_failure_while_retaining_takes_the_protected_path(native_lab, monkeypatch, capsys):
+    """A regular file where build/private belongs (an abnormal, synthetic shape): the copy fails with a filesystem
+    error, which now takes the same path as a refused copy: stop runs, nothing is wiped, the original stays."""
+    import shutil as shell
+    lab = native_lab
+    seen = command_path(lab, monkeypatch)
+    real_child = lab.module.run_child
+
+    def run_child(command, **kwargs):
+        code = real_child(command, **kwargs)
+        shell.rmtree(lab.tmp / 'build/private')
+        (lab.tmp / 'build/private').write_text('not a directory\n')
+        return code
+    monkeypatch.setattr(lab.module, 'run_child', run_child)
+    stops, wipes = count_calls(lab, monkeypatch, 'stop_lab'), count_wipes(lab, monkeypatch)
+    assert lab.module.main(CYCLE) == 5
+    assert (lab.tmp / 'evidence/deployment-e2e-run.json').read_bytes() == seen['runner_bytes']
+    assert stops and not wipes and json.loads(lab.module.diagnostic_path().read_text())['reason'] == 'runner_record_retention_failed'

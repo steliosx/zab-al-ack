@@ -40,6 +40,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import secrets
 import shutil
 import signal
@@ -483,6 +484,44 @@ def diagnostic_path() -> Path:
     return RECORD.with_name('deployment-e2e-run.retention-failure.json')
 
 
+def unresolved_original() -> bool:
+    """A previous attempt left an original that was never retained.
+
+    Either its terminal diagnostic is still present, or the canonical record is
+    still the runner's own record (it carries the pending marker and was never
+    bound by a cycle: a failed diagnostic write, or a cycle that died).
+    """
+    if diagnostic_path().exists() or diagnostic_path().is_symlink():
+        return True
+    record = load_record()
+    native = record.get('native_lab') if record else None
+    return isinstance(native, dict) and 'pending' in native and 'command' not in native
+
+
+def carry_forward_unresolved() -> dict | None:
+    """Retain an unresolved previous original, and its diagnostic, before this run invalidates the record.
+
+    The copy is read back and compared with the originals' digests; any failure
+    raises, and the caller then refuses without touching either file.
+    """
+    if not unresolved_original():
+        return None
+    diagnostic = diagnostic_path()
+    try:
+        previous = json.loads(diagnostic.read_text()).get('run_id') if diagnostic.exists() else None
+    except (OSError, ValueError, AttributeError):
+        previous = None
+    run_id = previous if isinstance(previous, str) and re.fullmatch(r'[0-9a-f]{6,32}', previous) else os.urandom(6).hex()
+    expected = {path.relative_to(REPO).as_posix().replace('/', '__'): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in (RECORD, diagnostic) if path.exists()}
+    retained = preserve(REPO, run_id, 'unresolved-previous-attempt', [RECORD, diagnostic])
+    directory = REPO / retained['directory']
+    for name, digest in expected.items():
+        if hashlib.sha256((directory / name).read_bytes()).hexdigest() != digest:
+            raise RetentionError('the retained copy of ' + name + ' differs from the original')
+    return retained
+
+
 def runner_original_unretained(summary: dict) -> bool:
     """The runner ran, and its original record could not be retained (lab_retention refused the copy)."""
     retained = summary.get('runner_record')
@@ -554,6 +593,8 @@ def bind_record(command: str, code: int, summary: dict) -> dict:
                                'deployment_gates': 'MANUAL_GATE_PENDING'}
     native = {'command': command, **{key: summary.get(key) for key in ('run_id', 'run_exit_code', 'runner_record', 'cleanup', 'retention', 'wipe',
                                                                       'final_state')}}
+    if summary.get('previous_attempt'):
+        native['previous_attempt'] = summary['previous_attempt']
     wipe, retention = summary.get('wipe'), summary.get('retention')
     native['cleanup_complete'] = (summary.get('final_state') == 'absent' and isinstance(wipe, dict) and wipe.get('wipe') == 'done'
                                   and isinstance(retention, dict) and retention.get('status') == 'RETAINED')
@@ -676,15 +717,15 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
                 # are retained only once the services are stopped.
                 try:
                     summary['runner_record'] = preserve(REPO, run_id, 'runner-record', [RECORD])
-                except RetentionError as error:
-                    summary['runner_record'] = {'error': str(error)}
+                except (RetentionError, OSError) as error:
+                    summary['runner_record'] = {'error': str(error) or type(error).__name__}
             try:
                 stop_code, summary['cleanup'] = stop_lab(binaries, inspect(binaries))
                 if stop_code == 0:
                     try:
                         summary['retention'] = preserve(REPO, run_id, 'deployment-cycle', [Path(name) for name in CYCLE_LOGS])
-                    except RetentionError as error:
-                        summary['retention'] = {'error': str(error)}
+                    except (RetentionError, OSError) as error:
+                        summary['retention'] = {'error': str(error) or type(error).__name__}
                     else:
                         if runner_original_unretained(summary):
                             # The runner's original exists only in the checkout: nothing is wiped.
@@ -785,9 +826,21 @@ def guarded(args, parser) -> int:
     130; a signal during the commit or after the publication leaves the record
     as committed and exits 130, saying which. None of these paths prints a
     traceback; a failed replace exits 1.
+
+    First, an original a previous attempt left unretained (its diagnostic, or the
+    runner's own unbound record) is retained and verified; if that cannot be done
+    this run refuses (exit 2) and writes nothing, so that original survives.
     """
+    try:
+        carried = carry_forward_unresolved()
+    except (RetentionError, OSError) as error:
+        print(json.dumps({'status': 'REFUSED', 'reason': 'unresolved_previous_original_not_retained',
+                          'detail': (str(error) or type(error).__name__)[:300]}))
+        print(f'a previous attempt left its original record unretained; {RECORD.relative_to(REPO).as_posix()} and its diagnostic '
+              'were left unchanged and this run did not start', file=sys.stderr)
+        return 2
     cancellation = Cancellation().install()
-    summary: dict = {}
+    summary: dict = {'previous_attempt': carried} if carried else {}
     outcome: tuple[int, dict] | None = None
     try:
         while True:

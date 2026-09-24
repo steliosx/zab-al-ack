@@ -20,6 +20,13 @@
   (`evidence/deployment-e2e-run.retention-failure.json`, NOT_A_RESULT)
   bound to this run and to the record's digest; it is removed when the next
   run starts.
+- R3-RETENTION retry (R5 review): a later command no longer invalidates an
+  unretained original. It first retains the original and its diagnostic
+  (verified by digest, bound as `native_lab.previous_attempt`), or refuses
+  with both unchanged and no start, runner, stop or wipe. This also covers
+  an original whose diagnostic write failed. OSError while retaining (a
+  wrong-type retention parent) now takes the protected path (exit 5,
+  original intact, lab stopped, not wiped) instead of escaping as exit 1.
 
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 
