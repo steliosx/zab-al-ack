@@ -42,6 +42,7 @@ from pathlib import Path
 import pwd
 import secrets
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -49,7 +50,7 @@ import time
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / 'tools'))
-from cancellation import Cancellation, describe, run_child  # noqa: E402
+from cancellation import SIGNALS, Cancellation, describe, run_child, signal_name  # noqa: E402
 from lab_retention import RetentionError, preserve  # noqa: E402
 from deployment_evidence import validate_report  # noqa: E402
 STATE = REPO / '.deployment-lab'
@@ -489,7 +490,14 @@ EXECUTION_KEYS = ('counts', 'checks', 'components', 'junit', 'supplied_wheel', '
 
 
 def finalize_record(command: str, code: int, summary: dict) -> dict:
-    """Bind the outcome to the public record. A non-zero outcome can never leave PASS behind.
+    """Bind the outcome to the public record and publish it (bind_record, then write_record)."""
+    record = bind_record(command, code, summary)
+    write_record(record)
+    return record
+
+
+def bind_record(command: str, code: int, summary: dict) -> dict:
+    """Bind the outcome to the public record, without publishing it. A non-zero outcome can never leave PASS behind.
 
     The runner never ran (a refusal or an early failure): the record is NOT_RUN
     with the refusal's public code and carries no execution evidence. The
@@ -554,7 +562,6 @@ def finalize_record(command: str, code: int, summary: dict) -> dict:
     elif code != 0 and command == 'cycle' and summary.get('final_state') != 'absent' and record.get('status') not in ('NOT_RUN', 'FAIL'):
         record.update(status='FAIL', reason=cleanup_reason(summary))
     record['finished_at'] = stamp()
-    write_record(record)
     return record
 
 
@@ -633,57 +640,100 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
     return code, summary
 
 
+def publish(command: str, code: int, summary: dict, cancellation: Cancellation) -> int:
+    """Bind the final record, publish it and return the command's exit code.
+
+    The publication is write_record's atomic replace. From the first line here a
+    termination signal is only recorded, never raised (guarded() restores the
+    handlers afterwards). A signal received before the publication is the
+    outcome: the record is bound as interrupted (FAIL) and the exit is 130,
+    whatever the run did. The last check and the replace run with the
+    termination signals blocked, so none can arrive between them unseen; one
+    that arrives after the check is delivered after the publication.
+    """
+    cancellation.deferring = True
+    record = bind_record(command, code, summary)
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
+    try:
+        arrived, cancellation.pending = cancellation.pending, None
+        # Signals already sent but held by the mask are taken here, so none of them is
+        # later reported as having arrived after the publication.
+        while (waiting := signal.sigtimedwait(SIGNALS, 0)) is not None:
+            cancellation.received.append(waiting.si_signo)
+            arrived = arrived if arrived is not None else waiting.si_signo
+        if arrived is not None and not summary.get('interrupted'):
+            summary = {**summary, 'refusal': 'interrupted (' + signal_name(arrived) + ')', 'interrupted': True}
+            code = 130
+            record = bind_record(command, code, summary)
+        write_record(record)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+    shown = {key: value[:300] if key == 'refusal' and isinstance(value, str) else value for key, value in summary.items()}
+    print(json.dumps({'status': record.get('status'), 'reason': record.get('reason'), **shown}))
+    if code == 0 and command == 'cycle' and record.get('status') != 'PASS':
+        return 1  # the run and cleanup succeeded but the final bound record did not validate
+    return code
+
+
 def guarded(args, parser) -> int:
     """run/cycle: a fresh NOT_RUN record first, then the environment checks, then the command.
 
     Every refusal is NOT_RUN exit 2. SIGTERM, SIGHUP and SIGINT are routed into
     the interrupt path (cleanup, retention, a FAIL record, exit 130); a signal
-    during cleanup or the record write is deferred until it is written.
+    during cleanup is deferred until the cleanup is recorded. The outcome is
+    published once (publish()): a signal before the publication makes it an
+    interrupted FAIL with exit 130; a signal after it leaves the published
+    record as it is and still exits 130, saying so, never with a traceback.
     """
     cancellation = Cancellation().install()
-    fresh_record(args.command)
-    services_path = args.services_file or STATE / 'services.json'
     summary: dict = {}
+    outcome: tuple[int, dict] | None = None
     try:
-        try:
-            if not unprivileged_helper_available():
-                raise SystemExit('BLOCKED_ENVIRONMENT: the deployment lab requires a non-root OS identity')
-            binaries = pg_bin()
-            observed = inspect(binaries)
-            if args.command == 'cycle':
-                code, summary = cycle_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256,
-                                          cancellation=cancellation, summary=summary)
-            else:
-                summary['start'] = 'running lab (run command)'  # services exist: an error from here on is a FAIL
-                code = run_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
-                summary = {'run_exit_code': code, 'final_state': inspect(binaries)['state']}
-        except SystemExit as error:
-            message = str(error) if not isinstance(error.code, int) else f'exit {error.code}'
-            with cancellation.critical():
-                record = finalize_record(args.command, 2, {**summary, 'refusal': message})
-                print(json.dumps({'status': record['status'], 'reason': record['reason'], **summary, 'refusal': message[:300]}))
-            return 2
-        except KeyboardInterrupt as error:
-            # Outside cycle_lab's own handling (before it started, or a deferred
-            # signal raised after its cleanup): the record ends as FAIL.
-            with cancellation.critical():
-                record = finalize_record(args.command, 130, {**summary, 'refusal': describe(error), 'interrupted': True})
-                print(json.dumps({'status': record['status'], 'reason': record['reason'], **summary, 'refusal': describe(error)}))
-            return 130
-        except Exception as error:  # noqa: BLE001 - an unexpected error is recorded, never left behind a runner's PASS
-            message = 'lab_error: ' + type(error).__name__
-            with cancellation.critical():
-                record = finalize_record(args.command, 1, {**summary, 'error': message})
-                print(json.dumps({'status': record['status'], 'reason': record['reason'], **summary, 'error': message}))
-            return 1
-        with cancellation.critical():
-            record = finalize_record(args.command, code, summary)
-            print(json.dumps({'status': record.get('status'), 'reason': record.get('reason'), **summary}))
-        if code == 0 and args.command == 'cycle' and record.get('status') != 'PASS':
-            return 1  # the run and cleanup succeeded but the final bound record did not validate
-        return code
+        while True:
+            try:
+                if outcome is None:
+                    outcome = run_command(args, cancellation, summary)
+                code = publish(args.command, *outcome, cancellation)
+                break
+            except KeyboardInterrupt as error:
+                # Delivered before publish() began deferring: nothing is published yet. The
+                # command is never run again; its summary so far is kept.
+                if outcome is None or not outcome[1].get('interrupted'):
+                    outcome = (130, {**(outcome[1] if outcome else summary), 'refusal': describe(error), 'interrupted': True})
     finally:
         cancellation.restore()
+    if cancellation.pending is not None:
+        print(f'interrupted ({signal_name(cancellation.pending)}) after the final record was published; that record stands',
+              file=sys.stderr)
+        return 130
+    return code
+
+
+def run_command(args, cancellation: Cancellation, summary: dict) -> tuple[int, dict]:
+    """The command itself: (exit code, summary) for publish(). A cancellation is an outcome, not an escape."""
+    fresh_record(args.command)
+    services_path = args.services_file or STATE / 'services.json'
+    try:
+        if not unprivileged_helper_available():
+            raise SystemExit('BLOCKED_ENVIRONMENT: the deployment lab requires a non-root OS identity')
+        binaries = pg_bin()
+        observed = inspect(binaries)
+        if args.command == 'cycle':
+            return cycle_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256,
+                             cancellation=cancellation, summary=summary)
+        summary['start'] = 'running lab (run command)'  # services exist: an error from here on is a FAIL
+        code = run_lab(binaries, observed, args.runner_python, args.wheel, services_path, args.wheel_sha256)
+        summary.update(run_exit_code=code, final_state=inspect(binaries)['state'])
+        summary.pop('start', None)
+        return code, summary
+    except SystemExit as error:
+        return 2, {**summary, 'refusal': str(error) if not isinstance(error.code, int) else f'exit {error.code}'}
+    except KeyboardInterrupt as error:
+        # Outside cycle_lab's own handling (before it started, or a deferred
+        # signal raised after its cleanup): the record ends as FAIL.
+        return 130, {**summary, 'refusal': describe(error), 'interrupted': True}
+    except Exception as error:  # noqa: BLE001 - an unexpected error is recorded, never left behind a runner's PASS
+        return 1, {**summary, 'error': 'lab_error: ' + type(error).__name__}
 
 
 def main(argv: list[str] | None = None) -> int:
