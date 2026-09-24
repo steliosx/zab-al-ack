@@ -195,7 +195,12 @@ def main(argv=None) -> int:
     parser.add_argument('--checkout', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--evidence', type=Path,
+                        help='PRIVATE bundle directory (outside any checkout; default: next to --out, OUT.private-evidence): '
+                             'records and logs, collected before cleanup')
     args = parser.parse_args(argv)
+    if args.evidence is None:
+        args.evidence = args.out.with_name(args.out.name + '.private-evidence')
     if os.geteuid() != 0:
         raise SystemExit('run as root on the isolated lab host')
     work = args.work.resolve()
@@ -207,6 +212,8 @@ def main(argv=None) -> int:
     created: list[Path] = []
     started = False
     error = None
+    attempt = f'lab-trust-{args.mode}-' + time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+    collect = acceptance.collector(args.evidence, attempt, [('checkout', 'checkout', checkout)])
     try:
         if args.mode == 'installed':
             # The audit comes first and gates everything: nothing is copied, started or signalled after a failure.
@@ -360,7 +367,9 @@ def main(argv=None) -> int:
         if started:
             cleanup['unit_stop_exit'] = sh('systemctl', 'stop', UNIT, check=False).returncode
             cleanup['unit_after'] = unit_show()
-            cleanup['lab'] = lab.stop_and_wipe()
+            cleanup['lab'] = lab.stop_and_wipe(collect)  # collected after stop, before the wipe
+        else:
+            cleanup['lab'] = [{'collect': collect()}]  # a refusal before any copy: the bundle records what was absent
         for path in reversed(created):
             if path.is_dir():
                 shutil.rmtree(path)
@@ -372,17 +381,21 @@ def main(argv=None) -> int:
         cleanup['left_behind'] = [str(path) for path in created if path.exists() or path.is_symlink()]
         cleanup['ports_still_listening'] = [port for port in LAB_PORTS if listening(port)]
         results['cleanup'] = cleanup
-        clean = (not started or (cleanup['unit_stop_exit'] == 0 and cleanup['unit_after'].get('ActiveState') in ('inactive', 'failed')
-                                 and all(step['exit'] == 0 for step in cleanup['lab']))) \
+        collected = [step['collect']['status'] for step in cleanup['lab'] if 'collect' in step]
+        clean = collected == ['COLLECTED'] and (not started or (
+            cleanup['unit_stop_exit'] == 0 and cleanup['unit_after'].get('ActiveState') in ('inactive', 'failed')
+            and all(step['exit'] == 0 for step in cleanup['lab'] if 'exit' in step))) \
             and not cleanup['left_behind'] and not cleanup['ports_still_listening'] and cleanup.get('daemon_reload_exit', 0) == 0
         results['cases'].append({'case': 'cleanup', 'pass': clean})
         results['host_after'] = host_state()
         results['host_unchanged'] = results['host_after'] == results['host_before']
         results['cases'].append({'case': 'host-unchanged', 'pass': results['host_unchanged']})
         results['summary'] = summarize(args.mode, results['cases'], error)
+        results['summary']['private_evidence'] = str(args.evidence.resolve() / attempt)
         args.out.write_text(json.dumps(results, indent=2) + '\n')
-    print(json.dumps({**results['summary'], 'host_unchanged': results['host_unchanged']}))
-    return 0 if results['summary']['status'] == 'PASS' else 1
+        result_collected = acceptance.collector(args.evidence, attempt, [('file', 'result', args.out)])()['status']
+    print(json.dumps({**results['summary'], 'host_unchanged': results['host_unchanged'], 'result_collected': result_collected}))
+    return 0 if results['summary']['status'] == 'PASS' and result_collected == 'COLLECTED' else 1
 
 
 def installed_ownership(lab: acceptance.Lab, checkout: Path) -> dict:

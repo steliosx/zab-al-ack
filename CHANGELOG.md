@@ -54,6 +54,10 @@
   - installed validation requires the unit launch.
   - New engine cases (pending a root run): `[]` and `null` responses, and route-upstream missing-anchor and
     expired certificates. That makes 51 graded cases plus the 15 ungraded baselines.
+- Evidence collection (R5 review): `tools/collect_attempt_evidence.py` puts every available record,
+  diagnostic, retained manifest and service log of an attempt into a PRIVATE bundle (0700/0600,
+  per-file digests, absent files recorded, secret-like names listed only). Both root drivers
+  collect after stopping and before wiping, for every outcome, including a refusal.
 
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 

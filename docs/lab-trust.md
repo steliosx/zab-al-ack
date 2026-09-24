@@ -159,9 +159,24 @@ The installed validation's required cases are:
 
 An exception is recorded as the run's error, and the run does not pass.
 
-For the ordinary native cycle, and for the complete S2 real-engine acceptance at the final integration tree, keep
-the original provisional and final records and every service log. Capture the precise webhook error if a delivery
-fails.
+**Private evidence.** Every attempt is collected into a PRIVATE bundle before anything is cleaned up, whatever its
+outcome (PASS, FAIL, REFUSED or NOT_RUN). The bundle holds:
+- the original provisional and final records;
+- the retention diagnostic;
+- retained-phase manifests and copies;
+- the lab's service logs, status and ownership records;
+- the driver's result.
+
+`tools/collect_attempt_evidence.py` does this. It records a digest for every file and the absence of every
+expected one. Secret-looking names are listed, not copied. Directories are 0700 and files 0600, with a
+`PRIVATE.txt` marker.
+- Both root drivers call it after the lab stops and before it is wiped, including after a refusal. They write
+  to `--evidence DIR`, by default next to `--out` as `OUT.private-evidence`.
+- For an ordinary native cycle, the operator runs it before removing the temporary checkout:
+  `python3 tools/collect_attempt_evidence.py --bundle <private dir> --attempt <label> --checkout checkout=<tree>`.
+
+Keep the bundle under the private evidence directory, never in a checkout, GitHub or chat. If a delivery fails,
+also capture the precise webhook error.
 
 The earlier native failure at `094fce4` (`synthetic_webhook_delivery_failed`) has no explicit TLS error in its
 retained log. Its cause (missing lab trust) is an inference for that run, and it is not reconstructed.

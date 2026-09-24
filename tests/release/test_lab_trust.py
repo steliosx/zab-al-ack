@@ -624,3 +624,14 @@ def test_the_harness_pki_has_the_upstream_missing_anchor_and_expired_certificate
         names = subprocess.run(['/usr/bin/openssl', 'x509', '-noout', '-ext', 'subjectAltName', '-in', str(d / cert)],
                                capture_output=True, text=True).stdout
         assert 'DNS:alerta.s2.test' in names  # only the anchor or the dates are wrong, never the name
+
+
+def test_the_harness_lab_collects_after_stopping_and_before_wiping(harness, monkeypatch):
+    order = []
+
+    def sh(*argv, **unused):
+        order.append(argv[-2] if argv[-1] == '--isolated-lab' else argv[-1])
+        return subprocess.CompletedProcess(argv, 0, '', '')
+    monkeypatch.setattr(harness, 'sh', sh)
+    steps = harness.Lab(Path('/x'), 'u').stop_and_wipe(lambda: order.append('collect') or {'status': 'COLLECTED'})
+    assert order == ['stop', 'collect', '--wipe'] and steps[1] == {'collect': {'status': 'COLLECTED'}}

@@ -256,10 +256,30 @@ class Lab:
     def start(self):
         return self.command('start', '--isolated-lab').stdout
 
-    def stop_and_wipe(self):
+    def stop_and_wipe(self, collect=None):
+        """Stop, then (when given) collect the stopped lab's evidence, then wipe; the wipe never precedes collection."""
         results = [self.command('stop', '--isolated-lab', check=False)]
-        results.append(self.command('reset', '--isolated-lab', '--wipe', check=False))
-        return [{'argv_tail': r.args[-3:], 'exit': r.returncode, 'stdout': r.stdout[-300:]} for r in results]
+        steps = [{'argv_tail': r.args[-3:], 'exit': r.returncode, 'stdout': r.stdout[-300:]} for r in results]
+        if collect is not None:
+            steps.append({'collect': collect()})
+        wiped = self.command('reset', '--isolated-lab', '--wipe', check=False)
+        steps.append({'argv_tail': wiped.args[-3:], 'exit': wiped.returncode, 'stdout': wiped.stdout[-300:]})
+        return steps
+
+
+def collector(bundle: Path, attempt: str, sources: list[tuple[str, str, Path]]):
+    """A callable that collects into the PRIVATE bundle (tools/collect_attempt_evidence.py); its failure is recorded."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+    import collect_attempt_evidence
+
+    def run() -> dict:
+        try:
+            manifest = collect_attempt_evidence.collect(bundle, attempt, sources)
+        except (collect_attempt_evidence.CollectionError, OSError) as error:
+            return {'status': 'FAILED', 'detail': f'{type(error).__name__}: {error}'}
+        return {'status': 'COLLECTED', 'files': len(manifest['files']), 'absent': len(manifest['absent']),
+                'excluded': len(manifest['excluded'])}
+    return run
 
 
 # ---------------------------------------------------------------- the gateway candidate
@@ -342,8 +362,14 @@ def main(argv=None) -> int:
     parser.add_argument('--nginx', required=True)
     parser.add_argument('--lab-user', default='zabalack-runner')
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--evidence', type=Path,
+                        help='PRIVATE bundle directory (outside any checkout; default: next to --out, OUT.private-evidence): '
+                             'records, lab and gateway logs, collected before cleanup')
     args = parser.parse_args(argv)
+    if args.evidence is None:
+        args.evidence = args.out.with_name(args.out.name + '.private-evidence')
     work = args.work.resolve()
+    attempt = 's2-acceptance-' + time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
     pki(work / 'pki')
     shutil.copytree(args.checkout, work / 'checkout', symlinks=True)
     sh('chown', '-R', f'{args.lab_user}:{args.lab_user}', str(work / 'checkout'))
@@ -567,7 +593,11 @@ def main(argv=None) -> int:
             'ipv6': 'the route and names are IPv4 loopback only in this lab',
             'ha': 'single server node; each HA node must pass the precondition (docs/webhook-transport.md)'}
     finally:
-        results['cleanup'] = {'lab': lab.stop_and_wipe()}
+        # Every attempt, whatever its outcome, is collected after the services stop and before anything is wiped.
+        gateway_logs = [('tree', path.parent.name + '-logs', path) for path in sorted(work.glob('nginx*/logs'))]
+        collect = collector(args.evidence, attempt, [('checkout', 'checkout', checkout), *gateway_logs,
+                                                     ('file', 'media-export', work / 'media-export.json')])
+        results['cleanup'] = {'lab': lab.stop_and_wipe(collect)}
         for leftover in extra_gateways:
             leftover.terminate()
             try:
@@ -583,12 +613,16 @@ def main(argv=None) -> int:
             results['cleanup']['gateway_exit'] = process.returncode
         for receiver in receivers.values():
             receiver.shutdown()
+        collected = results['cleanup']['lab'][1]['collect']
         results['summary'] = {'acceptance_cases': sum(1 for c in results['cases'] if c['pass'] is not None),
                               'passed': sum(1 for c in results['cases'] if c['pass'] is True),
-                              'failed': [c['case'] for c in results['cases'] if c['pass'] is False]}
+                              'failed': [c['case'] for c in results['cases'] if c['pass'] is False]
+                              + ([] if collected['status'] == 'COLLECTED' else ['evidence-collection']),
+                              'private_evidence': str(args.evidence.resolve() / attempt)}
         args.out.write_text(json.dumps(results, indent=2) + '\n')
+        results['summary']['result_collected'] = collector(args.evidence, attempt, [('file', 'result', args.out)])()['status']
     print(json.dumps(results['summary']))
-    return 0 if not results['summary']['failed'] else 1
+    return 0 if not results['summary']['failed'] and results['summary']['result_collected'] == 'COLLECTED' else 1
 
 
 if __name__ == '__main__':

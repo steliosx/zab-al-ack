@@ -31,9 +31,13 @@ def driver(monkeypatch, tmp_path):
             events.append('lab.start')
             raise RuntimeError('synthetic: the lab stops here')
 
-        def stop_and_wipe(self):
-            events.append('lab.stop_and_wipe')
-            return [{'argv_tail': ['stop'], 'exit': module.wipe_exit, 'stdout': ''}]
+        def stop_and_wipe(self, collect=None):
+            events.append('lab.stop')
+            steps = [{'argv_tail': ['stop'], 'exit': module.wipe_exit, 'stdout': ''}]
+            if collect is not None:
+                steps.append({'collect': collect()})
+            events.append('lab.wipe')
+            return steps + [{'argv_tail': ['--wipe'], 'exit': 0, 'stdout': ''}]
 
         def command(self, *args, check=True):
             events.append('lab.' + args[0])
@@ -115,3 +119,34 @@ def test_pass_needs_every_required_case_once_and_no_error(driver):
     assert driver.summarize('installed', cases(required + ['cleanup']), None)['duplicated'] == ['cleanup']
     assert driver.summarize('installed', cases(required, **{'daemon-identity-and-namespace': False}), None)['status'] == 'FAIL'
     assert driver.summarize('pre-install', cases(driver.REQUIRED_CASES['pre-install']), None)['status'] == 'PASS'
+
+
+def test_every_attempt_is_collected_privately_before_the_wipe(driver, monkeypatch, tmp_path):
+    checkout = tmp_path / 'work/checkout'
+    (checkout / '.zabbix-lab').mkdir(parents=True)
+    (checkout / '.zabbix-lab/zabbix_server.log').write_text('synthetic service log\n')
+    (checkout / '.zabbix-lab/zabbix-db-password').write_text('not collected\n')
+    real_collector = driver.acceptance.collector
+
+    def recording_collector(bundle, attempt, sources):
+        run = real_collector(bundle, attempt, sources)
+        def collect():
+            driver.events.append('collect')
+            return run()
+        return collect
+    monkeypatch.setattr(driver.acceptance, 'collector', recording_collector)
+    code, result = driver.run('installed')
+    assert driver.events.index('lab.stop') < driver.events.index('collect') < driver.events.index('lab.wipe')
+    bundle = Path(result['summary']['private_evidence'])
+    assert bundle.parent == tmp_path / 'result.json.private-evidence' and (bundle.parent / 'PRIVATE.txt').exists()
+    manifest = json.loads((bundle / 'MANIFEST.json').read_text())
+    assert [entry['path'] for entry in manifest['files']] == ['.zabbix-lab/zabbix_server.log', 'result.json']
+    assert (bundle.stat().st_mode & 0o777) == 0o700 and 'cleanup' not in result['summary']['failed']
+
+
+def test_a_refused_attempt_is_collected_too(driver):
+    driver.audit_exit = 1
+    code, result = driver.run('installed')
+    manifest = json.loads((Path(result['summary']['private_evidence']) / 'MANIFEST.json').read_text())
+    assert manifest['absent'][0]['path'] == 'evidence/deployment-e2e-run.json'  # nothing existed yet: recorded, not skipped
+    assert [entry['path'] for entry in manifest['files']] == ['result.json']
