@@ -97,17 +97,22 @@ def interpreter_library_env(python: str) -> dict[str, str]:
     (3.12.3 on the runner host), whose symbols the interpreter's extension
     modules do not match (_ctypes: undefined _PyErr_SetLocaleString). The
     library directory is derived from the interpreter itself, not from the
-    caller's environment (an inherited LD_LIBRARY_PATH is not carried over); an
-    interpreter without its own libpython gets nothing.
+    caller's environment (an inherited LD_LIBRARY_PATH is not carried over).
+    Only the interpreter's own libpythonX.Y.so.1.0 counts, as a file (a link to
+    a file is followed): another version, the stable-ABI libpython3.so, a
+    directory or a dangling link gives nothing, and so does a directory whose
+    path the loader would split or expand (':', ';', '$').
     """
-    library = Path(os.path.realpath(python)).parent.parent / "lib"
+    interpreter = Path(os.path.realpath(python))
+    version = re.fullmatch(r"python(\d+)\.(\d+)", interpreter.name)
+    library = interpreter.parent.parent / "lib"
+    if version is None or not library.is_absolute() or any(char in str(library) for char in ":;$\n"):
+        return {}
     try:
-        carries_libpython = any(library.glob("libpython3*.so*"))
+        carries_libpython = (library / f"libpython{version[1]}.{version[2]}.so.1.0").is_file()
     except OSError:
         carries_libpython = False
-    if not carries_libpython:
-        return {}
-    return {"LD_LIBRARY_PATH": str(library)}
+    return {"LD_LIBRARY_PATH": str(library)} if carries_libpython else {}
 
 
 @contextmanager
