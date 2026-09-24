@@ -275,6 +275,24 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
+T7_RESPONSE_LIMIT = 1048576  # the shipped webhook's own response limit
+
+
+def t7_application_verdict(text: bytes) -> tuple[bool, str]:
+    """T7's application semantics for an initial response body, with the webhook's limit and object rule."""
+    if len(text) > T7_RESPONSE_LIMIT:
+        return False, 'response_over_limit'
+    try:
+        document = json.loads(text)
+    except (ValueError, RecursionError):  # includes invalid UTF-8
+        return False, 'response_not_json'
+    if not isinstance(document, dict):
+        return False, 'response_not_an_object'
+    if document.get('status') != 'ok':
+        return False, 'status_not_ok'
+    return True, 'status_ok'
+
+
 def no_redirect_check(url_host: str, port: int, path: str, canary: str, body: bytes) -> dict:
     """T7: an initial explicit 2xx with application semantics, without following anything."""
     context = ssl.create_default_context(cafile='/etc/ssl/certs/ca-certificates.crt')
@@ -282,15 +300,12 @@ def no_redirect_check(url_host: str, port: int, path: str, canary: str, body: by
     try:
         connection.request('POST', path, body=body, headers={'Content-Type': 'application/json', 'Authorization': 'Key ' + canary})
         response = connection.getresponse()
-        text = response.read(1048577)
+        text = response.read(T7_RESPONSE_LIMIT + 1)  # one byte over the limit is enough to know it was exceeded
     finally:
         connection.close()
-    try:
-        semantic = json.loads(text).get('status') == 'ok'
-    except ValueError:
-        semantic = False
+    semantic, reason = t7_application_verdict(text)
     return {'initial_status': response.status, 'location': response.getheader('Location'), 'application_ok': semantic,
-            'passes': 200 <= response.status < 300 and semantic}
+            'application_reason': reason, 'bytes_read': len(text), 'passes': 200 <= response.status < 300 and semantic}
 
 
 # ---------------------------------------------------------------- run

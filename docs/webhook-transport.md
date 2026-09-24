@@ -40,7 +40,8 @@ Run the precondition on each node before enabling:
 `tools/webhook_transport_check.py --zabbix-server <that node's executable> --media-export <configuration.export JSON>
 --ingest-url <alerta_api_url> [--ca-file F --ca-path D]`.
 It exits 0 with `READY` only when checks 1–3 all hold. Otherwise it exits 3 with a structured `REFUSED`, and it
-never falls back to disabled verification. Malformed inputs, such as an out-of-range port, a malformed export,
+never falls back to disabled verification. Malformed inputs, such as a port outside 1–65535 (443 applies only when
+the URL names no port; an explicit `:0` is refused before any connection), a malformed export,
 an executor that does not exit 0, or an unreadable input, are refusals, not tracebacks.
 
 **What the operator binds.** This is a manual operator gate, not a runtime interlock. Its result is only as good as its inputs:
@@ -98,7 +99,7 @@ Results: **41 of 41 acceptance cases passed** at S2 `094fce4`, and again in a se
 | Another name on the route's address | no TLS session; nothing forwarded |
 | Plain HTTP to the route's TLS port | 400; nothing forwarded |
 | Disabled and echo paths | `disabled_reference_artifact` and `suppressed_echo`; nothing sent |
-| T7 no-redirect check | the route gives an initial 2xx with `status: ok`; a deliberate 302 fails the check; a redirecting upstream through the route gives 502 and fails the check |
+| T7 no-redirect check (it passes only an initial 2xx whose body is at most 1,048,576 bytes and is a JSON object with `status: ok`; unit-tested in `tests/release/test_webhook_transport_t7.py`, including the exact 1,048,577-byte R4 body) | the route gives an initial 2xx with `status: ok`; a deliberate 302 fails the check; a redirecting upstream through the route gives 502 and fails the check |
 | Precondition tool | the qualified executor gives READY; a missing trust anchor and an unqualified executor (7.0.27) give REFUSED |
 
 Baseline without the route (characterisation, TLS verification on):

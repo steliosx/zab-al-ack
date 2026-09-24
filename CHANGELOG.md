@@ -22,6 +22,13 @@
   it. Prepared and validated without installing; installation is the
   owner's decision. The real-engine acceptance adds the response contract
   and the route's upstream TLS (47 of 47).
+- R4-CHECKER (R5 review): 443 applies only when the URL names no port; an
+  explicit port 0 (or any port outside 1–65535) is REFUSED/3 before any TLS
+  context or connection.
+- R4-T7 (R5 review): T7 reads at most one byte over the webhook's 1 MiB
+  limit and fails a body over it, a non-object (`[]`, `null`, a string) or
+  invalid JSON, instead of passing or raising. Tested on T7 itself with the
+  exact 1,048,577-byte R4 body.
 
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 
