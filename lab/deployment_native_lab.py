@@ -622,7 +622,9 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
                 stop_code, summary['cleanup'] = stop_lab(binaries, inspect(binaries))
                 if stop_code == 0:
                     try:
-                        summary['retention'] = preserve(REPO, run_id, 'deployment-cycle', [Path(name) for name in CYCLE_LOGS])
+                        # The public record as the runner left it (its original provisional record), before
+                        # this command binds and replaces it, is retained with the service logs.
+                        summary['retention'] = preserve(REPO, run_id, 'deployment-cycle', [Path(name) for name in CYCLE_LOGS] + [RECORD])
                     except RetentionError as error:
                         summary['retention'] = {'error': str(error)}
                     else:

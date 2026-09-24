@@ -194,3 +194,24 @@ def test_the_cycle_command_never_passes_when_cleanup_fails_after_a_passing_runne
     assert code != 0 and final['status'] == 'FAIL' and final['native_lab']['cleanup_complete'] is False
     with pytest.raises(ValueError):
         validate_report(copy.deepcopy(final), lab.tmp)
+
+
+def test_the_runners_original_provisional_record_is_retained_before_the_cycle_replaces_it(native_lab, monkeypatch):
+    """S1 (retention of the original pending JSON): the record the runner wrote is copied, byte for byte, into the
+    cycle's private retention with the service logs, before the cycle binds and replaces it; the retention
+    manifest's digest in the final record covers it."""
+    import hashlib
+    lab = native_lab
+    seen = command_path(lab, monkeypatch)
+    assert lab.module.main(CYCLE) == 0
+    final = record(lab)
+    retention = final['native_lab']['retention']
+    directory = lab.tmp / retention['directory']
+    manifest = json.loads((directory / 'manifest.json').read_text())
+    assert hashlib.sha256((directory / 'manifest.json').read_bytes()).hexdigest() == retention['manifest_sha256']
+    entry = manifest['files']['evidence__deployment-e2e-run.json']
+    retained = (directory / 'evidence__deployment-e2e-run.json').read_bytes()
+    assert entry['source'] == 'evidence/deployment-e2e-run.json' and hashlib.sha256(retained).hexdigest() == entry['sha256']
+    original = json.loads(retained)
+    assert original == seen['runner_record'] and original['status'] == 'PENDING_BINDING' and original['native_lab']['pending'] is True
+    assert final['status'] == 'PASS' and retained != (lab.tmp / 'evidence/deployment-e2e-run.json').read_bytes()

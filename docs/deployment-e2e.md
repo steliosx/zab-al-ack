@@ -191,7 +191,11 @@ SIGTERM, SIGHUP and SIGINT blocked. A signal received before that check makes
 the outcome an interrupted FAIL with exit 130, even after a passing run and a
 complete cleanup; a death there leaves the runner's `PENDING_BINDING`. A signal
 after it leaves the published record as it is and the command still exits 130,
-saying so on stderr; a death after it leaves the published record in place. With `--wheel-sha256`
+saying so on stderr; a death after it leaves the published record in place. Before the wipe the cycle
+retains, privately under `build/private/retained-phases/<run>/deployment-cycle/`,
+both labs' service logs and the public record exactly as the runner left it
+(its original `PENDING_BINDING`, or its FAIL); the retention manifest's digest
+is bound into the final record. With `--wheel-sha256`
 the local runner performs the same supplied-wheel preflight as the Compose
 form (exact bytes, project identity, payload equal to the checkout) and the
 record carries `artifact_mode: supplied_wheel` with the installed-bytes
