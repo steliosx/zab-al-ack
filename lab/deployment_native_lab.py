@@ -452,8 +452,13 @@ def stamp() -> str:
 def write_record(record: dict) -> None:
     RECORD.parent.mkdir(exist_ok=True)
     temporary = RECORD.with_name(RECORD.name + '.tmp')
-    temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
-    os.replace(temporary, RECORD)
+    try:
+        temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
+        os.replace(temporary, RECORD)
+    except OSError:
+        # A record that was never published must not be left beside the real one.
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def fresh_record(command: str) -> dict:
@@ -642,24 +647,34 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
     return code, summary
 
 
-def publish(command: str, code: int, summary: dict, cancellation: Cancellation) -> int:
-    """Bind the final record, publish it and return the command's exit code.
+def publish(command: str, code: int, summary: dict, cancellation: Cancellation) -> tuple[int, bool]:
+    """Bind the final record, commit it; return the command's exit code and whether the record was published.
 
-    The publication is write_record's atomic replace. From the first line here a
-    termination signal is only recorded, never raised (guarded() restores the
-    handlers afterwards). A signal received before the publication is the
-    outcome: the record is bound as interrupted (FAIL) and the exit is 130,
-    whatever the run did. The last check and the replace run with the
-    termination signals blocked, so none can arrive between them unseen; one
-    that arrives after the check is delivered after the publication.
+    Three points in order. The cancellation cutoff is the last check for a
+    termination signal, made with SIGTERM, SIGHUP and SIGINT blocked. The commit
+    runs from the cutoff through write_record's atomic replace, still blocked.
+    The record is published once that replace has completed.
+
+    - A signal received before the cutoff is the outcome: the record is bound
+      as interrupted (FAIL) and the exit is 130, whatever the run did.
+    - A signal received during the commit is held until the commit ends; the
+      committed record stands, the exit is 130 and stderr says the signal came
+      during the final commit, after the cutoff.
+    - A death (SIGKILL) before the replace completes leaves the runner's
+      PENDING_BINDING record, which never validates; after it, the published one.
+    - A failed replace publishes nothing: the runner's record stays, the
+      unpublished temporary file is removed and the exit is 1.
+
+    From the first line here a termination signal is only recorded, never
+    raised; guarded() restores the handlers afterwards.
     """
     cancellation.deferring = True
     record = bind_record(command, code, summary)
     previous = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
+    during_commit = None
     try:
+        # The cancellation cutoff: every signal received so far, including any held by the mask.
         arrived, cancellation.pending = cancellation.pending, None
-        # Signals already sent but held by the mask are taken here, so none of them is
-        # later reported as having arrived after the publication.
         while (waiting := signal.sigtimedwait(SIGNALS, 0)) is not None:
             cancellation.received.append(waiting.si_signo)
             arrived = arrived if arrived is not None else waiting.si_signo
@@ -667,14 +682,29 @@ def publish(command: str, code: int, summary: dict, cancellation: Cancellation) 
             summary = {**summary, 'refusal': 'interrupted (' + signal_name(arrived) + ')', 'interrupted': True}
             code = 130
             record = bind_record(command, code, summary)
-        write_record(record)
+        try:
+            write_record(record)  # the record is published when this atomic replace has completed
+        except OSError as error:
+            while signal.sigtimedwait(SIGNALS, 0) is not None:
+                pass  # held signals change nothing: there is no record to keep or correct
+            print(f'the final record was not published ({type(error).__name__}); the runner\'s record remains and does not validate',
+                  file=sys.stderr)
+            return 1, False
+        # Signals that arrived during the commit are still held: take them before unblocking.
+        while (waiting := signal.sigtimedwait(SIGNALS, 0)) is not None:
+            cancellation.received.append(waiting.si_signo)
+            during_commit = during_commit if during_commit is not None else waiting.si_signo
     finally:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous)
     shown = {key: value[:300] if key == 'refusal' and isinstance(value, str) else value for key, value in summary.items()}
     print(json.dumps({'status': record.get('status'), 'reason': record.get('reason'), **shown}))
+    if during_commit is not None:
+        print(f'interrupted ({signal_name(during_commit)}) during the final commit, after the cancellation cutoff; '
+              'the committed record stands', file=sys.stderr)
+        return 130, True
     if code == 0 and command == 'cycle' and record.get('status') != 'PASS':
-        return 1  # the run and cleanup succeeded but the final bound record did not validate
-    return code
+        return 1, True  # the run and cleanup succeeded but the final bound record did not validate
+    return code, True
 
 
 def guarded(args, parser) -> int:
@@ -683,9 +713,11 @@ def guarded(args, parser) -> int:
     Every refusal is NOT_RUN exit 2. SIGTERM, SIGHUP and SIGINT are routed into
     the interrupt path (cleanup, retention, a FAIL record, exit 130); a signal
     during cleanup is deferred until the cleanup is recorded. The outcome is
-    published once (publish()): a signal before the publication makes it an
-    interrupted FAIL with exit 130; a signal after it leaves the published
-    record as it is and still exits 130, saying so, never with a traceback.
+    committed once (publish(), which states the cancellation cutoff and the
+    commit): a signal before the cutoff makes it an interrupted FAIL with exit
+    130; a signal during the commit or after the publication leaves the record
+    as committed and exits 130, saying which. None of these paths prints a
+    traceback; a failed replace exits 1.
     """
     cancellation = Cancellation().install()
     summary: dict = {}
@@ -695,7 +727,7 @@ def guarded(args, parser) -> int:
             try:
                 if outcome is None:
                     outcome = run_command(args, cancellation, summary)
-                code = publish(args.command, *outcome, cancellation)
+                code, published = publish(args.command, *outcome, cancellation)
                 break
             except KeyboardInterrupt as error:
                 # Delivered before publish() began deferring: nothing is published yet. The
@@ -704,7 +736,7 @@ def guarded(args, parser) -> int:
                     outcome = (130, {**(outcome[1] if outcome else summary), 'refusal': describe(error), 'interrupted': True})
     finally:
         cancellation.restore()
-    if cancellation.pending is not None:
+    if cancellation.pending is not None and published and code != 130:
         print(f'interrupted ({signal_name(cancellation.pending)}) after the final record was published; that record stands',
               file=sys.stderr)
         return 130

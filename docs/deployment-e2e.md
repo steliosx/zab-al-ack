@@ -186,12 +186,18 @@ absent, binds its outcome, sets PASS and validates that final record with
 `tools/deployment_evidence.py`; a failure there is FAIL
 `final_evidence_validation_failed` and a non-zero exit. A cycle cut short
 before binding leaves `PENDING_BINDING`, which never validates. The final record
-is published once, by an atomic replace; the last check before it runs with
-SIGTERM, SIGHUP and SIGINT blocked. A signal received before that check makes
-the outcome an interrupted FAIL with exit 130, even after a passing run and a
-complete cleanup; a death there leaves the runner's `PENDING_BINDING`. A signal
-after it leaves the published record as it is and the command still exits 130,
-saying so on stderr; a death after it leaves the published record in place. Before the wipe the cycle
+is committed once. The cancellation cutoff is the last check for SIGTERM,
+SIGHUP or SIGINT, made with those signals blocked; the commit runs from the
+cutoff, through the atomic replace that publishes the record, until the signals
+are unblocked. A signal received before the cutoff makes the outcome an
+interrupted FAIL with exit 130, even after a passing run and a complete cleanup.
+A signal received during the commit is held; the committed record stands and
+the command exits 130, saying on stderr that it came during the final commit. A
+signal after the commit likewise exits 130 with its own message. A death before
+the replace completes, including one after the cutoff, leaves the runner's
+`PENDING_BINDING`, which never validates; a death after it leaves the published
+record. A failed replace publishes nothing, removes the unpublished temporary
+file and exits 1. Before the wipe the cycle
 retains, privately under `build/private/retained-phases/<run>/deployment-cycle/`,
 both labs' service logs and the public record exactly as the runner left it
 (its original `PENDING_BINDING`, or its FAIL); the retention manifest's digest

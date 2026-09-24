@@ -16,9 +16,14 @@ Scenarios (a signal sent by this process to itself with os.kill):
   term-in-validation         SIGTERM while the final record is bound, inside its validation (before publication)
   int-in-validation          SIGINT there (the first signal of a GitHub cancellation)
   kill-in-validation         SIGKILL there (a death before publication)
-  term-at-replace            SIGTERM as the final record's write begins, after publish()'s last check
-  term-after-publication     SIGTERM right after the final record was published
-  kill-after-publication     SIGKILL right after the final record was published (a death after publication)
+  term-at-replace            SIGTERM as the final record's write begins, after the cancellation cutoff (in the commit)
+  term-before-replace        SIGTERM immediately before the atomic replace of the final record (in the commit)
+  kill-before-replace        SIGKILL there (a death after the cutoff, before publication)
+  term-after-replace         SIGTERM immediately after the replace, before the commit ends (in the commit)
+  replace-failure            the replace of the final record fails (OSError)
+  term-then-replace-failure  SIGTERM immediately before that failing replace
+  term-after-publication     SIGTERM after the commit ended (publish() returned); e8ef82b: right after the final write
+  kill-after-publication     SIGKILL right after the final record was replaced (a death after publication)
 """
 from contextlib import contextmanager
 import importlib.util
@@ -39,7 +44,8 @@ from tests.release.test_deployment_native_lab import CYCLE  # noqa: E402
 from tests.release.test_native_lab_binding import command_path  # noqa: E402
 
 SCENARIOS = ('none', 'term-after-cleanup', 'term-entering-publication', 'term-in-validation', 'int-in-validation', 'kill-in-validation',
-             'term-at-replace', 'term-after-publication',
+             'term-at-replace', 'term-before-replace', 'kill-before-replace', 'term-after-replace', 'replace-failure',
+             'term-then-replace-failure', 'term-after-publication',
              'kill-after-publication')
 
 
@@ -98,6 +104,28 @@ def install(lab: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, scenario: str
             send()
             return real(record)
         monkeypatch.setattr(module, 'validate_final', validate_final)
+    elif scenario in ('term-before-replace', 'kill-before-replace', 'term-after-replace', 'replace-failure', 'term-then-replace-failure'):
+        real_replace, replaced = module.os.replace, []
+
+        def replace(source, destination, *args, **kwargs):
+            final = Path(destination) == module.RECORD and (replaced.append(1) or len(replaced) == 2)
+            if final and scenario in ('term-before-replace', 'kill-before-replace', 'term-then-replace-failure'):
+                send()
+            if final and scenario.endswith('replace-failure'):
+                raise OSError('injected replace failure')
+            result = real_replace(source, destination, *args, **kwargs)
+            if final and scenario == 'term-after-replace':
+                send()
+            return result
+        monkeypatch.setattr(module.os, 'replace', replace)
+    elif scenario == 'term-after-publication' and hasattr(module, 'publish'):
+        real_publish = module.publish
+
+        def publish(*args, **kwargs):
+            outcome = real_publish(*args, **kwargs)
+            send()
+            return outcome
+        monkeypatch.setattr(module, 'publish', publish)
     elif scenario.endswith('after-publication') or scenario == 'term-at-replace':
         real_write = module.write_record
         writes = []
