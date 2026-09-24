@@ -84,6 +84,7 @@ def pki(d: Path) -> None:
     leaf('direct-other-anchor', NAMES['direct'], 'other')
     leaf('direct-wrong-name', NAMES['other'], 'trusted')
     leaf('direct-expired', NAMES['direct'], 'trusted', start='20000101000000Z', end='20000102000000Z')
+    leaf('alerta-untrusted', NAMES['alerta'], None, self_signed=True)
     for path in d.iterdir():
         path.chmod(0o644)
 
@@ -160,6 +161,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                             'canary_key_arrived': bool(canary) and canary in auth,
                                             'authorization_sha256': hashlib.sha256(auth.encode()).hexdigest() if auth else None})
         kind = self.server.behaviour
+        if kind[0] == 'respond':  # ('respond', status, body bytes): the response-contract cases
+            self.send_response(kind[1])
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(kind[2])))
+            self.end_headers()
+            self.wfile.write(kind[2])
+            return
         if kind[0] == 'redirect':
             self.send_response(kind[1])
             self.send_header('Location', kind[2])
@@ -231,8 +239,8 @@ class Lab:
 
 # ---------------------------------------------------------------- the gateway candidate
 
-def gateway(work: Path, nginx: str, user: str, upstream_port: int) -> tuple[subprocess.Popen, int, Path]:
-    root = work / 'nginx'
+def gateway(work: Path, nginx: str, user: str, upstream_port: int, label: str = 'nginx') -> tuple[subprocess.Popen, int, Path]:
+    root = work / label
     (root / 'logs').mkdir(parents=True)
     port = free_port()
     template = (work / 'checkout/deploy/ingress/alerta-ingest.nginx.conf.template').read_text()
@@ -316,11 +324,14 @@ def main(argv=None) -> int:
         'direct-wrong-name': Receiver('direct-wrong-name', pkidir, 'direct-wrong-name'),
         'direct-expired': Receiver('direct-expired', pkidir, 'direct-expired'),
         'direct-redirect': Receiver('direct-redirect', pkidir, 'direct'),
+        'upstream-untrusted': Receiver('upstream-untrusted', pkidir, 'alerta-untrusted'),
+        'upstream-wrong-name': Receiver('upstream-wrong-name', pkidir, 'other'),
     }
     for receiver in receivers.values():
         receiver.canary = canary
     lab = Lab(checkout, args.lab_user)
     process = None
+    extra_gateways: list[subprocess.Popen] = []
     results: dict = {'scope': __doc__.split('\n\n')[0], 'cases': [], 'identity': identity}
     try:
         process, gw_port, gw_root = gateway(work, args.nginx, args.lab_user, receivers['upstream'].port)
@@ -396,6 +407,18 @@ def main(argv=None) -> int:
             record('trust:' + label, 'Zabbix failure; TLS refused; no HTTP request, body or key at the listener', out,
                    out['zabbix_response'] != 'success' and no_http(out, label) and arrived_only(out, {label}))
 
+        # Response contract through the real engine: the script refuses each (direct, trusted certificate)
+        for label, status, body, expected in (
+                ('non-2xx', 500, json.dumps({'status': 'ok'}).encode(), 'Alerta ingestion HTTP failure'),
+                ('malformed-json', 201, b'{"status": ', 'Alerta invalid JSON response'),
+                ('status-error', 201, json.dumps({'status': 'error', 'message': 'synthetic'}).encode(), 'Alerta ingestion rejected'),
+                ('over-limit', 201, b'{"status":"ok","pad":"' + b'x' * 1048600 + b'"}', 'Alerta response limit')):
+            receivers['direct-ok'].behaviour = ('respond', status, body)
+            out = deliver(f"https://{NAMES['direct']}:{receivers['direct-ok'].port}/api/alert")
+            record('response:' + label, f'Zabbix failure: {expected}', out,
+                   out['zabbix_response'] != 'success' and expected in out['zabbix_value'] and arrived_only(out, {'direct-ok'}))
+        receivers['direct-ok'].behaviour = ('ok',)
+
         # The approved route (gateway), positive
         up.behaviour = ('ok',)
         out = deliver(gw)
@@ -420,6 +443,15 @@ def main(argv=None) -> int:
                        and len(out['observed'].get('upstream', {}).get('requests', [])) == 1
                        and out['gateway_access'] == ['POST /api/alert HTTP/1.1 502'])
         up.behaviour = ('ok',)
+
+        # The route's own upstream hop: an upstream certificate that is untrusted, or for another name
+        for label in ('upstream-untrusted', 'upstream-wrong-name'):
+            bad_process, bad_port, bad_root = gateway(work, args.nginx, args.lab_user, receivers[label].port, label='nginx-' + label)
+            extra_gateways.append(bad_process)
+            out = deliver(f"https://{NAMES['ingest']}:{bad_port}/api/alert")
+            access = (bad_root / 'logs/access.log').read_text() if (bad_root / 'logs/access.log').exists() else ''
+            record('route-upstream-tls:' + label, 'route answers 502; Zabbix failure; no HTTP request at the bad upstream', {**out, 'bad_gateway_access': access[-300:]},
+                   out['zabbix_response'] != 'success' and no_http(out, label) and arrived_only(out, {label}) and '" 502 ' in access)
 
         # Another hostname on the route's address
         out = deliver(f"https://{NAMES['other']}:{gw_port}/api/alert")
@@ -474,14 +506,14 @@ def main(argv=None) -> int:
         fake = work / 'zabbix_server-7.0.27'
         fake.write_text("#!/bin/sh\nprintf 'zabbix_server (Zabbix) 7.0.27\\nRevision 0000000 1 January 2026, compilation time: x\\n'\n")
         fake.chmod(0o755)
-        for case, extra, expected in (
+        for case, extra, expected_exit in (
                 ('precondition:qualified-executor-route', ['--ingest-url', gw], 0),
                 ('precondition:missing-trust-anchor', ['--ingest-url',
                                                        f"https://{NAMES['direct']}:{receivers['direct-other-anchor'].port}/api/alert"], 3),
                 ('precondition:unqualified-executor', ['--zabbix-server', str(fake), '--ingest-url', gw], 3)):
             run = sh(*tool, *extra, check=False)
             outcome = json.loads(run.stdout) if run.stdout.strip().startswith('{') else {'raw': run.stdout[-300:]}
-            record(case, 'READY' if expected == 0 else 'REFUSED', {'exit': run.returncode, 'tool': outcome}, run.returncode == expected)
+            record(case, 'READY' if expected_exit == 0 else 'REFUSED', {'exit': run.returncode, 'tool': outcome}, run.returncode == expected_exit)
 
         results['not_applicable'] = {
             'proxy': 'the webhook calls no setProxy and the lab service environment carries no proxy variables (service_env)',
@@ -489,6 +521,12 @@ def main(argv=None) -> int:
             'ha': 'single server node; each HA node must pass the precondition (docs/webhook-transport.md)'}
     finally:
         results['cleanup'] = {'lab': lab.stop_and_wipe()}
+        for leftover in extra_gateways:
+            leftover.terminate()
+            try:
+                leftover.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                leftover.kill()
         if process:
             process.terminate()
             try:
