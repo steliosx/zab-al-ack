@@ -745,3 +745,13 @@ def test_a_successful_cycle_validates_its_final_bound_record_once(lab, monkeypat
     assert validated['status'] == 'PASS' and validated['native_lab']['final_state'] == 'absent'
     assert validated['native_lab']['cleanup_complete'] is True and 'pending' not in validated['native_lab']
     assert record(lab)['status'] == 'PASS' and 'provisional_status' not in record(lab)
+
+
+def test_the_acceptance_harness_launch_override_is_refused_by_the_deployment_cycle(lab, monkeypatch):
+    """ZABALACK_LAB_ZABBIX_LAUNCH=direct is for the S2 harness's own trust namespace; a cycle never runs with it."""
+    ready_layout(lab, monkeypatch)
+    monkeypatch.setenv('ZABALACK_LAB_ZABBIX_LAUNCH', 'direct')
+    observed = lab.module.layout()
+    assert observed['ready'] is False and observed['lab_trust'] == {'unit': str(lab.module.LAB_TRUST_UNIT), 'ready': False,
+                                                                    'launch_override': True}
+    assert observed['missing'] == ['unset ZABALACK_LAB_ZABBIX_LAUNCH: the deployment cycle runs zabbix_server only through the lab-trust unit']

@@ -111,12 +111,8 @@ Baseline without the route (characterisation, TLS verification on):
 
 This is why requirement 4 exists.
 
-**Not yet exercised on the real engine** (planned for the integrated run):
-- non-2xx, malformed JSON, `status: error` and over-limit response bodies (the Node contract covers the first
-  three);
-- a gateway-to-upstream bad certificate or wrong name.
-
-Until then these results qualify the webhook-to-route hop only, not both TLS hops.
+The response-contract and route-upstream TLS cases added at `244cefc` are recorded below. For what remains
+open, see "Coverage and the post-install sequence".
 
 ## Integration dependency: the deployment lab's own delivery
 
@@ -133,4 +129,41 @@ lab CA, in a private mount namespace, after dropping privilege.
 At `244cefc`, the extended real-engine acceptance passed **47 of 47**. It adds the four response-contract cases
 (non-2xx, malformed JSON, `status: error`, an over-limit body; each refused by the script) and the route's own
 upstream TLS (an untrusted certificate and one for another name; each answered 502, with no HTTP request at the
-bad upstream).
+bad upstream). That is **47 graded acceptance passes**. The same run recorded 15 ungraded redirect
+characterisation baselines; those are observations, not passes, so the run is not "62 passes".
+
+## Coverage and the post-install sequence
+
+The harness runs with its own test CA and `.s2.test` names, and gives only the daemon in its private namespace
+that trust. Once the lab-trust unit is installed, the lab would otherwise start the unit's daemon. That daemon runs
+outside the harness's namespace and carries the installed lab CA, so it cannot verify the harness's certificates.
+Since R6 (review of `8211b1b`):
+- The harness launches the lab's `zabbix_server` directly inside its namespace (`ZABALACK_LAB_ZABBIX_LAUNCH=direct`).
+  It refuses while the installed unit is active, activating or deactivating, and it records the launch mode.
+- The deployment cycle refuses to run with that override set (`layout_not_ready`).
+- `lab/lab_trust_validation.py` never uses the override. In installed mode it refuses unless the lab starts
+  `zabbix_server` through the installed unit.
+
+The two paths are kept distinct:
+
+| Path | Trust | Driver | Establishes |
+|---|---|---|---|
+| Component acceptance | the harness's test CA, private namespace, direct launch | `webhook_transport_acceptance.py` | the webhook, the engine, the route and its upstream hop |
+| Installed lab trust | the installed lab CA through the unit and its sudo rule | `lab_trust_validation.py --mode installed`, then the ordinary native cycle | the installed path |
+
+R6 adds cases to the component harness, not yet run on the real engine (**pending**; this round grants no
+root-host operation):
+- `response:array` (`[]`, expected "Alerta ingestion rejected");
+- `response:null` (a Zabbix failure; the engine's own error text is recorded, not pinned);
+- `route-upstream-tls:upstream-other-anchor` (a valid chain to an anchor the route does not trust);
+- `route-upstream-tls:upstream-expired` (the route's anchor, the right name, expired).
+
+The planned acceptance at the final tree therefore has 51 graded cases plus the 15 baselines. T7 itself is now
+unit-tested (see the table above).
+
+Sequence on the lab host, under the shared lock, runner idle, after the owner authorizes installation:
+1. At the final tree, before installing, the component harness (51 graded cases).
+2. The authorized installation, audit and installed validation (`docs/lab-trust.md`).
+3. The ordinary native cycle.
+4. If the component harness has to run again after installation, stop the unit first. The harness refuses
+   otherwise.

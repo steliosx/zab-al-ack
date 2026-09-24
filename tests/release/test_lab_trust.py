@@ -553,3 +553,74 @@ def test_uninstall_rolls_back_once_the_unit_is_inactive(tmp_path, after_stop):
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / 'etc/zabalack-lab').exists() and not (tmp_path / 'run/zabalack-lab-zabbix').exists()
     assert not (tmp_path / 'etc/sudoers.d/zabalack-lab-zabbix').exists()
+
+
+# Review of 8211b1b (acceptance after installation): the S2 harness mounts its own test CA in a private namespace,
+# but with the unit installed the lab would start the unit's daemon, outside that namespace, with the installed CA.
+def test_the_direct_launch_override_bypasses_the_installed_unit_only_when_asked(zlab, monkeypatch):
+    assert zlab.trust_unit_installed() and zlab.zabbix_launch() == 'lab-trust-unit'
+    monkeypatch.setenv('ZABALACK_LAB_ZABBIX_LAUNCH', 'direct')
+    assert not zlab.trust_unit_installed() and zlab.zabbix_launch() == 'direct (override)'
+    assert zlab.server_conf() == zlab.STATE / 'zabbix_server.conf'
+    monkeypatch.setenv('ZABALACK_LAB_ZABBIX_LAUNCH', 'unit-please')
+    with pytest.raises(SystemExit, match='must be unset or "direct"'):
+        zlab.trust_unit_installed()
+
+
+@pytest.fixture
+def harness():
+    spec = importlib.util.spec_from_file_location('s2_acceptance_for_lab_trust', ROOT / 'lab/webhook_transport_acceptance.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_harness_launches_directly_and_the_installed_validation_through_the_unit(harness):
+    assert harness.LAB_ENV['ZABALACK_LAB_ZABBIX_LAUNCH'] == 'direct'
+    assert 'ZABALACK_LAB_ZABBIX_LAUNCH' not in harness.UNIT_LAB_ENV
+    assert harness.Lab(Path('/x'), 'u').env is harness.LAB_ENV
+    source = (ROOT / 'lab/lab_trust_validation.py').read_text()
+    assert 'acceptance.Lab(checkout, ACCOUNT, acceptance.UNIT_LAB_ENV)' in source
+    assert "zabbix_launch') != 'lab-trust-unit'" in source
+
+
+@pytest.mark.parametrize('state, refused', [('active', True), ('activating', True), ('deactivating', True), ('inactive', False),
+                                            ('failed', False), (None, False)])
+def test_the_harness_refuses_while_the_installed_unit_is_up(harness, monkeypatch, tmp_path, state, refused):
+    shown = 'LoadState=not-found\nActiveState=inactive\n' if state is None else f'LoadState=loaded\nActiveState={state}\n'
+    calls = []
+
+    def sh(*argv, **unused):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, shown if argv[0] == 'systemctl' else '', '')
+    monkeypatch.setattr(harness, 'sh', sh)
+    monkeypatch.setattr(harness.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(harness.os, 'readlink', lambda path: 'mnt:[1]' if path == '/proc/1/ns/mnt' else 'mnt:[2]')
+    (tmp_path / 'pki').mkdir()
+    (tmp_path / 'pki/trusted-ca.pem').write_text('synthetic\n')
+    if refused:
+        with pytest.raises(SystemExit, match='lab-trust unit is'):
+            harness.isolate(tmp_path)
+        assert not any(argv[0] == 'mount' for argv in calls)
+    else:
+        monkeypatch.setattr(harness.Path, 'read_text', lambda self: '' if str(self) == '/etc/hosts' else Path.read_bytes(self).decode())
+        identity = harness.isolate(tmp_path)
+        assert identity['lab_trust_unit'] == (state or 'not installed') and identity['zabbix_launch_requested'] == 'direct'
+
+
+def test_the_harness_pki_has_the_upstream_missing_anchor_and_expired_certificates(harness, tmp_path, openssl_cli):
+    harness.pki(tmp_path / 'pki')
+    d = tmp_path / 'pki'
+
+    def verify(cert, ca):
+        return subprocess.run(['/usr/bin/openssl', 'verify', '-no-CApath', '-no-CAstore', '-CAfile', str(d / ca), str(d / cert)],
+                              capture_output=True, text=True)
+    assert verify('alerta.pem', 'trusted-ca.pem').returncode == 0
+    assert verify('alerta-other-anchor.pem', 'trusted-ca.pem').returncode != 0      # the route's anchor does not vouch for it
+    assert verify('alerta-other-anchor.pem', 'other-ca.pem').returncode == 0        # a valid chain, just to another anchor
+    expired = verify('alerta-expired.pem', 'trusted-ca.pem')
+    assert expired.returncode != 0 and 'expired' in expired.stdout + expired.stderr
+    for cert in ('alerta-other-anchor.pem', 'alerta-expired.pem'):
+        names = subprocess.run(['/usr/bin/openssl', 'x509', '-noout', '-ext', 'subjectAltName', '-in', str(d / cert)],
+                               capture_output=True, text=True).stdout
+        assert 'DNS:alerta.s2.test' in names  # only the anchor or the dates are wrong, never the name

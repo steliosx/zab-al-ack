@@ -47,6 +47,13 @@
   - `verify.sh` runs as root;
   - `install.sh` installs only from a root-owned snapshot whose `SHA256SUMS` has the approved digest;
   - `uninstall.sh` removes nothing until the unit is inactive with an empty control group.
+- Acceptance after installation (R5 review):
+  - the S2 harness launches `zabbix_server` directly in its own trust namespace (`ZABALACK_LAB_ZABBIX_LAUNCH=direct`)
+    and refuses while the installed unit is up;
+  - the deployment cycle refuses the override;
+  - installed validation requires the unit launch.
+  - New engine cases (pending a root run): `[]` and `null` responses, and route-upstream missing-anchor and
+    expired certificates. That makes 51 graded cases plus the 15 ungraded baselines.
 
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 

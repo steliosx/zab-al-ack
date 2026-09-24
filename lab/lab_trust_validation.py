@@ -203,7 +203,7 @@ def main(argv=None) -> int:
     results: dict = {'mode': args.mode, 'host_before': host_state(), 'observations': {}, 'cases': []}
     obs = results['observations']
     checkout = work / 'checkout'
-    lab = acceptance.Lab(checkout, ACCOUNT)
+    lab = acceptance.Lab(checkout, ACCOUNT, acceptance.UNIT_LAB_ENV)  # never the harness's direct-launch override
     created: list[Path] = []
     started = False
     error = None
@@ -262,6 +262,8 @@ def main(argv=None) -> int:
             ca = (Path('/etc/zabalack-lab/ca/lab-ca.pem'), Path('/etc/zabalack-lab/ca/lab-ca.key'))
             start_text = lab.start()  # the lab starts zabbix_server through the unit (sudo rule)
         obs['lab_start'] = json.loads(start_text.strip().splitlines()[-1])
+        if args.mode == 'installed' and obs['lab_start'].get('zabbix_launch') != 'lab-trust-unit':
+            raise Refused(f"the lab did not start zabbix_server through the installed unit: {obs['lab_start'].get('zabbix_launch')}")
         assert wait_port(20051, up=True)
         pid = main_pid()
         obs['daemon'] = proc_identity(pid)

@@ -159,9 +159,12 @@ def layout() -> dict:
             owner = str(os.geteuid())
         record['missing'].append(f'install -d -m 0700 -o {owner} {PRIVATE}')
     trust_ready = LAB_TRUST_UNIT.is_file() and all(os.access(path, os.R_OK) for path in LAB_CA_FILES)
-    record['lab_trust'] = {'unit': str(LAB_TRUST_UNIT), 'ready': trust_ready}
+    overridden = 'ZABALACK_LAB_ZABBIX_LAUNCH' in os.environ  # the acceptance harness's direct launch never runs a cycle
+    record['lab_trust'] = {'unit': str(LAB_TRUST_UNIT), 'ready': trust_ready and not overridden, 'launch_override': overridden}
     if not trust_ready:
         record['missing'].append('lab trust: deploy/lab-trust/install.sh (owner-authorized; docs/lab-trust.md)')
+    if overridden:
+        record['missing'].append('unset ZABALACK_LAB_ZABBIX_LAUNCH: the deployment cycle runs zabbix_server only through the lab-trust unit')
     record['ready'] = not record['missing']
     return record
 

@@ -14,6 +14,13 @@ the host's own trust store and hosts file are not modified. The Zabbix lab (lab/
 candidate gateway (deploy/ingress/alerta-ingest.nginx.conf.template, an nginx binary extracted from the
 distribution package, not installed) run as the lab account inside the namespace and are stopped at the end.
 
+Coverage: this is component acceptance of the webhook, the engine and the route, with the harness's own test CA
+and `.s2.test` names. The lab's zabbix_server is therefore launched directly inside this namespace
+(`ZABALACK_LAB_ZABBIX_LAUNCH=direct`), also on a host where the lab-trust unit is installed. That unit carries the
+installed lab CA and runs outside this namespace, so it would be the wrong daemon here. The harness refuses while
+that unit is active. The installed path (the unit, its CA and its sudo rule) is covered separately by
+`lab/lab_trust_validation.py --mode installed` and the ordinary native deployment cycle.
+
 python3 lab/webhook_transport_acceptance.py --checkout DIR --work DIR --nginx PATH --lab-user USER --out FILE
 """
 from __future__ import annotations
@@ -43,7 +50,10 @@ API: dict[str, str] = {'url': ''}  # the lab reports its API URL when it starts
 TRAPPER = ('127.0.0.1', 20051)
 LAB_ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/tmp', 'TZ': 'UTC', 'ACK_LAB_PG_BIN': '/usr/lib/postgresql/18/bin',
            'ZABALACK_ZABBIX_SERVER': '/usr/sbin/zabbix_server', 'ZABALACK_ZABBIX_UI': '/usr/share/zabbix',
-           'ZABALACK_ZABBIX_SCHEMA': '/usr/share/zabbix-sql-scripts/postgresql/server.sql.gz', 'ZABALACK_PHP': '/usr/bin/php8.3'}
+           'ZABALACK_ZABBIX_SCHEMA': '/usr/share/zabbix-sql-scripts/postgresql/server.sql.gz', 'ZABALACK_PHP': '/usr/bin/php8.3',
+           'ZABALACK_LAB_ZABBIX_LAUNCH': 'direct'}  # this namespace's test trust, not the installed unit's (see Coverage)
+UNIT_LAB_ENV = {key: value for key, value in LAB_ENV.items() if key != 'ZABALACK_LAB_ZABBIX_LAUNCH'}  # lab_trust_validation.py
+LAB_TRUST_UNIT = 'zabalack-lab-zabbix.service'
 
 
 def sh(*argv, cwd=None, check=True, env=None):
@@ -85,8 +95,19 @@ def pki(d: Path) -> None:
     leaf('direct-wrong-name', NAMES['other'], 'trusted')
     leaf('direct-expired', NAMES['direct'], 'trusted', start='20000101000000Z', end='20000102000000Z')
     leaf('alerta-untrusted', NAMES['alerta'], None, self_signed=True)
+    leaf('alerta-other-anchor', NAMES['alerta'], 'other')
+    leaf('alerta-expired', NAMES['alerta'], 'trusted', start='20000101000000Z', end='20000102000000Z')
     for path in d.iterdir():
         path.chmod(0o644)
+
+
+def installed_unit_state() -> str | None:
+    """The lab-trust unit's ActiveState when it is known to systemd, else None (read-only)."""
+    shown = sh('systemctl', 'show', '-p', 'LoadState', '-p', 'ActiveState', LAB_TRUST_UNIT, check=False)
+    values = dict(line.partition('=')[::2] for line in shown.stdout.splitlines())
+    if shown.returncode or not values.get('ActiveState'):
+        raise SystemExit('cannot read the lab-trust unit state from systemd')
+    return None if values.get('LoadState') == 'not-found' else values['ActiveState']
 
 
 def isolate(work: Path) -> dict:
@@ -95,6 +116,9 @@ def isolate(work: Path) -> dict:
         raise SystemExit('run as root on the isolated lab host')
     if os.readlink('/proc/self/ns/mnt') == os.readlink('/proc/1/ns/mnt'):
         raise SystemExit('run inside a private mount namespace: unshare -m --propagation private')
+    unit = installed_unit_state()
+    if unit not in (None, 'inactive', 'failed'):
+        raise SystemExit(f'the lab-trust unit is {unit}; stop it (the lab account: zabbix_native_lab.py stop) before this harness')
     trust = work / 'trust'
     trust.mkdir()
     shutil.copy(work / 'pki/trusted-ca.pem', trust / 'ca-certificates.crt')
@@ -105,7 +129,8 @@ def isolate(work: Path) -> dict:
                      + ''.join(f'127.0.0.1 {name}\n' for name in NAMES.values()))
     for source, target in ((trust, '/etc/ssl/certs'), (hosts, '/etc/hosts')):
         sh('mount', '--bind', str(source), target)
-    return {'trust_ca_sha256': digest(trust / 'ca-certificates.crt'), 'hosts_sha256': digest(hosts)}
+    return {'trust_ca_sha256': digest(trust / 'ca-certificates.crt'), 'hosts_sha256': digest(hosts),
+            'lab_trust_unit': unit or 'not installed', 'zabbix_launch_requested': LAB_ENV['ZABALACK_LAB_ZABBIX_LAUNCH']}
 
 
 # ---------------------------------------------------------------- receivers
@@ -221,11 +246,11 @@ def trapper(request: dict, timeout=90) -> dict:
 
 
 class Lab:
-    def __init__(self, checkout: Path, user: str):
-        self.checkout, self.user = checkout, user
+    def __init__(self, checkout: Path, user: str, env: dict[str, str] | None = None):
+        self.checkout, self.user, self.env = checkout, user, LAB_ENV if env is None else env
 
     def command(self, *args, check=True):
-        return sh('runuser', '-u', self.user, '--', 'env', '-i', *[f'{k}={v}' for k, v in LAB_ENV.items()],
+        return sh('runuser', '-u', self.user, '--', 'env', '-i', *[f'{k}={v}' for k, v in self.env.items()],
                   '/usr/bin/python3', 'lab/zabbix_native_lab.py', *args, cwd=self.checkout, check=check)
 
     def start(self):
@@ -341,19 +366,23 @@ def main(argv=None) -> int:
         'direct-redirect': Receiver('direct-redirect', pkidir, 'direct'),
         'upstream-untrusted': Receiver('upstream-untrusted', pkidir, 'alerta-untrusted'),
         'upstream-wrong-name': Receiver('upstream-wrong-name', pkidir, 'other'),
+        'upstream-other-anchor': Receiver('upstream-other-anchor', pkidir, 'alerta-other-anchor'),
+        'upstream-expired': Receiver('upstream-expired', pkidir, 'alerta-expired'),
     }
     for receiver in receivers.values():
         receiver.canary = canary
     lab = Lab(checkout, args.lab_user)
     process = None
     extra_gateways: list[subprocess.Popen] = []
-    results: dict = {'scope': __doc__.split('\n\n')[0], 'cases': [], 'identity': identity}
+    results: dict = {'scope': __doc__.split('\n\n')[0], 'coverage': 'component acceptance, direct zabbix_server launch in a private '
+                     'trust namespace; not the installed lab-trust unit path', 'cases': [], 'identity': identity}
     try:
         process, gw_port, gw_root = gateway(work, args.nginx, args.lab_user, receivers['upstream'].port)
         identity['gateway'] = {'nginx': sh(args.nginx, '-v').stderr.strip(), 'config_sha256': digest(gw_root / 'nginx.conf'),
                                'template_sha256': digest(checkout / 'deploy/ingress/alerta-ingest.nginx.conf.template')}
         lab_start = json.loads(lab.start().strip().splitlines()[-1])
         identity['lab_start'] = lab_start
+        assert lab_start.get('zabbix_launch') == 'direct (override)', lab_start  # never the installed unit here
         API['url'] = lab_start['api_url']
         assert API['url'].startswith('http://127.0.0.1:'), API['url']
         identity['executor'] = sh('/usr/sbin/zabbix_server', '-V').stdout.splitlines()[:2]
@@ -427,10 +456,12 @@ def main(argv=None) -> int:
                 ('non-2xx', 500, json.dumps({'status': 'ok'}).encode(), 'Alerta ingestion HTTP failure'),
                 ('malformed-json', 201, b'{"status": ', 'Alerta invalid JSON response'),
                 ('status-error', 201, json.dumps({'status': 'error', 'message': 'synthetic'}).encode(), 'Alerta ingestion rejected'),
-                ('over-limit', 201, b'{"status":"ok","pad":"' + b'x' * 1048600 + b'"}', 'Alerta response limit')):
+                ('over-limit', 201, b'{"status":"ok","pad":"' + b'x' * 1048600 + b'"}', 'Alerta response limit'),
+                ('array', 201, b'[]', 'Alerta ingestion rejected'),
+                ('null', 201, b'null', '')):  # the engine's own error text for null is recorded, not pinned
             receivers['direct-ok'].behaviour = ('respond', status, body)
             out = deliver(f"https://{NAMES['direct']}:{receivers['direct-ok'].port}/api/alert")
-            record('response:' + label, f'Zabbix failure: {expected}', out,
+            record('response:' + label, f'Zabbix failure: {expected}' if expected else 'Zabbix failure (engine error text recorded)', out,
                    out['zabbix_response'] != 'success' and expected in out['zabbix_value'] and arrived_only(out, {'direct-ok'}))
         receivers['direct-ok'].behaviour = ('ok',)
 
@@ -459,8 +490,9 @@ def main(argv=None) -> int:
                        and out['gateway_access'] == ['POST /api/alert HTTP/1.1 502'])
         up.behaviour = ('ok',)
 
-        # The route's own upstream hop: an upstream certificate that is untrusted, or for another name
-        for label in ('upstream-untrusted', 'upstream-wrong-name'):
+        # The route's own upstream hop: an upstream certificate that is untrusted (self-signed), for another name,
+        # from an anchor the route does not trust, or expired
+        for label in ('upstream-untrusted', 'upstream-wrong-name', 'upstream-other-anchor', 'upstream-expired'):
             bad_process, bad_port, bad_root = gateway(work, args.nginx, args.lab_user, receivers[label].port, label='nginx-' + label)
             extra_gateways.append(bad_process)
             out = deliver(f"https://{NAMES['ingest']}:{bad_port}/api/alert")

@@ -380,8 +380,31 @@ def record_identity(name: str, pid: int) -> dict | None:
     return recorded
 
 
+LAUNCH_OVERRIDE = 'ZABALACK_LAB_ZABBIX_LAUNCH'  # 'direct': the S2 acceptance harness, inside its own trust namespace
+
+
+def launch_override() -> bool:
+    """Only the value 'direct' is honoured; any other value is refused rather than guessed at."""
+    value = os.environ.get(LAUNCH_OVERRIDE)
+    if value not in (None, 'direct'):
+        raise SystemExit(f'{LAUNCH_OVERRIDE} must be unset or "direct", not {value!r}')
+    return value == 'direct'
+
+
 def trust_unit_installed() -> bool:
-    return TRUST_UNIT_FILE.is_file() and TRUST_DIR.is_dir()
+    """Whether zabbix_server runs through the lab-trust unit; `ZABALACK_LAB_ZABBIX_LAUNCH=direct` launches it directly.
+
+    The override exists for lab/webhook_transport_acceptance.py, which runs the lab inside a private mount namespace
+    with its own test CA over /etc/ssl/certs; there the unit (which carries the installed lab CA) is the wrong daemon.
+    The deployment lab refuses to run with the override set.
+    """
+    return TRUST_UNIT_FILE.is_file() and TRUST_DIR.is_dir() and not launch_override()
+
+
+def zabbix_launch() -> str:
+    if trust_unit_installed():
+        return 'lab-trust-unit'
+    return 'direct (override)' if launch_override() else 'direct'
 
 
 def server_conf() -> Path:
@@ -932,7 +955,7 @@ def main(argv: list[str] | None = None) -> int:
     if not record['reference_match']:
         raise SystemExit(f"running Zabbix {observed_api!r} is not the pinned reference {record['reference']!r}; the lab is not the reference")
     print(json.dumps({'state': inspect()['state'], 'api_url': API_URL, 'observed_api_version': observed_api,
-                      'reference': record['reference'], 'production_gate': 'NOT_VERIFIED'}))
+                      'reference': record['reference'], 'zabbix_launch': zabbix_launch(), 'production_gate': 'NOT_VERIFIED'}))
     return 0
 
 
