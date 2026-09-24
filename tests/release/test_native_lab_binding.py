@@ -254,19 +254,84 @@ def test_an_interrupted_run_still_retains_the_runners_record(native_lab, monkeyp
     assert retained == seen['runner_bytes'] and final['status'] == 'FAIL' and final['reason'].startswith('interrupted')
 
 
-def test_a_runner_record_that_cannot_be_retained_is_never_a_pass(native_lab, monkeypatch):
-    lab = native_lab
-    command_path(lab, monkeypatch)
-    real_preserve = lab.module.preserve
+def refuse_retention(lab, monkeypatch, labels):
+    """lab_retention refuses these labels before copying a byte; others retain normally."""
+    real = lab.module.preserve
 
     def preserve(root, run_id, label, sources):
-        if label == 'runner-record':
-            raise lab.module.RetentionError('synthetic retention failure')
-        return real_preserve(root, run_id, label, sources)
+        if label in labels:
+            raise lab.module.RetentionError('synthetic refusal before any copy: ' + label)
+        return real(root, run_id, label, sources)
     monkeypatch.setattr(lab.module, 'preserve', preserve)
-    assert lab.module.main(CYCLE) == 1
+
+
+def count_wipes(lab, monkeypatch):
+    wipes, real = [], lab.module.wipe_lab
+
+    def wipe_lab(*args):
+        wipes.append(args)
+        return real(*args)
+    monkeypatch.setattr(lab.module, 'wipe_lab', wipe_lab)
+    return wipes
+
+
+@pytest.mark.parametrize('case, labels, stop_exit, interrupt, exit_code', [
+    ('copy-refused-stop-ok', {'runner-record'}, 0, False, 5),
+    ('all-retention-refused-stop-ok', {'runner-record', 'deployment-cycle'}, 0, False, 5),
+    ('copy-refused-stop-failed', {'runner-record'}, 1, False, 5),
+    ('copy-refused-interrupted', {'runner-record'}, 0, True, 130),
+])
+def test_an_original_that_could_not_be_retained_stays_the_canonical_record(native_lab, monkeypatch, capsys, case, labels, stop_exit,
+                                                                           interrupt, exit_code):
+    """Review of ad28093 (R3-RETENTION): with the runner-record copy refused before any byte, the final publication
+    overwrote the only original and, with service logs retained, the lab was wiped. Now the original stays exactly as
+    the runner wrote it, nothing is wiped, and the outcome goes to a separate terminal diagnostic bound to it."""
+    import hashlib
+    lab = native_lab
+    seen = command_path(lab, monkeypatch, stop_exit=stop_exit)
+    seen['interrupt_after_runner'] = interrupt
+    refuse_retention(lab, monkeypatch, labels)
+    wipes = count_wipes(lab, monkeypatch)
+    assert lab.module.main(CYCLE) == exit_code
+    canonical = (lab.tmp / 'evidence/deployment-e2e-run.json').read_bytes()
+    assert canonical == seen['runner_bytes']  # byte for byte: size and digest follow
+    assert json.loads(canonical)['status'] == 'PENDING_BINDING'
+    assert not wipes and lab.module.STATE.exists()
+    run_id = json.loads(capsys.readouterr().out.strip().splitlines()[-1])['run_id']
+    diagnostic = json.loads(lab.module.diagnostic_path().read_text())
+    assert diagnostic['kind'] == 'native_lab_terminal_diagnostic' and diagnostic['result'] == 'NOT_A_RESULT'
+    assert diagnostic['status'] == 'FAIL' and diagnostic['reason'] == 'runner_record_retention_failed' and diagnostic['run_id'] == run_id
+    assert diagnostic['canonical_record'] == {'path': 'evidence/deployment-e2e-run.json', 'left_unchanged': True, 'status': 'PENDING_BINDING',
+                                              'bytes': len(seen['runner_bytes']), 'sha256': hashlib.sha256(seen['runner_bytes']).hexdigest()}
+    assert diagnostic['exit_code'] == exit_code and 'error' in diagnostic['runner_record_retention']
+    assert not (lab.tmp / 'build/private/retained-phases' / run_id / 'runner-record').exists()
+    for value in (json.loads(canonical), diagnostic):
+        with pytest.raises(ValueError):
+            validate_report(copy.deepcopy(value), lab.tmp)
+
+
+@pytest.mark.parametrize('failure', ['stop-exception', 'stop-refusal'])
+def test_a_retained_original_survives_a_stop_that_raises_or_refuses(native_lab, monkeypatch, failure):
+    lab = native_lab
+    seen = command_path(lab, monkeypatch)
+
+    def stop_lab(*args):
+        if failure == 'stop-exception':
+            raise RuntimeError('synthetic stop exception')
+        raise SystemExit('synthetic stop refusal')
+    monkeypatch.setattr(lab.module, 'stop_lab', stop_lab)
+    wipes = count_wipes(lab, monkeypatch)
+    assert lab.module.main(CYCLE) == 5
     final = record(lab)
-    assert final['status'] == 'FAIL' and final['reason'] == 'runner_record_retention_failed'
-    assert final['native_lab']['runner_record'] == {'error': 'synthetic retention failure'}
-    with pytest.raises(ValueError):
-        validate_report(copy.deepcopy(final), lab.tmp)
+    _, retained = retained_runner_record(lab, final)
+    assert retained == seen['runner_bytes'] and final['status'] == 'FAIL' and not wipes
+    assert not lab.module.diagnostic_path().exists()
+
+
+def test_a_previous_runs_diagnostic_is_removed_when_the_next_run_starts(native_lab, monkeypatch):
+    lab = native_lab
+    command_path(lab, monkeypatch)
+    lab.module.diagnostic_path().parent.mkdir(parents=True, exist_ok=True)
+    lab.module.diagnostic_path().write_text('{"kind": "native_lab_terminal_diagnostic", "run_id": "previous"}\n')
+    assert lab.module.main(CYCLE) == 0
+    assert record(lab)['status'] == 'PASS' and not lab.module.diagnostic_path().exists()

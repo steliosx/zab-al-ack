@@ -202,8 +202,12 @@ ended, before any cleanup, the cycle retains the public record exactly as the
 runner left it (its original `PENDING_BINDING`, or its FAIL), privately under
 `build/private/retained-phases/<run>/runner-record/`, whatever cleanup then
 does: a failed stop or an interruption keeps it too, still ending FAIL with the
-lab left unwiped. A cycle whose runner record could not be retained never ends
-PASS. Both labs' service logs are retained (`…/deployment-cycle/`) only after
+lab left unwiped. If that copy cannot be made, the runner's record is
+left exactly as it is as the canonical record (a `PENDING_BINDING` never
+validates), nothing is wiped, and the outcome is written instead to
+`evidence/deployment-e2e-run.retention-failure.json`: a terminal diagnostic
+(`result: NOT_A_RESULT`) naming the canonical record's digest and this run's
+identity, removed when the next run starts. Both labs' service logs are retained (`…/deployment-cycle/`) only after
 every service has stopped, before the wipe; a lab that did not stop is not
 snapshotted. Both retention manifests' digests are bound into the final record. With `--wheel-sha256`
 the local runner performs the same supplied-wheel preflight as the Compose

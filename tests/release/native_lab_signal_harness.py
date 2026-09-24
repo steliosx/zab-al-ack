@@ -130,12 +130,12 @@ def install(lab: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, scenario: str
         real_write = module.write_record
         writes = []
 
-        def write_record(record):
+        def write_record(record, *target):
             writes.append(record.get('status'))
             final = len(writes) == 2  # the first write is the fresh NOT_RUN record; the second is the final one
             if final and scenario == 'term-at-replace':
                 send()
-            real_write(record)
+            real_write(record, *target)
             if final and scenario != 'term-at-replace':
                 send()
         monkeypatch.setattr(module, 'write_record', write_record)

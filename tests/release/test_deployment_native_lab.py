@@ -405,10 +405,21 @@ def test_cycle_exits_5_when_a_passing_run_leaves_a_component_running(lab, monkey
     assert out['wipe'] is None and out['final_state'] == 'partial' and lab.module.MARKER.exists()
 
 
+def refuse_service_log_retention(lab, monkeypatch):
+    """The service-log retention (label deployment-cycle) fails; the runner record's own retention still works."""
+    real = lab.module.preserve
+
+    def preserve(root, run_id, label, sources):
+        if label == 'deployment-cycle':
+            raise lab.module.RetentionError('disk full')
+        return real(root, run_id, label, sources)
+    monkeypatch.setattr(lab.module, 'preserve', preserve)
+
+
 @pytest.mark.parametrize('runner_exit,expected', [(0, 5), (1, 1)])
 def test_cycle_refuses_the_wipe_when_diagnostics_are_not_preserved(lab, monkeypatch, capsys, runner_exit, expected):
     cycle_environment(lab, monkeypatch, runner_exit=runner_exit)
-    monkeypatch.setattr(lab.module, 'preserve', lambda *args, **kwargs: (_ for _ in ()).throw(lab.module.RetentionError('disk full')))
+    refuse_service_log_retention(lab, monkeypatch)
     assert lab.module.main(CYCLE) == expected
     out = json.loads(capsys.readouterr().out)
     assert out['retention'] == {'error': 'disk full'} and out['wipe'] is None and out['final_state'] == 'stopped'
@@ -430,7 +441,7 @@ def test_a_non_zero_cycle_after_an_inner_pass_rewrites_the_record_to_fail(lab, m
     """R1: the uploaded artifact can never read PASS when stop, retention or the wipe failed."""
     cycle_environment(lab, monkeypatch, runner_exit=0, stop_exit=1 if failure == 'stop' else 0)
     if failure == 'retention':
-        monkeypatch.setattr(lab.module, 'preserve', lambda *args, **kwargs: (_ for _ in ()).throw(lab.module.RetentionError('disk full')))
+        refuse_service_log_retention(lab, monkeypatch)
     if failure == 'wipe':
         real = lab.module.zabbix
 
