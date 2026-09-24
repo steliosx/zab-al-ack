@@ -280,17 +280,19 @@ def hba_method(fields: list[tuple[str, bool]]) -> str | None:
         return None
     kind = fields[0][0]
     if kind == 'local' and len(fields) >= 4:
-        method = fields[3]
+        position = 3
     elif kind in HBA_HOST_TYPES and len(fields) >= 5:
         address, next_field = fields[3], fields[4]
-        if not address[1] and '/' not in address[0] and not next_field[1] and IP_MASK.fullmatch(next_field[0]) and len(fields) >= 6:
-            method = fields[5]
-        else:
-            method = next_field
+        separate_mask = not address[1] and '/' not in address[0] and not next_field[1] and IP_MASK.fullmatch(next_field[0])
+        position = 5 if separate_mask and len(fields) >= 6 else 4
     else:
         return None  # include directives, unknown connection types, short records
-    text, was_quoted = method
+    text, was_quoted = fields[position]
     if was_quoted or ',' in text:
+        return None
+    # PostgreSQL rejects an option that is not name=value ("authentication option not in
+    # name=value format"); such a record is refused here rather than read as its method.
+    if any('=' not in option for option, _ in fields[position + 1:]):
         return None
     return text
 
@@ -302,10 +304,16 @@ def verify_authentication(pgdata: Path) -> None:
     the line, as a database, user or option, proves nothing); every record
     must use scram-sha-256 or reject, and a record that cannot be read refuses.
     """
+    # The raw bytes, split at '\n' only, as PostgreSQL reads the file: read_text() would
+    # also end a line at a bare CR, which PostgreSQL treats as a blank inside the record.
     try:
-        lines = (pgdata / 'pg_hba.conf').read_text().split('\n')  # PostgreSQL ends a line at '\n' only
+        raw = (pgdata / 'pg_hba.conf').read_bytes()
     except OSError as error:
         raise SystemExit(f'Zabbix lab cluster authentication unreadable: {error}') from error
+    try:
+        lines = raw.decode('utf-8').split('\n')
+    except UnicodeDecodeError as error:
+        raise SystemExit('Zabbix lab cluster authentication unreadable: pg_hba.conf is not UTF-8') from error
     for line in lines:
         fields = hba_fields(line)
         if fields == []:

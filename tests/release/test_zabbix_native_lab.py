@@ -682,3 +682,30 @@ def test_staging_the_packaged_frontend_skips_its_unconfigured_configuration_link
     assert (staged.stat().st_mode & 0o777) == 0o600
     copied = lab.UI / 'assets/fonts/graphfont.ttf'
     assert copied.is_file() and not copied.is_symlink() and copied.read_bytes() == b'font bytes'
+
+
+# Raw pg_hba.conf bytes through the actual reader (verify_authentication), with the verdict PostgreSQL
+# 18.6 gives for the same bytes (pg_hba_file_rules, packaged server on the x64 runner host): a bare CR
+# is a blank inside the record, never a line end; a record PostgreSQL rejects is refused.
+@pytest.mark.parametrize('raw, accepted', [
+    (b'local all all scram-sha-256\r\n', True),                    # PG18: scram-sha-256
+    (b'local\rall\rall\rscram-sha-256\n', True),                   # CR_strong. PG18: scram-sha-256
+    (b'local all all scram-sha-256\r', True),                      # PG18: scram-sha-256
+    (b'local all "a\rb" scram-sha-256\n', True),                   # PG18: scram-sha-256
+    (b'host\tall\tall\t127.0.0.1/32\rscram-sha-256\n', True),      # PG18: scram-sha-256
+    (b'\r\nlocal all all scram-sha-256\n', True),                  # PG18: scram-sha-256 on line 2
+    (b'# note\rlocal all all trust\n', True),                      # PG18: no rule (the comment runs to '\n')
+    (b'local\rall\rall\rtrust\n', False),                          # PG18: trust
+    (b'local all all scram-sha-256\rlocal all all trust\n', False),  # PG18: error, option not name=value
+    (b'local all all scram-sha-256 # \xff\n', False),              # not UTF-8: refused, never a crash
+], ids=['crlf', 'cr-strong', 'cr-at-eof', 'cr-in-quotes', 'cr-host', 'cr-blank-line', 'cr-in-comment',
+        'cr-weak', 'cr-joined-records', 'non-utf8'])
+def test_pg_hba_raw_bytes_are_read_as_postgresql_reads_them(lab, raw, accepted):
+    """Review of e8ef82b (F2): read_text() ended a line at a bare CR, which PostgreSQL treats as a blank."""
+    marked(lab)
+    (lab.PGDATA / 'pg_hba.conf').write_bytes(raw)
+    if accepted:
+        lab.verify_authentication(lab.PGDATA)
+    else:
+        with pytest.raises(SystemExit, match='unauthenticated or non-scram|not UTF-8'):
+            lab.verify_authentication(lab.PGDATA)
