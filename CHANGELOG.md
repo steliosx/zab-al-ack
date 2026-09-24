@@ -36,6 +36,17 @@
   deactivating unit (state `ambiguous`) without writing the configuration
   or starting, signalling or stopping anything. It stops only its own
   invocation, including descendants after the main process exits.
+- Installed validation fails closed (R5 review):
+  - `lab_trust_validation.py` records `verify.sh`'s exit code, stdout and stderr, and refuses before copying
+    or starting anything when it fails or the snapshot is mutable;
+  - prerequisites, cleanup and the host comparison are graded cases;
+  - PASS needs every required case exactly once and no exception.
+- The installation audit is exact:
+  - `check-ca.sh` checks the CA's constraints, path length, key usage and extension set, the exact trust and
+    CA entries, the hash-link target, copy equality and the key;
+  - `verify.sh` runs as root;
+  - `install.sh` installs only from a root-owned snapshot whose `SHA256SUMS` has the approved digest;
+  - `uninstall.sh` removes nothing until the unit is inactive with an empty control group.
 
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 

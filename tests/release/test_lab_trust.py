@@ -4,6 +4,7 @@ Policy tests read the shipped unit, sudoers, tmpfiles and scripts; nothing is in
 name-constrained CA exactly as install.sh does and verify real certificates with OpenSSL. The lab tests replace
 only the privileged `sudo systemctl` call. Execution on the lab host is recorded separately (docs/lab-trust.md).
 """
+import hashlib
 import importlib.util
 import json
 import os
@@ -79,7 +80,7 @@ def test_the_tmpfiles_rule_and_the_scripts():
     assert 'nameConstraints=critical,permitted;DNS:runner,permitted;IP:127.0.0.1/255.255.255.255' in install
     assert 'basicConstraints=critical,CA:TRUE,pathlen:0' in install and 'visudo -cf' in install
     assert 'refusing,' in install  # an existing path is never overwritten
-    for script in ('install.sh', 'uninstall.sh', 'verify.sh'):
+    for script in ('install.sh', 'uninstall.sh', 'verify.sh', 'check-ca.sh', 'snapshot-check.sh'):
         text = (TRUST / script).read_text()
         body = '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('#'))
         for global_trust in ('update-ca-certificates', '/usr/local/share/ca-certificates', 'apparmor', '/etc/ssl/certs/', 'usermod', 'gpasswd'):
@@ -392,3 +393,163 @@ def test_a_reused_main_pid_under_the_recorded_invocation_is_not_owned(zlab):
     owner = zlab.record_unit_owner(zlab.unit_status())
     zlab.unit_owner_file().write_text(json.dumps({**owner, 'main_starttime': owner['main_starttime'] - 1}))
     assert zlab.unit_ownership()[1] == 'foreign'
+
+
+# Review of 8211b1b (installation audit): verify.sh accepted any CA whose constraints contained "Permitted:", any
+# *.0 entry and any hash-link target; it could not run as the runner at all (0440 sudoers). The exact content check
+# is check-ca.sh; verify.sh runs as root, from an immutable snapshot (snapshot-check.sh); uninstall.sh removes
+# nothing until the unit is inactive with an empty control group.
+def ca_tree(tmp_path, *extensions, key_bits='2048'):
+    d = tmp_path / 'installed'
+    (d / 'trust').mkdir(parents=True)
+    (d / 'ca').mkdir()
+    subprocess.run(['/usr/bin/openssl', 'req', '-x509', '-newkey', 'rsa:' + key_bits, '-nodes', '-days', '1',
+                    '-subj', '/CN=Zabalack isolated lab CA', '-keyout', str(d / 'ca/lab-ca.key'), '-out', str(d / 'ca/lab-ca.pem'),
+                    *[argument for extension in extensions for argument in ('-addext', extension)]], check=True, capture_output=True)
+    shutil.copy(d / 'ca/lab-ca.pem', d / 'trust/lab-ca.pem')
+    shutil.copy(d / 'ca/lab-ca.pem', d / 'trust/ca-certificates.crt')
+    subject_hash = subprocess.run(['/usr/bin/openssl', 'x509', '-noout', '-subject_hash', '-in', str(d / 'ca/lab-ca.pem')],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+    (d / 'trust' / f'{subject_hash}.0').symlink_to('lab-ca.pem')
+    return d, subject_hash
+
+
+REVIEWED = ('basicConstraints=critical,CA:TRUE,pathlen:0', 'keyUsage=critical,keyCertSign,cRLSign',
+            'nameConstraints=critical,permitted;DNS:runner,permitted;IP:127.0.0.1/255.255.255.255')
+
+
+def check_ca(d):
+    return subprocess.run(['sh', str(TRUST / 'check-ca.sh'), str(d / 'trust'), str(d / 'ca')], capture_output=True, text=True)
+
+
+@pytest.fixture
+def openssl_cli():
+    if not Path('/usr/bin/openssl').exists():
+        pytest.skip('/usr/bin/openssl unavailable')
+
+
+def test_the_exact_check_accepts_the_installed_ca_as_install_sh_makes_it(tmp_path, openssl_cli, lab_ca):
+    d, _ = ca_tree(tmp_path, *REVIEWED)
+    result = check_ca(d)
+    assert result.returncode == 0, result.stdout
+    for name in ('lab-ca.pem', 'lab-ca.key'):  # and install.sh's own CA
+        shutil.copy(lab_ca[0] if name.endswith('pem') else lab_ca[1], d / 'ca' / name)
+    for name in ('lab-ca.pem', 'ca-certificates.crt'):
+        shutil.copy(lab_ca[0], d / 'trust' / name)
+    for link in (d / 'trust').glob('*.0'):
+        link.unlink()
+    subject_hash = subprocess.run(['/usr/bin/openssl', 'x509', '-noout', '-subject_hash', '-in', str(lab_ca[0])],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+    (d / 'trust' / f'{subject_hash}.0').symlink_to('lab-ca.pem')
+    assert check_ca(d).returncode == 0
+
+
+@pytest.mark.parametrize('extensions', [
+    ('basicConstraints=critical,CA:TRUE,pathlen:5', 'keyUsage=critical,keyCertSign,cRLSign',
+     'nameConstraints=critical,permitted;DNS:example.invalid'),                                        # Astra's probe CA
+    ('basicConstraints=critical,CA:TRUE,pathlen:5', *REVIEWED[1:]),
+    ('basicConstraints=critical,CA:TRUE', *REVIEWED[1:]),
+    (REVIEWED[0], REVIEWED[1], 'nameConstraints=critical,permitted;DNS:runner'),
+    (REVIEWED[0], REVIEWED[1], 'nameConstraints=critical,permitted;DNS:runner,permitted;IP:127.0.0.0/255.0.0.0'),
+    (REVIEWED[0], REVIEWED[1], 'nameConstraints=critical,permitted;DNS:runner,permitted;DNS:other,permitted;IP:127.0.0.1/255.255.255.255'),
+    (REVIEWED[0], REVIEWED[1], 'nameConstraints=permitted;DNS:runner,permitted;IP:127.0.0.1/255.255.255.255'),
+    (REVIEWED[0], 'keyUsage=critical,keyCertSign,cRLSign,digitalSignature', REVIEWED[2]),
+    (*REVIEWED, 'extendedKeyUsage=serverAuth'),
+    REVIEWED[:2],
+], ids=['astra-example-invalid-pathlen5', 'pathlen5', 'no-pathlen', 'no-ip', 'wider-ip', 'extra-name', 'not-critical',
+        'extra-key-usage', 'extra-extension', 'no-name-constraints'])
+def test_any_other_ca_fails_the_exact_check(tmp_path, openssl_cli, extensions):
+    d, _ = ca_tree(tmp_path, *extensions)
+    result = check_ca(d)
+    assert result.returncode == 1, result.stdout
+
+
+@pytest.mark.parametrize('change', ['extra-trust-file', 'extra-hash-link', 'link-elsewhere', 'trust-bundle-differs',
+                                    'ca-copy-differs', 'two-certificates', 'other-key', 'extra-ca-file'])
+def test_trust_entries_links_and_copies_must_be_exact(tmp_path, openssl_cli, change):
+    d, subject_hash = ca_tree(tmp_path, *REVIEWED)
+    other, _ = ca_tree(tmp_path / 'other', *REVIEWED)
+    if change == 'extra-trust-file':
+        (d / 'trust/extra.pem').write_bytes((other / 'ca/lab-ca.pem').read_bytes())
+    elif change == 'extra-hash-link':
+        shutil.copy(other / 'ca/lab-ca.pem', d / 'trust/other.pem')
+        (d / 'trust/other.pem').rename(d / 'trust/deadbeef.0')
+    elif change == 'link-elsewhere':
+        (d / 'trust' / f'{subject_hash}.0').unlink()
+        (d / 'trust' / f'{subject_hash}.0').symlink_to('ca-certificates.crt')
+    elif change == 'trust-bundle-differs':
+        shutil.copy(other / 'ca/lab-ca.pem', d / 'trust/ca-certificates.crt')
+    elif change == 'ca-copy-differs':
+        shutil.copy(other / 'ca/lab-ca.pem', d / 'ca/lab-ca.pem')
+    elif change == 'two-certificates':
+        for name in ('trust/lab-ca.pem', 'trust/ca-certificates.crt', 'ca/lab-ca.pem'):
+            with (d / name).open('ab') as bundle:
+                bundle.write((other / 'ca/lab-ca.pem').read_bytes())
+    elif change == 'other-key':
+        shutil.copy(other / 'ca/lab-ca.key', d / 'ca/lab-ca.key')
+    else:
+        (d / 'ca/serial').write_text('01\n')
+    assert check_ca(d).returncode == 1
+
+
+def test_the_audit_runs_only_as_root_and_only_from_an_immutable_snapshot():
+    if os.geteuid() == 0:
+        pytest.skip('checks the refusal for a non-root caller')
+    result = subprocess.run(['sh', str(TRUST / 'verify.sh')], capture_output=True, text=True)
+    assert result.returncode == 2 and 'run as root' in result.stderr
+    installer = subprocess.run(['sh', str(TRUST / 'install.sh'), '0' * 64], capture_output=True, text=True)
+    assert installer.returncode == 2 and 'run as root' in installer.stderr
+    snapshot = subprocess.run(['sh', str(TRUST / 'snapshot-check.sh'), str(TRUST)], capture_output=True, text=True)
+    assert snapshot.returncode == 1 and 'not owned by root' in snapshot.stderr  # a user checkout is not a snapshot
+
+
+def test_the_snapshot_manifest_lists_exactly_the_current_sources():
+    listed = [line.split() for line in (TRUST / 'SHA256SUMS').read_text().splitlines()]
+    assert sorted(name for _, name in listed) == sorted(path.name for path in TRUST.iterdir() if path.name != 'SHA256SUMS')
+    for digest, name in listed:
+        assert hashlib.sha256((TRUST / name).read_bytes()).hexdigest() == digest, name
+
+
+def sandboxed_uninstall(tmp_path, after_stop, procs=''):
+    """uninstall.sh with its absolute host paths moved under tmp_path and systemctl replaced by a recorder."""
+    (tmp_path / 'etc/zabalack-lab/trust').mkdir(parents=True)
+    for name in ('systemd/system/zabalack-lab-zabbix.service', 'sudoers.d/zabalack-lab-zabbix', 'tmpfiles.d/zabalack-lab-zabbix.conf'):
+        (tmp_path / 'etc' / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / 'etc' / name).write_text('installed\n')
+    (tmp_path / 'run/zabalack-lab-zabbix').mkdir(parents=True)
+    (tmp_path / 'cgroup/system.slice/zabalack-lab-zabbix.service').mkdir(parents=True)
+    (tmp_path / 'cgroup/system.slice/zabalack-lab-zabbix.service/cgroup.procs').write_text(procs)
+    systemctl = tmp_path / 'systemctl'
+    systemctl.write_text(f"""#!/bin/sh
+echo "$*" >> {tmp_path}/systemctl.log
+case "$1 $3" in
+  "show ActiveState") cat {tmp_path}/active 2>/dev/null || echo active ;;
+  "show ControlGroup") echo /system.slice/zabalack-lab-zabbix.service ;;
+  "show LoadState") [ -e {tmp_path}/etc/systemd/system/zabalack-lab-zabbix.service ] && echo loaded || echo not-found ;;
+esac
+[ "$1" = stop ] && echo {after_stop} > {tmp_path}/active
+exit 0
+""")
+    systemctl.chmod(0o755)
+    script = (TRUST / 'uninstall.sh').read_text()
+    for host, sandbox in (('/usr/bin/systemctl', str(systemctl)), ('/sys/fs/cgroup', f'{tmp_path}/cgroup'), (' /etc/', f' {tmp_path}/etc/'),
+                          (' /run/', f' {tmp_path}/run/'), ('[ "$(id -u)" = 0 ]', 'true')):
+        assert host in script
+        script = script.replace(host, sandbox)
+    (tmp_path / 'uninstall.sh').write_text(script)
+    return subprocess.run(['sh', str(tmp_path / 'uninstall.sh')], capture_output=True, text=True)
+
+
+@pytest.mark.parametrize('after_stop, procs', [('active', ''), ('deactivating', ''), ('inactive', '4242\n')])
+def test_uninstall_removes_nothing_until_the_unit_is_inactive_with_an_empty_control_group(tmp_path, after_stop, procs):
+    result = sandboxed_uninstall(tmp_path, after_stop, procs)
+    assert result.returncode == 1 and 'nothing removed' in result.stderr
+    assert (tmp_path / 'etc/zabalack-lab').is_dir() and (tmp_path / 'etc/sudoers.d/zabalack-lab-zabbix').exists()
+
+
+@pytest.mark.parametrize('after_stop', ['inactive', 'failed'])
+def test_uninstall_rolls_back_once_the_unit_is_inactive(tmp_path, after_stop):
+    result = sandboxed_uninstall(tmp_path, after_stop)
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / 'etc/zabalack-lab').exists() and not (tmp_path / 'run/zabalack-lab-zabbix').exists()
+    assert not (tmp_path / 'etc/sudoers.d/zabalack-lab-zabbix').exists()

@@ -8,8 +8,11 @@ zabalack-lab-zabbix.service`); an operator runs it as root to observe the bounda
                       difference, its trust source (a root-owned directory under /run holding a lab CA generated
                       with install.sh's command); /run/zabalack-lab-zabbix is created as the tmpfiles rule would.
                       The lab starts PostgreSQL and the frontend; its own zabbix_server is replaced by the unit's.
-  --mode installed    After install.sh (owner-authorized): the lab account starts the Zabbix lab itself, which
-                      now starts zabbix_server through the installed unit with its sudo rule.
+  --mode installed    After install.sh (owner-authorized): first the read-only installation audit (verify.sh, as
+                      root, from the operator's snapshot given as --checkout); any nonzero exit refuses before
+                      anything starts. Then the lab account starts the Zabbix lab itself, which now starts
+                      zabbix_server through the installed unit with its sudo rule, and the lab's unit ownership
+                      is exercised: it refuses to stop an invocation it did not start and stops its own.
 
 Observed in both: host trust and hosts before and after (unchanged); the daemon's and every descendant's UID,
 GID, groups, capabilities and no_new_privs; its mount namespace against init's; the trust it sees; deliveries of
@@ -17,6 +20,10 @@ the shipped webhook through the packaged engine to receivers named `runner`: a l
 and untrusted, other-anchor, wrong-name and expired certificates (refused before any HTTP data); the host's own
 trust refusing the lab certificate; start, stop, restart and a stop by signal from the lab account. Everything
 it created is removed at the end.
+
+The result is PASS only when every required case for the mode is present and passed: prerequisites and the
+installation audit, identity, deliveries, lifecycle, cleanup and the host comparison are cases like any other,
+and an exception is recorded as the error that ended the run, never hidden by the cases that did pass.
 
 python3 lab/lab_trust_validation.py --mode pre-install|installed --checkout DIR --work DIR --out FILE
 """
@@ -44,6 +51,37 @@ INSTALLED_UNIT = Path('/etc/systemd/system') / UNIT
 CONF = Path('/run/zabalack-lab-zabbix/zabbix_server.conf')
 STAGE = Path('/run/zabalack-lab-trust-validation')
 sh = acceptance.sh
+COMMON_CASES = ['daemon-identity-and-namespace', 'delivery:lab-ca', 'delivery:untrusted', 'delivery:other-anchor', 'delivery:wrong-name',
+                'delivery:expired', 'host-trust-does-not-trust-the-lab-ca', 'lifecycle-stop-restart-signal', 'cleanup', 'host-unchanged']
+REQUIRED_CASES = {'pre-install': ['prerequisites', *COMMON_CASES],
+                  'installed': ['installation-audit', *COMMON_CASES[:-2], 'installed-lab-unit-ownership', *COMMON_CASES[-2:]]}
+
+
+class Refused(Exception):
+    """A required precondition failed; nothing after it runs."""
+
+
+def summarize(mode: str, cases: list[dict], error: str | None) -> dict:
+    """PASS only when every required case is present exactly once and passed, and nothing raised."""
+    names = [case['case'] for case in cases]
+    missing = [name for name in REQUIRED_CASES[mode] if name not in names]
+    failed = [case['case'] for case in cases if case.get('pass') is not True]
+    duplicated = sorted({name for name in names if names.count(name) > 1})
+    passed = not missing and not failed and not duplicated and error is None
+    return {'status': 'PASS' if passed else 'FAIL', 'required': len(REQUIRED_CASES[mode]), 'cases': len(cases),
+            'passed': sum(1 for case in cases if case.get('pass') is True), 'failed': failed, 'missing': missing,
+            'duplicated': duplicated, 'error': error}
+
+
+def unit_show() -> dict:
+    fields = sh('systemctl', 'show', '-p', 'ActiveState', '-p', 'InvocationID', '-p', 'MainPID', UNIT, check=False).stdout
+    return dict(line.partition('=')[::2] for line in fields.splitlines())
+
+
+def snapshot_audit(snapshot: Path) -> dict:
+    """verify.sh, run as root from the operator's snapshot (never from the runner-owned working copy)."""
+    audit = sh('sh', str(snapshot / 'deploy/lab-trust/verify.sh'), check=False)
+    return {'returncode': audit.returncode, 'stdout': audit.stdout, 'stderr': audit.stderr}
 
 
 def host_state() -> dict:
@@ -81,6 +119,26 @@ def main_pid() -> int:
     return int(sh('systemctl', 'show', '-p', 'MainPID', '--value', UNIT).stdout.strip() or 0)
 
 
+LAB_PORTS = (55434, 20051, 58080)  # lab/zabbix_native_lab.py: PostgreSQL, zabbix_server, frontend
+
+
+def listening(port: int) -> bool:
+    with socket.socket() as probe:
+        return probe.connect_ex(('127.0.0.1', port)) == 0
+
+
+def immutable(snapshot: Path) -> str | None:
+    """Why the operator's snapshot is not safe for root to execute from, or None: the lab-trust sources and every
+    ancestor must be root-owned and not writable by group or others (sticky ancestors such as /tmp excepted)."""
+    trust = snapshot / 'deploy/lab-trust'
+    for path in [*sorted(trust.iterdir()), trust, *trust.parents]:
+        info = path.lstat()
+        sticky_ancestor = path in snapshot.parents and info.st_mode & 0o1000
+        if info.st_uid != 0 or (info.st_mode & 0o022 and not sticky_ancestor) or (path.is_symlink()):
+            return f'{path} is not root-owned and closed to other writers'
+    return None
+
+
 def wait_port(port: int, up: bool, timeout: float = 60) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -91,9 +149,9 @@ def wait_port(port: int, up: bool, timeout: float = 60) -> bool:
     return False
 
 
-def lab_ca(work: Path, stage: Path) -> tuple[Path, Path]:
-    """A lab CA made with install.sh's own openssl command, in root-owned staging."""
-    install = (work / 'checkout/deploy/lab-trust/install.sh').read_text()
+def lab_ca(snapshot: Path, stage: Path) -> tuple[Path, Path]:
+    """A lab CA made with install.sh's own openssl command (read from the operator's snapshot), in root-owned staging."""
+    install = (snapshot / 'deploy/lab-trust/install.sh').read_text()
     match = re.search(r'/usr/bin/openssl req -x509 (.*?) 2>/dev/null', install, re.S)
     assert match, 'install.sh no longer carries the CA command'
     command = match[1]
@@ -141,23 +199,43 @@ def main(argv=None) -> int:
     if os.geteuid() != 0:
         raise SystemExit('run as root on the isolated lab host')
     work = args.work.resolve()
-    shutil.copytree(args.checkout, work / 'checkout', symlinks=True)
-    sh('chown', '-R', f'{ACCOUNT}:{ACCOUNT}', str(work / 'checkout'))
-    checkout = work / 'checkout'
+    snapshot = args.checkout.resolve()  # root-owned operator snapshot; the lab account gets a copy
     results: dict = {'mode': args.mode, 'host_before': host_state(), 'observations': {}, 'cases': []}
     obs = results['observations']
+    checkout = work / 'checkout'
     lab = acceptance.Lab(checkout, ACCOUNT)
     created: list[Path] = []
+    started = False
+    error = None
     try:
+        if args.mode == 'installed':
+            # The audit comes first and gates everything: nothing is copied, started or signalled after a failure.
+            unsafe = immutable(snapshot)
+            if unsafe:
+                obs['verify_installation'] = {'returncode': None, 'not_run': unsafe}
+                obs['verify_installation_returncode'] = None
+                results['cases'].append({'case': 'installation-audit', 'snapshot': unsafe, 'pass': False})
+                raise Refused('the snapshot is not immutable: ' + unsafe + '; nothing was run from it')
+            audit = snapshot_audit(snapshot)
+            obs['verify_installation'] = audit
+            obs['verify_installation_returncode'] = audit['returncode']
+            results['cases'].append({'case': 'installation-audit', 'returncode': audit['returncode'], 'pass': audit['returncode'] == 0})
+            if audit['returncode'] != 0:
+                raise Refused(f"installation audit failed (verify.sh exit {audit['returncode']}); nothing was started")
+        else:
+            present = [str(path) for path in (RUNTIME_UNIT, INSTALLED_UNIT, STAGE, CONF.parent) if path.exists()]
+            results['cases'].append({'case': 'prerequisites', 'present': present, 'pass': not present})
+            if present:
+                raise Refused('refusing: ' + ', '.join(present) + ' exists')
+        shutil.copytree(snapshot, checkout, symlinks=True)
+        sh('chown', '-R', f'{ACCOUNT}:{ACCOUNT}', str(checkout))
+        started = True
         if args.mode == 'pre-install':
-            for path in (RUNTIME_UNIT, INSTALLED_UNIT, STAGE, CONF.parent):
-                if path.exists():
-                    raise SystemExit(f'refusing: {path} exists')
             STAGE.mkdir(mode=0o755)
             created.append(STAGE)
             ca_dir = STAGE / 'ca'
             ca_dir.mkdir(mode=0o700)
-            ca = lab_ca(work, ca_dir)
+            ca = lab_ca(snapshot, ca_dir)
             trust = STAGE / 'trust'
             trust.mkdir(mode=0o755)
             shutil.copy(ca[0], trust / 'ca-certificates.crt')
@@ -182,7 +260,6 @@ def main(argv=None) -> int:
             sh('systemctl', 'start', UNIT)
         else:
             ca = (Path('/etc/zabalack-lab/ca/lab-ca.pem'), Path('/etc/zabalack-lab/ca/lab-ca.key'))
-            obs['verify_installation'] = sh('sh', str(checkout / 'deploy/lab-trust/verify.sh'), check=False).stdout
             start_text = lab.start()  # the lab starts zabbix_server through the unit (sudo rule)
         obs['lab_start'] = json.loads(start_text.strip().splitlines()[-1])
         assert wait_port(20051, up=True)
@@ -270,25 +347,67 @@ def main(argv=None) -> int:
         signalled = wait_port(20051, up=False) and sh('systemctl', 'is-active', UNIT, check=False).stdout.strip() != 'active'
         results['cases'].append({'case': 'lifecycle-stop-restart-signal', 'stopped': stopped, 'leftover_pids': leftovers, 'restarted': restarted,
                                  'stopped_by_lab_account_signal': signalled, 'pass': stopped and not leftovers and restarted and signalled})
+        if args.mode == 'installed':
+            results['cases'].append(installed_ownership(lab, checkout))
         for receiver in receivers.values():
             receiver.shutdown()
+    except Exception as failure:  # recorded, never hidden by the cases that passed
+        error = f'{type(failure).__name__}: {failure}'
     finally:
-        results['cleanup'] = {'unit_stop': sh('systemctl', 'stop', UNIT, check=False).returncode, 'lab': lab.stop_and_wipe()}
+        cleanup: dict = {}
+        if started:
+            cleanup['unit_stop_exit'] = sh('systemctl', 'stop', UNIT, check=False).returncode
+            cleanup['unit_after'] = unit_show()
+            cleanup['lab'] = lab.stop_and_wipe()
         for path in reversed(created):
             if path.is_dir():
                 shutil.rmtree(path)
             else:
                 path.unlink(missing_ok=True)
         if RUNTIME_UNIT in created:
-            sh('systemctl', 'daemon-reload')
+            cleanup['daemon_reload_exit'] = sh('systemctl', 'daemon-reload', check=False).returncode
             sh('systemctl', 'reset-failed', UNIT, check=False)
+        cleanup['left_behind'] = [str(path) for path in created if path.exists() or path.is_symlink()]
+        cleanup['ports_still_listening'] = [port for port in LAB_PORTS if listening(port)]
+        results['cleanup'] = cleanup
+        clean = (not started or (cleanup['unit_stop_exit'] == 0 and cleanup['unit_after'].get('ActiveState') in ('inactive', 'failed')
+                                 and all(step['exit'] == 0 for step in cleanup['lab']))) \
+            and not cleanup['left_behind'] and not cleanup['ports_still_listening'] and cleanup.get('daemon_reload_exit', 0) == 0
+        results['cases'].append({'case': 'cleanup', 'pass': clean})
         results['host_after'] = host_state()
         results['host_unchanged'] = results['host_after'] == results['host_before']
-        results['summary'] = {'cases': len(results['cases']), 'passed': sum(1 for c in results['cases'] if c['pass']),
-                              'failed': [c['case'] for c in results['cases'] if not c['pass']]}
+        results['cases'].append({'case': 'host-unchanged', 'pass': results['host_unchanged']})
+        results['summary'] = summarize(args.mode, results['cases'], error)
         args.out.write_text(json.dumps(results, indent=2) + '\n')
     print(json.dumps({**results['summary'], 'host_unchanged': results['host_unchanged']}))
-    return 0 if not results['summary']['failed'] and results['host_unchanged'] else 1
+    return 0 if results['summary']['status'] == 'PASS' else 1
+
+
+def installed_ownership(lab: acceptance.Lab, checkout: Path) -> dict:
+    """The installed lab refuses to stop an invocation it did not start, and starts and stops its own."""
+    record: dict = {'case': 'installed-lab-unit-ownership'}
+    sh('systemctl', 'start', UNIT)  # an invocation the lab account did not start
+    wait_port(20051, up=True)
+    foreign = unit_show()
+    refused = lab.command('stop', '--isolated-lab', check=False)
+    after_refusal = unit_show()
+    record['foreign'] = {'stop_exit': refused.returncode, 'stderr': refused.stderr[-300:], 'before': foreign, 'after': after_refusal}
+    sh('systemctl', 'stop', UNIT)
+    own_start = lab.command('start', '--isolated-lab', check=False)
+    owned = unit_show()
+    try:
+        owner = json.loads((checkout / '.zabbix-lab/trust-unit.owner.json').read_text())
+    except (OSError, ValueError):
+        owner = None
+    own_stop = lab.command('stop', '--isolated-lab', check=False)
+    stopped = unit_show()
+    record['own'] = {'start_exit': own_start.returncode, 'unit': owned, 'owner_record': owner, 'stop_exit': own_stop.returncode,
+                     'after_stop': stopped}
+    record['pass'] = (refused.returncode != 0 and after_refusal.get('ActiveState') == 'active'
+                      and after_refusal.get('InvocationID') == foreign.get('InvocationID')
+                      and own_start.returncode == 0 and isinstance(owner, dict) and owner.get('invocation_id') == owned.get('InvocationID')
+                      and own_stop.returncode == 0 and stopped.get('ActiveState') in ('inactive', 'failed'))
+    return record
 
 
 if __name__ == '__main__':

@@ -13,11 +13,20 @@
 #   /etc/tmpfiles.d/zabalack-lab-zabbix.conf          root:root  0644  -> /run/zabalack-lab-zabbix 0700 zabalack-runner
 # The lab CA is name-constrained to DNS:runner and IP:127.0.0.1, path length 0. The host trust store, AppArmor,
 # the lab account's groups and every other file are left unchanged. Rollback: deploy/lab-trust/uninstall.sh.
+#
+# usage: install.sh APPROVED_SHA256SUMS_DIGEST
+# It installs only from an immutable, owner-approved snapshot: this directory must pass snapshot-check.sh (root-owned
+# path, no group/other write, every source matching SHA256SUMS) and SHA256SUMS itself must have the SHA-256 the owner
+# approved, given as the argument. A runner-writable checkout is refused.
 set -eu
 umask 022
-SOURCE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SOURCE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 ACCOUNT=zabalack-runner
 [ "$(id -u)" = 0 ] || { echo "install.sh: run as root" >&2; exit 2; }
+[ "$#" = 1 ] || { echo "usage: install.sh APPROVED_SHA256SUMS_DIGEST" >&2; exit 2; }
+sh "$SOURCE/snapshot-check.sh" "$SOURCE" || { echo "install.sh: refusing, $SOURCE is not an immutable snapshot" >&2; exit 3; }
+manifest=$(sha256sum "$SOURCE/SHA256SUMS" | cut -d' ' -f1)
+[ "$manifest" = "$1" ] || { echo "install.sh: refusing, SHA256SUMS is $manifest, not the approved $1" >&2; exit 3; }
 id "$ACCOUNT" >/dev/null 2>&1 || { echo "install.sh: account $ACCOUNT missing" >&2; exit 2; }
 for tool in /usr/bin/setpriv /usr/sbin/zabbix_server /usr/bin/openssl /usr/sbin/visudo /usr/bin/systemctl /usr/bin/systemd-tmpfiles; do
     [ -x "$tool" ] || { echo "install.sh: $tool missing" >&2; exit 2; }
@@ -58,3 +67,4 @@ for path in /etc/zabalack-lab /etc/zabalack-lab/trust /etc/zabalack-lab/trust/* 
     stat -c '%U:%G %a %F %n' "$path"
 done
 echo "lab CA certificate sha256: $(sha256sum /etc/zabalack-lab/trust/ca-certificates.crt | cut -d' ' -f1)"
+echo "installed from $SOURCE, SHA256SUMS $manifest"

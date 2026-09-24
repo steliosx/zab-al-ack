@@ -53,6 +53,15 @@ Installing it is a host change that needs the owner's authorization.
 
 ## Installation diff (what `install.sh` creates; it refuses if any path exists)
 
+`install.sh` installs only from an immutable, owner-approved snapshot. It takes one argument: the SHA-256 of
+`deploy/lab-trust/SHA256SUMS` that the owner approved. `snapshot-check.sh` then requires three things:
+- the snapshot directory and every ancestor are root-owned and not writable by group or others (a sticky
+  ancestor such as `/tmp` is allowed);
+- each of the eight sources is a root-owned regular file that is not group- or other-writable;
+- every source matches `SHA256SUMS`.
+
+A runner-writable checkout is refused, and so is a manifest other than the approved one.
+
 | Path | Owner | Mode | Content |
 |---|---|---|---|
 | `/etc/zabalack-lab/` | root:root | 0755 | directory |
@@ -76,11 +85,27 @@ Not changed:
 - the lab account and its groups;
 - the Actions runner, its hooks and its labels.
 
-After installing, `deploy/lab-trust/verify.sh` checks owners, modes, contents and the CA's constraints, read-only.
+**Audit:** after installing, the operator runs `deploy/lab-trust/verify.sh` **as root**, from the same snapshot.
+It reads the 0440 sudoers file and the CA key, so the lab account cannot run it, and no sudo rule is added for
+it. It is read-only and checks:
+- owners, modes and types, including the hash link;
+- the exact entries of `/etc/zabalack-lab`;
+- the unit, sudoers and tmpfiles contents against the snapshot;
+- through `check-ca.sh`:
+  - the trust directory holds exactly `ca-certificates.crt`, `lab-ca.pem` and `<subject-hash>.0`, the last a
+    link to `lab-ca.pem`;
+  - the CA directory holds exactly the key and the certificate;
+  - all three certificate files are one identical, self-signed certificate that matches the key;
+  - the extensions are exactly the key identifiers plus `CA:TRUE, pathlen:0`, `Certificate Sign, CRL Sign`
+    and names permitted only for `DNS:runner` and `IP:127.0.0.1/255.255.255.255`, each critical.
 
-**Rollback:** `deploy/lab-trust/uninstall.sh` stops only this unit, removes only the paths in the table plus
-`/run/zabalack-lab-zabbix`, and reloads systemd. It never touches the global trust store, AppArmor or any
-caller-selected directory.
+It prints each installed file's SHA-256. A CA with any other name, path length, key usage or extension fails.
+
+**Rollback:** `deploy/lab-trust/uninstall.sh` stops only this unit and then requires systemd to report it
+inactive (or failed), with no process left in its control group. Otherwise it removes nothing, exits 1 and
+reports that the rollback is not complete. Only then does it remove the paths in the table plus
+`/run/zabalack-lab-zabbix` and reload systemd. It finally checks that every path is gone and the unit is no longer
+loaded. It never touches the global trust store, AppArmor or any caller-selected directory.
 
 ## Pre-install validation (done; no persistent change)
 
@@ -105,16 +130,34 @@ caller-selected directory.
 These steps need `install.sh` to have run. Run each on the lab host, under the shared lab lock, with the runner idle.
 
 ```
-sudo sh deploy/lab-trust/install.sh              # expect: the table above printed; exit 0
-sh deploy/lab-trust/verify.sh                    # expect: "lab-trust installation matches the reviewed files"
+SNAP=/root/zabalack-lab-trust-<approved commit>  # as root: a root-owned snapshot of the approved commit
+sudo sh -c "umask 022 && mkdir $SNAP && git -C <checkout> archive <approved commit> | tar -x -C $SNAP"
+sudo sha256sum $SNAP/deploy/lab-trust/SHA256SUMS # expect: the digest the owner approved
+sudo sh $SNAP/deploy/lab-trust/install.sh <approved digest>
+                                                 # expect: the table above printed; exit 0
+sudo sh $SNAP/deploy/lab-trust/verify.sh         # expect: "lab-trust installation matches the reviewed files" and the
+                                                 # installed SHA-256s; keep its full output
 sudo -l -U zabalack-runner                       # expect: exactly the two systemctl commands
-sudo python3 lab/lab_trust_validation.py --mode installed --checkout <tree> --work <tmp> --out <file>
-                                                 # expect: every case passes; host_unchanged true; the lab account
-                                                 # starts zabbix_server itself through the unit
+sudo python3 $SNAP/lab/lab_trust_validation.py --mode installed --checkout $SNAP --work <tmp> --out <file>
+                                                 # expect: status PASS, 12 of 12 required cases, host_unchanged true;
+                                                 # it refuses before any start if the audit fails
 <ordinary native cycle as the lab account>       # expect: PASS, exit 0, runner-record retained, final record validates;
                                                  # the deployment webhook delivered through the unit's trust
-sudo sh deploy/lab-trust/uninstall.sh            # rollback check if requested: every path gone
+sudo sh $SNAP/deploy/lab-trust/uninstall.sh      # rollback check if requested: unit inactive, every path gone
 ```
+
+The installed validation's required cases are:
+- `installation-audit`;
+- identity and namespace;
+- the five deliveries;
+- host trust;
+- lifecycle;
+- `installed-lab-unit-ownership`: the lab refuses to stop an invocation root started, then starts and stops
+  its own;
+- cleanup;
+- the host comparison.
+
+An exception is recorded as the run's error, and the run does not pass.
 
 For the ordinary native cycle, and for the complete S2 real-engine acceptance at the final integration tree, keep
 the original provisional and final records and every service log. Capture the precise webhook error if a delivery
