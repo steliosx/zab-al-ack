@@ -65,6 +65,10 @@ DATABASE = 'alerta'
 LAB_ROLES = ('alerta_app', 'migrator', 'zabalack_worker', 'zabalack_probe', 'zabalack_operator', 'zabalack_owner')
 ZABBIX_LAB = REPO / 'lab/zabbix_native_lab.py'
 RECORD = REPO / 'evidence/deployment-e2e-run.json'
+# The installed lab-trust unit and CA (deploy/lab-trust): the webhook verifies TLS, so the lab's zabbix_server
+# must trust the lab certificate. Checked with the rest of the layout, before any service starts.
+LAB_TRUST_UNIT = Path('/etc/systemd/system/zabalack-lab-zabbix.service')
+LAB_CA_FILES = (Path('/etc/zabalack-lab/ca/lab-ca.pem'), Path('/etc/zabalack-lab/ca/lab-ca.key'))
 NATIVE_LAB_BINDING = 'ZABALACK_NATIVE_LAB_BINDING'
 RUNNER_DESCRIPTION = ('lab/deployment_native_lab.py: services from installed artifacts on this host for '
                       'tools/run_deployment_e2e_local.py; the public record is invalidated before any service work and '
@@ -154,6 +158,10 @@ def layout() -> dict:
         except KeyError:
             owner = str(os.geteuid())
         record['missing'].append(f'install -d -m 0700 -o {owner} {PRIVATE}')
+    trust_ready = LAB_TRUST_UNIT.is_file() and all(os.access(path, os.R_OK) for path in LAB_CA_FILES)
+    record['lab_trust'] = {'unit': str(LAB_TRUST_UNIT), 'ready': trust_ready}
+    if not trust_ready:
+        record['missing'].append('lab trust: deploy/lab-trust/install.sh (owner-authorized; docs/lab-trust.md)')
     record['ready'] = not record['missing']
     return record
 

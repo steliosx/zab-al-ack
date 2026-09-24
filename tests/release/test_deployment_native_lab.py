@@ -72,6 +72,27 @@ def ready_layout(lab, monkeypatch):
     lab.module.LINK.symlink_to(lab.tmp)
     monkeypatch.setattr(lab.module.socket, 'getaddrinfo', lambda name, port: [(None, None, None, None, ('127.0.0.1', 0))])
     monkeypatch.setattr(lab.module.os, 'geteuid', lambda: private.stat().st_uid)
+    provisioned_trust(lab, monkeypatch)
+
+
+def provisioned_trust(lab, monkeypatch):
+    """Synthetic stand-ins for the installed lab-trust unit and CA files (deploy/lab-trust)."""
+    trust = lab.tmp / 'lab-trust'
+    trust.mkdir(exist_ok=True)
+    for name in ('unit.service', 'lab-ca.pem', 'lab-ca.key'):
+        (trust / name).write_text('synthetic\n')
+    monkeypatch.setattr(lab.module, 'LAB_TRUST_UNIT', trust / 'unit.service')
+    monkeypatch.setattr(lab.module, 'LAB_CA_FILES', (trust / 'lab-ca.pem', trust / 'lab-ca.key'))
+
+
+def test_the_layout_is_not_ready_without_the_lab_trust(lab, monkeypatch):
+    """With the webhook verifying TLS, a cycle refuses before any service starts when the lab trust is absent."""
+    ready_layout(lab, monkeypatch)
+    assert lab.module.layout()['ready'] is True and lab.module.layout()['lab_trust']['ready'] is True
+    monkeypatch.setattr(lab.module, 'LAB_TRUST_UNIT', lab.tmp / 'absent.service')
+    observed = lab.module.layout()
+    assert observed['ready'] is False and observed['lab_trust']['ready'] is False
+    assert observed['missing'] == ['lab trust: deploy/lab-trust/install.sh (owner-authorized; docs/lab-trust.md)']
 
 
 @pytest.mark.parametrize('layout_kind,pg_status,port,zabbix_state,expected', [
