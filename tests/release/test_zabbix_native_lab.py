@@ -4,6 +4,7 @@ and PID identity verification (R27, R29).
 Every service and port is mocked; no PostgreSQL, zabbix_server or PHP starts. The PID identity tests
 use real throwaway sleeper processes so `/proc` is read for real.
 """
+import hashlib
 import importlib.util
 import json
 import os
@@ -689,7 +690,8 @@ def test_staging_the_packaged_frontend_skips_its_unconfigured_configuration_link
 # is a blank inside the record, never a line end; a record PostgreSQL rejects is refused.
 @pytest.mark.parametrize('raw, accepted', [
     (b'local all all scram-sha-256\r\n', True),                    # PG18: scram-sha-256
-    (b'local\rall\rall\rscram-sha-256\n', True),                   # CR_strong. PG18: scram-sha-256
+    (b'local\rall\rall\rscram-sha-256\n', True),                   # PG18: scram-sha-256
+    (b'host\rall\rall\r127.0.0.1/32\rscram-sha-256\n', True),      # Astra's CR_strong, exact bytes. PG18.3 ARM, PG18.6 x64: scram
     (b'local all all scram-sha-256\r', True),                      # PG18: scram-sha-256
     (b'local all "a\rb" scram-sha-256\n', True),                   # PG18: scram-sha-256
     (b'host\tall\tall\t127.0.0.1/32\rscram-sha-256\n', True),      # PG18: scram-sha-256
@@ -698,10 +700,13 @@ def test_staging_the_packaged_frontend_skips_its_unconfigured_configuration_link
     (b'local\rall\rall\rtrust\n', False),                          # PG18: trust
     (b'local all all scram-sha-256\rlocal all all trust\n', False),  # PG18: error, option not name=value
     (b'local all all scram-sha-256 # \xff\n', False),              # not UTF-8: refused, never a crash
-], ids=['crlf', 'cr-strong', 'cr-at-eof', 'cr-in-quotes', 'cr-host', 'cr-blank-line', 'cr-in-comment',
+], ids=['crlf', 'cr-local', 'cr-strong-host-astra', 'cr-at-eof', 'cr-in-quotes', 'cr-host', 'cr-blank-line', 'cr-in-comment',
         'cr-weak', 'cr-joined-records', 'non-utf8'])
 def test_pg_hba_raw_bytes_are_read_as_postgresql_reads_them(lab, raw, accepted):
     """Review of e8ef82b (F2): read_text() ended a line at a bare CR, which PostgreSQL treats as a blank."""
+    if raw.startswith(b'host\r'):
+        # The retained original file (Astra R2, arm_snapshot02/adversarial-arm-01/pg18/CR_strong/pg_hba.conf).
+        assert hashlib.sha256(raw).hexdigest() == 'cb49719a9943df16748e9b87fa7b2a7b9c9071e6094caa9b324bd56662c54ead'
     marked(lab)
     (lab.PGDATA / 'pg_hba.conf').write_bytes(raw)
     if accepted:
