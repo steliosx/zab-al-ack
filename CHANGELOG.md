@@ -1,5 +1,20 @@
 # Zab-al-ack changelog
 
+## Unreleased — follow-ups to the R3 review (Opus; on S1 `cea3412`)
+
+- F2: Astra's exact CR_strong host bytes are a permanent reader case.
+- F1: the cancellation cutoff, the commit and the publication are named
+  separately. A signal held during the commit is reported as "during the
+  final commit, after the cancellation cutoff" (exit 130; the committed
+  record stands), no longer as "after the final record was published"; a
+  failed replace publishes nothing, leaves no temporary record and exits 1
+  without a traceback. The documentation no longer claims that a death after
+  the cutoff leaves a published record: before the replace completes it
+  leaves `PENDING_BINDING`.
+- S1: the runner's record is retained under its own label as soon as the run
+  ends, before cleanup, on success, failed cleanup and interruption alike;
+  a cycle whose runner record could not be retained never ends PASS.
+
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 
 Layered on the reviewed `e8ef82b`, which is not rewritten; each correction
