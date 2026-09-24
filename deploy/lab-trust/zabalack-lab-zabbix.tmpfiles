@@ -1,0 +1,3 @@
+# Zabalack isolated lab only (docs/lab-trust.md). Installed as /etc/tmpfiles.d/zabalack-lab-zabbix.conf.
+# The lab account writes the lab zabbix_server configuration here; the daemon reads it only after dropping to that account.
+d /run/zabalack-lab-zabbix 0700 zabalack-runner zabalack-runner -

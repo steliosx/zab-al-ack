@@ -55,6 +55,7 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import time
@@ -77,6 +78,14 @@ DB_USER = 'zabbix'
 PID_FILES = {'postgres': PGDATA / 'postmaster.pid', 'zabbix_server': STATE / 'zabbix_server.pid', 'php': STATE / 'php.pid'}
 PORTS = {'postgres': PG_PORT, 'zabbix_server': SERVER_PORT, 'php': WEB_PORT}
 ADMIN_USER = 'lab_admin'
+# The installed lab-trust unit (deploy/lab-trust, docs/lab-trust.md). When it is installed, zabbix_server is
+# started only through it: the packaged daemon, dropped to the lab account, with the lab CA as its only trust.
+TRUST_UNIT = 'zabalack-lab-zabbix.service'
+TRUST_UNIT_FILE = Path('/etc/systemd/system/zabalack-lab-zabbix.service')
+TRUST_DIR = Path('/etc/zabalack-lab/trust')
+TRUST_CONF = Path('/run/zabalack-lab-zabbix/zabbix_server.conf')
+TRUST_EXECUTABLE = Path('/usr/sbin/zabbix_server')
+SYSTEMCTL = '/usr/bin/systemctl'
 PASSWORD_FILE_NAMES = {ADMIN_USER: 'pg-password', DB_USER: 'zabbix-db-password'}
 ACCEPTED_AUTH_METHODS = ('scram-sha-256', 'reject')
 SERVER_CONF = '''# Generated disposable lab configuration; loopback only; never production.
@@ -371,10 +380,35 @@ def record_identity(name: str, pid: int) -> dict | None:
     return recorded
 
 
+def trust_unit_installed() -> bool:
+    return TRUST_UNIT_FILE.is_file() and TRUST_DIR.is_dir()
+
+
+def server_conf() -> Path:
+    return TRUST_CONF if trust_unit_installed() else STATE / 'zabbix_server.conf'
+
+
 def expected_argv(name: str) -> list[str]:
     """Arguments the lab passes to a component; a verified process carries every one of them."""
-    return {'postgres': ['-D', str(PGDATA)], 'zabbix_server': ['-c', str(STATE / 'zabbix_server.conf')],
+    server = ['--config', str(TRUST_CONF)] if trust_unit_installed() else ['-c', str(STATE / 'zabbix_server.conf')]
+    return {'postgres': ['-D', str(PGDATA)], 'zabbix_server': server,
             'php': ['-S', f'{WEB_HOST}:{WEB_PORT}', '-t', str(UI)]}[name]
+
+
+def trust_unit(verb: str) -> subprocess.CompletedProcess:
+    """The one privileged operation the lab account has: start or stop the fixed lab-trust unit (sudoers rule)."""
+    assert verb in ('start', 'stop')
+    return subprocess.run(['sudo', '-n', SYSTEMCTL, verb, TRUST_UNIT], text=True, capture_output=True, timeout=90, env=service_env())
+
+
+def require_trust_runtime() -> None:
+    """The unit reads its configuration from a fixed directory the lab account must own alone."""
+    try:
+        info = TRUST_CONF.parent.lstat()
+    except OSError as error:
+        raise SystemExit('BLOCKED_ENVIRONMENT: the lab-trust runtime directory is missing: ' + str(TRUST_CONF.parent)) from error
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or (info.st_mode & 0o777) != 0o700:
+        raise SystemExit(f'BLOCKED_ENVIRONMENT: {TRUST_CONF.parent} must be a directory owned by the lab account, mode 0700')
 
 
 def verified_pid(name: str) -> tuple[dict | None, str]:
@@ -581,10 +615,18 @@ def start_server(paths: dict[str, Path]) -> None:
         return
     (STATE / 'run').mkdir(exist_ok=True)
     own(STATE / 'run')
-    conf = STATE / 'zabbix_server.conf'
+    conf = server_conf()
+    if conf == TRUST_CONF:
+        # The unit runs the fixed packaged executable; a different one requested here is refused, not ignored.
+        if paths['zabbix_server'].resolve() != TRUST_EXECUTABLE.resolve():
+            raise SystemExit(f'the lab-trust unit runs {TRUST_EXECUTABLE}; ZABALACK_ZABBIX_SERVER names {paths["zabbix_server"]}')
+        require_trust_runtime()
     write_private(conf, SERVER_CONF.format(server_port=SERVER_PORT, pg_port=PG_PORT, database=DATABASE, db_user=DB_USER,
                                            db_password=password(DB_USER), state=STATE))
-    result = run([str(paths['zabbix_server']), '-c', str(conf)], check=False, env=service_env())
+    if conf == TRUST_CONF:
+        result = trust_unit('start')
+    else:
+        result = run([str(paths['zabbix_server']), '-c', str(conf)], check=False, env=service_env())
     if result.returncode:
         raise SystemExit('zabbix_server failed to start:\n' + (result.stdout + result.stderr)[-2000:])
     if not wait_until(lambda: port_listening(SERVER_PORT), 60):
@@ -699,6 +741,12 @@ def stop_all(paths: dict[str, Path]) -> dict:
         PID_FILES['php'].unlink(missing_ok=True)
         identity_file('php').unlink(missing_ok=True)
     outcomes['zabbix_server'] = stop_component('zabbix_server', 60)
+    if trust_unit_installed():
+        # The verified daemon was signalled above; stopping the unit also ends anything left in its control group.
+        stopped = trust_unit('stop')
+        outcomes['zabbix_server']['trust_unit_stop_exit_code'] = stopped.returncode
+        if stopped.returncode != 0:
+            outcomes['zabbix_server']['status'] = 'FAILED'
     if outcomes['zabbix_server']['status'] == 'STOPPED':
         identity_file('zabbix_server').unlink(missing_ok=True)
     identity, classification = verified_pid('postgres')

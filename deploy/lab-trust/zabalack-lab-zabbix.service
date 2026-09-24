@@ -1,0 +1,25 @@
+# Zabalack isolated lab only: the packaged zabbix_server with the lab CA as its only trust (docs/lab-trust.md).
+# Installed root-owned at /etc/systemd/system/zabalack-lab-zabbix.service by deploy/lab-trust/install.sh.
+#
+# Root-context work is limited to systemd itself (a private mount namespace in which the fixed, root-owned
+# /etc/zabalack-lab/trust is bind-mounted read-only over /etc/ssl/certs, the CA file and directory libcurl
+# uses) and to /usr/bin/setpriv, which permanently drops to the lab account before anything the account
+# controls is read: supplementary groups cleared, GID/UID set, capabilities and the bounding set emptied,
+# no_new_privs set, environment reset. Only then does the fixed packaged executable start; it reads its
+# configuration (runner-owned, at a fixed path) as the lab account. No argument, path or environment of
+# this unit comes from the caller. Host trust (/etc/ssl/certs outside this namespace) is not changed.
+[Unit]
+Description=Zabalack isolated lab: packaged zabbix_server with the lab CA only (lab host only)
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/setpriv --reuid=zabalack-runner --regid=zabalack-runner --clear-groups --inh-caps=-all --ambient-caps=-all --bounding-set=-all --no-new-privs --reset-env -- /usr/sbin/zabbix_server --foreground --config /run/zabalack-lab-zabbix/zabbix_server.conf
+PrivateMounts=yes
+BindReadOnlyPaths=/etc/zabalack-lab/trust:/etc/ssl/certs
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin TZ=UTC LANG=C.UTF-8
+UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH HTTPS_PROXY https_proxy HTTP_PROXY http_proxy ALL_PROXY all_proxy
+KillMode=control-group
+TimeoutStopSec=30
+Restart=no

@@ -1,0 +1,6 @@
+# Zabalack isolated lab only (docs/lab-trust.md). Installed root:root 0440 as /etc/sudoers.d/zabalack-lab-zabbix.
+# The lab account may start and stop exactly this one fixed unit. No other command, argument, wildcard,
+# environment or unit is allowed; the unit itself takes no input from the caller.
+Cmnd_Alias ZABALACK_LAB_ZABBIX = /usr/bin/systemctl start zabalack-lab-zabbix.service, /usr/bin/systemctl stop zabalack-lab-zabbix.service
+Defaults!ZABALACK_LAB_ZABBIX env_reset, !setenv
+zabalack-runner ALL=(root) NOPASSWD: ZABALACK_LAB_ZABBIX

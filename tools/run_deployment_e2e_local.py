@@ -57,6 +57,10 @@ PASSWORD_NAMES = ("alerta_app", "zabalack_worker", "zabalack_probe", "zabalack_o
 GENERATED = ("bootstrap.json", "server.crt", "server.key", "junit.xml", "observations.json", "signing.key", "source.token",
              "probe.dsn", "worker.dsn", "operator.dsn", "zabalack.json", "alertad.conf")
 LAB_PORTS = (58081, 58443)
+# The installed lab-trust unit (deploy/lab-trust): the webhook verifies TLS, so the lab's zabbix_server must
+# trust the lab certificate. Its CA signs each run's certificate; without it the run is NOT_RUN, not a late FAIL.
+LAB_CA = (Path("/etc/zabalack-lab/ca/lab-ca.pem"), Path("/etc/zabalack-lab/ca/lab-ca.key"))
+LAB_TRUST_UNIT = Path("/etc/systemd/system/zabalack-lab-zabbix.service")
 
 
 def require(condition, reason):
@@ -79,6 +83,8 @@ def check_host_layout():
         with socket.socket() as sock:
             sock.settimeout(0.5)
             require(sock.connect_ex(("127.0.0.1", port)) != 0, "lab_port_in_use_before_run: " + str(port))
+    require(LAB_TRUST_UNIT.is_file() and all(os.access(path, os.R_OK) for path in LAB_CA),
+            "lab_trust_not_provisioned: the webhook verifies TLS; install deploy/lab-trust (docs/lab-trust.md)")
 
 
 # Run as `python -I -S`: no PYTHON* environment, no user site and no .pth
@@ -174,7 +180,7 @@ def bootstrap(project: str):
     import secrets
     protected(PRIVATE / "bootstrap.json", json.dumps({"isolated_lab": True, "project": project,
               "passwords": {name: secrets.token_urlsafe(32) for name in PASSWORD_NAMES}}))
-    certificates(PRIVATE)
+    certificates(PRIVATE, ca=LAB_CA)
 
 
 def lab_ports_free() -> bool:
