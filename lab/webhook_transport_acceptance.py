@@ -241,7 +241,7 @@ def gateway(work: Path, nginx: str, user: str, upstream_port: int) -> tuple[subp
                        '@UPSTREAM_URL@': f"https://{NAMES['alerta']}:{upstream_port}/api/alert", '@UPSTREAM_NAME@': NAMES['alerta'],
                        '@UPSTREAM_CA@': str(work / 'pki/trusted-ca.pem')}.items():
         server = server.replace(key, value)
-    assert '@' not in re.sub(r'#.*', '', server), 'unrendered placeholder'
+    assert not re.search(r'@[A-Z_]+@', re.sub(r'#.*', '', server)), 'unrendered placeholder'
     conf = root / 'nginx.conf'
     conf.write_text(f'pid {root}/nginx.pid;\nerror_log {root}/logs/error.log info;\nevents {{ worker_connections 64; }}\n'
                     f'http {{\n  access_log {root}/logs/access.log;\n  client_body_temp_path {root}/body;\n  proxy_temp_path {root}/proxy;\n'
