@@ -185,3 +185,30 @@ def test_an_out_of_range_port_is_a_structured_refusal(tmp_path, capsys):
                        '--ingest-url', 'https://localhost:99999/api/alert'])
     out = json.loads(capsys.readouterr().out)
     assert code == 3 and out['status'] == 'REFUSED' and out['checks']['trust']['reason'] == 'ingestion_url_port_invalid'
+
+
+# Review of 8211b1b (R4-CHECKER port zero): an explicit port 0 was probed as 443 and could report READY.
+@pytest.mark.parametrize('port', ['0', '00000', '99999'])
+def test_an_explicit_invalid_port_refuses_before_any_tls_or_connection(tmp_path, capsys, monkeypatch, port):
+    def forbidden(*unused, **unused_too):
+        raise AssertionError('no TLS context or connection is made for an invalid port')
+    monkeypatch.setattr(check.ssl, 'create_default_context', forbidden)
+    monkeypatch.setattr(check.socket, 'create_connection', forbidden)
+    reviewed = export(tmp_path, (ROOT / 'zabbix/v1/webhook.js').read_text())
+    code = check.main(['--zabbix-server', fake_server(tmp_path, 'zabbix_server (Zabbix) 7.0.31'), '--media-export', str(reviewed),
+                       '--ingest-url', f'https://localhost:{port}/api/alert'])
+    out = json.loads(capsys.readouterr().out)
+    assert code == 3 and out['status'] == 'REFUSED'
+    assert out['checks']['trust'] == {'ok': False, 'reason': 'ingestion_url_port_invalid'}
+
+
+@pytest.mark.parametrize('url, port', [('https://localhost/api/alert', 443), ('https://localhost:1/api/alert', 1),
+                                       ('https://localhost:65535/api/alert', 65535)])
+def test_the_default_port_applies_only_when_the_port_is_absent(monkeypatch, url, port):
+    endpoints = []
+    def refuse(endpoint, timeout):
+        endpoints.append(endpoint)
+        raise ConnectionRefusedError
+    monkeypatch.setattr(check.socket, 'create_connection', refuse)
+    result = check.trust(url, None, None)
+    assert endpoints == [('localhost', port)] and result['ok'] is False and result['port'] == port

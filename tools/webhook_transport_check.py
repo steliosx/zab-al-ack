@@ -85,8 +85,12 @@ def trust(url: str, ca_file: str, ca_path: str, timeout: float = 10) -> dict:
         return {'ok': False, 'reason': 'ingestion_url_not_an_https_alert_url'}
     parts = urlsplit(url)
     try:
-        host, port = parts.hostname, parts.port or 443
+        host, port = parts.hostname, parts.port
     except ValueError:
+        return {'ok': False, 'reason': 'ingestion_url_port_invalid'}
+    if port is None:  # the default only when no port is given; an explicit 0 is not "absent"
+        port = 443
+    elif not 1 <= port <= 65535:
         return {'ok': False, 'reason': 'ingestion_url_port_invalid'}
     try:
         context = ssl.create_default_context(cafile=ca_file, capath=ca_path)
