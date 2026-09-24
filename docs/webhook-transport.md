@@ -37,9 +37,22 @@ commit `e7da53eea21`, which is the revision `zabbix_server -V` prints for the Ub
 | 6 | If the name resolves to IPv6, the route is served on that address with the same configuration | inspection; the lab covers IPv4 only |
 
 Run the precondition on each node before enabling:
-`tools/webhook_transport_check.py --media-export <configuration.export JSON> --ingest-url <alerta_api_url>`.
-It exits 0 with `READY` only when checks 1–3 all hold. Otherwise it exits 3 with `REFUSED`, and it never
-falls back to disabled verification.
+`tools/webhook_transport_check.py --zabbix-server <that node's executable> --media-export <configuration.export JSON>
+--ingest-url <alerta_api_url> [--ca-file F --ca-path D]`.
+It exits 0 with `READY` only when checks 1–3 all hold. Otherwise it exits 3 with a structured `REFUSED`, and it
+never falls back to disabled verification. Malformed inputs, such as an out-of-range port, a malformed export,
+an executor that does not exit 0, or an unreadable input, are refusals, not tracebacks.
+
+**What the operator binds.** This is a manual operator gate, not a runtime interlock. Its result is only as good as its inputs:
+- `--zabbix-server`: the executable the node's running service actually executes. Read it from the unit or
+  from `/proc/<pid>/exe` of the running `zabbix_server`.
+- `--media-export`: exported at check time from the Zabbix that node serves.
+- `--ingest-url`: the media type's currently stored `alerta_api_url`.
+- `--ca-file`/`--ca-path`: the store that daemon actually uses. By default that is the Ubuntu libcurl store.
+  If the daemon runs in a private mount namespace with its own trust (as in the lab below), run the check inside
+  that namespace, or pass the files mounted there.
+
+Record all four with the result. READY is not transport approval, beta approval or a redirect check.
 
 ## The ingestion route (candidate)
 
@@ -73,7 +86,8 @@ inspected route and a G1/G2 disposition.
 - Receivers record connections, handshake failures, and for each request the method, path, body digest and
   whether the synthetic canary key arrived.
 
-Results at S2 `094fce4`: **41 of 41 acceptance cases passed.**
+Results: **41 of 41 acceptance cases passed** at S2 `094fce4`, and again in a separate final run at
+`643a0a4` (`results.json` SHA-256 `9461a90c…f25e`; the earlier run's is `227bf687…36de`).
 
 | Group | Observed |
 |---|---|
@@ -95,6 +109,13 @@ Baseline without the route (characterisation, TLS verification on):
   30-redirect limit.
 
 This is why requirement 4 exists.
+
+**Not yet exercised on the real engine** (planned for the integrated run):
+- non-2xx, malformed JSON, `status: error` and over-limit response bodies (the Node contract covers the first
+  three);
+- a gateway-to-upstream bad certificate or wrong name.
+
+Until then these results qualify the webhook-to-route hop only, not both TLS hops.
 
 ## Integration dependency: the deployment lab's own delivery
 

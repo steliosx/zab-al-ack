@@ -5,7 +5,7 @@ Run on every Zabbix server node that can execute the webhook (each HA node: any 
 The webhook asks Zabbix's HttpRequest to verify the ingestion peer and host; only some builds honour that,
 and the trust is the executing server's own CA store. Enablement is refused unless all of these hold:
 
-1. executor: `zabbix_server -V` names a qualified build exactly (version and source revision). Only the
+1. executor: `zabbix_server -V` completes (exit 0) and names a qualified build exactly (version and source revision). Only the
    7.0 branch reads the constructor options, from 7.0.28; 7.0.31 (tag 7.0.31, commit e7da53eea21) is the
    qualified build. A later number, another branch or an unreadable version is refused, never assumed.
 2. script: the media type script stored in Zabbix (a JSON export given with --media-export, from
@@ -16,6 +16,10 @@ and the trust is the executing server's own CA store. Enablement is refused unle
 
 Redirect containment is not checked here: HttpRequest follows redirects, so the supported configuration
 requires an ingestion route that never returns one (docs/webhook-transport.md), checked separately.
+This is a manual operator gate, not a runtime interlock, and READY is not transport or beta approval: the
+operator binds its inputs to the node being enabled (that node's executable, a fresh export, the stored
+endpoint and the CA file and directory that node's daemon actually uses). Every refusal is structured
+output with exit 3; malformed inputs never raise.
 """
 from __future__ import annotations
 
@@ -40,10 +44,13 @@ URL = re.compile(r'https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9_.~-]+)*/
 
 def executor(binary: str) -> dict:
     try:
-        output = subprocess.run([binary, '-V'], capture_output=True, text=True, timeout=10, env={'PATH': '/usr/bin:/bin'}).stdout
-    except (OSError, subprocess.SubprocessError) as error:
+        completed = subprocess.run([binary, '-V'], capture_output=True, text=True, timeout=10, env={'PATH': '/usr/bin:/bin'})
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError) as error:
         return {'ok': False, 'reason': 'executor_unreadable: ' + type(error).__name__}
-    lines = output.splitlines()
+    if completed.returncode != 0:
+        # An identity printed by a run that did not complete is not accepted.
+        return {'ok': False, 'reason': f'executor_failed: exit {completed.returncode}'}
+    lines = completed.stdout.splitlines()
     version = re.fullmatch(r'zabbix_server \(Zabbix\) (\S+)', lines[0].strip()) if lines else None
     revision = re.match(r'Revision ([0-9a-f]{7,40}) ', lines[1].strip()) if len(lines) > 1 else None
     identity = (version[1] if version else None, revision[1] if revision else None)
@@ -53,12 +60,18 @@ def executor(binary: str) -> dict:
 
 
 def script(export: Path) -> dict:
-    expected = (ROOT / 'zabbix/v1/webhook.js').read_text()
     try:
-        media = json.loads(export.read_text())['zabbix_export']['media_types']
-        stored = [m['script'] for m in media if m.get('type') == 'WEBHOOK' and 'Zab-al-ack' in m.get('name', '')]
-    except (OSError, ValueError, KeyError, TypeError):
+        expected = (ROOT / 'zabbix/v1/webhook.js').read_text()
+    except (OSError, UnicodeDecodeError):
+        return {'ok': False, 'reason': 'reviewed_artifact_unreadable'}
+    try:
+        data = json.loads(export.read_text())
+    except (OSError, ValueError, UnicodeDecodeError):
         return {'ok': False, 'reason': 'media_export_unreadable'}
+    media = data.get('zabbix_export', {}).get('media_types') if isinstance(data, dict) and isinstance(data.get('zabbix_export'), dict) else None
+    if not isinstance(media, list) or not all(isinstance(m, dict) for m in media):
+        return {'ok': False, 'reason': 'media_export_malformed'}
+    stored = [m.get('script') for m in media if m.get('type') == 'WEBHOOK' and 'Zab-al-ack' in str(m.get('name', ''))]
     if len(stored) != 1 or not isinstance(stored[0], str):
         return {'ok': False, 'reason': 'media_type_not_found_once'}
     # Zabbix stores imported multi-line text with CRLF; only line terminators may differ.
@@ -71,7 +84,10 @@ def trust(url: str, ca_file: str, ca_path: str, timeout: float = 10) -> dict:
     if not URL.fullmatch(url):
         return {'ok': False, 'reason': 'ingestion_url_not_an_https_alert_url'}
     parts = urlsplit(url)
-    host, port = parts.hostname, parts.port or 443
+    try:
+        host, port = parts.hostname, parts.port or 443
+    except ValueError:
+        return {'ok': False, 'reason': 'ingestion_url_port_invalid'}
     try:
         context = ssl.create_default_context(cafile=ca_file, capath=ca_path)
     except OSError as error:
