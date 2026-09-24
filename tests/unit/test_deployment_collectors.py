@@ -120,4 +120,4 @@ def test_synthetic_media_contract_and_early_echo():
     if not shutil.which('node'):
         pytest.skip('Node unavailable; JS fixtures not executed')
     result=subprocess.run(['node',str(ROOT/'zabbix/v1/test_webhook.cjs')],capture_output=True,text=True,check=True)
-    assert json.loads(result.stdout)['passed']==15
+    assert json.loads(result.stdout)['passed']==18  # 15 contract cases + 3 A2 transport-construction cases

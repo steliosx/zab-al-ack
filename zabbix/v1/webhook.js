@@ -62,7 +62,11 @@ function execute(p) {
         throw 'An explicit HTTPS Alerta /alert URL without userinfo, query or fragment is required';
     }
     var apiKey = required(p.alerta_api_key, 'customer-bound ingestion key');
-    var request = new HttpRequest();
+    // Peer and host verification against the executing server's CA store (SPEC_AMENDMENTS A2).
+    // Honoured by Zabbix 7.0.28 and later in the 7.0 branch; 7.0.31 is the qualified build. Earlier
+    // 7.0 builds ignore the argument, so enablement is gated by tools/webhook_transport_check.py.
+    // HttpRequest always follows redirects: the approved ingestion route must never return one.
+    var request = new HttpRequest({SSLVerifyPeer: true, SSLVerifyHost: true});
     request.addHeader('Content-Type: application/json');
     request.addHeader('Authorization: Key ' + apiKey);
     var response = request.post(endpoint, JSON.stringify(result.payload));

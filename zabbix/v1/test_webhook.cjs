@@ -33,4 +33,33 @@ assert.throws(()=>webhook.buildPayload({...fixture('recovery'),event_recovery_id
 assert.equal(webhook.buildPayload(fixture('no_cause_unknown')).payload.attributes.zabbix_cause_event_id,null); passed++;
 assert.throws(()=>webhook.buildPayload({...fixture('problem'),event_cause_id:'unknown'})); passed++;
 assert.throws(()=>webhook.buildPayload({...fixture('problem'),event_cause_id:'*UNKNOWN*x'})); passed++;
+// A2 (S2): the enabled path constructs HttpRequest with peer and host verification and nothing else;
+// disabled and echo paths never construct one. A stand-in records calls; it is not Zabbix transport evidence.
+function fakeHttp(status, response) {
+    const calls = {constructed: [], headers: [], posts: []};
+    global.HttpRequest = function (options) {
+        calls.constructed.push(arguments.length === 1 ? options : {arguments: arguments.length});
+        this.addHeader = h => calls.headers.push(h);
+        this.post = (url, body) => { calls.posts.push({url, body}); return response; };
+        this.getStatus = () => status;
+    };
+    return calls;
+}
+const enabled = {...fixture('problem'), external_writes_enabled: 'true', alerta_api_url: 'https://ingest.example.invalid/api/alert',
+                 alerta_api_key: 'synthetic-canary-key', alerta_customer: 'c', zabbix_instance: 'i', alerta_environment: 'e'};
+let calls = fakeHttp(201, '{"status":"ok"}');
+assert.equal(JSON.parse(webhook.execute(enabled)).status, 'accepted');
+assert.deepEqual(calls.constructed, [{SSLVerifyPeer: true, SSLVerifyHost: true}]);
+assert.deepEqual(calls.headers, ['Content-Type: application/json', 'Authorization: Key synthetic-canary-key']);
+assert.equal(calls.posts.length, 1); assert.equal(calls.posts[0].url, enabled.alerta_api_url); passed++;
+for (const [status, response] of [[302, ''], [500, '{"status":"ok"}'], [201, 'not json'], [201, '{"status":"error"}']]) {
+    fakeHttp(status, response); assert.throws(() => webhook.execute(enabled));
+}
+passed++;
+calls = fakeHttp(201, '{"status":"ok"}');
+assert.throws(() => webhook.execute({...enabled, alerta_api_url: 'http://ingest.example.invalid/api/alert'}));
+assert.equal(JSON.parse(webhook.execute(fixture('human_update'))).status, 'disabled_reference_artifact');
+assert.equal(JSON.parse(webhook.execute(fixture('writeback_echo'))).status, 'suppressed_echo');
+assert.equal(calls.constructed.length, 0); passed++;
+delete global.HttpRequest;
 process.stdout.write(JSON.stringify({passed,evidence:'synthetic Node contract; not Zabbix macro/API/notification evidence'})+'\n');
