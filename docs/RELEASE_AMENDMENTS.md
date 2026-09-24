@@ -1168,6 +1168,14 @@ environments. A manual native `cycle` of the a18 wheel on
 `zabalack-omarchy-x64` then passed (4 passed, lab absent, final record
 validated); it is a verification run, not a qualification record.
 
+Corrections after Astra's review of `e8ef82b` (2026-09-24; author
+verification only): the cycle publishes its final record once, and a
+termination signal received before that publication makes the outcome an
+interrupted FAIL with exit 130 instead of a published PASS followed by a
+traceback (F1); `pg_hba.conf` is read as raw bytes with PostgreSQL's line and
+blank rules (F2); the runner interpreter's library directory is named only
+for its own `libpythonX.Y.so.1.0` file (F3).
+
 ## R28 — Docker requirements inventory and runner-account verification (prepared handoff)
 
 Numbered after R26 (Docker-free routine native CI) and R27 (native Zabbix

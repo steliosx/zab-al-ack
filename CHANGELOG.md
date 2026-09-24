@@ -1,5 +1,31 @@
 # Zab-al-ack changelog
 
+## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
+
+Layered on the reviewed `e8ef82b`, which is not rewritten; each correction
+carries a regression that fails with its fix removed. Author verification
+only, not independent review or approval.
+
+- F1 (HIGH): the cycle publishes its final record once, at an explicit
+  boundary. A SIGTERM, SIGHUP or SIGINT received before the last check (run
+  with those signals blocked up to the atomic replace) is an interrupted
+  FAIL with exit 130, even after a passing run and complete cleanup;
+  previously a signal during the final validation still published a
+  validating PASS and the CLI died with a traceback (exit 1). A signal
+  after the publication leaves the record as published and exits 130 with
+  a message; a death before it leaves the runner's non-validating
+  `PENDING_BINDING`. Pinned by real signals at nine boundaries
+  (`tests/release/native_lab_signal_harness.py`).
+- F2: `pg_hba.conf` is read as raw bytes and split at `\n` only (a bare CR
+  is a blank, as in PostgreSQL); a non-UTF-8 file and a record whose options
+  are not `name=value` are refused. Ten raw-byte cases pin PostgreSQL 18.6's
+  verdicts.
+- F3: `LD_LIBRARY_PATH` names the interpreter's lib directory only for its
+  own `libpythonX.Y.so.1.0` file; another version, the stable-ABI library,
+  a non-file, a dangling link and a path with `:`, `;` or `$` give nothing.
+  Both copies are tested, and the four callers import `_ctypes` on the x64
+  host's setup-python interpreter.
+
 ## Unreleased — corrections after the non-author review of `b57bebb` (Opus)
 
 Five corrective commits (O17–O21) and two test commits (O22 with its lint
