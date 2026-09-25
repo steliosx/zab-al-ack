@@ -256,30 +256,59 @@ class Lab:
     def start(self):
         return self.command('start', '--isolated-lab').stdout
 
-    def stop_and_wipe(self, collect=None):
-        """Stop, then (when given) collect the stopped lab's evidence, then wipe; the wipe never precedes collection."""
-        results = [self.command('stop', '--isolated-lab', check=False)]
-        steps = [{'argv_tail': r.args[-3:], 'exit': r.returncode, 'stdout': r.stdout[-300:]} for r in results]
-        if collect is not None:
-            steps.append({'collect': collect()})
+    def stop_and_wipe(self, collect):
+        """Stop the lab's own services, collect its evidence, and wipe only when every selected file was retained.
+
+        An INCOMPLETE or FAILED collection leaves the lab state exactly in place (stopped, not wiped) for a later
+        collection; the caller reports the attempt as failed.
+        """
+        stopped = self.command('stop', '--isolated-lab', check=False)
+        steps: list[dict] = [{'argv_tail': stopped.args[-3:], 'exit': stopped.returncode, 'stdout': stopped.stdout[-300:]}]
+        verdict = collect()
+        steps.append({'collect': verdict})
+        if verdict['status'] != 'COLLECTED':
+            steps.append({'wipe': 'SKIPPED', 'reason': 'evidence not fully retained; the stopped lab state is left in place'})
+            return steps
         wiped = self.command('reset', '--isolated-lab', '--wipe', check=False)
         steps.append({'argv_tail': wiped.args[-3:], 'exit': wiped.returncode, 'stdout': wiped.stdout[-300:]})
         return steps
 
 
-def collector(bundle: Path, attempt: str, sources: list[tuple[str, str, Path]]):
-    """A callable that collects into the PRIVATE bundle (tools/collect_attempt_evidence.py); its failure is recorded."""
+def evidence_tool():
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
     import collect_attempt_evidence
+    return collect_attempt_evidence
+
+
+def collector(bundle: Path, attempt: str, sources: list[tuple[str, str, Path]], new: bool = False):
+    """A callable that collects into the PRIVATE bundle (tools/collect_attempt_evidence.py).
+
+    Its status is COLLECTED only when every selected file that exists was retained and read back; otherwise
+    INCOMPLETE (with each failure) or FAILED (the bundle could not be used). Only COLLECTED permits a wipe.
+    """
+    tool = evidence_tool()
 
     def run() -> dict:
         try:
-            manifest = collect_attempt_evidence.collect(bundle, attempt, sources)
-        except (collect_attempt_evidence.CollectionError, OSError) as error:
+            manifest = tool.collect(bundle, attempt, sources, new=new)
+        except (tool.CollectionError, OSError) as error:
             return {'status': 'FAILED', 'detail': f'{type(error).__name__}: {error}'}
-        return {'status': 'COLLECTED', 'files': len(manifest['files']), 'absent': len(manifest['absent']),
-                'excluded': len(manifest['excluded'])}
+        return {'status': tool.verdict(manifest), 'files': len(manifest['files']), 'absent': len(manifest['absent']),
+                'excluded': len(manifest['excluded']), 'failed': manifest['failed']}
     return run
+
+
+def stop_owned(process: subprocess.Popen | None) -> int | None:
+    """Terminate a process this attempt started (a gateway) and wait for it; nothing else is signalled."""
+    if process is None:
+        return None
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=10)
+    return process.returncode
 
 
 # ---------------------------------------------------------------- the gateway candidate
@@ -311,6 +340,7 @@ def gateway(work: Path, nginx: str, user: str, upstream_port: int, label: str = 
             if probe.connect_ex(('127.0.0.1', port)) == 0:
                 return process, port, root
         time.sleep(0.2)
+    stop_owned(process)  # never leave an unlistening gateway (and its log writer) running
     raise RuntimeError('gateway did not listen')
 
 
@@ -369,43 +399,48 @@ def main(argv=None) -> int:
     if args.evidence is None:
         args.evidence = args.out.with_name(args.out.name + '.private-evidence')
     work = args.work.resolve()
-    attempt = 's2-acceptance-' + time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
-    pki(work / 'pki')
-    shutil.copytree(args.checkout, work / 'checkout', symlinks=True)
-    sh('chown', '-R', f'{args.lab_user}:{args.lab_user}', str(work / 'checkout'))
-    identity: dict[str, object] = {'isolation': isolate(work)}
+    attempt = evidence_tool().attempt_label('s2-acceptance')
     checkout = work / 'checkout'
-    canary = 'S2-CANARY-' + secrets.token_hex(12)
-    fixture = json.loads((checkout / 'zabbix/v1/fixtures/problem.params.json').read_text())
-    pkidir = work / 'pki'
-
-    receivers = {
-        'upstream': Receiver('upstream', pkidir, 'alerta'),
-        'target-other': Receiver('target-other', pkidir, 'other'),
-        'target-alt-port': Receiver('target-alt-port', pkidir, 'ingest'),
-        'target-plain': Receiver('target-plain'),
-        'direct-ok': Receiver('direct-ok', pkidir, 'direct'),
-        'direct-untrusted': Receiver('direct-untrusted', pkidir, 'direct-untrusted'),
-        'direct-other-anchor': Receiver('direct-other-anchor', pkidir, 'direct-other-anchor'),
-        'direct-wrong-name': Receiver('direct-wrong-name', pkidir, 'direct-wrong-name'),
-        'direct-expired': Receiver('direct-expired', pkidir, 'direct-expired'),
-        'direct-redirect': Receiver('direct-redirect', pkidir, 'direct'),
-        'upstream-untrusted': Receiver('upstream-untrusted', pkidir, 'alerta-untrusted'),
-        'upstream-wrong-name': Receiver('upstream-wrong-name', pkidir, 'other'),
-        'upstream-other-anchor': Receiver('upstream-other-anchor', pkidir, 'alerta-other-anchor'),
-        'upstream-expired': Receiver('upstream-expired', pkidir, 'alerta-expired'),
-    }
-    for receiver in receivers.values():
-        receiver.canary = canary
+    identity: dict[str, object] = {}
+    results: dict = {'scope': __doc__.split('\n\n')[0], 'coverage': 'component acceptance, direct zabbix_server launch in a private '
+                     'trust namespace; not the installed lab-trust unit path', 'attempt': attempt, 'cases': [], 'identity': identity}
     lab = Lab(checkout, args.lab_user)
+    lab_started = False
     process = None
     extra_gateways: list[subprocess.Popen] = []
-    results: dict = {'scope': __doc__.split('\n\n')[0], 'coverage': 'component acceptance, direct zabbix_server launch in a private '
-                     'trust namespace; not the installed lab-trust unit path', 'cases': [], 'identity': identity}
+    receivers: dict[str, Receiver] = {}
+    # The attempt boundary starts here: a setup or precondition refusal (isolate() included) is recorded, collected
+    # and re-raised, without starting anything to obtain the record.
     try:
+        pki(work / 'pki')
+        shutil.copytree(args.checkout, checkout, symlinks=True)
+        sh('chown', '-R', f'{args.lab_user}:{args.lab_user}', str(checkout))
+        identity['isolation'] = isolate(work)
+        canary = 'S2-CANARY-' + secrets.token_hex(12)
+        fixture = json.loads((checkout / 'zabbix/v1/fixtures/problem.params.json').read_text())
+        pkidir = work / 'pki'
+        receivers.update({
+            'upstream': Receiver('upstream', pkidir, 'alerta'),
+            'target-other': Receiver('target-other', pkidir, 'other'),
+            'target-alt-port': Receiver('target-alt-port', pkidir, 'ingest'),
+            'target-plain': Receiver('target-plain'),
+            'direct-ok': Receiver('direct-ok', pkidir, 'direct'),
+            'direct-untrusted': Receiver('direct-untrusted', pkidir, 'direct-untrusted'),
+            'direct-other-anchor': Receiver('direct-other-anchor', pkidir, 'direct-other-anchor'),
+            'direct-wrong-name': Receiver('direct-wrong-name', pkidir, 'direct-wrong-name'),
+            'direct-expired': Receiver('direct-expired', pkidir, 'direct-expired'),
+            'direct-redirect': Receiver('direct-redirect', pkidir, 'direct'),
+            'upstream-untrusted': Receiver('upstream-untrusted', pkidir, 'alerta-untrusted'),
+            'upstream-wrong-name': Receiver('upstream-wrong-name', pkidir, 'other'),
+            'upstream-other-anchor': Receiver('upstream-other-anchor', pkidir, 'alerta-other-anchor'),
+            'upstream-expired': Receiver('upstream-expired', pkidir, 'alerta-expired'),
+        })
+        for receiver in receivers.values():
+            receiver.canary = canary
         process, gw_port, gw_root = gateway(work, args.nginx, args.lab_user, receivers['upstream'].port)
         identity['gateway'] = {'nginx': sh(args.nginx, '-v').stderr.strip(), 'config_sha256': digest(gw_root / 'nginx.conf'),
                                'template_sha256': digest(checkout / 'deploy/ingress/alerta-ingest.nginx.conf.template')}
+        lab_started = True  # from here the lab may own services, even if start fails part-way
         lab_start = json.loads(lab.start().strip().splitlines()[-1])
         identity['lab_start'] = lab_start
         assert lab_start.get('zabbix_launch') == 'direct (override)', lab_start  # never the installed unit here
@@ -592,38 +627,33 @@ def main(argv=None) -> int:
             'proxy': 'the webhook calls no setProxy and the lab service environment carries no proxy variables (service_env)',
             'ipv6': 'the route and names are IPv4 loopback only in this lab',
             'ha': 'single server node; each HA node must pass the precondition (docs/webhook-transport.md)'}
+    except BaseException as failure:  # recorded in the result and the bundle, then re-raised unchanged
+        results['error'] = f'{type(failure).__name__}: {failure}'
+        raise
     finally:
-        # Every attempt, whatever its outcome, is collected after the services stop and before anything is wiped.
-        gateway_logs = [('tree', path.parent.name + '-logs', path) for path in sorted(work.glob('nginx*/logs'))]
-        collect = collector(args.evidence, attempt, [('checkout', 'checkout', checkout), *gateway_logs,
-                                                     ('file', 'media-export', work / 'media-export.json')])
-        results['cleanup'] = {'lab': lab.stop_and_wipe(collect)}
-        for leftover in extra_gateways:
-            leftover.terminate()
-            try:
-                leftover.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                leftover.kill()
-        if process:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-            results['cleanup']['gateway_exit'] = process.returncode
+        # 1. Stop the log writers this attempt owns (its gateways) and its receivers; nothing foreign is signalled.
+        cleanup: dict = {'gateway_exits': [stop_owned(gw) for gw in [*extra_gateways, process] if gw is not None]}
         for receiver in receivers.values():
             receiver.shutdown()
-        collected = results['cleanup']['lab'][1]['collect']
+        # 2. Collect every attempt into a fresh directory; 3. the lab is stopped, and wiped only after a complete collection.
+        gateway_logs = [('tree', path.parent.name + '-logs', path) for path in sorted(work.glob('nginx*/logs'))]
+        collect = collector(args.evidence, attempt, [('checkout', 'checkout', checkout), *gateway_logs,
+                                                     ('file', 'media-export', work / 'media-export.json')], new=True)
+        cleanup['lab'] = lab.stop_and_wipe(collect) if lab_started else [{'collect': collect()}, {'wipe': 'NOT_NEEDED',
+                                                                                                    'reason': 'the lab was never started'}]
+        results['cleanup'] = cleanup
+        collected = next(step['collect'] for step in cleanup['lab'] if 'collect' in step)
         results['summary'] = {'acceptance_cases': sum(1 for c in results['cases'] if c['pass'] is not None),
                               'passed': sum(1 for c in results['cases'] if c['pass'] is True),
                               'failed': [c['case'] for c in results['cases'] if c['pass'] is False]
-                              + ([] if collected['status'] == 'COLLECTED' else ['evidence-collection']),
+                              + ([] if collected['status'] == 'COLLECTED' else ['evidence-collection'])
+                              + (['error'] if 'error' in results else []),
+                              'error': results.get('error'),
                               'private_evidence': str(args.evidence.resolve() / attempt)}
         args.out.write_text(json.dumps(results, indent=2) + '\n')
         results['summary']['result_collected'] = collector(args.evidence, attempt, [('file', 'result', args.out)])()['status']
     print(json.dumps(results['summary']))
     return 0 if not results['summary']['failed'] and results['summary']['result_collected'] == 'COLLECTED' else 1
-
 
 if __name__ == '__main__':
     sys.exit(main())

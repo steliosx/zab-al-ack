@@ -48,6 +48,7 @@ def test_every_outcome_is_collected_with_digests_and_nothing_secret(tmp_path, ou
                 'build/private/retained-phases/abc123/deployment-cycle/logs__server.log'} <= copied
     assert not any('password' in name or name.endswith('.key') or 'pgdata' in name for name in copied)
     assert {entry['path'] for entry in manifest['excluded']} == {'.deployment-lab/db-password.json'}  # listed by name, not copied
+    assert manifest['failed'] == [] and collector.verdict(manifest) == 'COLLECTED'  # an intentional exclusion is not a failure
     for entry in manifest['files']:
         copy = bundle / entry['bundle_path']
         assert hashlib.sha256(copy.read_bytes()).hexdigest() == entry['sha256'] == hashlib.sha256((root / entry['path']).read_bytes()).hexdigest()
@@ -76,13 +77,72 @@ def test_the_bundle_is_never_inside_a_collected_source(tmp_path):
     assert not (root / 'evidence/private').exists()
 
 
-def test_links_are_listed_not_followed(tmp_path):
+# Review of 97925db (evidence lifecycle): a copy error was listed as an exclusion and the collection still read
+# COLLECTED; a linked .zabbix-lab was followed outside the checkout; a reused label overwrote an earlier copy.
+def test_links_anywhere_on_the_path_are_failures_and_never_followed(tmp_path):
     root = checkout_after(tmp_path, 'PASS')
-    (tmp_path / 'outside.txt').write_text('outside the checkout\n')
-    (root / '.zabbix-lab/linked.log').symlink_to(tmp_path / 'outside.txt')
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'outside.log').write_text('outside the checkout\n')
+    (root / '.zabbix-lab/linked.log').symlink_to(outside / 'outside.log')
+    (root / '.deployment-lab/logs').rename(tmp_path / 'real-logs')
+    (root / '.deployment-lab/logs').symlink_to(tmp_path / 'real-logs', target_is_directory=True)  # a linked ancestor
     manifest = collector.collect(tmp_path / 'bundle', 'attempt-1', [('checkout', 'checkout', root)])
-    assert {'source': 'checkout', 'path': '.zabbix-lab/linked.log', 'reason': 'symbolic link', 'target': str(tmp_path / 'outside.txt')} \
-        in manifest['excluded']
+    failed = {entry['path']: entry['reason'] for entry in manifest['failed']}
+    assert set(failed) == {'.zabbix-lab/linked.log', '.deployment-lab/logs'}
+    assert all('link on the path, not followed' in reason for reason in failed.values())
+    assert manifest['complete'] is False and collector.verdict(manifest) == 'INCOMPLETE'
+    copied = [path for path in (tmp_path / 'bundle').rglob('*') if path.is_file()]
+    assert not any(b'outside the checkout' in path.read_bytes() or b'synthetic postgres log' in path.read_bytes() for path in copied)
+
+
+def test_a_linked_source_root_is_refused(tmp_path):
+    root = checkout_after(tmp_path, 'PASS')
+    (tmp_path / 'link').symlink_to(root, target_is_directory=True)
+    manifest = collector.collect(tmp_path / 'bundle', 'attempt-1', [('checkout', 'checkout', tmp_path / 'link')])
+    assert manifest['files'] == [] and manifest['failed'][0]['reason'] == 'the source root is a link'
+
+
+def test_a_copy_failure_is_incomplete_not_collected(tmp_path, monkeypatch, capsys):
+    root = checkout_after(tmp_path, 'FAIL')
+    def failing_fsync(fd):
+        raise OSError(5, 'synthetic destination I/O failure')
+    monkeypatch.setattr(collector.os, 'fsync', failing_fsync)
+    manifest = collector.collect(tmp_path / 'bundle', 'attempt-1', [('checkout', 'checkout', root)])
+    assert manifest['files'] == [] and len(manifest['failed']) == 4 and collector.verdict(manifest) == 'INCOMPLETE'
+    assert all('synthetic destination I/O failure' in entry['reason'] for entry in manifest['failed'])
+    assert not [path for path in (tmp_path / 'bundle/attempt-1').rglob('*.partial')]  # no half copies left behind
+    assert collector.main(['--bundle', str(tmp_path / 'bundle2'), '--attempt', 'a2', '--checkout', f'checkout={root}']) == 3
+    assert json.loads(capsys.readouterr().out)['status'] == 'INCOMPLETE'
+
+
+def test_an_unusable_bundle_is_a_collection_error(tmp_path):
+    root = checkout_after(tmp_path, 'FAIL')
+    (tmp_path / 'bundle').write_text('a regular file where the bundle should be\n')
+    with pytest.raises(collector.CollectionError, match='cannot be prepared'):
+        collector.collect(tmp_path / 'bundle', 'attempt-1', [('checkout', 'checkout', root)])
+
+
+def test_a_repeated_label_never_overwrites_a_retained_copy(tmp_path):
+    root = checkout_after(tmp_path, 'FAIL')
+    record = root / 'evidence/deployment-e2e-run.json'
+    first = collector.collect(tmp_path / 'bundle', 'same', [('checkout', 'checkout', root)])
+    entry = next(item for item in first['files'] if item['path'] == 'evidence/deployment-e2e-run.json')
+    again = collector.collect(tmp_path / 'bundle', 'same', [('checkout', 'checkout', root)])  # the same bytes: accepted once
+    assert again['complete'] is True and len(again['files']) == len(first['files'])
+    record.write_text('{"status": "a different attempt"}\n')
+    changed = collector.collect(tmp_path / 'bundle', 'same', [('checkout', 'checkout', root)])
+    assert changed['complete'] is False
+    assert changed['failed'] == [{'source': 'checkout', 'path': 'evidence/deployment-e2e-run.json',
+                                  'reason': 'not retained: CollectionError: a different file is already retained at deployment-e2e-run.json'}]
+    assert collector.sha256(tmp_path / 'bundle' / entry['bundle_path']) == entry['sha256']  # the first copy is intact
+    with pytest.raises(collector.CollectionError, match='cannot be prepared'):
+        collector.collect(tmp_path / 'bundle', 'same', [('checkout', 'checkout', root)], new=True)
+
+
+def test_attempt_labels_are_fresh():
+    labels = {collector.attempt_label('s2-acceptance') for _ in range(200)}
+    assert len(labels) == 200 and all(collector.LABEL.fullmatch(label) for label in labels)
 
 
 def test_the_cli_reports_and_refuses(tmp_path, capsys):
