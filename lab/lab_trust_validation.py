@@ -420,7 +420,9 @@ def main(argv=None) -> int:
     finally:
         cleanup: dict = {'invocations_created': list(invocations.created)}
         invocations.note_lab_owner(checkout)
-        cleanup['unit'] = invocations.stop_if_owned()  # never a pre-existing or foreign invocation
+        # Never a pre-existing or foreign invocation; an attempt that started nothing makes no host call at all.
+        cleanup['unit'] = invocations.stop_if_owned() if lab_started or invocations.created else {
+            'action': 'none', 'reason': 'this attempt started nothing'}
         if lab_started:
             cleanup['lab'] = lab.stop_and_wipe(collect)  # stop, collect, and wipe only after a complete collection
         else:

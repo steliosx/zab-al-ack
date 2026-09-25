@@ -75,7 +75,7 @@ def test_a_failed_installation_audit_refuses_before_anything_starts(driver):
     driver.audit_exit = 1
     code, result = driver.run('installed')
     assert code == 1 and 'lab.start' not in driver.events and 'copytree' not in driver.events
-    assert not any(event.startswith(('systemctl stop', 'runuser')) for event in driver.events)
+    assert [event for event in driver.events if not event.startswith('sh ')] == []  # after a failed audit, no host call at all
     assert result['observations']['verify_installation'] == {'returncode': 1, 'stdout': 'differs: synthetic\n',
                                                              'stderr': 'synthetic stderr\n'}
     assert result['summary']['status'] == 'FAIL' and result['summary']['failed'] == ['installation-audit']
