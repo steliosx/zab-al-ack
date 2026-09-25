@@ -202,3 +202,56 @@ def test_an_incomplete_collection_leaves_the_lab_state_in_place(driver, monkeypa
     assert code == 1 and 'lab.stop' in driver.events and 'lab.reset' not in driver.events  # stopped, never wiped
     assert steps[1]['collect']['status'] == 'INCOMPLETE' and steps[2]['wipe'] == 'SKIPPED'
     assert log.read_bytes() == b'the only copy of this attempt\'s server log\n' and 'cleanup' in result['summary']['failed']
+
+
+# Review of 6f083b5 (Astra R7, B13): cleanup read a checkout owner record even when this attempt never started
+# the lab, so a stale record naming the running unit made the driver stop it as root. Only an owner record that
+# appears during this attempt's own lab start is adopted now.
+def stale_owner(driver, tmp_path, invocation='f' * 32):
+    state = tmp_path / 'work/checkout/.zabbix-lab'
+    state.mkdir(parents=True)
+    (state / 'trust-unit.owner.json').write_text(json.dumps({'invocation_id': invocation}))
+    driver.unit.update(ActiveState='active', InvocationID=invocation)
+
+
+def test_a_failed_audit_never_adopts_a_stale_owner_record(driver, tmp_path):
+    stale_owner(driver, tmp_path)
+    driver.audit_exit = 1
+    code, result = driver.run('installed')
+    assert code == 1 and [event for event in driver.events if not event.startswith('sh ')] == []  # the verifier only
+    assert driver.unit == {'ActiveState': 'active', 'InvocationID': 'f' * 32}
+    assert result['cleanup']['unit'] == {'action': 'none', 'reason': 'this attempt started nothing'}
+    assert result['cleanup']['invocations_created'] == []
+
+
+def test_a_busy_preflight_never_adopts_a_stale_owner_record(driver, tmp_path):
+    stale_owner(driver, tmp_path)
+    code, result = driver.run('installed')
+    assert code == 1 and result['summary']['failed'] == ['prerequisites']
+    assert 'systemctl stop' not in driver.events and 'copytree' not in driver.events and 'lab.start' not in driver.events
+    assert [event for event in driver.events if event.startswith('systemctl')] == ['systemctl show']  # read-only preflight
+    assert driver.unit == {'ActiveState': 'active', 'InvocationID': 'f' * 32}
+    assert result['cleanup']['invocations_created'] == []
+
+
+def test_an_owner_record_already_present_when_the_start_runs_is_not_adopted(driver, tmp_path):
+    stale_owner(driver, tmp_path)
+    driver.unit.update(ActiveState='inactive')  # idle preflight; the stale record is in the checkout
+    driver.on_start = lambda lab: driver.unit.update(ActiveState='activating')  # that invocation reappears, not rebound
+    code, result = driver.run('installed')
+    assert code == 1 and 'systemctl stop' not in driver.events
+    assert result['cleanup']['invocations_created'] == [] and result['cleanup']['owner_records_not_adopted'] == ['f' * 32]
+    assert result['cleanup']['unit']['action'] == 'left_running_not_this_attempt' and driver.unit['ActiveState'] == 'activating'
+
+
+def test_a_new_owner_record_from_this_start_is_adopted_even_over_a_stale_one(driver, tmp_path):
+    stale_owner(driver, tmp_path)
+    driver.unit.update(ActiveState='inactive')
+
+    def rebind(lab):  # this attempt's own (partial) start binds a new invocation, then fails
+        (lab.checkout / '.zabbix-lab/trust-unit.owner.json').write_text(json.dumps({'invocation_id': 'c' * 32}))
+        driver.unit.update(ActiveState='active', InvocationID='c' * 32)
+    driver.on_start = rebind
+    code, result = driver.run('installed')
+    assert driver.events.count('systemctl stop') == 1 and result['cleanup']['unit']['action'] == 'stopped'
+    assert result['cleanup']['invocations_created'] == ['c' * 32] and driver.unit['ActiveState'] == 'inactive'

@@ -89,6 +89,7 @@ class Invocations:
 
     def __init__(self) -> None:
         self.created: list[str] = []
+        self.ignored: list[str] = []  # owner records present before a start: never this attempt's
 
     def note(self) -> dict:
         shown = unit_show()
@@ -100,15 +101,32 @@ class Invocations:
         sh('systemctl', 'start', UNIT)
         return self.note()
 
-    def note_lab_owner(self, checkout: Path) -> None:
-        """The lab records the invocation its own start produced (lab/zabbix_native_lab.py, trust-unit.owner.json)."""
+    @staticmethod
+    def lab_owner(checkout: Path) -> str | None:
+        """The invocation named by the lab's owner record (lab/zabbix_native_lab.py, trust-unit.owner.json), if any."""
         try:
             owner = json.loads((checkout / '.zabbix-lab/trust-unit.owner.json').read_text())
         except (OSError, ValueError):
-            return
+            return None
         invocation = owner.get('invocation_id') if isinstance(owner, dict) else None
-        if isinstance(invocation, str) and invocation and invocation not in self.created:
-            self.created.append(invocation)
+        return invocation if isinstance(invocation, str) and invocation else None
+
+    def lab_start(self, start, checkout: Path):
+        """Run one of this attempt's own lab starts and adopt only the invocation that start bound.
+
+        The owner record is read immediately before and after the start: a record that was already there (a stale
+        checkout, or one copied in) is never adopted; only a new invocation the lab recorded during this call is.
+        It is adopted even when the start then fails part-way, so this attempt can still stop what it started.
+        """
+        before = self.lab_owner(checkout)
+        try:
+            return start()
+        finally:
+            after = self.lab_owner(checkout)
+            if after is not None and after != before and after not in self.created:
+                self.created.append(after)
+            elif after is not None and after == before:
+                self.ignored.append(after)
 
     def stop_if_owned(self) -> dict:
         shown = unit_show()
@@ -319,10 +337,7 @@ def main(argv=None) -> int:
         else:
             ca = (Path('/etc/zabalack-lab/ca/lab-ca.pem'), Path('/etc/zabalack-lab/ca/lab-ca.key'))
             lab_started = True
-            try:
-                start_text = lab.start()  # the lab starts zabbix_server through the unit (sudo rule)
-            finally:
-                invocations.note_lab_owner(checkout)  # only the invocation the lab's own start bound
+            start_text = invocations.lab_start(lab.start, checkout)  # through the unit (sudo rule); adopts only what it bound
         obs['lab_start'] = json.loads(start_text.strip().splitlines()[-1])
         if args.mode == 'installed' and obs['lab_start'].get('zabbix_launch') != 'lab-trust-unit':
             raise Refused(f"the lab did not start zabbix_server through the installed unit: {obs['lab_start'].get('zabbix_launch')}")
@@ -418,11 +433,13 @@ def main(argv=None) -> int:
     except Exception as failure:  # recorded, never hidden by the cases that passed
         run_error = f'{type(failure).__name__}: {failure}'
     finally:
-        cleanup: dict = {'invocations_created': list(invocations.created)}
-        invocations.note_lab_owner(checkout)
         # Never a pre-existing or foreign invocation; an attempt that started nothing makes no host call at all.
+        # No owner record is read here: only this attempt's own starts adopt invocations (Invocations.lab_start).
+        cleanup: dict = {}
         cleanup['unit'] = invocations.stop_if_owned() if lab_started or invocations.created else {
             'action': 'none', 'reason': 'this attempt started nothing'}
+        cleanup['invocations_created'] = list(invocations.created)  # recorded after the decision it drove
+        cleanup['owner_records_not_adopted'] = list(invocations.ignored)
         if lab_started:
             cleanup['lab'] = lab.stop_and_wipe(collect)  # stop, collect, and wipe only after a complete collection
         else:
@@ -469,8 +486,7 @@ def installed_ownership(lab: acceptance.Lab, checkout: Path, invocations: Invoca
     after_refusal = unit_show()
     record['foreign'] = {'stop_exit': refused.returncode, 'stderr': refused.stderr[-300:], 'before': foreign, 'after': after_refusal}
     sh('systemctl', 'stop', UNIT)
-    own_start = lab.command('start', '--isolated-lab', check=False)
-    invocations.note_lab_owner(checkout)
+    own_start = invocations.lab_start(lambda: lab.command('start', '--isolated-lab', check=False), checkout)
     owned = unit_show()
     try:
         owner = json.loads((checkout / '.zabbix-lab/trust-unit.owner.json').read_text())
