@@ -385,6 +385,192 @@ def no_redirect_check(url_host: str, port: int, path: str, canary: str, body: by
 
 # ---------------------------------------------------------------- run
 
+def run_cases(results: dict, identity: dict, checkout: Path, work: Path, receivers: dict, gw_port: int, gw_root: Path,
+              canary: str, fixture: dict, extra_gateways: list, nginx: str, lab_user: str) -> None:
+    """The engine cases, after the gateway and the lab have started; each appends to results['cases']."""
+    identity['executor'] = sh('/usr/sbin/zabbix_server', '-V').stdout.splitlines()[:2]
+    identity['packages'] = sh('dpkg-query', '-W', '-f', '${Package} ${Version} ${Architecture}\n', 'zabbix-server-pgsql',
+                              'zabbix-frontend-php', 'libcurl4t64', 'openssl').stdout.splitlines()
+    identity['executor_libcurl'] = [line.strip() for line in sh('ldd', '/usr/sbin/zabbix_server').stdout.splitlines() if 'libcurl' in line]
+    identity['webhook_js_sha256'] = digest(checkout / 'zabbix/v1/webhook.js')
+    identity['media_export_sha256'] = digest(checkout / 'zabbix/v1/media_type.reference.json')
+
+    session = rpc('user.login', {'username': 'Admin', 'password': 'zabbix'})
+    artifact = json.loads((checkout / 'zabbix/v1/media_type.reference.json').read_text())
+    assert rpc('configuration.import', {'format': 'json', 'source': json.dumps(artifact),
+                                        'rules': {'mediaTypes': {'createMissing': True, 'updateExisting': False}}}, session) is True
+    name = artifact['zabbix_export']['media_types'][0]['name']
+    media = rpc('mediatype.get', {'output': ['mediatypeid', 'script'], 'filter': {'name': name}}, session)
+    media_id = media[0]['mediatypeid']
+    stored_script = media[0]['script'].replace('\r\n', '\n')
+    identity['stored_script_equals_artifact'] = stored_script == (checkout / 'zabbix/v1/webhook.js').read_text()
+    rpc('mediatype.update', {'mediatypeid': media_id, 'status': 0, 'maxattempts': 1}, session)
+    exported = rpc('configuration.export', {'format': 'json', 'options': {'mediaTypes': [media_id]}}, session)
+    (work / 'media-export.json').write_text(exported)
+
+    def deliver(url, overrides=None):
+        parameters = {row['name']: row['value'] for row in artifact['zabbix_export']['media_types'][0]['parameters']}
+        parameters.update(fixture)
+        parameters.update({'external_writes_enabled': 'true', 'alerta_api_url': url, 'alerta_api_key': canary,
+                           'alerta_customer': 's2-lab', 'zabbix_instance': 's2-lab', 'alerta_environment': 'Development'})
+        parameters.update(overrides or {})
+        before = {label: r.snapshot() for label, r in receivers.items()}
+        access_before = (gw_root / 'logs/access.log').read_text() if (gw_root / 'logs/access.log').exists() else ''
+        reply = trapper({'request': 'alert.send', 'sid': session, 'data': {'mediatypeid': media_id, 'parameters': parameters}})
+        time.sleep(0.3)
+        observed = {}
+        for label, receiver in receivers.items():
+            now, then = receiver.snapshot(), before[label]
+            delta = {'connections': now['connections'] - then['connections'],
+                     'handshake_failures': now['handshake_failures'] - then['handshake_failures'],
+                     'requests': now['requests'][len(then['requests']):]}
+            if delta['connections'] or delta['requests']:
+                observed[label] = delta
+        access = (gw_root / 'logs/access.log').read_text()[len(access_before):] if (gw_root / 'logs/access.log').exists() else ''
+        return {'zabbix_response': reply.get('response'), 'zabbix_value': (reply.get('data') or reply.get('info') or '')[:300],
+                'observed': observed, 'gateway_access': [line.split('"')[1] + ' ' + line.split('"')[2].split()[0]
+                                                         for line in access.splitlines() if '"' in line]}
+
+    def record(case, expectation, outcome, passes):
+        results['cases'].append({'case': case, 'expected': expectation, **outcome, 'pass': bool(passes)})
+
+    def arrived_only(outcome, allowed):
+        return all(label in allowed for label in outcome['observed'])
+
+    def no_http(outcome, label):
+        item = outcome['observed'].get(label, {})
+        return not item.get('requests')
+
+    gw = f"https://{NAMES['ingest']}:{gw_port}/api/alert"
+    up = receivers['upstream']
+
+    # Trust: trusted, untrusted, missing anchor, wrong name, expired (direct, no gateway)
+    out = deliver(f"https://{NAMES['direct']}:{receivers['direct-ok'].port}/api/alert")
+    record('trust:valid-direct', 'success; one POST with the canary key', out,
+           out['zabbix_response'] == 'success' and len(out['observed'].get('direct-ok', {}).get('requests', [])) == 1
+           and out['observed']['direct-ok']['requests'][0]['canary_key_arrived'] and arrived_only(out, {'direct-ok'}))
+    for label in ('direct-untrusted', 'direct-other-anchor', 'direct-wrong-name', 'direct-expired'):
+        out = deliver(f"https://{NAMES['direct']}:{receivers[label].port}/api/alert")
+        record('trust:' + label, 'Zabbix failure; TLS refused; no HTTP request, body or key at the listener', out,
+               out['zabbix_response'] != 'success' and no_http(out, label) and arrived_only(out, {label}))
+
+    # Response contract through the real engine: the script refuses each (direct, trusted certificate)
+    for label, status, body, expected in (
+            ('non-2xx', 500, json.dumps({'status': 'ok'}).encode(), 'Alerta ingestion HTTP failure'),
+            ('malformed-json', 201, b'{"status": ', 'Alerta invalid JSON response'),
+            ('status-error', 201, json.dumps({'status': 'error', 'message': 'synthetic'}).encode(), 'Alerta ingestion rejected'),
+            ('over-limit', 201, b'{"status":"ok","pad":"' + b'x' * 1048600 + b'"}', 'Alerta response limit'),
+            ('array', 201, b'[]', 'Alerta ingestion rejected'),
+            ('null', 201, b'null', '')):  # the engine's own error text for null is recorded, not pinned
+        receivers['direct-ok'].behaviour = ('respond', status, body)
+        out = deliver(f"https://{NAMES['direct']}:{receivers['direct-ok'].port}/api/alert")
+        record('response:' + label, f'Zabbix failure: {expected}' if expected else 'Zabbix failure (engine error text recorded)', out,
+               out['zabbix_response'] != 'success' and expected in out['zabbix_value'] and arrived_only(out, {'direct-ok'}))
+    receivers['direct-ok'].behaviour = ('ok',)
+
+    # The approved route (gateway), positive
+    up.behaviour = ('ok',)
+    out = deliver(gw)
+    record('route:valid', 'success; exactly one POST /api/alert upstream with the canary key; nothing else', out,
+           out['zabbix_response'] == 'success' and len(out['observed'].get('upstream', {}).get('requests', [])) == 1
+           and out['observed']['upstream']['requests'][0]['method'] == 'POST'
+           and out['observed']['upstream']['requests'][0]['canary_key_arrived'] and arrived_only(out, {'upstream'})
+           and out['gateway_access'] == ['POST /api/alert HTTP/1.1 201'])
+
+    # Upstream redirects through the route: every code, every target
+    targets = {'other-origin': f"https://{NAMES['other']}:{receivers['target-other'].port}/api/alert",
+               'alternate-port': f"https://{NAMES['ingest']}:{receivers['target-alt-port'].port}/api/alert",
+               'downgrade-http': f"http://{NAMES['ingest']}:{receivers['target-plain'].port}/api/alert",
+               'http-to-route-port': f"http://{NAMES['ingest']}:{gw_port}/api/alert",
+               'same-origin-path': '/api/other'}
+    for code in (301, 302, 303, 307, 308):
+        for target, location in targets.items():
+            up.behaviour = ('redirect', code, location)
+            out = deliver(gw)
+            record(f'route:redirect-{code}-{target}', 'Zabbix failure; route answers 502; no second request anywhere', out,
+                   out['zabbix_response'] != 'success' and arrived_only(out, {'upstream'})
+                   and len(out['observed'].get('upstream', {}).get('requests', [])) == 1
+                   and out['gateway_access'] == ['POST /api/alert HTTP/1.1 502'])
+    up.behaviour = ('ok',)
+
+    # The route's own upstream hop: an upstream certificate that is untrusted (self-signed), for another name,
+    # from an anchor the route does not trust, or expired
+    for label in ('upstream-untrusted', 'upstream-wrong-name', 'upstream-other-anchor', 'upstream-expired'):
+        bad_process, bad_port, bad_root = gateway(work, nginx, lab_user, receivers[label].port, label='nginx-' + label)
+        extra_gateways.append(bad_process)
+        out = deliver(f"https://{NAMES['ingest']}:{bad_port}/api/alert")
+        access = (bad_root / 'logs/access.log').read_text() if (bad_root / 'logs/access.log').exists() else ''
+        record('route-upstream-tls:' + label, 'route answers 502; Zabbix failure; no HTTP request at the bad upstream', {**out, 'bad_gateway_access': access[-300:]},
+               out['zabbix_response'] != 'success' and no_http(out, label) and arrived_only(out, {label}) and '" 502 ' in access)
+
+    # Another hostname on the route's address
+    out = deliver(f"https://{NAMES['other']}:{gw_port}/api/alert")
+    record('route:other-name-same-address', 'Zabbix failure; no TLS session; nothing forwarded', out,
+           out['zabbix_response'] != 'success' and not out['observed'] and not out['gateway_access'])
+
+    # Plain HTTP to the route's TLS port (the webhook itself refuses http:// URLs)
+    connection = http.client.HTTPConnection('127.0.0.1', gw_port, timeout=10)
+    before = up.snapshot()
+    connection.request('POST', '/api/alert', body=b'{}', headers={'Host': NAMES['ingest'], 'Authorization': 'Key ' + canary})
+    status = connection.getresponse().status
+    connection.close()
+    record('route:plain-http-to-tls-port', 'refused by the route (400), nothing forwarded',
+           {'http_status': status, 'upstream_new_requests': len(up.snapshot()['requests']) - len(before['requests'])},
+           status == 400 and len(up.snapshot()['requests']) == len(before['requests']))
+
+    # Disabled and echo paths: no HttpRequest, no credential-bearing send
+    out = deliver(gw, {'external_writes_enabled': 'false'})
+    record('path:disabled', 'script result disabled_reference_artifact; nothing sent', out,
+           out['zabbix_response'] == 'success' and 'disabled_reference_artifact' in out['zabbix_value'] and not out['observed'])
+    echo = json.loads((checkout / 'zabbix/v1/fixtures/writeback_echo.params.json').read_text())
+    out = deliver(gw, echo)
+    record('path:echo', 'script result suppressed_echo; nothing sent', out,
+           out['zabbix_response'] == 'success' and 'suppressed_echo' in out['zabbix_value'] and not out['observed'])
+
+    # Baseline without the route: what the real engine does with a redirect it receives (why the route is required)
+    for code in (301, 302, 303, 307, 308):
+        for target, location in (('other-origin', targets['other-origin']), ('same-origin-path', '/api/other'),
+                                 ('downgrade-http', targets['downgrade-http'])):
+            receivers['direct-redirect'].behaviour = ('redirect', code, location)
+            out = deliver(f"https://{NAMES['direct']}:{receivers['direct-redirect'].port}/api/alert")
+            results['cases'].append({'case': f'baseline-no-route:redirect-{code}-{target}',
+                                     'expected': 'characterisation only (no control in front)', **out, 'pass': None})
+    receivers['direct-redirect'].behaviour = ('ok',)
+
+    # T7 no-redirect check and its deliberate-redirect control
+    body = json.dumps({'resource': 's2', 'event': 's2'}).encode()
+    up.behaviour = ('ok',)
+    t7 = no_redirect_check(NAMES['ingest'], gw_port, '/api/alert', canary, body)
+    record('t7:route-no-redirect', 'initial 2xx with status ok', t7, t7['passes'])
+    receivers['direct-redirect'].behaviour = ('redirect', 302, targets['other-origin'])
+    t7 = no_redirect_check(NAMES['direct'], receivers['direct-redirect'].port, '/api/alert', canary, body)
+    record('t7:deliberate-redirect-fails-the-check', 'the check fails on a 302', t7, not t7['passes'] and t7['initial_status'] == 302)
+    up.behaviour = ('redirect', 307, targets['other-origin'])
+    t7 = no_redirect_check(NAMES['ingest'], gw_port, '/api/alert', canary, body)
+    record('t7:route-with-redirecting-upstream-fails-the-check', 'the check fails (502, no Location)', t7,
+           not t7['passes'] and t7['initial_status'] == 502 and t7['location'] is None)
+    up.behaviour = ('ok',)
+
+    # The enablement precondition on this executor
+    tool = [sys.executable, str(checkout / 'tools/webhook_transport_check.py'), '--media-export', str(work / 'media-export.json')]
+    fake = work / 'zabbix_server-7.0.27'
+    fake.write_text("#!/bin/sh\nprintf 'zabbix_server (Zabbix) 7.0.27\\nRevision 0000000 1 January 2026, compilation time: x\\n'\n")
+    fake.chmod(0o755)
+    for case, extra, expected_exit in (
+            ('precondition:qualified-executor-route', ['--ingest-url', gw], 0),
+            ('precondition:missing-trust-anchor', ['--ingest-url',
+                                                   f"https://{NAMES['direct']}:{receivers['direct-other-anchor'].port}/api/alert"], 3),
+            ('precondition:unqualified-executor', ['--zabbix-server', str(fake), '--ingest-url', gw], 3)):
+        run = sh(*tool, *extra, check=False)
+        outcome = json.loads(run.stdout) if run.stdout.strip().startswith('{') else {'raw': run.stdout[-300:]}
+        record(case, 'READY' if expected_exit == 0 else 'REFUSED', {'exit': run.returncode, 'tool': outcome}, run.returncode == expected_exit)
+
+    results['not_applicable'] = {
+        'proxy': 'the webhook calls no setProxy and the lab service environment carries no proxy variables (service_env)',
+        'ipv6': 'the route and names are IPv4 loopback only in this lab',
+        'ha': 'single server node; each HA node must pass the precondition (docs/webhook-transport.md)'}
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--checkout', type=Path, required=True)
@@ -446,187 +632,8 @@ def main(argv=None) -> int:
         assert lab_start.get('zabbix_launch') == 'direct (override)', lab_start  # never the installed unit here
         API['url'] = lab_start['api_url']
         assert API['url'].startswith('http://127.0.0.1:'), API['url']
-        identity['executor'] = sh('/usr/sbin/zabbix_server', '-V').stdout.splitlines()[:2]
-        identity['packages'] = sh('dpkg-query', '-W', '-f', '${Package} ${Version} ${Architecture}\n', 'zabbix-server-pgsql',
-                                  'zabbix-frontend-php', 'libcurl4t64', 'openssl').stdout.splitlines()
-        identity['executor_libcurl'] = [line.strip() for line in sh('ldd', '/usr/sbin/zabbix_server').stdout.splitlines() if 'libcurl' in line]
-        identity['webhook_js_sha256'] = digest(checkout / 'zabbix/v1/webhook.js')
-        identity['media_export_sha256'] = digest(checkout / 'zabbix/v1/media_type.reference.json')
-
-        session = rpc('user.login', {'username': 'Admin', 'password': 'zabbix'})
-        artifact = json.loads((checkout / 'zabbix/v1/media_type.reference.json').read_text())
-        assert rpc('configuration.import', {'format': 'json', 'source': json.dumps(artifact),
-                                            'rules': {'mediaTypes': {'createMissing': True, 'updateExisting': False}}}, session) is True
-        name = artifact['zabbix_export']['media_types'][0]['name']
-        media = rpc('mediatype.get', {'output': ['mediatypeid', 'script'], 'filter': {'name': name}}, session)
-        media_id = media[0]['mediatypeid']
-        stored_script = media[0]['script'].replace('\r\n', '\n')
-        identity['stored_script_equals_artifact'] = stored_script == (checkout / 'zabbix/v1/webhook.js').read_text()
-        rpc('mediatype.update', {'mediatypeid': media_id, 'status': 0, 'maxattempts': 1}, session)
-        exported = rpc('configuration.export', {'format': 'json', 'options': {'mediaTypes': [media_id]}}, session)
-        (work / 'media-export.json').write_text(exported)
-
-        def deliver(url, overrides=None):
-            parameters = {row['name']: row['value'] for row in artifact['zabbix_export']['media_types'][0]['parameters']}
-            parameters.update(fixture)
-            parameters.update({'external_writes_enabled': 'true', 'alerta_api_url': url, 'alerta_api_key': canary,
-                               'alerta_customer': 's2-lab', 'zabbix_instance': 's2-lab', 'alerta_environment': 'Development'})
-            parameters.update(overrides or {})
-            before = {label: r.snapshot() for label, r in receivers.items()}
-            access_before = (gw_root / 'logs/access.log').read_text() if (gw_root / 'logs/access.log').exists() else ''
-            reply = trapper({'request': 'alert.send', 'sid': session, 'data': {'mediatypeid': media_id, 'parameters': parameters}})
-            time.sleep(0.3)
-            observed = {}
-            for label, receiver in receivers.items():
-                now, then = receiver.snapshot(), before[label]
-                delta = {'connections': now['connections'] - then['connections'],
-                         'handshake_failures': now['handshake_failures'] - then['handshake_failures'],
-                         'requests': now['requests'][len(then['requests']):]}
-                if delta['connections'] or delta['requests']:
-                    observed[label] = delta
-            access = (gw_root / 'logs/access.log').read_text()[len(access_before):] if (gw_root / 'logs/access.log').exists() else ''
-            return {'zabbix_response': reply.get('response'), 'zabbix_value': (reply.get('data') or reply.get('info') or '')[:300],
-                    'observed': observed, 'gateway_access': [line.split('"')[1] + ' ' + line.split('"')[2].split()[0]
-                                                             for line in access.splitlines() if '"' in line]}
-
-        def record(case, expectation, outcome, passes):
-            results['cases'].append({'case': case, 'expected': expectation, **outcome, 'pass': bool(passes)})
-
-        def arrived_only(outcome, allowed):
-            return all(label in allowed for label in outcome['observed'])
-
-        def no_http(outcome, label):
-            item = outcome['observed'].get(label, {})
-            return not item.get('requests')
-
-        gw = f"https://{NAMES['ingest']}:{gw_port}/api/alert"
-        up = receivers['upstream']
-
-        # Trust: trusted, untrusted, missing anchor, wrong name, expired (direct, no gateway)
-        out = deliver(f"https://{NAMES['direct']}:{receivers['direct-ok'].port}/api/alert")
-        record('trust:valid-direct', 'success; one POST with the canary key', out,
-               out['zabbix_response'] == 'success' and len(out['observed'].get('direct-ok', {}).get('requests', [])) == 1
-               and out['observed']['direct-ok']['requests'][0]['canary_key_arrived'] and arrived_only(out, {'direct-ok'}))
-        for label in ('direct-untrusted', 'direct-other-anchor', 'direct-wrong-name', 'direct-expired'):
-            out = deliver(f"https://{NAMES['direct']}:{receivers[label].port}/api/alert")
-            record('trust:' + label, 'Zabbix failure; TLS refused; no HTTP request, body or key at the listener', out,
-                   out['zabbix_response'] != 'success' and no_http(out, label) and arrived_only(out, {label}))
-
-        # Response contract through the real engine: the script refuses each (direct, trusted certificate)
-        for label, status, body, expected in (
-                ('non-2xx', 500, json.dumps({'status': 'ok'}).encode(), 'Alerta ingestion HTTP failure'),
-                ('malformed-json', 201, b'{"status": ', 'Alerta invalid JSON response'),
-                ('status-error', 201, json.dumps({'status': 'error', 'message': 'synthetic'}).encode(), 'Alerta ingestion rejected'),
-                ('over-limit', 201, b'{"status":"ok","pad":"' + b'x' * 1048600 + b'"}', 'Alerta response limit'),
-                ('array', 201, b'[]', 'Alerta ingestion rejected'),
-                ('null', 201, b'null', '')):  # the engine's own error text for null is recorded, not pinned
-            receivers['direct-ok'].behaviour = ('respond', status, body)
-            out = deliver(f"https://{NAMES['direct']}:{receivers['direct-ok'].port}/api/alert")
-            record('response:' + label, f'Zabbix failure: {expected}' if expected else 'Zabbix failure (engine error text recorded)', out,
-                   out['zabbix_response'] != 'success' and expected in out['zabbix_value'] and arrived_only(out, {'direct-ok'}))
-        receivers['direct-ok'].behaviour = ('ok',)
-
-        # The approved route (gateway), positive
-        up.behaviour = ('ok',)
-        out = deliver(gw)
-        record('route:valid', 'success; exactly one POST /api/alert upstream with the canary key; nothing else', out,
-               out['zabbix_response'] == 'success' and len(out['observed'].get('upstream', {}).get('requests', [])) == 1
-               and out['observed']['upstream']['requests'][0]['method'] == 'POST'
-               and out['observed']['upstream']['requests'][0]['canary_key_arrived'] and arrived_only(out, {'upstream'})
-               and out['gateway_access'] == ['POST /api/alert HTTP/1.1 201'])
-
-        # Upstream redirects through the route: every code, every target
-        targets = {'other-origin': f"https://{NAMES['other']}:{receivers['target-other'].port}/api/alert",
-                   'alternate-port': f"https://{NAMES['ingest']}:{receivers['target-alt-port'].port}/api/alert",
-                   'downgrade-http': f"http://{NAMES['ingest']}:{receivers['target-plain'].port}/api/alert",
-                   'http-to-route-port': f"http://{NAMES['ingest']}:{gw_port}/api/alert",
-                   'same-origin-path': '/api/other'}
-        for code in (301, 302, 303, 307, 308):
-            for target, location in targets.items():
-                up.behaviour = ('redirect', code, location)
-                out = deliver(gw)
-                record(f'route:redirect-{code}-{target}', 'Zabbix failure; route answers 502; no second request anywhere', out,
-                       out['zabbix_response'] != 'success' and arrived_only(out, {'upstream'})
-                       and len(out['observed'].get('upstream', {}).get('requests', [])) == 1
-                       and out['gateway_access'] == ['POST /api/alert HTTP/1.1 502'])
-        up.behaviour = ('ok',)
-
-        # The route's own upstream hop: an upstream certificate that is untrusted (self-signed), for another name,
-        # from an anchor the route does not trust, or expired
-        for label in ('upstream-untrusted', 'upstream-wrong-name', 'upstream-other-anchor', 'upstream-expired'):
-            bad_process, bad_port, bad_root = gateway(work, args.nginx, args.lab_user, receivers[label].port, label='nginx-' + label)
-            extra_gateways.append(bad_process)
-            out = deliver(f"https://{NAMES['ingest']}:{bad_port}/api/alert")
-            access = (bad_root / 'logs/access.log').read_text() if (bad_root / 'logs/access.log').exists() else ''
-            record('route-upstream-tls:' + label, 'route answers 502; Zabbix failure; no HTTP request at the bad upstream', {**out, 'bad_gateway_access': access[-300:]},
-                   out['zabbix_response'] != 'success' and no_http(out, label) and arrived_only(out, {label}) and '" 502 ' in access)
-
-        # Another hostname on the route's address
-        out = deliver(f"https://{NAMES['other']}:{gw_port}/api/alert")
-        record('route:other-name-same-address', 'Zabbix failure; no TLS session; nothing forwarded', out,
-               out['zabbix_response'] != 'success' and not out['observed'] and not out['gateway_access'])
-
-        # Plain HTTP to the route's TLS port (the webhook itself refuses http:// URLs)
-        connection = http.client.HTTPConnection('127.0.0.1', gw_port, timeout=10)
-        before = up.snapshot()
-        connection.request('POST', '/api/alert', body=b'{}', headers={'Host': NAMES['ingest'], 'Authorization': 'Key ' + canary})
-        status = connection.getresponse().status
-        connection.close()
-        record('route:plain-http-to-tls-port', 'refused by the route (400), nothing forwarded',
-               {'http_status': status, 'upstream_new_requests': len(up.snapshot()['requests']) - len(before['requests'])},
-               status == 400 and len(up.snapshot()['requests']) == len(before['requests']))
-
-        # Disabled and echo paths: no HttpRequest, no credential-bearing send
-        out = deliver(gw, {'external_writes_enabled': 'false'})
-        record('path:disabled', 'script result disabled_reference_artifact; nothing sent', out,
-               out['zabbix_response'] == 'success' and 'disabled_reference_artifact' in out['zabbix_value'] and not out['observed'])
-        echo = json.loads((checkout / 'zabbix/v1/fixtures/writeback_echo.params.json').read_text())
-        out = deliver(gw, echo)
-        record('path:echo', 'script result suppressed_echo; nothing sent', out,
-               out['zabbix_response'] == 'success' and 'suppressed_echo' in out['zabbix_value'] and not out['observed'])
-
-        # Baseline without the route: what the real engine does with a redirect it receives (why the route is required)
-        for code in (301, 302, 303, 307, 308):
-            for target, location in (('other-origin', targets['other-origin']), ('same-origin-path', '/api/other'),
-                                     ('downgrade-http', targets['downgrade-http'])):
-                receivers['direct-redirect'].behaviour = ('redirect', code, location)
-                out = deliver(f"https://{NAMES['direct']}:{receivers['direct-redirect'].port}/api/alert")
-                results['cases'].append({'case': f'baseline-no-route:redirect-{code}-{target}',
-                                         'expected': 'characterisation only (no control in front)', **out, 'pass': None})
-        receivers['direct-redirect'].behaviour = ('ok',)
-
-        # T7 no-redirect check and its deliberate-redirect control
-        body = json.dumps({'resource': 's2', 'event': 's2'}).encode()
-        up.behaviour = ('ok',)
-        t7 = no_redirect_check(NAMES['ingest'], gw_port, '/api/alert', canary, body)
-        record('t7:route-no-redirect', 'initial 2xx with status ok', t7, t7['passes'])
-        receivers['direct-redirect'].behaviour = ('redirect', 302, targets['other-origin'])
-        t7 = no_redirect_check(NAMES['direct'], receivers['direct-redirect'].port, '/api/alert', canary, body)
-        record('t7:deliberate-redirect-fails-the-check', 'the check fails on a 302', t7, not t7['passes'] and t7['initial_status'] == 302)
-        up.behaviour = ('redirect', 307, targets['other-origin'])
-        t7 = no_redirect_check(NAMES['ingest'], gw_port, '/api/alert', canary, body)
-        record('t7:route-with-redirecting-upstream-fails-the-check', 'the check fails (502, no Location)', t7,
-               not t7['passes'] and t7['initial_status'] == 502 and t7['location'] is None)
-        up.behaviour = ('ok',)
-
-        # The enablement precondition on this executor
-        tool = [sys.executable, str(checkout / 'tools/webhook_transport_check.py'), '--media-export', str(work / 'media-export.json')]
-        fake = work / 'zabbix_server-7.0.27'
-        fake.write_text("#!/bin/sh\nprintf 'zabbix_server (Zabbix) 7.0.27\\nRevision 0000000 1 January 2026, compilation time: x\\n'\n")
-        fake.chmod(0o755)
-        for case, extra, expected_exit in (
-                ('precondition:qualified-executor-route', ['--ingest-url', gw], 0),
-                ('precondition:missing-trust-anchor', ['--ingest-url',
-                                                       f"https://{NAMES['direct']}:{receivers['direct-other-anchor'].port}/api/alert"], 3),
-                ('precondition:unqualified-executor', ['--zabbix-server', str(fake), '--ingest-url', gw], 3)):
-            run = sh(*tool, *extra, check=False)
-            outcome = json.loads(run.stdout) if run.stdout.strip().startswith('{') else {'raw': run.stdout[-300:]}
-            record(case, 'READY' if expected_exit == 0 else 'REFUSED', {'exit': run.returncode, 'tool': outcome}, run.returncode == expected_exit)
-
-        results['not_applicable'] = {
-            'proxy': 'the webhook calls no setProxy and the lab service environment carries no proxy variables (service_env)',
-            'ipv6': 'the route and names are IPv4 loopback only in this lab',
-            'ha': 'single server node; each HA node must pass the precondition (docs/webhook-transport.md)'}
+        run_cases(results, identity, checkout, work, receivers, gw_port, gw_root, canary, fixture, extra_gateways,
+                  args.nginx, args.lab_user)
     except BaseException as failure:  # recorded in the result and the bundle, then re-raised unchanged
         results['error'] = f'{type(failure).__name__}: {failure}'
         raise
