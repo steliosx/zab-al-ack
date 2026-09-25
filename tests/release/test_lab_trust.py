@@ -325,6 +325,34 @@ def test_a_foreign_unit_invocation_is_never_started_stopped_or_reconfigured(zlab
     assert zlab.calls == [] and not zlab.TRUST_CONF.exists() and zlab.unit['InvocationID'] == 'f' * 32
 
 
+# Review of 97925db (R6-UNIT-FRESH): a fresh checkout read as absent before the unit was checked, so start
+# requested PostgreSQL and the database, created the marker, and only then refused, leaving a lab stop refused.
+@pytest.mark.parametrize('unit_state', ['active', 'activating', 'deactivating', 'unobservable'])
+def test_a_fresh_checkout_refuses_a_foreign_or_unobservable_unit_before_any_effect(zlab, monkeypatch, unit_state):
+    shutil.rmtree(zlab.STATE)  # fresh checkout: no lab directory at all
+    effects = []
+    for name in ('start_postgres', 'ensure_database', 'start_server', 'stage_frontend', 'start_frontend', 'write_private', 'own'):
+        monkeypatch.setattr(zlab, name, lambda *args, name=name, **kwargs: effects.append(name))
+    monkeypatch.setattr(zlab, 'inputs', lambda: {'pg_bin': Path('/nonexistent'), 'zabbix_server': zlab.TRUST_EXECUTABLE})
+    monkeypatch.setattr(zlab, 'port_listening', lambda port: False)  # pre-listen: the port guard sees nothing
+    if unit_state == 'unobservable':
+        monkeypatch.setattr(zlab, 'unit_status', lambda: None)
+    else:
+        foreign_invocation(zlab, unit_state, 0 if unit_state == 'deactivating' else os.getpid(), 'no-record')
+    observed = zlab.inspect()
+    assert observed['state'] == 'ambiguous'
+    with pytest.raises(SystemExit, match='Refusing to start'):
+        zlab.main(['start', '--isolated-lab'])
+    assert effects == [] and zlab.calls == [] and not zlab.STATE.exists() and not zlab.TRUST_CONF.exists()
+
+
+def test_a_fresh_checkout_with_the_unit_idle_still_starts(zlab, monkeypatch):
+    shutil.rmtree(zlab.STATE)
+    monkeypatch.setattr(zlab, 'port_listening', lambda port: False)
+    observed = zlab.inspect()
+    assert observed['state'] == 'absent' and observed['trust_unit']['ownership'] == 'inactive'
+
+
 def test_an_unobservable_unit_is_refused_like_a_foreign_one(zlab, monkeypatch):
     mark(zlab)
     monkeypatch.setattr(zlab, 'unit_status', lambda: None)

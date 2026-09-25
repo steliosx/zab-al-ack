@@ -535,14 +535,8 @@ def inspect() -> dict:
     record: dict = {'state': 'ambiguous', 'marker': MARKER.exists(), 'components': {}, 'api_url': API_URL}
     listening = {name: port_listening(port) for name, port in PORTS.items()}
     record['ports_listening'] = listening
-    if not STATE.exists():
-        record['state'] = 'ambiguous' if any(listening.values()) else 'absent'
-        record['detail'] = 'lab port in use without a lab directory' if any(listening.values()) else 'no lab directory'
-        return record
-    if not record['marker']:
-        record['state'] = 'unmarked'
-        record['detail'] = 'existing .zabbix-lab directory without the isolated-lab marker'
-        return record
+    # The installed unit is global: it is checked first, so a fresh checkout (no lab directory yet) never reads as
+    # absent, and so never starts PostgreSQL or anything else, while another invocation holds the unit.
     unit_owned_busy = False
     if trust_unit_installed():
         status, ownership = unit_ownership()
@@ -552,6 +546,14 @@ def inspect() -> dict:
                                 if status else 'the lab-trust unit cannot be observed') + '; it is not started, stopped or reconfigured'
             return record
         unit_owned_busy = ownership == 'owned'
+    if not STATE.exists():
+        record['state'] = 'ambiguous' if any(listening.values()) else 'absent'
+        record['detail'] = 'lab port in use without a lab directory' if any(listening.values()) else 'no lab directory'
+        return record
+    if not record['marker']:
+        record['state'] = 'unmarked'
+        record['detail'] = 'existing .zabbix-lab directory without the isolated-lab marker'
+        return record
     live, stale, foreign, unreadable = [], [], [], []
     for name in PID_FILES:
         identity, classification = verified_pid(name)

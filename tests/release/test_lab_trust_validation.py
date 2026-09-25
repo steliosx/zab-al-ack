@@ -23,25 +23,20 @@ def driver(monkeypatch, tmp_path):
     module.events = events
     module.audit_exit = 0
 
-    class FakeLab:
-        def __init__(self, *unused):
-            pass
+    # The real Lab (and so its real stop/collect/wipe sequencing); only its runuser commands and start are replaced.
+    module.unit = {'ActiveState': 'inactive', 'InvocationID': ''}
+    module.on_start = None
 
+    class FakeLab(module.acceptance.Lab):
         def start(self):
             events.append('lab.start')
+            if module.on_start:
+                module.on_start(self)
             raise RuntimeError('synthetic: the lab stops here')
-
-        def stop_and_wipe(self, collect=None):
-            events.append('lab.stop')
-            steps = [{'argv_tail': ['stop'], 'exit': module.wipe_exit, 'stdout': ''}]
-            if collect is not None:
-                steps.append({'collect': collect()})
-            events.append('lab.wipe')
-            return steps + [{'argv_tail': ['--wipe'], 'exit': 0, 'stdout': ''}]
 
         def command(self, *args, check=True):
             events.append('lab.' + args[0])
-            return subprocess.CompletedProcess(args, 0, '', '')
+            return subprocess.CompletedProcess(args, module.wipe_exit if args[0] == 'stop' else 0, '', '')
 
     def sh(*argv, **unused):
         events.append(' '.join(str(part) for part in argv[:2]))
@@ -49,7 +44,12 @@ def driver(monkeypatch, tmp_path):
             return subprocess.CompletedProcess(argv, module.audit_exit, 'differs: synthetic\n' if module.audit_exit else 'ok\n',
                                                'synthetic stderr\n' if module.audit_exit else '')
         if argv[:2] == ('systemctl', 'show'):
-            return subprocess.CompletedProcess(argv, 0, 'ActiveState=inactive\nInvocationID=\nMainPID=0\n', '')
+            shown = f"ActiveState={module.unit['ActiveState']}\nInvocationID={module.unit['InvocationID']}\nMainPID=0\n"
+            return subprocess.CompletedProcess(argv, 0, shown, '')
+        if argv[:2] == ('systemctl', 'start'):
+            module.unit.update(ActiveState='active', InvocationID='d' * 32)
+        if argv[:2] == ('systemctl', 'stop'):
+            module.unit.update(ActiveState='inactive')
         return subprocess.CompletedProcess(argv, 0, '', '')
     module.wipe_exit = 0
     monkeypatch.setattr(module.os, 'geteuid', lambda: 0)
@@ -58,7 +58,10 @@ def driver(monkeypatch, tmp_path):
     monkeypatch.setattr(module, 'host_state', lambda: {'synthetic': 'unchanged'})
     monkeypatch.setattr(module, 'immutable', lambda snapshot: None)
     monkeypatch.setattr(module, 'listening', lambda port: False)
-    monkeypatch.setattr(module.shutil, 'copytree', lambda *unused, **unused_too: events.append('copytree'))
+    def copytree(source, target, **unused):
+        events.append('copytree')
+        Path(target).mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(module.shutil, 'copytree', copytree)
     for name in ('RUNTIME_UNIT', 'INSTALLED_UNIT', 'STAGE'):
         monkeypatch.setattr(module, name, tmp_path / 'absent' / name)
     monkeypatch.setattr(module, 'CONF', tmp_path / 'absent/conf-dir/zabbix_server.conf')
@@ -128,15 +131,15 @@ def test_every_attempt_is_collected_privately_before_the_wipe(driver, monkeypatc
     (checkout / '.zabbix-lab/zabbix-db-password').write_text('not collected\n')
     real_collector = driver.acceptance.collector
 
-    def recording_collector(bundle, attempt, sources):
-        run = real_collector(bundle, attempt, sources)
+    def recording_collector(bundle, attempt, sources, new=False):
+        run = real_collector(bundle, attempt, sources, new)
         def collect():
             driver.events.append('collect')
             return run()
         return collect
     monkeypatch.setattr(driver.acceptance, 'collector', recording_collector)
     code, result = driver.run('installed')
-    assert driver.events.index('lab.stop') < driver.events.index('collect') < driver.events.index('lab.wipe')
+    assert driver.events.index('lab.stop') < driver.events.index('collect') < driver.events.index('lab.reset')
     bundle = Path(result['summary']['private_evidence'])
     assert bundle.parent == tmp_path / 'result.json.private-evidence' and (bundle.parent / 'PRIVATE.txt').exists()
     manifest = json.loads((bundle / 'MANIFEST.json').read_text())
@@ -150,3 +153,52 @@ def test_a_refused_attempt_is_collected_too(driver):
     manifest = json.loads((Path(result['summary']['private_evidence']) / 'MANIFEST.json').read_text())
     assert manifest['absent'][0]['path'] == 'evidence/deployment-e2e-run.json'  # nothing existed yet: recorded, not skipped
     assert [entry['path'] for entry in manifest['files']] == ['result.json']
+
+
+# Review of 97925db: `started` was set before lab.start(), and the finally block stopped the unit as root even
+# when that start had refused a unit this attempt never started. The driver now requires the unit idle before
+# anything starts, records the invocations this attempt creates, and stops only those.
+@pytest.mark.parametrize('state', ['active', 'activating', 'deactivating', ''])
+def test_a_busy_or_unobservable_unit_refuses_the_attempt_before_anything_starts(driver, state):
+    driver.unit.update(ActiveState=state, InvocationID='f' * 32 if state else '')
+    code, result = driver.run('installed')
+    assert code == 1 and result['summary']['failed'] == ['prerequisites']
+    assert 'copytree' not in driver.events and 'lab.start' not in driver.events
+    assert 'systemctl stop' not in driver.events and 'systemctl start' not in driver.events
+    assert driver.unit['InvocationID'] == ('f' * 32 if state else '') and driver.unit['ActiveState'] == state
+
+
+def test_a_foreign_invocation_during_a_refused_start_is_not_stopped(driver):
+    driver.on_start = lambda lab: driver.unit.update(ActiveState='activating', InvocationID='f' * 32)
+    code, result = driver.run('installed')
+    assert code == 1 and 'systemctl stop' not in driver.events
+    assert result['cleanup']['unit']['action'] == 'left_running_not_this_attempt'
+    assert result['cleanup']['invocations_created'] == [] and 'cleanup' in result['summary']['failed']
+    assert driver.unit == {'ActiveState': 'activating', 'InvocationID': 'f' * 32}
+
+
+def test_the_invocation_this_attempt_created_is_stopped(driver, tmp_path):
+    def bind(lab):  # the lab's own start binds the invocation it produced, then the run fails
+        (lab.checkout / '.zabbix-lab').mkdir(parents=True, exist_ok=True)
+        (lab.checkout / '.zabbix-lab/trust-unit.owner.json').write_text(json.dumps({'invocation_id': 'c' * 32}))
+        driver.unit.update(ActiveState='active', InvocationID='c' * 32)
+    driver.on_start = bind
+    code, result = driver.run('installed')
+    assert driver.events.count('systemctl stop') == 1 and result['cleanup']['unit']['action'] == 'stopped'
+    assert driver.unit['ActiveState'] == 'inactive' and 'cleanup' not in result['summary']['failed']
+
+
+def test_an_incomplete_collection_leaves_the_lab_state_in_place(driver, monkeypatch, tmp_path):
+    checkout = tmp_path / 'work/checkout'
+    (checkout / '.zabbix-lab').mkdir(parents=True)
+    log = checkout / '.zabbix-lab/zabbix_server.log'
+    log.write_bytes(b'the only copy of this attempt\'s server log\n')
+    tool = driver.acceptance.evidence_tool()
+    def failing_fsync(fd):
+        raise OSError(5, 'synthetic destination I/O failure')
+    monkeypatch.setattr(tool.os, 'fsync', failing_fsync)
+    code, result = driver.run('installed')
+    steps = result['cleanup']['lab']
+    assert code == 1 and 'lab.stop' in driver.events and 'lab.reset' not in driver.events  # stopped, never wiped
+    assert steps[1]['collect']['status'] == 'INCOMPLETE' and steps[2]['wipe'] == 'SKIPPED'
+    assert log.read_bytes() == b'the only copy of this attempt\'s server log\n' and 'cleanup' in result['summary']['failed']
