@@ -257,21 +257,39 @@ class Lab:
         return self.command('start', '--isolated-lab').stdout
 
     def stop_and_wipe(self, collect):
-        """Stop the lab's own services, collect its evidence, and wipe only when every selected file was retained.
+        """Stop the lab's own services, collect its evidence, and wipe only when the stop succeeded and every
+        selected file was retained.
 
-        An INCOMPLETE or FAILED collection leaves the lab state exactly in place (stopped, not wiped) for a later
-        collection; the caller reports the attempt as failed.
+        Evidence is collected whatever the stop did. A failed stop, or an INCOMPLETE or FAILED collection, leaves
+        the lab state in place (not wiped) for a later cleanup; cleanup_failures() then names what failed, and the
+        caller reports the attempt as failed. A successful collection does not show that the stop succeeded.
         """
         stopped = self.command('stop', '--isolated-lab', check=False)
-        steps: list[dict] = [{'argv_tail': stopped.args[-3:], 'exit': stopped.returncode, 'stdout': stopped.stdout[-300:]}]
+        steps: list[dict] = [{'argv_tail': stopped.args[-3:], 'exit': stopped.returncode, 'stdout': stopped.stdout[-300:],
+                              'stderr': stopped.stderr[-300:]}]
         verdict = collect()
         steps.append({'collect': verdict})
         if verdict['status'] != 'COLLECTED':
             steps.append({'wipe': 'SKIPPED', 'reason': 'evidence not fully retained; the stopped lab state is left in place'})
             return steps
+        if stopped.returncode != 0:
+            steps.append({'wipe': 'SKIPPED', 'reason': f'the lab stop exited {stopped.returncode}; its state is left in place'})
+            return steps
         wiped = self.command('reset', '--isolated-lab', '--wipe', check=False)
-        steps.append({'argv_tail': wiped.args[-3:], 'exit': wiped.returncode, 'stdout': wiped.stdout[-300:]})
+        steps.append({'argv_tail': wiped.args[-3:], 'exit': wiped.returncode, 'stdout': wiped.stdout[-300:],
+                      'stderr': wiped.stderr[-300:]})
         return steps
+
+
+def cleanup_failures(steps: list[dict]) -> list[str]:
+    """Every lab cleanup step that did not succeed: a nonzero stop or reset, or a collection other than COLLECTED."""
+    failures = []
+    for step in steps:
+        if 'exit' in step and step['exit'] != 0:
+            failures.append(f"{' '.join(step['argv_tail'])} exited {step['exit']}")
+        if 'collect' in step and step['collect']['status'] != 'COLLECTED':
+            failures.append(f"evidence collection {step['collect']['status']}")
+    return failures
 
 
 def evidence_tool():
@@ -648,13 +666,16 @@ def main(argv=None) -> int:
                                                      ('file', 'media-export', work / 'media-export.json')], new=True)
         cleanup['lab'] = lab.stop_and_wipe(collect) if lab_started else [{'collect': collect()}, {'wipe': 'NOT_NEEDED',
                                                                                                     'reason': 'the lab was never started'}]
+        cleanup['failures'] = cleanup_failures(cleanup['lab'])  # a failed stop or reset fails the attempt
         results['cleanup'] = cleanup
         collected = next(step['collect'] for step in cleanup['lab'] if 'collect' in step)
         results['summary'] = {'acceptance_cases': sum(1 for c in results['cases'] if c['pass'] is not None),
                               'passed': sum(1 for c in results['cases'] if c['pass'] is True),
                               'failed': [c['case'] for c in results['cases'] if c['pass'] is False]
                               + ([] if collected['status'] == 'COLLECTED' else ['evidence-collection'])
+                              + (['cleanup'] if any('exited' in failure for failure in cleanup['failures']) else [])
                               + (['error'] if 'error' in results else []),
+                              'cleanup_failures': cleanup['failures'],
                               'error': results.get('error'),
                               'private_evidence': str(args.evidence.resolve() / attempt)}
         args.out.write_text(json.dumps(results, indent=2) + '\n')

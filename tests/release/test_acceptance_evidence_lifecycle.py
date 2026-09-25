@@ -88,7 +88,7 @@ class FakeProcess:
         self.events.append('gateway.kill')
 
 
-def run_main(harness, monkeypatch, tmp_path, events, isolate=None, start=None):
+def run_main(harness, monkeypatch, tmp_path, events, isolate=None, start=None, exits=None):
     monkeypatch.setattr(harness, 'pki', lambda directory: events.append('pki'))
     def copytree(source, target, **unused):
         (Path(target) / 'zabbix/v1/fixtures').mkdir(parents=True)
@@ -120,7 +120,8 @@ def run_main(harness, monkeypatch, tmp_path, events, isolate=None, start=None):
             (self.checkout / '.zabbix-lab').mkdir(parents=True, exist_ok=True)
             (self.checkout / '.zabbix-lab/zabbix_server.log').write_text('synthetic server log\n')
             (start or (lambda: None))()
-        return subprocess.CompletedProcess(list(args), 0, '{}', '')
+        code = (exits or {}).get(args[0] + (' --wipe' if '--wipe' in args else ''), 0)
+        return subprocess.CompletedProcess(list(args), code, '{}', 'synthetic failure\n' if code else '')
     monkeypatch.setattr(harness.Lab, 'command', command)
     real = harness.collector
 
@@ -161,3 +162,33 @@ def test_owned_gateways_stop_before_collection_and_the_wipe_follows_it(harness, 
     result = json.loads(out.read_text())
     manifest = json.loads((Path(result['summary']['private_evidence']) / 'MANIFEST.json').read_text())
     assert {entry['path'] for entry in manifest['files']} >= {'.zabbix-lab/zabbix_server.log', 'access.log', 'result.json'}
+
+
+# Review of 6f083b5 (Astra R7, B14): a failed stop or reset was recorded but left out of the verdict, so a run with
+# passing cases and a complete collection returned 0. A failed stop now also leaves the lab state unwiped.
+@pytest.mark.parametrize('stop, reset, expected_failures, reset_requested', [
+    (0, 0, [], True),
+    (5, 0, ['stop --isolated-lab exited 5'], False),
+    (0, 7, ['reset --isolated-lab --wipe exited 7'], True),
+    (5, 7, ['stop --isolated-lab exited 5'], False),     # the reset is never requested after a failed stop
+], ids=['clean', 'stop-fails', 'reset-fails', 'both-fail'])
+def test_a_failed_stop_or_reset_fails_an_otherwise_passing_attempt(harness, monkeypatch, tmp_path, capsys, stop, reset,
+                                                                   expected_failures, reset_requested):
+    events: list[str] = []
+    out, argv = run_main(harness, monkeypatch, tmp_path, events, exits={'stop': stop, 'reset --wipe': reset})
+    monkeypatch.setattr(harness, 'run_cases', lambda results, *unused: results['cases'].extend(
+        [{'case': 'synthetic:passing', 'expected': 'pass', 'pass': True}]))
+    monkeypatch.setattr(harness.Lab, 'start', lambda self: (self.command('start', '--isolated-lab'),
+                                                            '{"api_url": "http://127.0.0.1:1/", "zabbix_launch": "direct (override)"}')[1])
+    code = harness.main(argv)
+    summary = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    result = json.loads(out.read_text())
+    assert code == (0 if not expected_failures else 1)
+    assert summary['failed'] == ([] if not expected_failures else ['cleanup']) and summary['cleanup_failures'] == expected_failures
+    assert result['cleanup']['failures'] == expected_failures and summary['result_collected'] == 'COLLECTED'
+    assert ('lab.reset --wipe' in events) is reset_requested
+    if stop:
+        assert result['cleanup']['lab'][0]['stderr'] == 'synthetic failure\n'  # the diagnostic is kept
+        assert result['cleanup']['lab'][2] == {'wipe': 'SKIPPED', 'reason': 'the lab stop exited 5; its state is left in place'}
+    manifest = json.loads((Path(summary['private_evidence']) / 'MANIFEST.json').read_text())
+    assert manifest['complete'] is True and 'result.json' in {entry['path'] for entry in manifest['files']}
