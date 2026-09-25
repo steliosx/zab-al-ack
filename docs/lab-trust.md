@@ -177,8 +177,12 @@ An exception is recorded as the run's error, and the run does not pass.
 
 The driver stops the unit as root only while it runs an invocation this attempt created. That covers its own
 root starts (including the intentional one in the ownership case) and the invocation the lab's own start
-bound. A start that refused a pre-existing or foreign invocation never ends in that invocation being stopped.
-Cleanup passes only when the unit ends idle, or exactly as the attempt found it.
+bound. The driver reads the lab's owner record immediately before and after each of its own lab starts, and
+adopts only a new invocation recorded during that call, even if the start then fails part-way. A record already
+in the checkout (a stale one, or one copied in) is never adopted, and cleanup reads no owner record at all. A
+failed audit or busy preflight therefore makes no root stop. A start that refused a pre-existing or foreign
+invocation never ends in that invocation being stopped. Cleanup passes only when the unit ends idle, or exactly
+as the attempt found it.
 
 **Private evidence.** Every attempt is collected into a PRIVATE bundle before anything is cleaned up, whatever its
 outcome (PASS, FAIL, REFUSED or NOT_RUN). The bundle holds:
@@ -204,7 +208,11 @@ directory with a random suffix. Only the driver's own result file is added to it
 
 **Only a complete collection permits a wipe.**
 - Both root drivers stop the processes they own first: the lab's services, and the harness's gateways, whose
-  logs are then final. They collect next. They wipe the lab only after a COLLECTED verdict.
+  logs are then final. They collect next. They wipe the lab only after a COLLECTED verdict **and** a successful
+  lab stop. A complete collection does not show that the stop succeeded.
+- A failed lab stop or reset fails the attempt (exit 1, `cleanup` in the summary's failures, `cleanup_failures`
+  and the command's stderr kept in the result and the bundle). After a failed stop the lab is left in place and
+  the reset is not requested.
 - An INCOMPLETE or FAILED collection leaves the stopped lab state exactly in place and fails the run. A later
   collection into a fresh attempt recovers it, and only then is the lab wiped.
 - A refusal at setup (for example in the harness's `isolate()`) is recorded in the result and the bundle, then

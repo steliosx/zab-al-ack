@@ -2,6 +2,11 @@
 
 ## Unreleased — S2: webhook transport candidate for A2 (Opus; separate, not integrated)
 
+- Corrections after Astra's R7 review of `6f083b5`:
+  - **B13:** the root validation driver adopts only an owner record bound during its own lab start. A stale
+    checkout record is never adopted, so a failed audit or busy preflight makes no root stop.
+  - **B14:** a failed lab stop or reset fails the S2 acceptance attempt (exit 1, named in the summary), and a
+    failed stop is never followed by a wipe.
 - Corrections after the independent R6 review of `97925db`:
   - **Evidence:** a collection is COLLECTED only when every selected, existing file was copied and read back.
     Otherwise it is INCOMPLETE and lists each failure: copy or destination errors, links anywhere on the path,
