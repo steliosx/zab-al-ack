@@ -38,8 +38,10 @@ Installing it is a host change that needs the owner's authorization.
     invocation. It reads systemd's view without privilege (`systemctl show`: ActiveState, MainPID, InvocationID,
     ControlGroup). As soon as its own start returns, it records the invocation ID, control group, main PID and
     that process's start time in `.zabbix-lab/trust-unit.owner.json`. An active, activating or deactivating unit
-    under any other invocation, or one systemd cannot report, makes the lab state `ambiguous`. The lab then does
-    not write the fixed configuration, start, signal or stop anything. The lab stops the unit only when the
+    under any other invocation, or one systemd cannot report, makes the lab state `ambiguous`. This is checked
+    first, before a fresh checkout (no `.zabbix-lab` yet) can read as absent. The lab then does not create its
+    directory or marker, start PostgreSQL, set up the database, write the fixed configuration, or start, signal or
+    stop anything. The lab stops the unit only when the
     invocation is its own, including after its main process has exited while descendants remain in the control
     group (the stop ends the whole group). The stop succeeds only when systemd then reports the unit inactive.
     The shared lab lock serializes cooperating jobs; the invocation binding is what identifies this run's unit.
@@ -95,15 +97,27 @@ it. It is read-only and checks:
   - the trust directory holds exactly `ca-certificates.crt`, `lab-ca.pem` and `<subject-hash>.0`, the last a
     link to `lab-ca.pem`;
   - the CA directory holds exactly the key and the certificate;
-  - all three certificate files are one identical, self-signed certificate that matches the key;
+  - all three certificate files are one identical certificate that matches the key, and its self-signature
+    verifies (`openssl verify -check_ss_sig`; without that option OpenSSL accepts a trust anchor without
+    checking its signature);
   - the extensions are exactly the key identifiers plus `CA:TRUE, pathlen:0`, `Certificate Sign, CRL Sign`
     and names permitted only for `DNS:runner` and `IP:127.0.0.1/255.255.255.255`, each critical.
 
 It prints each installed file's SHA-256. A CA with any other name, path length, key usage or extension fails.
 
-**Rollback:** `deploy/lab-trust/uninstall.sh` stops only this unit and then requires systemd to report it
-inactive (or failed), with no process left in its control group. Otherwise it removes nothing, exits 1 and
-reports that the rollback is not complete. Only then does it remove the paths in the table plus
+**Rollback:** `deploy/lab-trust/uninstall.sh` stops only this unit, then requires two things before it removes
+anything:
+- systemd reports the unit inactive (or failed);
+- its control group is gone, or reads as empty. The script checks both the group systemd reports and the fixed
+  path `/sys/fs/cgroup/system.slice/zabalack-lab-zabbix.service`. An existing group must have a readable
+  `cgroup.events` that says `populated 0`, which covers every descendant group, and an empty, readable
+  `cgroup.procs`. Emptiness is never taken from a file size, because cgroupfs reports size 0 even for a
+  populated group. A group that no longer exists after the stop is accepted. One that exists but cannot be
+  read is refused. This assumes the unified cgroup-v2 hierarchy of the lab host (Ubuntu 24.04); without
+  `cgroup.events` it refuses.
+
+Otherwise it removes nothing, exits 1 and reports that the rollback is not complete. Only then does it remove
+the paths in the table plus
 `/run/zabalack-lab-zabbix` and reload systemd. It finally checks that every path is gone and the unit is no longer
 loaded. It never touches the global trust store, AppArmor or any caller-selected directory.
 
@@ -139,8 +153,8 @@ sudo sh $SNAP/deploy/lab-trust/verify.sh         # expect: "lab-trust installati
                                                  # installed SHA-256s; keep its full output
 sudo -l -U zabalack-runner                       # expect: exactly the two systemctl commands
 sudo python3 $SNAP/lab/lab_trust_validation.py --mode installed --checkout $SNAP --work <tmp> --out <file>
-                                                 # expect: status PASS, 12 of 12 required cases, host_unchanged true;
-                                                 # it refuses before any start if the audit fails
+                                                 # expect: status PASS, 13 of 13 required cases, host_unchanged true;
+                                                 # it refuses before any start if the audit fails or the unit is not idle
 <ordinary native cycle as the lab account>       # expect: PASS, exit 0, runner-record retained, final record validates;
                                                  # the deployment webhook delivered through the unit's trust
 sudo sh $SNAP/deploy/lab-trust/uninstall.sh      # rollback check if requested: unit inactive, every path gone
@@ -148,6 +162,8 @@ sudo sh $SNAP/deploy/lab-trust/uninstall.sh      # rollback check if requested: 
 
 The installed validation's required cases are:
 - `installation-audit`;
+- `prerequisites`: the unit is idle (not active, activating, deactivating, reloading, or unobservable) before
+  the attempt starts anything;
 - identity and namespace;
 - the five deliveries;
 - host trust;
@@ -158,6 +174,11 @@ The installed validation's required cases are:
 - the host comparison.
 
 An exception is recorded as the run's error, and the run does not pass.
+
+The driver stops the unit as root only while it runs an invocation this attempt created. That covers its own
+root starts (including the intentional one in the ownership case) and the invocation the lab's own start
+bound. A start that refused a pre-existing or foreign invocation never ends in that invocation being stopped.
+Cleanup passes only when the unit ends idle, or exactly as the attempt found it.
 
 **Private evidence.** Every attempt is collected into a PRIVATE bundle before anything is cleaned up, whatever its
 outcome (PASS, FAIL, REFUSED or NOT_RUN). The bundle holds:
@@ -170,10 +191,28 @@ outcome (PASS, FAIL, REFUSED or NOT_RUN). The bundle holds:
 `tools/collect_attempt_evidence.py` does this. It records a digest for every file and the absence of every
 expected one. Secret-looking names are listed, not copied. Directories are 0700 and files 0600, with a
 `PRIVATE.txt` marker.
-- Both root drivers call it after the lab stops and before it is wiped, including after a refusal. They write
-  to `--evidence DIR`, by default next to `--out` as `OUT.private-evidence`.
-- For an ordinary native cycle, the operator runs it before removing the temporary checkout:
-  `python3 tools/collect_attempt_evidence.py --bundle <private dir> --attempt <label> --checkout checkout=<tree>`.
+
+**What COLLECTED means.** The verdict is COLLECTED only when every selected file that exists was copied and read
+back with its source digest. Anything else is INCOMPLETE and lists each failure:
+- a copy or destination error;
+- a link anywhere on the path (a linked `.zabbix-lab` is never followed);
+- a file that resolves outside its source once opened;
+- an existing destination with different bytes.
+
+Files are opened without following links, and an existing copy is never replaced. Each attempt gets a fresh
+directory with a random suffix. Only the driver's own result file is added to it later.
+
+**Only a complete collection permits a wipe.**
+- Both root drivers stop the processes they own first: the lab's services, and the harness's gateways, whose
+  logs are then final. They collect next. They wipe the lab only after a COLLECTED verdict.
+- An INCOMPLETE or FAILED collection leaves the stopped lab state exactly in place and fails the run. A later
+  collection into a fresh attempt recovers it, and only then is the lab wiped.
+- A refusal at setup (for example in the harness's `isolate()`) is recorded in the result and the bundle, then
+  raised unchanged. Nothing is started to obtain the record.
+- The bundle goes to `--evidence DIR`, by default next to `--out` as `OUT.private-evidence`.
+- For an ordinary native cycle, the operator runs the collector before removing the temporary checkout, and
+  removes nothing unless it exits 0 (COLLECTED; 3 means INCOMPLETE):
+  `python3 tools/collect_attempt_evidence.py --bundle <private dir> --attempt <label> --new --checkout checkout=<tree>`.
 
 Keep the bundle under the private evidence directory, never in a checkout, GitHub or chat. If a delivery fails,
 also capture the precise webhook error.

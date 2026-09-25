@@ -2,6 +2,20 @@
 
 ## Unreleased — S2: webhook transport candidate for A2 (Opus; separate, not integrated)
 
+- Corrections after the independent R6 review of `97925db`:
+  - **Evidence:** a collection is COLLECTED only when every selected, existing file was copied and read back.
+    Otherwise it is INCOMPLETE and lists each failure: copy or destination errors, links anywhere on the path,
+    files resolving outside their source, or an existing copy with different bytes. Such a collection
+    suppresses the lab wipe and fails the run. Attempts get fresh directories, and copies are never
+    overwritten. The harness records setup refusals, including `isolate()`, and stops its own gateways before
+    collecting.
+  - **Rollback:** `uninstall.sh` reads the unit cgroup's `cgroup.events` and `cgroup.procs` instead of a file
+    size, which is always 0 on cgroupfs. It refuses a populated or unreadable group and accepts a removed one.
+  - **Audit:** `check-ca.sh` verifies the CA's self-signature with `-check_ss_sig`.
+  - **Ownership:** a foreign or unobservable installed unit is refused before a fresh checkout can read as
+    absent, so nothing starts. The root validation driver requires the unit idle before the attempt, and
+    stops only the invocations it created.
+
 - The reference webhook constructs `HttpRequest` with `SSLVerifyPeer` and
   `SSLVerifyHost` enabled (Zabbix 7.0.28+ in the 7.0 branch; 7.0.31 qualified).
 - `tools/webhook_transport_check.py`: per-node enablement precondition
