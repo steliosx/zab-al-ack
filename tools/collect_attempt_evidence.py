@@ -200,10 +200,10 @@ def collect(bundle: Path, attempt: str, sources: list[tuple[str, str, Path]], ne
         for path in candidates(kind, root):
             relative = path.name if kind == 'file' else path.relative_to(root).as_posix()
             entry = {'source': name, 'path': relative}
-            link = linked_component(base, path)
-            if link is not None:
-                if link not in links:  # not already reported above
-                    manifest['failed'].append({**entry, 'reason': f'link on the path, not followed: {link.relative_to(base)}'})
+            linked = linked_component(base, path)
+            if linked is not None:
+                if linked not in links:  # not already reported above
+                    manifest['failed'].append({**entry, 'reason': f'link on the path, not followed: {linked.relative_to(base)}'})
                 continue
             if not path.is_file():
                 continue
