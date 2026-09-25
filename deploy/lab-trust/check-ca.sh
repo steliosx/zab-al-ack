@@ -4,7 +4,7 @@
 # Exit 0 only when:
 #   - TRUST_DIR holds exactly ca-certificates.crt, lab-ca.pem and <subject-hash>.0, a link to lab-ca.pem;
 #   - CA_DIR holds exactly lab-ca.key and lab-ca.pem;
-#   - all three certificate files are the same single certificate, self-signed, matching lab-ca.key;
+#   - all three certificate files are the same single certificate, validly self-signed (its signature checked), matching lab-ca.key;
 #   - its extensions are exactly subject/authority key identifiers plus the three below, with these exact values:
 #     CA:TRUE with path length 0, keyCertSign and cRLSign only, and names permitted only for DNS:runner and IP:127.0.0.1/32.
 # Otherwise it names each difference and exits 1.
@@ -27,7 +27,8 @@ for copy in "$TRUST/ca-certificates.crt" "$CA/lab-ca.pem"; do
     cmp -s "$pem" "$copy" || differs "$copy is not the same certificate as $pem"
 done
 [ "$(grep -c -- '-----BEGIN' "$pem" 2>/dev/null)" = 1 ] || differs "$pem is not exactly one PEM object"
-"$OPENSSL" verify -no-CApath -no-CAstore -CAfile "$pem" "$pem" >/dev/null 2>&1 || differs "the lab CA is not a valid self-signed CA"
+# -check_ss_sig: without it, OpenSSL accepts a trust anchor without checking its own signature.
+"$OPENSSL" verify -check_ss_sig -no-CApath -no-CAstore -CAfile "$pem" "$pem" >/dev/null 2>&1 || differs "the lab CA is not a validly self-signed CA"
 cert_key=$("$OPENSSL" x509 -noout -pubkey -in "$pem" 2>/dev/null)
 key=$("$OPENSSL" pkey -pubout -in "$CA/lab-ca.key" 2>/dev/null)
 [ -n "$key" ] && [ "$key" = "$cert_key" ] || differs "$CA/lab-ca.key is not the lab CA's key"

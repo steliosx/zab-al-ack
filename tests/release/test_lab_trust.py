@@ -492,6 +492,25 @@ def test_trust_entries_links_and_copies_must_be_exact(tmp_path, openssl_cli, cha
     assert check_ca(d).returncode == 1
 
 
+# Review of 97925db (R6-INSTALL-2): `openssl verify -CAfile ca ca` accepts a trust anchor without checking its own
+# signature, so a CA with a damaged signature passed as "self-signed".
+def test_a_ca_whose_self_signature_is_damaged_fails_the_exact_check(tmp_path, openssl_cli):
+    d, _ = ca_tree(tmp_path, *REVIEWED)
+    assert check_ca(d).returncode == 0  # the intact CA, the same bytes but one
+    der = subprocess.run(['/usr/bin/openssl', 'x509', '-in', str(d / 'ca/lab-ca.pem'), '-outform', 'DER'], capture_output=True,
+                         check=True).stdout
+    damaged = der[:-1] + bytes([der[-1] ^ 0x01])  # the last byte belongs to the signature value
+    pem = subprocess.run(['/usr/bin/openssl', 'x509', '-inform', 'DER', '-outform', 'PEM'], input=damaged, capture_output=True,
+                         check=True).stdout
+    for name in ('ca/lab-ca.pem', 'trust/lab-ca.pem', 'trust/ca-certificates.crt'):
+        (d / name).write_bytes(pem)
+    constraints = subprocess.run(['/usr/bin/openssl', 'x509', '-noout', '-ext', 'basicConstraints,keyUsage,nameConstraints',
+                                  '-in', str(d / 'ca/lab-ca.pem')], capture_output=True, text=True)
+    assert 'pathlen:0' in constraints.stdout  # everything else, key and hash link included, is unchanged
+    result = check_ca(d)
+    assert result.returncode == 1 and 'not a validly self-signed CA' in result.stdout, result.stdout
+
+
 def test_the_audit_runs_only_as_root_and_only_from_an_immutable_snapshot():
     if os.geteuid() == 0:
         pytest.skip('checks the refusal for a non-root caller')
@@ -510,21 +529,40 @@ def test_the_snapshot_manifest_lists_exactly_the_current_sources():
         assert hashlib.sha256((TRUST / name).read_bytes()).hexdigest() == digest, name
 
 
-def sandboxed_uninstall(tmp_path, after_stop, procs=''):
-    """uninstall.sh with its absolute host paths moved under tmp_path and systemctl replaced by a recorder."""
+def own_cgroup() -> Path | None:
+    """This test process's own cgroup-v2 directory: a real, populated group whose cgroup.procs reports size 0."""
+    line = next((line for line in Path('/proc/self/cgroup').read_text().splitlines() if line.startswith('0::')), None)
+    group = Path('/sys/fs/cgroup' + line[3:]) if line else None
+    return group if group and (group / 'cgroup.events').is_file() else None
+
+
+def sandboxed_uninstall(tmp_path, after_stop, group='empty', reported=True):
+    """uninstall.sh with its absolute host paths moved under tmp_path and systemctl replaced by a recorder.
+
+    group: the unit's cgroup after the stop: 'gone', 'empty', 'procs' (a direct member), 'descendant' (populated
+    only below it), 'unreadable' (no cgroup.events), or 'real' (a link to this process's own real cgroupfs group,
+    populated, whose cgroup.procs has stat size 0). reported: whether systemd still names the group.
+    """
     (tmp_path / 'etc/zabalack-lab/trust').mkdir(parents=True)
     for name in ('systemd/system/zabalack-lab-zabbix.service', 'sudoers.d/zabalack-lab-zabbix', 'tmpfiles.d/zabalack-lab-zabbix.conf'):
         (tmp_path / 'etc' / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / 'etc' / name).write_text('installed\n')
     (tmp_path / 'run/zabalack-lab-zabbix').mkdir(parents=True)
-    (tmp_path / 'cgroup/system.slice/zabalack-lab-zabbix.service').mkdir(parents=True)
-    (tmp_path / 'cgroup/system.slice/zabalack-lab-zabbix.service/cgroup.procs').write_text(procs)
+    unit_group = tmp_path / 'cgroup/system.slice/zabalack-lab-zabbix.service'
+    unit_group.parent.mkdir(parents=True)
+    if group == 'real':
+        unit_group.symlink_to(own_cgroup(), target_is_directory=True)
+    elif group != 'gone':
+        unit_group.mkdir()
+        if group != 'unreadable':
+            (unit_group / 'cgroup.events').write_text(f"populated {1 if group in ('procs', 'descendant') else 0}\nfrozen 0\n")
+            (unit_group / 'cgroup.procs').write_text('4242\n' if group == 'procs' else '')
     systemctl = tmp_path / 'systemctl'
     systemctl.write_text(f"""#!/bin/sh
 echo "$*" >> {tmp_path}/systemctl.log
 case "$1 $3" in
   "show ActiveState") cat {tmp_path}/active 2>/dev/null || echo active ;;
-  "show ControlGroup") echo /system.slice/zabalack-lab-zabbix.service ;;
+  "show ControlGroup") {'echo /system.slice/zabalack-lab-zabbix.service' if reported else 'echo'} ;;
   "show LoadState") [ -e {tmp_path}/etc/systemd/system/zabalack-lab-zabbix.service ] && echo loaded || echo not-found ;;
 esac
 [ "$1" = stop ] && echo {after_stop} > {tmp_path}/active
@@ -540,16 +578,36 @@ exit 0
     return subprocess.run(['sh', str(tmp_path / 'uninstall.sh')], capture_output=True, text=True)
 
 
-@pytest.mark.parametrize('after_stop, procs', [('active', ''), ('deactivating', ''), ('inactive', '4242\n')])
-def test_uninstall_removes_nothing_until_the_unit_is_inactive_with_an_empty_control_group(tmp_path, after_stop, procs):
-    result = sandboxed_uninstall(tmp_path, after_stop, procs)
-    assert result.returncode == 1 and 'nothing removed' in result.stderr
+def nothing_removed(tmp_path, result):
+    assert result.returncode == 1 and 'nothing removed' in result.stderr, result.stderr
     assert (tmp_path / 'etc/zabalack-lab').is_dir() and (tmp_path / 'etc/sudoers.d/zabalack-lab-zabbix').exists()
+    assert (tmp_path / 'etc/systemd/system/zabalack-lab-zabbix.service').exists() and (tmp_path / 'run/zabalack-lab-zabbix').is_dir()
 
 
-@pytest.mark.parametrize('after_stop', ['inactive', 'failed'])
-def test_uninstall_rolls_back_once_the_unit_is_inactive(tmp_path, after_stop):
-    result = sandboxed_uninstall(tmp_path, after_stop)
+@pytest.mark.parametrize('after_stop', ['active', 'deactivating'])
+def test_uninstall_removes_nothing_while_the_unit_is_still_up(tmp_path, after_stop):
+    nothing_removed(tmp_path, sandboxed_uninstall(tmp_path, after_stop))
+
+
+# Review of 97925db (R6-INSTALL-1): `-s cgroup.procs` read a size, and real cgroupfs files report size 0 even
+# when populated, so a populated group passed. Emptiness is now read from cgroup.events and cgroup.procs.
+@pytest.mark.parametrize('group, reported', [('procs', True), ('descendant', True), ('unreadable', True),
+                                             ('procs', False), ('descendant', False)])
+def test_uninstall_removes_nothing_while_the_group_is_populated_or_unreadable(tmp_path, group, reported):
+    nothing_removed(tmp_path, sandboxed_uninstall(tmp_path, 'inactive', group, reported))
+
+
+def test_a_real_zero_size_populated_cgroup_is_not_taken_as_empty(tmp_path):
+    real = own_cgroup()
+    if real is None or 'populated 1' not in (real / 'cgroup.events').read_text():
+        pytest.skip('no readable populated cgroup-v2 group for this process')
+    assert (real / 'cgroup.procs').stat().st_size == 0 and (real / 'cgroup.procs').read_text().strip()  # the cgroupfs shape
+    nothing_removed(tmp_path, sandboxed_uninstall(tmp_path, 'inactive', 'real'))
+
+
+@pytest.mark.parametrize('after_stop, group', [('inactive', 'empty'), ('failed', 'empty'), ('inactive', 'gone'), ('failed', 'gone')])
+def test_uninstall_rolls_back_once_the_unit_is_inactive_and_its_group_empty_or_gone(tmp_path, after_stop, group):
+    result = sandboxed_uninstall(tmp_path, after_stop, group)
     assert result.returncode == 0, result.stderr
     assert not (tmp_path / 'etc/zabalack-lab').exists() and not (tmp_path / 'run/zabalack-lab-zabbix').exists()
     assert not (tmp_path / 'etc/sudoers.d/zabalack-lab-zabbix').exists()
