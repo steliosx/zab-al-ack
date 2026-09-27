@@ -1,7 +1,9 @@
-# Preparing and publishing the alpha
+# Preparing and publishing the beta candidate
 
-The candidate under qualification is 0.1.0a18, an alpha under qualification toward beta. Creating its source archive/wheel does not
-publish it, assign a public namespace or authorize production changes. No
+The current integrated local candidate is 0.1.0b1. Its beta version is a candidate
+identity; qualification requires final-head evidence. Creating its source
+archive/wheel does not publish it, assign a public namespace or authorize
+production changes. No
 publication workflow is active: `release/publish.yml.example` is a template.
 
 ## Local release preparation
@@ -43,7 +45,7 @@ fixture described in `lab/real_zabbix.md` (or `--not-run REASON`). The recorder
 owns pytest execution, redacts both report formats and checks tree stability;
 importing an arbitrary historical JUnit is refused. Run native checks on a
 supported lab host before mapping; an unavailable native runner writes
-`NOT_RUN` and returns 2. Local alpha builds may retain this explicit limitation;
+`NOT_RUN` and returns 2. Local candidate builds may retain this explicit limitation;
 the Actions packaging job requires native success. Active workflows select the
 dedicated native Linux x64 self-hosted runner (ARM64 until 2026-09-22) with no
 paid-hosted fallback; see
@@ -101,9 +103,9 @@ Complete the single publication register, `config/publication.pending.json`:
 5. Run `python tools/public_audit.py --publication`. It returns 2 until required
    publication inputs are recorded, and 1 for a public-export check failure.
 
-Create a reviewed tag `v0.1.0a18` only after those edits and final reruns. Review
+Create a reviewed tag `v0.1.0b1` only after those edits and final reruns. Review
 the exact GitHub Actions run for that commit and clearly disclose unavailable
-native/real-source checks in the prerelease notes. Source-only alpha evaluation
+native/real-source checks in the prerelease notes. Source-only candidate evaluation
 is possible while such gaps remain, but stable production support is not claimed.
 The stable-release requirements are tracked in `docs/ROADMAP.md`; the beta boundary and its open items are tracked in `docs/BETA_READINESS.md`.
 
@@ -123,7 +125,7 @@ Action commits and fetched action.yml provenance are in ci_reference_manifest.js
 
 ## Withdrawing a release
 
-Stop recommending the affected alpha and publish an advisory with the affected
+Stop recommending the affected candidate and publish an advisory with the affected
 version and mitigation. If necessary, a package owner can deliberately yank the
 PyPI release; do not erase its source/tag or audit evidence. Follow
 `docs/rollback.md` for deployment holds/rollback: preserve capture/ledger data,

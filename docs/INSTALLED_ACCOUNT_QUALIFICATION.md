@@ -3,7 +3,7 @@
 This is a prepared procedure, not an execution record or deployment authority.
 The approved installation, account, cohort and test authorization have not been
 supplied. A4/G5 remain pending for that installation. Disposable-fixture passes,
-including the current ARM64 candidate's real-Zabbix cases, do not close them.
+including the historical ARM64 candidate's real-Zabbix cases, do not close them.
 
 The qualification baseline is version `0.1.0a16`, PR #24 at
 `7ae972e8488ab9602c60a4895a98e1204d534207`, based on
@@ -18,8 +18,11 @@ do not rebuild or silently substitute it. At 21 September 2026 the candidate is
 retained as the procedure's history. That 21 September pointer is superseded:
 since 22 September 2026 the candidate is `0.1.0a18` (draft PR #29), which has no built
 wheel yet; `e5c9e212…` remains the a17 artifact only
-([preparation note](beta_preparation_note_2026-09-22.md)). A changed implementation, dependency,
-SQL or executable harness needs a documented affected-evidence revalidation
+([preparation note](beta_preparation_note_2026-09-22.md)). That pointer is now historical:
+the integrated local candidate is `0.1.0b1`, and this procedure still requires its
+exact retained wheel and installed-account authorization before execution. A
+changed implementation, dependency, SQL or executable harness needs a documented
+affected-evidence revalidation
 decision. This procedure changes no version or artifact.
 
 Read [A4](SPEC_AMENDMENTS.md#a4--zabbix-role-defaults-do-not-revoke-omitted-existing-action-rules),

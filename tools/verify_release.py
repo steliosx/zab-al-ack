@@ -38,6 +38,11 @@ MAX_BYTES = 100 * 1024 * 1024
 MAX_MEMBERS = 2000
 
 
+def candidate_version(value: object) -> bool:
+    """Allow explicitly numbered alpha and beta prerelease artifacts."""
+    return isinstance(value, str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+[ab][0-9]+', value) is not None
+
+
 def safe_bytes(path: Path) -> bytes:
     require(not path.is_symlink() and not any(p.is_symlink() for p in path.parents)
             and path.is_file(), 'Release input is missing or not a regular file')
@@ -156,8 +161,7 @@ def verify(root: Path, dist: Path, *, candidate: Path | None = None,
            context: dict | None = None) -> dict:
     project = tomllib.loads(safe_bytes(root / 'pyproject.toml').decode())['project']
     version = project['version']
-    require(isinstance(version, str) and bool(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+a[0-9]+', version)),
-            'Expected an explicit alpha version')
+    require(candidate_version(version), 'Expected an explicit alpha or beta version')
     names = {
         'wheel': f'pypi/zabalack-{version}-py3-none-any.whl',
         'normalised_sdist': f'pypi/zabalack-{version}.tar.gz',

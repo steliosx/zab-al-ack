@@ -14,7 +14,7 @@ import re
 import subprocess
 
 from collect_ci_evidence import EvidenceError, require
-from verify_release import safe_bytes, sha
+from verify_release import candidate_version, safe_bytes, sha
 
 GH_VERSION = '2.83.2'
 PREDICATE = 'https://slsa.dev/provenance/v1'
@@ -24,8 +24,8 @@ WORKFLOW = '.github/workflows/attest.yml'
 def verify(artifact: Path, repository: str, source_ref: str, commit: str, *,
            bundle: Path | None = None, trusted_root: Path | None = None) -> dict:
     require(bool(re.fullmatch(r'[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+', repository)), 'Invalid repository policy')
-    require(bool(re.fullmatch(r'refs/tags/v[0-9]+\.[0-9]+\.[0-9]+a[0-9]+', source_ref)),
-            'Expected reviewed alpha tag policy')
+    require(source_ref.startswith('refs/tags/v') and candidate_version(source_ref.removeprefix('refs/tags/v')),
+            'Expected reviewed alpha or beta tag policy')
     require(bool(re.fullmatch(r'[0-9a-f]{40}', commit)), 'Expected exact source commit')
     require(trusted_root is None or bundle is not None, 'Offline root requires a local bundle')
     watched = [artifact, *([bundle] if bundle else []), *([trusted_root] if trusted_root else [])]

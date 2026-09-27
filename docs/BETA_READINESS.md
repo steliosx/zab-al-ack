@@ -1,9 +1,11 @@
 # Beta readiness
 
-The candidate under qualification is 0.1.0a18, an alpha under qualification toward beta
-(its identity is recorded in `docs/beta_preparation_note_2026-09-22.md`). A beta requires the intended automation to
-execute successfully on its exact commit in supported environments, plus the
-publication-owner inputs. See `ALPHA_REPORT.md` for current executed results.
+The current integrated local candidate is `0.1.0b1`. Its version metadata does
+not establish qualification: the intended automation must execute successfully
+on this exact commit in supported environments, and publication-owner inputs
+remain separate. Earlier `0.1.0a18` preparation is recorded in
+`docs/beta_preparation_note_2026-09-22.md`; see `ALPHA_REPORT.md` for its
+historical executed results.
 The original a16 release narrative below is historical. Its reference, mutation,
 property, native, real-Zabbix and deployment-path records retain their original
 revision bindings (42 native, 6 real Zabbix 7.0.10, 4 deployment-path cases with

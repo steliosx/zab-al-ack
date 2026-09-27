@@ -1,10 +1,12 @@
 # Zab-al-ack changelog
 
-## Unreleased — R8 S2 and R6 retention integration (Astra; local candidate)
+## 0.1.0b1 — 2026-09-27 (integrated local beta candidate; unpublished)
 
 - Integrates reviewed retention `9cb38de` with reviewed S2 `842e88d` once. The R8 x64 host run exercised the
   S2 lineage before this merge and the historical `0.1.0a18` wheel; it is preparation evidence, not a test of
   this combined source or a frozen `0.1.0b1` artifact.
+- Sets the package and local release policy to `0.1.0b1`. Final-head checks, a built wheel, and
+  exact-artifact host qualification remain separate evidence to produce for this candidate.
 - The two sections below preserve their original, separate-lineage change histories. The S2 heading describes
   its pre-integration review state.
 

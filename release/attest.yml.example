@@ -1,12 +1,12 @@
 # DISABLED TEMPLATE: review and deliberately install as .github/workflows/attest.yml.
 # Issuance writes a repository attestation (and public Sigstore log for public
 # repositories). It does not upload a Python package or create a GitHub release.
-name: Attest reviewed alpha build
+name: Attest reviewed candidate build
 on:
   workflow_dispatch:
     inputs:
       reviewed_commit:
-        description: Full reviewed commit SHA (must equal the selected alpha tag)
+        description: Full reviewed commit SHA (must equal the selected candidate tag)
         required: true
         type: string
 permissions:
@@ -53,7 +53,7 @@ jobs:
           from pathlib import Path
           version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
           if os.environ['GITHUB_REF'] != 'refs/tags/v' + version or os.environ['ZABALACK_REVIEWED_COMMIT'] != os.environ['GITHUB_SHA']:
-              raise SystemExit('Reviewed alpha tag/commit mismatch')
+              raise SystemExit('Reviewed candidate tag/commit mismatch')
           PY
           python tools/verify_release.py --candidate build/sign-input
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

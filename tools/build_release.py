@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and compare local alpha artifacts. No upload or remote Git operations."""
+"""Build and compare local candidate artifacts. No upload or remote Git operations."""
 from __future__ import annotations
 from datetime import datetime, timezone
 import gzip
@@ -80,7 +80,7 @@ def main() -> int:
         wheels = list(destination.glob('*-' + version + '-*.whl'))
         sources = [p for p in destination.glob('*-' + version + '.tar.gz') if not p.name.startswith('normalised-')]
         if len(wheels) != 1 or len(sources) != 1:
-            raise RuntimeError('Expected exactly one wheel and sdist for the selected alpha')
+            raise RuntimeError('Expected exactly one wheel and sdist for the selected candidate')
         normalised = destination / ('normalised-' + sources[0].name)
         normalise_sdist(sources[0], normalised)
         names.append((wheels[0], normalised, sources[0].name))

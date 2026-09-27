@@ -26,6 +26,15 @@ from tests.release.test_ci_collection import CONTEXT, PR_CONTEXT, create_reports
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize('version,valid', [
+    ('0.0.0a7', True), ('0.1.0b1', True),
+    ('0.1.0', False), ('0.1.0rc1', False), ('0.1.0b1+local', False),
+    (None, False),
+])
+def test_explicit_alpha_or_beta_candidate_version(version, valid):
+    assert release.candidate_version(version) is valid
+
+
 def write_zip(path, rows):
     with zipfile.ZipFile(path, 'w') as archive:
         for name, data in rows.items():
@@ -366,14 +375,15 @@ def verifier(tmp_path, monkeypatch):
     return path, invocations, response
 
 
-def test_owned_verifier_process_enforces_certificate_identity_and_digest(verifier):
+@pytest.mark.parametrize('tag', ['refs/tags/v0.0.0a7', 'refs/tags/v0.1.0b1'])
+def test_owned_verifier_process_enforces_certificate_identity_and_digest(verifier, tag):
     path, calls, response = verifier
-    result = signed.verify(path, 'synthetic/zabalack', 'refs/tags/v0.0.0a7', 'a' * 40)
+    result = signed.verify(path, 'synthetic/zabalack', tag, 'a' * 40)
     command, options = calls[1]
     assert command[0:3] == ['gh', 'attestation', 'verify']
     for flag, value in {'--repo': 'synthetic/zabalack', '--hostname': 'github.com',
-        '--cert-identity': 'https://github.com/synthetic/zabalack/.github/workflows/attest.yml@refs/tags/v0.0.0a7',
-        '--source-ref': 'refs/tags/v0.0.0a7', '--source-digest': 'a' * 40,
+        '--cert-identity': f'https://github.com/synthetic/zabalack/.github/workflows/attest.yml@{tag}',
+        '--source-ref': tag, '--source-digest': 'a' * 40,
         '--signer-digest': 'a' * 40, '--predicate-type': signed.PREDICATE}.items():
         assert command[command.index(flag) + 1] == value
     assert '--deny-self-hosted-runners' in command and '--signer-workflow' not in command

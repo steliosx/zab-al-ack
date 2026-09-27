@@ -1,6 +1,6 @@
 # Zab-al-ack
 
-**0.1.0a18 · public alpha candidate · development and isolated evaluation**
+**0.1.0b1 · local beta candidate · development and isolated evaluation**
 
 Formerly **Ackline**. 0.1.0a9 renamed the package, CLI, Alerta entry points,
 configuration, services, database namespace and signing domain to `zabalack`;
@@ -110,14 +110,14 @@ and package publication stays disabled.
   operator controls and conservative handling of unknown remote outcomes.
 
 Bulk actions, chatops, arbitrary status/attribute updates and fan-in alerts are
-outside this alpha's write-back scope. A later source unacknowledgement does not
+outside this candidate's write-back scope. A later source unacknowledgement does not
 automatically cause re-acknowledgement. See [design](docs/DESIGN.md),
 [source-backed amendment A1](docs/SPEC_AMENDMENTS.md) and
 [final-review interpretations](docs/final_review_notes.md).
 
 ## Compatibility and evidence
 
-| Component | Alpha reference | Evidence / support limit |
+| Component | Reference | Evidence / support limit |
 |---|---|---|
 | Python | 3.12 | Linux x86_64 reference; other platforms unvalidated |
 | Alerta server | 9.1.0, default alarm model | Real installed hooks, HTTP and persistence tests |

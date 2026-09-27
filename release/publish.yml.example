@@ -1,12 +1,12 @@
 # DISABLED TEMPLATE. Not under .github/workflows and never invoked by this build.
 # After explicit publication authorization, complete RELEASING.md, pin/review
 # this template, and install it as .github/workflows/publish.yml.
-name: Publish reviewed alpha
+name: Publish reviewed beta candidate
 on:
   workflow_dispatch:
     inputs:
       confirm_version:
-        description: Exact reviewed alpha version
+        description: Exact reviewed beta candidate version
         required: true
         type: string
 permissions:
@@ -15,7 +15,7 @@ env:
   TZ: UTC
 jobs:
   build:
-    if: github.ref == 'refs/tags/v0.1.0a18' && inputs.confirm_version == '0.1.0a18'
+    if: github.ref == 'refs/tags/v0.1.0b1' && inputs.confirm_version == '0.1.0b1'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read

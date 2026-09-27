@@ -1,6 +1,6 @@
 ---
 name: zabalack-release-review
-description: Review and package a Zab-al-ack alpha candidate with source-bound evidence. Use for candidate exports or release artifact reviews.
+description: Review and package a Zab-al-ack candidate with source-bound evidence. Use for candidate exports or release artifact reviews.
 ---
 
 Read [release preparation](../../../docs/RELEASING.md) and the

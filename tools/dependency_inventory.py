@@ -8,6 +8,7 @@ import importlib.metadata as metadata
 import json
 from pathlib import Path
 import re
+import tomllib
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
@@ -77,9 +78,10 @@ def generate(root: Path = ROOT) -> tuple[dict, dict]:
         if integrity.startswith('sha512-'):
             component['hashes'] = [{'alg': 'SHA-512', 'content': base64.b64decode(integrity[7:]).hex()}]
         components.append(component)
+    project_version = tomllib.loads((root / 'pyproject.toml').read_text())['project']['version']
     bom = {'bomFormat': 'CycloneDX', 'specVersion': '1.6', 'version': 1,
         'metadata': {'component': {'type': 'application', 'name': 'Zab-al-ack reference evaluation environment',
-                                  'version': '0.1.0a18'}},
+                                  'version': project_version}},
         'components': components, 'dependencies': relationships}
     notes = {'inventory_scope': 'Exact installed reference build/test packages and pinned Node lab dependencies',
         'component_count': len(components), 'metadata_review_required': review,

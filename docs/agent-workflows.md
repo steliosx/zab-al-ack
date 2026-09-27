@@ -91,7 +91,7 @@ attempts in the handoff review and replace current evidence only by fresh runs.
   and report the invariant and results.” Preserve the frozen baseline.
 - **Interrupted lab:** “Inspect this unfinished disposable run, preserve it,
   establish cleanup, rerun the required phase with a new ID, and record both.”
-- **Alpha handoff:** “Run the available candidate checks, repair defects, label
+- **Candidate handoff:** “Run the available candidate checks, repair defects, label
   unavailable layers, build and verify source/wheel/sdist, include the website,
   full justification and open inputs, and return one ZIP.” Stop before any
   external publication or production operation unless separately authorised.
