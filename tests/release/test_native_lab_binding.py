@@ -115,7 +115,7 @@ def test_the_runner_run_directly_still_validates_its_pass_as_final():
 # PostgreSQL/Zabbix processes (the cycle's service stubs), the runner's host layout
 # and installed-environment probes, and the inner pytest, which writes the private
 # observations and JUnit a passing tests/deployment_e2e session writes.
-from tests.release.test_deployment_native_lab import CYCLE, cycle_environment, record  # noqa: E402
+from tests.release.test_deployment_native_lab import CYCLE, VERSION, cycle_environment, record  # noqa: E402
 from tests.release import test_deployment_native_lab as native_lab_tests  # noqa: E402
 native_lab = native_lab_tests.lab  # the native-lab fixture, shared under this name
 from evidence_utils import HARNESS_SCOPE, SOURCE_SCOPE  # noqa: E402
@@ -135,8 +135,8 @@ def command_path(lab, monkeypatch, *, stop_exit=0):
     private = lab.tmp / 'runner-private'
     private.mkdir(mode=0o700)
     for key, value in [('ROOT', lab.tmp), ('PRIVATE', private), ('check_host_layout', lambda: None),
-                       ('check_source', lambda path, expected, root: (b'', {'filename': path.name, 'sha256': expected, 'version': '0.1.0a18'})),
-                       ('check_runner', lambda python, path, expected: {'python': str(python), 'version': '0.1.0a18', 'wheel_sha256': expected,
+                       ('check_source', lambda path, expected, root: (b'', {'filename': path.name, 'sha256': expected, 'version': VERSION})),
+                       ('check_runner', lambda python, path, expected: {'python': str(python), 'version': VERSION, 'wheel_sha256': expected,
                                                                        'installed_bytes_verified': True, 'startup_hooks': [],
                                                                        'dependency_verification': 'record_consistency_only'}),
                        ('bootstrap', lambda project: None), ('clean_private', lambda: None), ('lab_ports_free', lambda: True)]:

@@ -7,11 +7,13 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tomllib
 from types import SimpleNamespace
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+VERSION = tomllib.loads((ROOT / 'pyproject.toml').read_text())['project']['version']  # the candidate's own version
 
 
 @pytest.fixture
@@ -385,7 +387,8 @@ def record(lab):
     return json.loads(lab.module.RECORD.read_text())
 
 
-CYCLE = ['cycle', '--isolated-lab', '--runner-python', '/venv/bin/python', '--wheel', '/dist/zabalack-0.1.0a18-py3-none-any.whl', '--wheel-sha256', 'f' * 64]
+CYCLE = ['cycle', '--isolated-lab', '--runner-python', '/venv/bin/python', '--wheel', f'/dist/zabalack-{VERSION}-py3-none-any.whl',
+         '--wheel-sha256', 'f' * 64]
 
 
 def test_cycle_starts_runs_stops_and_wipes_and_reports_the_run_exit_code(lab, monkeypatch, capsys):
