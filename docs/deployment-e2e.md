@@ -186,12 +186,39 @@ absent, binds its outcome, sets PASS and validates that final record with
 `tools/deployment_evidence.py`; a failure there is FAIL
 `final_evidence_validation_failed` and a non-zero exit. A cycle cut short
 before binding leaves `PENDING_BINDING`, which never validates. The final record
-is published once, by an atomic replace; the last check before it runs with
-SIGTERM, SIGHUP and SIGINT blocked. A signal received before that check makes
-the outcome an interrupted FAIL with exit 130, even after a passing run and a
-complete cleanup; a death there leaves the runner's `PENDING_BINDING`. A signal
-after it leaves the published record as it is and the command still exits 130,
-saying so on stderr; a death after it leaves the published record in place. With `--wheel-sha256`
+is committed once. The cancellation cutoff is the last check for SIGTERM,
+SIGHUP or SIGINT, made with those signals blocked; the commit runs from the
+cutoff, through the atomic replace that publishes the record, until the signals
+are unblocked. A signal received before the cutoff makes the outcome an
+interrupted FAIL with exit 130, even after a passing run and a complete cleanup.
+A signal received during the commit is held; the committed record stands and
+the command exits 130, saying on stderr that it came during the final commit. A
+signal after the commit likewise exits 130 with its own message. A death before
+the replace completes, including one after the cutoff, leaves the runner's
+`PENDING_BINDING`, which never validates; a death after it leaves the published
+record. A failed replace publishes nothing, removes the unpublished temporary
+file and exits 1. As soon as the run has
+ended, before any cleanup, the cycle retains the public record exactly as the
+runner left it (its original `PENDING_BINDING`, or its FAIL), privately under
+`build/private/retained-phases/<run>/runner-record/`, whatever cleanup then
+does: a failed stop or an interruption keeps it too, still ending FAIL with the
+lab left unwiped. If that copy cannot be made, the runner's record is
+left exactly as it is as the canonical record (a `PENDING_BINDING` never
+validates), nothing is wiped, and the outcome is written instead to
+`evidence/deployment-e2e-run.retention-failure.json`: a terminal diagnostic
+(`result: NOT_A_RESULT`) naming the canonical record's digest and this run's
+identity. A later command first retains that unresolved original and its
+diagnostic, byte for byte and verified by digest, under
+`build/private/retained-phases/<previous run>/unresolved-previous-attempt/`
+(bound into its own record as `native_lab.previous_attempt`); only then does it
+replace them. If that copy cannot be made, the command refuses (`REFUSED`,
+exit 2) with both files unchanged and nothing started, stopped or wiped. A
+`PENDING_BINDING` record left without a diagnostic (the diagnostic write itself
+failed) is treated the same way, and filesystem errors while retaining (for
+example a retention parent that is not a directory) take the same protected
+path as a refused copy. Both labs' service logs are retained (`…/deployment-cycle/`) only after
+every service has stopped, before the wipe; a lab that did not stop is not
+snapshotted. Both retention manifests' digests are bound into the final record. With `--wheel-sha256`
 the local runner performs the same supplied-wheel preflight as the Compose
 form (exact bytes, project identity, payload equal to the checkout) and the
 record carries `artifact_mode: supplied_wheel` with the installed-bytes

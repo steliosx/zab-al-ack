@@ -96,7 +96,12 @@ def preserve(root: Path, run_id: str, label: str, sources: Iterable[Path]) -> di
     root = root.resolve()
     # build/private is shared with the pool state directory, which an
     # unprivileged service user must traverse; only the retention tree is 0700.
-    (root / RETAINED.parent).mkdir(parents=True, exist_ok=True)
+    # A filesystem failure here (a file where a directory belongs, a permission)
+    # is a RetentionError like every other one, so callers keep their protections.
+    try:
+        (root / RETAINED.parent).mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise RetentionError(type(error).__name__ + ' creating the retention parent') from error
     directory = root / RETAINED / run_id / label
     _unlinked(directory.parent)
     try:

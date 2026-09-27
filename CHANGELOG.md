@@ -1,5 +1,13 @@
 # Zab-al-ack changelog
 
+## Unreleased — R8 S2 and R6 retention integration (Astra; local candidate)
+
+- Integrates reviewed retention `9cb38de` with reviewed S2 `842e88d` once. The R8 x64 host run exercised the
+  S2 lineage before this merge and the historical `0.1.0a18` wheel; it is preparation evidence, not a test of
+  this combined source or a frozen `0.1.0b1` artifact.
+- The two sections below preserve their original, separate-lineage change histories. The S2 heading describes
+  its pre-integration review state.
+
 ## Unreleased — S2: webhook transport candidate for A2 (Opus; separate, not integrated)
 
 - Corrections after Astra's R7 review of `6f083b5`:
@@ -77,6 +85,34 @@
   diagnostic, retained manifest and service log of an attempt into a PRIVATE bundle (0700/0600,
   per-file digests, absent files recorded, secret-like names listed only). Both root drivers
   collect after stopping and before wiping, for every outcome, including a refusal.
+
+## Unreleased — follow-ups to the R3 review (Opus; on S1 `cea3412`)
+
+- F2: Astra's exact CR_strong host bytes are a permanent reader case.
+- F1: the cancellation cutoff, the commit and the publication are named
+  separately. A signal held during the commit is reported as "during the
+  final commit, after the cancellation cutoff" (exit 130; the committed
+  record stands), no longer as "after the final record was published"; a
+  failed replace publishes nothing, leaves no temporary record and exits 1
+  without a traceback. The documentation no longer claims that a death after
+  the cutoff leaves a published record: before the replace completes it
+  leaves `PENDING_BINDING`.
+- S1: the runner's record is retained under its own label as soon as the run
+  ends, before cleanup, on success, failed cleanup and interruption alike;
+  a cycle whose runner record could not be retained never ends PASS.
+- R3-RETENTION: when that copy cannot be made, the runner's record is left
+  byte for byte as the canonical record, nothing is wiped, and the outcome
+  goes to a separate terminal diagnostic
+  (`evidence/deployment-e2e-run.retention-failure.json`, NOT_A_RESULT)
+  bound to this run and to the record's digest; it is removed when the next
+  run starts.
+- R3-RETENTION retry (R5 review): a later command no longer invalidates an
+  unretained original. It first retains the original and its diagnostic
+  (verified by digest, bound as `native_lab.previous_attempt`), or refuses
+  with both unchanged and no start, runner, stop or wipe. This also covers
+  an original whose diagnostic write failed. OSError while retaining (a
+  wrong-type retention parent) now takes the protected path (exit 5,
+  original intact, lab stopped, not wiped) instead of escaping as exit 1.
 
 ## Unreleased — corrections after Astra's review of `e8ef82b` (Opus)
 

@@ -2,10 +2,12 @@
 
 Each case runs tests/release/native_lab_signal_harness.py in its own process: the cycle command as its CLI runs
 it (sys.exit(main(argv))), through the real runner and the real final validation, with a real signal sent at one
-boundary. The exit status is the process's own. Before the publication (publish()'s last check, with the
-termination signals blocked up to the atomic replace) a signal is an interrupted FAIL and exit 130; a death there
-leaves the runner's non-validating PENDING_BINDING record. After the publication the published record stands; a
-signal still exits 130 and says so, a death leaves the published record as it is. Never a traceback.
+boundary. The exit status is the process's own. Before the cancellation cutoff (publish()'s last check, made with
+the termination signals blocked) a signal is an interrupted FAIL and exit 130. A signal during the commit (from the
+cutoff until the signals are unblocked, including the atomic replace) leaves the committed record, exit 130, and
+says so; after the publication, likewise with its own message. A death before the replace completes leaves the
+runner's non-validating PENDING_BINDING; after it, the published record. A failed replace publishes nothing and
+exits 1. Never a traceback.
 """
 import json
 import os
@@ -20,6 +22,8 @@ from deployment_evidence import validate_report
 ROOT = Path(__file__).resolve().parents[2]
 HARNESS = ROOT / 'tests/release/native_lab_signal_harness.py'
 AFTER = 'after the final record was published; that record stands'
+COMMIT = 'during the final commit, after the cancellation cutoff; the committed record stands'
+NOT_PUBLISHED = "the final record was not published (OSError); the runner's record remains and does not validate"
 
 # scenario: (exit status, record status, record reason, validates, stderr contains)
 EXPECTED = {
@@ -29,7 +33,12 @@ EXPECTED = {
     'term-in-validation': (130, 'FAIL', 'interrupted (SIGTERM)', False, None),
     'int-in-validation': (130, 'FAIL', 'interrupted (SIGINT)', False, None),
     'kill-in-validation': (-9, 'PENDING_BINDING', None, False, None),
-    'term-at-replace': (130, 'PASS', None, True, 'interrupted (SIGTERM) ' + AFTER),
+    'term-at-replace': (130, 'PASS', None, True, 'interrupted (SIGTERM) ' + COMMIT),
+    'term-before-replace': (130, 'PASS', None, True, 'interrupted (SIGTERM) ' + COMMIT),
+    'kill-before-replace': (-9, 'PENDING_BINDING', None, False, None),
+    'term-after-replace': (130, 'PASS', None, True, 'interrupted (SIGTERM) ' + COMMIT),
+    'replace-failure': (1, 'PENDING_BINDING', None, False, NOT_PUBLISHED),
+    'term-then-replace-failure': (1, 'PENDING_BINDING', None, False, NOT_PUBLISHED),
     'term-after-publication': (130, 'PASS', None, True, 'interrupted (SIGTERM) ' + AFTER),
     'kill-after-publication': (-9, 'PASS', None, True, None),
 }
@@ -46,7 +55,9 @@ def test_a_signal_at_the_publication_boundary(tmp_path, scenario):
     if message:
         assert message in result.stderr
     else:
-        assert AFTER not in result.stderr
+        assert AFTER not in result.stderr and COMMIT not in result.stderr
+    if exit_status != -9:  # a SIGKILL leaves no chance to clean up; the next command's fresh record replaces it
+        assert not (tmp_path / 'evidence/deployment-e2e-run.json.tmp').exists()  # nothing unpublished is left beside the record
     if validates:
         validate_report(record, tmp_path)  # the harness root links this checkout's digest scopes
     else:

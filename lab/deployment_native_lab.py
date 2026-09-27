@@ -40,6 +40,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import secrets
 import shutil
 import signal
@@ -460,11 +461,17 @@ def stamp() -> str:
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
 
-def write_record(record: dict) -> None:
-    RECORD.parent.mkdir(exist_ok=True)
-    temporary = RECORD.with_name(RECORD.name + '.tmp')
-    temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
-    os.replace(temporary, RECORD)
+def write_record(record: dict, target: Path | None = None) -> None:
+    target = target or RECORD
+    target.parent.mkdir(exist_ok=True)
+    temporary = target.with_name(target.name + '.tmp')
+    try:
+        temporary.write_text(json.dumps(record, indent=2, sort_keys=True) + '\n')
+        os.replace(temporary, target)
+    except OSError:
+        # A record that was never published must not be left beside the real one.
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def fresh_record(command: str) -> dict:
@@ -477,8 +484,84 @@ def fresh_record(command: str) -> dict:
     record = {'layer': 'native_deployment_e2e', 'status': 'NOT_RUN', 'reason': 'lab_' + command + '_not_started', 'not_docker': True,
               'started_at': stamp(), 'runner': RUNNER_DESCRIPTION, 'deployment_gates': 'MANUAL_GATE_PENDING',
               'native_lab': {'command': command, 'final_state': None, 'cleanup_complete': False}}
+    diagnostic_path().unlink(missing_ok=True)  # a previous run's diagnostic is never this run's
     write_record(record)
     return record
+
+
+def diagnostic_path() -> Path:
+    """Written instead of the final record when the runner's original record could not be retained: the
+    original then stays the canonical record, unchanged. Never a result; removed when the next run starts."""
+    return RECORD.with_name('deployment-e2e-run.retention-failure.json')
+
+
+def unresolved_original() -> bool:
+    """A previous attempt left an original that was never retained.
+
+    Either its terminal diagnostic is still present, or the canonical record is
+    still the runner's own record (it carries the pending marker and was never
+    bound by a cycle: a failed diagnostic write, or a cycle that died).
+    """
+    if diagnostic_path().exists() or diagnostic_path().is_symlink():
+        return True
+    record = load_record()
+    native = record.get('native_lab') if record else None
+    return isinstance(native, dict) and 'pending' in native and 'command' not in native
+
+
+def carry_forward_unresolved() -> dict | None:
+    """Retain an unresolved previous original, and its diagnostic, before this run invalidates the record.
+
+    The copy is read back and compared with the originals' digests; any failure
+    raises, and the caller then refuses without touching either file.
+    """
+    if not unresolved_original():
+        return None
+    diagnostic = diagnostic_path()
+    try:
+        previous = json.loads(diagnostic.read_text()).get('run_id') if diagnostic.exists() else None
+    except (OSError, ValueError, AttributeError):
+        previous = None
+    run_id = previous if isinstance(previous, str) and re.fullmatch(r'[0-9a-f]{6,32}', previous) else os.urandom(6).hex()
+    expected = {path.relative_to(REPO).as_posix().replace('/', '__'): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in (RECORD, diagnostic) if path.exists()}
+    retained = preserve(REPO, run_id, 'unresolved-previous-attempt', [RECORD, diagnostic])
+    directory = REPO / retained['directory']
+    for name, digest in expected.items():
+        if hashlib.sha256((directory / name).read_bytes()).hexdigest() != digest:
+            raise RetentionError('the retained copy of ' + name + ' differs from the original')
+    return retained
+
+
+def runner_original_unretained(summary: dict) -> bool:
+    """The runner ran, and its original record could not be retained (lab_retention refused the copy)."""
+    retained = summary.get('runner_record')
+    return summary.get('start') is not None and isinstance(retained, dict) and 'error' in retained
+
+
+def terminal_diagnostic(command: str, code: int, summary: dict) -> dict:
+    """The outcome, written beside the canonical record when its original could not be retained.
+
+    The canonical record is left exactly as the runner wrote it (it stays the only
+    copy of the original, and a PENDING_BINDING never validates). This names it by
+    digest, so the diagnostic is bound to this run's canonical bytes.
+    """
+    try:
+        raw = RECORD.read_bytes()
+    except OSError:
+        raw = None
+    try:
+        status = json.loads(raw).get('status') if raw is not None else None
+    except (ValueError, AttributeError):
+        status = None
+    bound = bind_record(command, code, summary)  # computed for its summary only; never written over RECORD
+    return {'kind': 'native_lab_terminal_diagnostic', 'result': 'NOT_A_RESULT', 'status': 'FAIL', 'reason': 'runner_record_retention_failed',
+            'command': command, 'run_id': summary.get('run_id'), 'exit_code': code or 1,
+            'canonical_record': {'path': RECORD.relative_to(REPO).as_posix(), 'left_unchanged': True, 'status': status,
+                                 'bytes': None if raw is None else len(raw),
+                                 'sha256': None if raw is None else hashlib.sha256(raw).hexdigest()},
+            'runner_record_retention': summary.get('runner_record'), 'outcome_reason': bound.get('reason'),
+            'native_lab': bound.get('native_lab'), 'finished_at': stamp()}
 
 
 def load_record() -> dict | None:
@@ -519,7 +602,10 @@ def bind_record(command: str, code: int, summary: dict) -> dict:
     """
     record = load_record() or {'layer': 'native_deployment_e2e', 'not_docker': True, 'started_at': stamp(), 'runner': RUNNER_DESCRIPTION,
                                'deployment_gates': 'MANUAL_GATE_PENDING'}
-    native = {'command': command, **{key: summary.get(key) for key in ('run_id', 'run_exit_code', 'cleanup', 'retention', 'wipe', 'final_state')}}
+    native = {'command': command, **{key: summary.get(key) for key in ('run_id', 'run_exit_code', 'runner_record', 'cleanup', 'retention', 'wipe',
+                                                                      'final_state')}}
+    if summary.get('previous_attempt'):
+        native['previous_attempt'] = summary['previous_attempt']
     wipe, retention = summary.get('wipe'), summary.get('retention')
     native['cleanup_complete'] = (summary.get('final_state') == 'absent' and isinstance(wipe, dict) and wipe.get('wipe') == 'done'
                                   and isinstance(retention, dict) and retention.get('status') == 'RETAINED')
@@ -551,7 +637,12 @@ def bind_record(command: str, code: int, summary: dict) -> dict:
         # The runner passed provisionally. Only a cycle whose run exited 0 and whose
         # cleanup completed (stopped, retained, wiped, lab absent) turns that into a
         # PASS, and only if the final bound record then validates.
-        if command == 'cycle' and code == 0 and summary.get('run_exit_code') == 0 and native['cleanup_complete']:
+        runner_record = summary.get('runner_record')
+        runner_record_retained = isinstance(runner_record, dict) and runner_record.get('status') == 'RETAINED'
+        if command == 'cycle' and code == 0 and summary.get('run_exit_code') == 0 and native['cleanup_complete'] and not runner_record_retained:
+            # The original provisional record could not be retained: never a PASS.
+            record.update(status='FAIL', reason='runner_record_retention_failed')
+        elif command == 'cycle' and code == 0 and summary.get('run_exit_code') == 0 and native['cleanup_complete']:
             final = {key: value for key, value in record.items() if key != 'provisional_status'}
             final.update(status='PASS', reason=None, finished_at=stamp())
             try:
@@ -612,7 +703,8 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
     run_id = os.urandom(6).hex()
     cancellation = cancellation or Cancellation()
     summary = summary if summary is not None else {}
-    summary.update({'run_id': run_id, 'start': None, 'run_exit_code': None, 'cleanup': None, 'retention': None, 'wipe': None, 'final_state': None})
+    summary.update({'run_id': run_id, 'start': None, 'run_exit_code': None, 'runner_record': None, 'cleanup': None, 'retention': None,
+                    'wipe': None, 'final_state': None})
     code = 1
     try:
         summary['start'] = start_lab(binaries, observed)
@@ -629,15 +721,28 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
         # Cleanup, retention and the wipe are one critical section: a further
         # signal is deferred until the outcome is recorded.
         with cancellation.critical():
+            if summary['start'] is not None:
+                # The public record exactly as the runner left it (its original provisional
+                # record, or its FAIL), retained before cleanup whatever cleanup then does:
+                # the final publication replaces it. Its own label; the service logs below
+                # are retained only once the services are stopped.
+                try:
+                    summary['runner_record'] = preserve(REPO, run_id, 'runner-record', [RECORD])
+                except (RetentionError, OSError) as error:
+                    summary['runner_record'] = {'error': str(error) or type(error).__name__}
             try:
                 stop_code, summary['cleanup'] = stop_lab(binaries, inspect(binaries))
                 if stop_code == 0:
                     try:
                         summary['retention'] = preserve(REPO, run_id, 'deployment-cycle', [Path(name) for name in CYCLE_LOGS])
-                    except RetentionError as error:
-                        summary['retention'] = {'error': str(error)}
+                    except (RetentionError, OSError) as error:
+                        summary['retention'] = {'error': str(error) or type(error).__name__}
                     else:
-                        summary['wipe'] = wipe_lab(binaries, inspect(binaries))
+                        if runner_original_unretained(summary):
+                            # The runner's original exists only in the checkout: nothing is wiped.
+                            summary['wipe'] = {'wipe': 'withheld', 'reason': 'runner_record_not_retained'}
+                        else:
+                            summary['wipe'] = wipe_lab(binaries, inspect(binaries))
             except SystemExit as error:
                 summary['cleanup'] = {'refusal': str(error)}
             except KeyboardInterrupt as error:
@@ -651,39 +756,74 @@ def cycle_lab(binaries: Path, observed: dict, runner_python: Path, wheel: Path, 
     return code, summary
 
 
-def publish(command: str, code: int, summary: dict, cancellation: Cancellation) -> int:
-    """Bind the final record, publish it and return the command's exit code.
+def publish(command: str, code: int, summary: dict, cancellation: Cancellation) -> tuple[int, bool]:
+    """Bind the final record, commit it; return the command's exit code and whether the record was published.
 
-    The publication is write_record's atomic replace. From the first line here a
-    termination signal is only recorded, never raised (guarded() restores the
-    handlers afterwards). A signal received before the publication is the
-    outcome: the record is bound as interrupted (FAIL) and the exit is 130,
-    whatever the run did. The last check and the replace run with the
-    termination signals blocked, so none can arrive between them unseen; one
-    that arrives after the check is delivered after the publication.
+    Three points in order. The cancellation cutoff is the last check for a
+    termination signal, made with SIGTERM, SIGHUP and SIGINT blocked. The commit
+    runs from the cutoff through write_record's atomic replace, still blocked.
+    The record is published once that replace has completed.
+
+    - A signal received before the cutoff is the outcome: the record is bound
+      as interrupted (FAIL) and the exit is 130, whatever the run did.
+    - A signal received during the commit is held until the commit ends; the
+      committed record stands, the exit is 130 and stderr says the signal came
+      during the final commit, after the cutoff.
+    - A death (SIGKILL) before the replace completes leaves the runner's
+      PENDING_BINDING record, which never validates; after it, the published one.
+    - A failed replace publishes nothing: the runner's record stays, the
+      unpublished temporary file is removed and the exit is 1.
+
+    From the first line here a termination signal is only recorded, never
+    raised; guarded() restores the handlers afterwards.
     """
     cancellation.deferring = True
-    record = bind_record(command, code, summary)
+    # The runner's original could not be retained: it stays the canonical record and the
+    # outcome goes to the separate terminal diagnostic instead.
+    keep_original = runner_original_unretained(summary)
+    outcome = terminal_diagnostic if keep_original else bind_record
+    target = diagnostic_path() if keep_original else RECORD
+    record = outcome(command, code, summary)
     previous = signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
+    during_commit = None
     try:
+        # The cancellation cutoff: every signal received so far, including any held by the mask.
         arrived, cancellation.pending = cancellation.pending, None
-        # Signals already sent but held by the mask are taken here, so none of them is
-        # later reported as having arrived after the publication.
         while (waiting := signal.sigtimedwait(SIGNALS, 0)) is not None:
             cancellation.received.append(waiting.si_signo)
             arrived = arrived if arrived is not None else waiting.si_signo
         if arrived is not None and not summary.get('interrupted'):
             summary = {**summary, 'refusal': 'interrupted (' + signal_name(arrived) + ')', 'interrupted': True}
             code = 130
-            record = bind_record(command, code, summary)
-        write_record(record)
+            record = outcome(command, code, summary)
+        try:
+            write_record(record, target)  # published when this atomic replace has completed
+        except OSError as error:
+            while signal.sigtimedwait(SIGNALS, 0) is not None:
+                pass  # held signals change nothing: there is no record to keep or correct
+            print(f'the final record was not published ({type(error).__name__}); the runner\'s record remains and does not validate',
+                  file=sys.stderr)
+            return 1, False
+        # Signals that arrived during the commit are still held: take them before unblocking.
+        while (waiting := signal.sigtimedwait(SIGNALS, 0)) is not None:
+            cancellation.received.append(waiting.si_signo)
+            during_commit = during_commit if during_commit is not None else waiting.si_signo
     finally:
         signal.pthread_sigmask(signal.SIG_SETMASK, previous)
     shown = {key: value[:300] if key == 'refusal' and isinstance(value, str) else value for key, value in summary.items()}
     print(json.dumps({'status': record.get('status'), 'reason': record.get('reason'), **shown}))
+    if keep_original:
+        print(f"the runner's original record could not be retained; it was left unchanged as {RECORD.relative_to(REPO).as_posix()} "
+              f"and the outcome was written to {diagnostic_path().relative_to(REPO).as_posix()}", file=sys.stderr)
+    if during_commit is not None:
+        print(f'interrupted ({signal_name(during_commit)}) during the final commit, after the cancellation cutoff; '
+              'the committed record stands', file=sys.stderr)
+        return 130, True
+    if keep_original:
+        return record['exit_code'], True
     if code == 0 and command == 'cycle' and record.get('status') != 'PASS':
-        return 1  # the run and cleanup succeeded but the final bound record did not validate
-    return code
+        return 1, True  # the run and cleanup succeeded but the final bound record did not validate
+    return code, True
 
 
 def guarded(args, parser) -> int:
@@ -692,19 +832,33 @@ def guarded(args, parser) -> int:
     Every refusal is NOT_RUN exit 2. SIGTERM, SIGHUP and SIGINT are routed into
     the interrupt path (cleanup, retention, a FAIL record, exit 130); a signal
     during cleanup is deferred until the cleanup is recorded. The outcome is
-    published once (publish()): a signal before the publication makes it an
-    interrupted FAIL with exit 130; a signal after it leaves the published
-    record as it is and still exits 130, saying so, never with a traceback.
+    committed once (publish(), which states the cancellation cutoff and the
+    commit): a signal before the cutoff makes it an interrupted FAIL with exit
+    130; a signal during the commit or after the publication leaves the record
+    as committed and exits 130, saying which. None of these paths prints a
+    traceback; a failed replace exits 1.
+
+    First, an original a previous attempt left unretained (its diagnostic, or the
+    runner's own unbound record) is retained and verified; if that cannot be done
+    this run refuses (exit 2) and writes nothing, so that original survives.
     """
+    try:
+        carried = carry_forward_unresolved()
+    except (RetentionError, OSError) as error:
+        print(json.dumps({'status': 'REFUSED', 'reason': 'unresolved_previous_original_not_retained',
+                          'detail': (str(error) or type(error).__name__)[:300]}))
+        print(f'a previous attempt left its original record unretained; {RECORD.relative_to(REPO).as_posix()} and its diagnostic '
+              'were left unchanged and this run did not start', file=sys.stderr)
+        return 2
     cancellation = Cancellation().install()
-    summary: dict = {}
+    summary: dict = {'previous_attempt': carried} if carried else {}
     outcome: tuple[int, dict] | None = None
     try:
         while True:
             try:
                 if outcome is None:
                     outcome = run_command(args, cancellation, summary)
-                code = publish(args.command, *outcome, cancellation)
+                code, published = publish(args.command, *outcome, cancellation)
                 break
             except KeyboardInterrupt as error:
                 # Delivered before publish() began deferring: nothing is published yet. The
@@ -713,7 +867,7 @@ def guarded(args, parser) -> int:
                     outcome = (130, {**(outcome[1] if outcome else summary), 'refusal': describe(error), 'interrupted': True})
     finally:
         cancellation.restore()
-    if cancellation.pending is not None:
+    if cancellation.pending is not None and published and code != 130:
         print(f'interrupted ({signal_name(cancellation.pending)}) after the final record was published; that record stands',
               file=sys.stderr)
         return 130
