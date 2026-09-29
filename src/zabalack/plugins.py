@@ -491,6 +491,17 @@ class AckSigningPlugin(PluginBase):
         contexts = g.get("zabalack_context", {}).get(str(alert.id), {})
         if not contexts:
             return alert, status, text
+        # When PLUGINS_RAISE_ON_ERROR is False, Alerta logs and suppresses any exception that is not an
+        # AlertaException and then persists the acknowledgement. This request staged an intent, so every failure
+        # from here on refuses the acknowledgement rather than letting it commit without its proof (DB-1).
+        try:
+            return self._final_binding(alert, status, text, contexts, kwargs)
+        except AlertaException:
+            raise
+        except Exception:
+            raise AlertaException("zabalack_final_binding_invalid", code=503) from None
+
+    def _final_binding(self, alert: Any, status: str, text: str, contexts: dict[str, Any], kwargs: dict[str, Any]) -> Any:
         settings = settings_for(kwargs.get("config"), self.settings)
         if len(contexts) != 1 or not self._last(alert) or not _safe_status_receivers(alert):
             raise AlertaException("zabalack_final_routing_invalid", code=503)

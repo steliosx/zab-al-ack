@@ -13,6 +13,7 @@ from flask import Flask, g
 from alerta import settings as alerta_defaults
 from alerta.app import alarm_model, hooks, plugins
 from alerta.exceptions import AlertaException, ApiError, InvalidAction, RejectException
+from alerta.models import alert as alert_model
 from alerta.models.alert import Alert
 from alerta.utils.api import process_action, process_status
 from alerta.utils.hooks import status_change_hook
@@ -570,3 +571,57 @@ def test_T40_attribute_key_with_a_newline_is_refused_not_normalised(key, shape):
               else MultiDict([("sort-by", field)]))
 
     assert query_guard.selector_refusal(params) == query_guard.REFUSAL
+
+
+class SourceCorruptor:
+    """An earlier routed status plugin that removes or corrupts a source field before the signer's final hook."""
+    name = "synthetic_corruptor"
+
+    def __init__(self, mutate):
+        self.mutate = mutate
+
+    def take_action(self, alert, action, text, **kwargs):
+        return None
+
+    def status_change(self, alert, status, text, **kwargs):
+        self.mutate(alert.attributes)
+        return alert, status, text
+
+
+CORRUPTIONS = {
+    "removed event id": lambda attrs: attrs.pop("zabbix_event_id"),
+    "non-numeric event id": lambda attrs: attrs.update(zabbix_event_id="not-a-number"),
+    "removed trigger id": lambda attrs: attrs.pop("zabbix_trigger_id"),
+    "invalid instance": lambda attrs: attrs.update(zabbix_instance=None),
+}
+
+
+@pytest.mark.parametrize("case", sorted(CORRUPTIONS))
+def test_DB1_corrupted_source_before_final_hook_fails_closed_when_generic_errors_suppressed(context, monkeypatch, case):
+    """Daybreak DB-1: the snapshot's PolicyError is not an AlertaException, so with PLUGINS_RAISE_ON_ERROR False
+    Alerta logged and suppressed it, and the acknowledgement then committed without its signed marker."""
+    assert context.app.config["PLUGINS_RAISE_ON_ERROR"] is False
+    monkeypatch.setattr(plugins, "plugins", OrderedDict(corruptor=SourceCorruptor(CORRUPTIONS[case]), signer=context.signer))
+    alert, action, note, timeout = stage(context)
+    assert alert.attributes["zabbix_ack_sync"] == "pending"
+    with pytest.raises(AlertaException, match="final_binding_invalid"):
+        process_status(alert, "ack", note)
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_DB1_an_eligible_acknowledgement_is_saved_only_with_its_proof(context, monkeypatch, corrupt):
+    """Through Alerta's own from_action(): the history row is written only when the final hook signed it."""
+    saved = []
+    monkeypatch.setattr(alert_model, "db", SimpleNamespace(set_alert=lambda **record: saved.append(record) or record))
+    monkeypatch.setattr(Alert, "from_db", classmethod(lambda cls, record: record))
+    mutate = CORRUPTIONS["removed event id"] if corrupt else (lambda attrs: None)
+    monkeypatch.setattr(plugins, "plugins", OrderedDict(corruptor=SourceCorruptor(mutate), signer=context.signer))
+    alert, action, note, timeout = stage(context)
+    if corrupt:
+        with pytest.raises(ApiError, match="final_binding_invalid"):
+            alert.from_action(action, note, timeout)
+        assert saved == []
+    else:
+        alert.from_action(action, note, timeout)
+        [record] = saved
+        assert record["status"] == "ack" and "[zabalack:v1 action=" in record["history"][0].text
