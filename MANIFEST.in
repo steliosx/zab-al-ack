@@ -4,7 +4,7 @@ include requirements*.lock requirements-quality.in Makefile ruff.toml mypy.ini
 recursive-include config *.json
 recursive-include sql *.sql *.py *.json *.md
 recursive-include lab *.py *.sh *.sql *.json *.md *.yml *.mjs Dockerfile* *.Dockerfile *.ini *.txt LICENSE-*
-recursive-include deploy *.py *.yml *.service *.timer
+recursive-include deploy *.py *.yml *.service *.timer *.sh *.sudoers *.tmpfiles *.template SHA256SUMS
 recursive-include zabbix *.js *.cjs *.json *.yml *.py *.md
 recursive-include collectors *.py *.json *.md
 recursive-include tests *.py *.sql *.md
