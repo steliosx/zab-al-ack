@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "status": "PASS",
+  "profile": "pr",
+  "code_digests": {
+    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
+    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+  },
+  "started_at_utc": "2026-09-13T23:10:47.653199+00:00",
+  "selected_count": 12,
+  "baseline": {
+    "outcome": "BASELINE_PASS",
+    "exit_code": 0,
+    "tests": 111,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "assertion_failures": 0,
+    "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+    "duration_ms": 768
+  },
+  "mutants": [
+    {
+      "name": "mac_check_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 3,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 1220
+    },
+    {
+      "name": "observed_source_binding_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 2,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 767
+    },
+    {
+      "name": "history_actor_binding_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 2,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 767
+    },
+    {
+      "name": "capture_window_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 1,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 767
+    },
+    {
+      "name": "actor_customer_scope_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 2,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 818
+    },
+    {
+      "name": "host_drift_gate_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 1,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 770
+    },
+    {
+      "name": "unknown_delivery_gate_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 1,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 820
+    },
+    {
+      "name": "execution_expiry_gate_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 1,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 818
+    },
+    {
+      "name": "shadow_gate_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 1,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 818
+    },
+    {
+      "name": "presend_fence_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 2,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 769
+    },
+    {
+      "name": "attempt_ownership_guard_removed",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 1,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 768
+    },
+    {
+      "name": "full_host_set_weakened_to_overlap",
+      "outcome": "KILLED",
+      "exit_code": 1,
+      "tests": 111,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0,
+      "assertion_failures": 2,
+      "case_digest": "31b4c0c30272e5891566500cf2df5e68b17069c359a144aaf6ead6a0494c7de2",
+      "duration_ms": 768
+    }
+  ],
+  "scope": "Curated Python trust/worker/RPC assertion mutations with mocked dependencies; no SQL/native/deployment coverage",
+  "counts": {
+    "KILLED": 12,
+    "SURVIVED": 0,
+    "INVALID": 0,
+    "ERROR": 0,
+    "TIMEOUT": 0,
+    "NOT_RUN": 0
+  },
+  "tree_unchanged": true,
+  "finished_at_utc": "2026-09-13T23:10:58.461895+00:00"
+}

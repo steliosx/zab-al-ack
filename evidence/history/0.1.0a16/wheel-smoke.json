@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "version": "0.1.0a16",
+  "fresh_venv": true,
+  "wheel_sha256": "151a4cfcee71f0036c6215951aacd52fd86c15ade484270115bd45b4c0ea43d1",
+  "review_harness_sha256": "2b4e7dc43d4e5a6fd0e8e0a758e64c1e3d3c2530565c4e9b6bcfb3bedcfad602",
+  "installed_entry_points": [
+    "zabalack",
+    "zabalack_zabbix_ack",
+    "zabalack_zabbix_normalise"
+  ],
+  "installed_modules_checked": 13,
+  "imports_from_venv_site_packages": true,
+  "package_bytes_equal_source": true,
+  "package_bytes_equal_wheel": true,
+  "pip_check": "PASS",
+  "cli_help": "PASS",
+  "inert_configuration": "PASS",
+  "scope": "Fresh wheel environment, import origin, package bytes and inert CLI only; no service run"
+}

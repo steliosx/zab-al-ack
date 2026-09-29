@@ -1,7 +1,8 @@
 > **Historical a17 record.** This report describes `0.1.0a17` and its evidence only. The
-> current candidate is `0.1.0a18` (draft PR #29); see
-> [docs/beta_preparation_note_2026-09-22.md](docs/beta_preparation_note_2026-09-22.md). Nothing
-> here is evidence for a18.
+> current candidate is the local beta candidate `0.1.0b1`; see
+> [docs/BETA_READINESS.md](docs/BETA_READINESS.md). The intervening `0.1.0a18` (draft PR #29) is
+> recorded in [docs/beta_preparation_note_2026-09-22.md](docs/beta_preparation_note_2026-09-22.md).
+> Nothing here is evidence for a18 or b1.
 
 # Zab-al-ack 0.1.0a17 — integrated recovery candidate
 

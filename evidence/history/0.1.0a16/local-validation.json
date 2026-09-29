@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "code_digests": {
+    "source": "f8d8f787e903ed2bf784fa609dd580146f9b97495eaacc17f61ee7ed3e721d21",
+    "harness": "546c7fc1fabd82293b85dc7bc5fd67eeb0105a2afff82eccd6ef8b59e42cf6e5"
+  },
+  "reference_counts": {
+    "passed": 855,
+    "skipped": 23,
+    "failed": 0
+  },
+  "quickstart_exit_code": 0,
+  "webhook_groups": 15,
+  "sql_groups": 8,
+  "docs_capture": "PASS (tools/capture_docs.py --isolated-lab)",
+  "native": "PASS (42 passed, tools/native_local.py, local services, not_docker)",
+  "real_zabbix": "PASS (6 passed incl. the A4 excluded-action denial, tools/record_real_zabbix.py --run)",
+  "deployment_e2e": "PASS (4 passed, 13/13 observations, tools/run_deployment_e2e_local.py, installed a15 wheel, not_docker)",
+  "export_file_modes": "PASS (public_audit.export_mode_findings: no exported file is owner-only)",
+  "browser_captures": "a12 captures retained; not recaptured for a15",
+  "gitleaks": "NOT_RUN",
+  "production_gates": "PENDING",
+  "scope": "Development, isolated WASM lab and local-process service labs only; Compose forms, hosted checks, the independent review's QEMU 7.0.30 layer and a14's agent evaluations are separate"
+}

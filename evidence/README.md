@@ -1,32 +1,46 @@
-# Zab-al-ack a16 evidence
+# Zab-al-ack evidence
 
-Current counts and limits are in [ALPHA_REPORT.md](../ALPHA_REPORT.md). Every
-record identifies the source/harness bytes it executed on. The native
-(`native-run.json`, 42 passed), real-Zabbix (`real-zabbix-run.json`, 6 passed
-including the A4 excluded-action denial) and deployment-path
-(`deployment-e2e-run.json`, 4 passed, 13 observations, installed a16 wheel)
-records were produced on local services by the R14 runners (`not_docker: true`).
-They were executed on a16. Unchanged service-path code supports an inference
-about a14 and a15; a14's own records remain NOT_RUN and a15's stand on a15's
-runs.
+This index covers the current candidate, `0.1.0b1`, an unpublished local beta
+candidate (see [beta readiness](../docs/BETA_READINESS.md)). Every record
+identifies the source and harness bytes it executed on, and describes only
+that run.
 
-The reference run has 865 passes and 23 skips: 836 unit, mocked, property and
-offline cases plus 29 PostgreSQL WASM cases. Profiles and repeated scenarios
-overlap and are never added to the unique acceptance total. `mutation-pr-run.json`
-and `mutation-nightly-run.json` are the per-profile records a14 introduced;
-they are validated when present and optional when absent, and `mutation-run.json`
-remains the latest-profile pointer. From a15 every record here is published 0644
-and the export audit rejects an exported file that is not readable to group and
-other (R20); from a16 ten writer regressions pin both public writers, both
-private writers and both umasks (R21).
+## 0.1.0b1: PENDING
 
-The independent a12 and a15 reviews' records and a14's qualitative agent
-evaluations are retained in the complete handoff as received and are **not**
-rebound to this tree — including the a15 review's local Gitleaks result, which
-is its evidence and not this candidate's. The browser captures are the a12
-images, not recaptured here.
+No record in this directory is evidence for `0.1.0b1` yet. Until this
+candidate's own runs are adopted, the files at the current paths are still
+the `0.1.0a16` records, byte for byte. They are bound to a16's source and
+harness. So `tools/public_audit.py` reports them as not bound to this tree,
+and `tools/build_release.py` refuses to export.
+
+- Local release checks on this candidate: NOT_RUN. These are quickstart,
+  quality, mutation, SQL, reference and property
+  ([releasing](../docs/RELEASING.md)).
+- Deployment path with this candidate's exact wheel: NOT_RUN. The lab run that
+  passed on `494768d` is evidence for `494768d` only, and it is never rebound
+  to a later tree.
+- Native PostgreSQL/PgBouncer and real Zabbix: NOT_RUN on this candidate.
+
+This candidate's records will replace the current paths in one change,
+together with this index, the
+[compatibility manifest](../docs/compatibility_manifest.json) and the version
+narrative. Preparation, local and hosted runs stay distinct.
+
+## Historical evidence
+
+[history/](history/README.md) holds byte-exact copies of earlier versions'
+records, under paths that never change.
+- `history/0.1.0a16/` preserves every file this directory carried for a16,
+  including its original index. Its `MANIFEST.json` lists each file's SHA-256,
+  size, Git blob and original path.
+- The a16 records keep their original bindings and counts:
+  - native: 42 passed;
+  - real Zabbix: 6 passed, including the A4 excluded-action denial;
+  - deployment path: 4 passed, with 13/13 observations from the installed
+    a16 wheel;
+  - reference: 865 passed and 23 skipped.
 
 The public export and acceptance tools still reject stale, malformed or
-contradictory evidence. G1–G8 remain pending; A2 is unresolved. Docker Compose,
-hosted workflows, external security review and signed attestation remain
-unexecuted or pending.
+contradictory evidence. G1–G8 remain pending, and A2 is unresolved. Docker
+Compose, hosted workflows, external security review and signed attestation
+remain unexecuted or pending.

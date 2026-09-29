@@ -9,6 +9,19 @@
   exact-artifact host qualification remain separate evidence to produce for this candidate.
 - The two sections below preserve their original, separate-lineage change histories. The S2 heading describes
   its pre-integration review state.
+- Corrections on 29 September 2026. Each has focused regression tests. The final checks and the exact-wheel
+  lab run are still to be recorded.
+  - **ZB-B1-REL-01:** `MANIFEST.in` includes the lab-trust installer files and the ingestion template, so the
+    sdist matches the source archive.
+  - **Daybreak DB-1:** once an intent is staged, a failure while binding the signed marker refuses the
+    acknowledgement under either `PLUGINS_RAISE_ON_ERROR` setting. It is never saved without its proof.
+  - **Daybreak DB-3:** `response_limit_bytes` must be an integer from 65536 to 8388608, in both the
+    validation and the schema.
+  - **Evidence history (Daybreak DB-2/DB-4):** the a16 evidence is preserved byte for byte under
+    `evidence/history/0.1.0a16/`. The evidence index, the compatibility manifest and the version narrative
+    name `0.1.0b1` as current, and mark its evidence PENDING.
+  - **Deferred, Daybreak DB-5:** the unfenced `record_drift` operation is documented, with its release impact,
+    in `docs/BETA_READINESS.md`.
 
 ## Unreleased — S2: webhook transport candidate for A2 (Opus; separate, not integrated)
 

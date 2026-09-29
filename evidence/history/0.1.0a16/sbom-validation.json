@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "schema": "CycloneDX 1.6",
+  "validator_version": "4.26.0",
+  "schema_sha256": "cb88c8121ae6be6ec0d2f01909b4458e12852f260b372f18d20e3dc2ef90ea15",
+  "component_count": 61,
+  "scope": "Schema validity only; no licence or vulnerability clearance"
+}

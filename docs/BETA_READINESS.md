@@ -4,7 +4,7 @@ The current integrated local candidate is `0.1.0b1`. Its version metadata does
 not establish qualification: the intended automation must execute successfully
 on this exact commit in supported environments, and publication-owner inputs
 remain separate. Earlier `0.1.0a18` preparation is recorded in
-`docs/beta_preparation_note_2026-09-22.md`; see `ALPHA_REPORT.md` for its
+`docs/beta_preparation_note_2026-09-22.md`. `ALPHA_REPORT.md` holds a17's
 historical executed results.
 The original a16 release narrative below is historical. Its reference, mutation,
 property, native, real-Zabbix and deployment-path records retain their original
@@ -16,6 +16,49 @@ records remain NOT_RUN and a15's stand on a15's runs. The independent a12 and
 a15 reviews' records — including the a15 review's local Gitleaks result — and
 a14's qualitative agent evaluations are retained in the handoff as received and
 are not rebound here. Earlier Ackline results remain historical as well.
+
+## Candidate evidence and open findings (29 September 2026)
+
+The a16 records named above are preserved byte for byte under
+`evidence/history/0.1.0a16/`, which lists them in `MANIFEST.json`. Until this
+candidate's own records are adopted, the current `evidence/` paths still hold
+those a16 bytes. They are not evidence for `0.1.0b1`; see the
+[evidence index](../evidence/README.md).
+
+This candidate corrects three findings, each with focused regression tests.
+The fresh required checks and an exact-wheel lab run on the final candidate
+are still to be recorded.
+
+- **ZB-B1-REL-01:** the source distribution now includes the lab-trust
+  installer files and the ingestion template. `tools/verify_release.py` can
+  therefore match it to the source archive.
+- **Daybreak DB-1:** once a request has staged an intent, any failure while
+  binding the signed marker refuses the acknowledgement
+  (`zabalack_final_binding_invalid`). This holds under either
+  `PLUGINS_RAISE_ON_ERROR` setting. Before, Alerta could suppress the error
+  and save the acknowledgement without its proof.
+- **Daybreak DB-3:** `response_limit_bytes` must be an integer from 65536 to
+  8388608 (default 1048576). The schema carries the same bounds.
+
+**Deferred, Daybreak DB-5.** The documented `worker_call('record_drift')`
+operation is not fenced by the background lease: it needs no `worker_id` and
+checks no instance or lease generation. No shipped code calls it; the
+reconciler records drift scheduling through the fenced `record_reconciliation`.
+- **Scope:** it reaches only successful actions. There it sets the reason
+  `source_state_drift` when asked, postpones the next daily drift read by one
+  day and schedules a reprojection.
+- **Limits:** it cannot change an action's state, attempts or completion
+  evidence, and it cannot cause a write to Zabbix.
+- **Who can call it:** only roles that can act as `zabalack_worker`, which
+  already verifies and rejects captures, or `zabalack_owner`. Resealing refuses
+  an application role that can execute `worker_call()`.
+- **Residual gap:** a stale worker, or any other holder of the worker
+  credential, can mutate those fields without holding the lease.
+- **Required before production:** remove the operation, or fence it like
+  `record_reconciliation` in a new migration. That must happen before
+  production use, and before any code records drift through it.
+
+DB-6 (CI workflow labels) is not part of this candidate.
 
 Implemented in a14: task-specific agent instructions, three focused repository
 skills, retained review attempts, separate mutation profiles and packaged
@@ -75,8 +118,9 @@ captures added, including a real Zabbix frontend screenshot of the lab event.
 
 ## Current state (21 September 2026)
 
-> **Superseded on 22 September 2026.** The candidate under qualification is now
-> `0.1.0a18`, draft PR #29; see [beta_preparation_note_2026-09-22.md](beta_preparation_note_2026-09-22.md).
+> **Superseded on 22 September 2026** by `0.1.0a18`, draft PR #29; see
+> [beta_preparation_note_2026-09-22.md](beta_preparation_note_2026-09-22.md).
+> Superseded again on 27 September 2026 by the local beta candidate `0.1.0b1` (top of this page).
 > The paragraph below is kept unchanged as the 21 September record.
 
 `main` is `a3317dc41890ef56411e7597b32c44c70b878416` (PR #25 merged 2026-09-18) and

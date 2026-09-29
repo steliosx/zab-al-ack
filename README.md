@@ -129,8 +129,10 @@ automatically cause re-acknowledgement. See [design](docs/DESIGN.md),
 These are reference pins, not a recommendation to deploy old patch releases.
 Dependency or upstream upgrades require compatibility review and reruns. Exact
 commits, hashes and observations are in [reference manifest](docs/reference_manifest.json)
-and [compatibility manifest](docs/compatibility_manifest.json). Current executed
-results are in [alpha report](ALPHA_REPORT.md) and [test evidence](evidence/README.md).
+and [compatibility manifest](docs/compatibility_manifest.json). This candidate's
+evidence status is in [beta readiness](docs/BETA_READINESS.md) and the
+[evidence index](evidence/README.md). The [alpha report](ALPHA_REPORT.md) (a17) and the
+[a16 evidence](evidence/history/0.1.0a16/) are historical results for those versions.
 All T1–T39 requirements, including T11a/T11b, retain traceability in the
 [acceptance matrix](docs/acceptance_matrix.csv); G1–G8 remain deployment gates.
 
