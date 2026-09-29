@@ -40,9 +40,10 @@ Opus sends another in-scope correction; verify it and issue a bounded dispositio
 Ask again only for scope expansion, missing authority or a reserved owner decision.
 
 For the present guidance-only task, Codex owns the separate branch changing
-`AGENTS.md`, `docs/agent-workflows.md` and this file. Opus independently reviews the
-guidance and updates his own authorized private controller/mailbox records; Codex
-updates its own. Neither edits the other's working directory. No push, merge,
+`AGENTS.md`, `docs/agent-workflows.md` and this file. Opus is the requested independent
+guidance reviewer and owner of his authorized private controller/mailbox updates;
+record his verified acceptance before treating either assignment as accepted.
+Codex updates its own records. Neither edits the other's working directory. No push, merge,
 schedule alteration, worker restart or new orchestration is part of this task.
 
 Keep `494768d`, r9-2, frozen artifacts and historical evidence unchanged. Guidance
