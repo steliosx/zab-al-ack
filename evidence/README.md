@@ -48,8 +48,21 @@ Neither is inferred from the deployment path.
 - `public-audit.json` is PASS with no findings.
 - `sbom.cdx.json` inventories `0.1.0b1`. It does not establish vulnerability clearance.
 
-The six a16 service XMLs, which the NOT_RUN recorders remove from the current paths, remain in the history.
-Preparation, local and host runs stay distinct.
+**Legacy a16 records no longer at the current paths.** No tool for this candidate regenerates these seven, so
+they were removed from `evidence/`. Byte-exact copies remain in `history/0.1.0a16/`, and they are not evidence for
+`0.1.0b1`.
+
+| Historical record (`history/0.1.0a16/…`) | Current status for `0.1.0b1` |
+|---|---|
+| `security-scans.json`, `pip-audit.json` (a16 pins, including wheel 0.46.2) | NOT_RUN: no `tools/security_scan.py` run on this candidate, so no vulnerability clearance for its pins (wheel 0.48.0) |
+| `npm-audit.json` | NOT_RUN for this candidate |
+| `sbom-validation.json` | NOT_RUN: the regenerated `sbom.cdx.json` has not been schema-validated |
+| `wheel-smoke.json` (the a16 wheel) | NOT_RUN as a separate record. The canonical wheel is byte-identical to the preliminary wheel the deployment path installed |
+| `collection-check.json`, `local-validation.json` (a16 / a15) | NOT_RUN as separate records. `reference-run.json` holds this candidate's collection and suite results |
+
+`dependency-review.json` is current: the dependency inventory reproduced it for this candidate. The six a16 service
+XMLs, which the NOT_RUN recorders remove from the current paths, also remain in the history. Preparation, local and
+host runs stay distinct.
 
 ## Historical evidence
 

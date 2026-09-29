@@ -20,7 +20,9 @@
     validation and the schema.
   - **Evidence history (Daybreak DB-2/DB-4):** the a16 evidence is preserved byte for byte under
     `evidence/history/0.1.0a16/`. The current records are those of `34ea703`, adopted together with the
-    evidence index, the compatibility manifest and the version narrative.
+    evidence index, the compatibility manifest and the version narrative. Seven legacy a16 records that no tool
+    regenerates for this candidate (security scans, pip-audit, npm audit, SBOM validation, wheel smoke, collection
+    check, local validation) are kept only in the history, and are NOT_RUN for `0.1.0b1`.
   - **Deferred, Daybreak DB-5:** the unfenced `record_drift` operation is documented, with its release impact,
     in `docs/BETA_READINESS.md`.
 

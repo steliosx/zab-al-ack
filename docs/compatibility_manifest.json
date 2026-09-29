@@ -150,6 +150,16 @@
   "a16_review_base_commit": "14b8c72f34d93b16c102013a232a995d75f7a6eb",
   "review_status": "Zab-al-ack 0.1.0b1: unpublished local beta candidate, not qualified; its evidence status is in evidence/README.md and docs/BETA_READINESS.md. Historical: a16 with A5 stage two under review (PR #11, unreleased, review base a16_review_base_commit): migration 008 moves the schema to 4 and adds the generation fence, zabalack.stage_generation(), the retirement sweep, the application grant (12) and re-seal (13) scripts and the matching plugin, worker and health changes; the a16 review outcome (ten writer regressions, R20 history, R21 verifier dependency) is retained in docs/RELEASE_AMENDMENTS.md",
   "native_and_real_zabbix_evidence": "0.1.0b1 (tested source 34ea703, digests c8a7430b.../fab2507e...): native PostgreSQL/PgBouncer and real Zabbix are NOT_RUN on this candidate (evidence/native-run.json, evidence/real-zabbix-run.json); the deployment path passed on lab run b1-34ea703-host-01 with the preliminary wheel eaf3c422... (evidence/deployment-e2e-run.json, 4 passed, 13/13 checks, own disposable lab services, not_docker: true) and carries to the canonical wheel only if its bytes are identical. Historical a16 evidence, recorded before A5 stage two and predating every T41 case, is preserved byte for byte in evidence/history/0.1.0a16/ (MANIFEST.json): native-run.json 42 passed, real-zabbix-run.json 6 passed, deployment-e2e-run.json 4 passed with 13/13 observations (local services, not_docker: true). The T41 native, worker and HTTP cases run in the native CI job; evidence for schema 4 is recorded as a new run, never by replacing the a16 digests.",
+  "legacy_evidence_not_current": {
+    "note": "a16 records removed from the current evidence/ paths for 0.1.0b1; byte-exact copies remain in evidence/history/0.1.0a16/ and are not evidence for 0.1.0b1",
+    "security-scans.json": "NOT_RUN for 0.1.0b1 (no tools/security_scan.py run); no vulnerability clearance for its pins",
+    "pip-audit.json": "NOT_RUN for 0.1.0b1; the historical report covers a16 pins (wheel 0.46.2), not the current lock (wheel 0.48.0)",
+    "npm-audit.json": "NOT_RUN for 0.1.0b1",
+    "sbom-validation.json": "NOT_RUN for the regenerated evidence/sbom.cdx.json",
+    "wheel-smoke.json": "NOT_RUN as a separate record; the canonical wheel is byte-identical to the preliminary wheel exercised by the deployment path",
+    "collection-check.json": "NOT_RUN as a separate record; see evidence/reference-run.json",
+    "local-validation.json": "NOT_RUN as a separate record (historical a15 wheel/service run)"
+  },
   "quality_tools": {
     "ruff": "0.16.7",
     "mypy": "2.3.1",

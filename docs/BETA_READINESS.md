@@ -31,6 +31,10 @@ The a16 records named above are preserved byte for byte under
 - **Not run:** native PostgreSQL/PgBouncer and real Zabbix.
 - **Acceptance and audit:** 40 checks PASS and 2 manual gates pending; the public audit passes. Canonical build
   verification and the candidate freeze are still to be recorded.
+- **Not carried:** seven legacy a16 records are removed from the current paths and kept only in the history
+  (security scans and pip-audit, npm audit, SBOM validation, wheel smoke, collection check, local validation). For
+  this candidate those checks are NOT_RUN, so neither vulnerability clearance nor SBOM schema validation is
+  established; see the [evidence index](../evidence/README.md).
 
 This candidate corrects three findings, each with focused regression tests.
 
