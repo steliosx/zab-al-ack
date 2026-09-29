@@ -28,16 +28,18 @@ from review_runs import atomic_json, now, private_directory
 
 # Statuses that never let a gate record pass; the tests' own exit status is kept separately.
 FAILED_RETENTION = frozenset({'INCOMPLETE', 'NOT_OWNED', 'FAILED', 'PENDING'})
-# Fixtures the suite deliberately makes unreadable. Their metadata is listed and
-# their bytes are not custody material; any other unreadable entry is INCOMPLETE.
+# Fixtures the suite deliberately makes unreadable: regular files with mode 0 at exactly
+# these paths. Their metadata is listed and their bytes are not custody material; any
+# other unreadable entry is INCOMPLETE.
 EXPECTED_UNREADABLE = {
     'test_unreadable_environment_fi*/runner.env':
         'tests/release/test_runner_account_check.py: mode-0 environment file',
     'test_preserve_fails_closed_and*/evidence/native-run.json':
         'tests/release/test_lab_retention.py[unreadable]: mode-0 source',
 }
-# Persistent disk rather than a size-limited tmpfs /tmp: a full reference scratch is
-# gigabytes and every original is kept. /var/tmp/zab-XXXXXXXX/b is still shorter than
+# /var/tmp where writable, else the system temporary directory. /var/tmp is conventionally
+# not a size-limited tmpfs (a full reference scratch is gigabytes and every original is
+# kept), though that depends on the host. /var/tmp/zab-XXXXXXXX/b is still shorter than
 # pytest's own /tmp/pytest-of-<user>/pytest-<n>, which matters for socket fixtures.
 ROOT_PARENT: str | None = '/var/tmp' if os.path.isdir('/var/tmp') and os.access('/var/tmp', os.W_OK) else None
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -56,13 +58,20 @@ class OwnedScratch:
     """
 
     def __init__(self, label: str, parent: Path, name: str | None = None):
+        parent = private_directory(parent)
+        if name is not None:
+            # Single use: an existing destination (PENDING or finished) is refused before anything is written.
+            self.destination = parent / name
+            self.destination.mkdir(mode=0o700)
         root = Path(tempfile.mkdtemp(prefix='zab-', dir=ROOT_PARENT))
         info = os.lstat(root)
         self.binding = {'label': label, 'invocation': uuid.uuid4().hex, 'pid': os.getpid(), 'root': str(root),
                         'device': info.st_dev, 'inode': info.st_ino, 'created_at_utc': now()}
         atomic_json(root / 'OWNER.json', self.binding)
         self.basetemp = root / 'b'
-        self.destination = private_directory(private_directory(parent) / (name or label + '-' + root.name))
+        if name is None:
+            self.destination = parent / (label + '-' + root.name)
+            self.destination.mkdir(mode=0o700)
         # Persisted before the child starts, so a crashed parent leaves a recoverable, visibly incomplete record.
         atomic_json(self.destination / 'custody.json', dict(self.binding, status='PENDING'))
         self.status = 'PENDING'
@@ -126,6 +135,7 @@ def _copy_file(parent_fd: int, name: str, expected: tuple[int, int], target: Pat
 def _walk(directory_fd: int, prefix: str, target: Path, record: dict) -> None:
     for name in sorted(os.listdir(directory_fd)):
         relative = prefix + name
+        info = None
         try:
             info = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
             if stat.S_ISLNK(info.st_mode):
@@ -146,7 +156,10 @@ def _walk(directory_fd: int, prefix: str, target: Path, record: dict) -> None:
             else:
                 record['special'][relative] = stat.filemode(info.st_mode)
         except PermissionError as error:
-            reason = _expected(relative)
+            # Only a listed fixture path that is a regular file with the deliberate mode 0 is exempt.
+            # A directory, any other type or mode, or an unlisted path stays an unexpected denial.
+            deliberate = info is not None and stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0
+            reason = _expected(relative) if deliberate else None
             (record['unreadable_expected'] if reason else record['unreadable'])[relative] = reason or error.strerror
         except OSError as error:
             record['errors'][relative] = type(error).__name__ + ': ' + (error.strerror or str(error))

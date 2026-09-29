@@ -14,6 +14,24 @@ import retained_temp
 from retained_temp import OwnedScratch
 
 
+@pytest.fixture(autouse=True)
+def restore_denied_modes(tmp_path):
+    """Leave no deliberately denied entry behind: the gate retains this suite's own scratch too."""
+    yield
+
+    def restore(directory):
+        for entry in os.scandir(directory):
+            info = entry.stat(follow_symlinks=False)
+            if stat.S_ISDIR(info.st_mode):
+                if stat.S_IMODE(info.st_mode) & 0o700 != 0o700:
+                    os.chmod(entry.path, 0o700)
+                restore(entry.path)
+            elif stat.S_ISREG(info.st_mode) and not info.st_mode & 0o400:
+                os.chmod(entry.path, 0o600)
+
+    restore(tmp_path)
+
+
 @pytest.fixture
 def temp_root(tmp_path, monkeypatch):
     root = tmp_path / 'system-temp'
@@ -304,3 +322,45 @@ def test_retention_never_overwrites_an_earlier_copy(tmp_path, temp_root):
         retained_temp.retain(scratch.destination)
     assert retained_temp.retain_status(scratch.destination) == 'FAILED'
     assert 'NOT_CREATED' not in retained_temp.FAILED_RETENTION
+
+
+@needs_modes
+@pytest.mark.parametrize('shape', ['directory', 'readable-mode-file'])
+def test_only_a_mode_0_regular_file_at_a_fixture_path_is_exempt(tmp_path, temp_root, shape):
+    scratch = OwnedScratch('synthetic', tmp_path / 'raw/basetemp')
+    fixture = scratch.basetemp / 'test_unreadable_environment_fi0/runner.env'
+    fixture.parent.mkdir(parents=True)
+    if shape == 'directory':
+        fixture.mkdir()
+        (fixture / 'inside.txt').write_text('an unenumerated subtree')
+        fixture.chmod(0)
+    else:
+        fixture.write_text('fixture')
+        fixture.chmod(0o200)  # unreadable, but not the fixture's deliberate mode 0
+    try:
+        with scratch:
+            pass
+    finally:
+        fixture.chmod(0o700)
+    record = json.loads((scratch.destination / 'retention.json').read_text())
+    assert scratch.status == 'INCOMPLETE' and record['unreadable_expected'] == {}
+    assert list(record['unreadable']) == ['test_unreadable_environment_fi0/runner.env']
+
+
+@pytest.mark.parametrize('finished', [False, True])
+def test_a_named_destination_is_single_use_and_its_records_stay_byte_exact(tmp_path, temp_root, finished):
+    first = OwnedScratch('mutation-baseline', tmp_path / 'raw/basetemp', name='baseline')
+    if finished:
+        first.basetemp.mkdir()
+        (first.basetemp / 'out.txt').write_text('first run')
+        with first:
+            pass
+    before = {path.relative_to(first.destination): path.read_bytes()
+              for path in sorted(first.destination.rglob('*')) if path.is_file()}
+    with pytest.raises(FileExistsError):
+        OwnedScratch('mutation-baseline', tmp_path / 'raw/basetemp', name='baseline')
+    after = {path.relative_to(first.destination): path.read_bytes()
+             for path in sorted(first.destination.rglob('*')) if path.is_file()}
+    assert after == before
+    assert json.loads(after[Path('custody.json')])['status'] == ('COMPLETE' if finished else 'PENDING')
+    assert json.loads(after[Path('custody.json')])['invocation'] == first.binding['invocation']

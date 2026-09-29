@@ -1278,7 +1278,10 @@ An outside observer can only verify after the fact. It cannot prevent either los
 - Ownership binds a random invocation identity to that root's device and inode, recorded in `OWNER.json` with the
   label and process. A root that is foreign, or was replaced since, is `NOT_OWNED` and is never copied.
 - An explicit basetemp is never rotated.
-- The root stays short (`/tmp/zab-XXXXXXXX/b`), because fixtures bind Unix sockets below it.
+- The root is `/var/tmp/zab-XXXXXXXX/b` when `/var/tmp` is writable, otherwise under the system temporary directory.
+  On the local lab host `/var/tmp` is on persistent disk rather than a size-limited tmpfs; that is a host
+  observation, not a portable guarantee. The path stays shorter than pytest's own basetemp, because fixtures bind
+  Unix sockets below it.
 
 **Retained copies.** Before the child starts, a `PENDING` custody record binding the invocation to its root is written
 to the run's private raw directory. However the child ends (including a timeout or interruption, which still
@@ -1287,8 +1290,11 @@ propagates), the scratch is copied there and the record finalised. The original 
 - Every open is relative to an already opened directory, refuses a final link, and checks that the opened object is
   the one listed. So a link swapped in during the copy is never followed.
 - Links are copied as links. FIFOs, sockets and devices are listed, never opened. Nothing is re-permissioned.
-- Unreadable entries are listed. Only the suite's deliberately unreadable fixtures (`EXPECTED_UNREADABLE`) are
-  accepted; any other unreadable entry makes the retention `INCOMPLETE`.
+- Unreadable entries are listed. Only the suite's deliberately unreadable fixtures are accepted: regular files with
+  mode 0 at the exact paths in `EXPECTED_UNREADABLE`. Any other unreadable entry, including a directory at such a
+  path, makes the retention `INCOMPLETE`.
+- Destinations are single use. An existing destination, `PENDING` or finished, is refused before anything is written,
+  so an earlier custody record is never overwritten.
 - `retention.json` inventories every file by size and SHA-256.
 - A vanished or changing file, or a copy that does not match its inventory, makes the retention `INCOMPLETE`.
 - **Test status is kept separately.** Each record keeps its tests' own exit status or outcome, and adds the retention

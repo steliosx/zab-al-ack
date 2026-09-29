@@ -97,7 +97,7 @@ Executed material is kept in the same private run directory, before anything can
     - an entry vanishes, is replaced or changes during its copy;
     - a copy does not match its inventory;
     - a file or directory is unreadable and is not one of the suite's listed deliberate fixtures
-      (`EXPECTED_UNREADABLE`).
+      (`EXPECTED_UNREADABLE`: regular files with mode 0 at exactly those paths).
   - Otherwise retention is `COMPLETE`, or `NOT_CREATED` when no test used scratch.
   - The original stays in place.
   - Each child's row keeps its test outcome. `scratch_retention` records whether every child's copy
