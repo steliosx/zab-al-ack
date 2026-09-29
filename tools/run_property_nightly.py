@@ -19,7 +19,7 @@ import subprocess
 import sys
 
 from evidence_utils import cases, code_digests, redact_junit
-from retained_temp import fresh_basetemp, retain
+from retained_temp import FAILED_RETENTION, fresh_basetemp, retain_status
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = ['tests/property', 'tests/postgres/test_stateful_ledger.py']
@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
                                *TARGETS, '-q', '-p', 'no:cacheprovider', '--junitxml=' + str(raw_xml),
                                '--basetemp=' + str(basetemp)],
                               cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=3600).returncode
-    retain(basetemp, raw / 'basetemp' / ('property-nightly-' + basetemp.parent.name))
+    record['retention'] = retain_status(basetemp, raw / 'basetemp' / ('property-nightly-' + basetemp.parent.name))
     record['exit_code'] = code
     if raw_xml.is_file():
         redact_junit(raw_xml, public_xml, ROOT)
@@ -64,7 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         passed = False
     record['tree_unchanged'] = record['code_digests'] == code_digests(ROOT)
     record['finished_at_utc'] = datetime.now(timezone.utc).isoformat()
-    record['status'] = 'PASS' if code == 0 and passed and record['tree_unchanged'] else 'FAIL'
+    retained = record['retention'] not in FAILED_RETENTION
+    record['status'] = 'PASS' if code == 0 and passed and record['tree_unchanged'] and retained else 'FAIL'
     record_path.write_text(json.dumps(record, indent=2) + '\n')
     print(json.dumps({key: record.get(key) for key in ('status', 'counts', 'seed', 'tree_unchanged')}))
     return 0 if record['status'] == 'PASS' else 1

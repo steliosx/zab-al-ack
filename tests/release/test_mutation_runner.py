@@ -260,7 +260,13 @@ def test_real_pytest_assertion_runtime_skip_and_import_provenance(tmp_path, monk
     copied_test.write_text('import zabalack\ndef test_boundary():\n    zabalack.__file__ = "/untrusted/zabalack/__init__.py"\n')
     assert runner.run_pytest(tree, raw, 'wrong-source', 10, baseline)['outcome'] == 'ERROR'
     copied_test.write_text('import zabalack\nimport time\ndef test_boundary():\n    time.sleep(30)\n')
-    assert runner.run_pytest(tree, raw, 'timeout', 1, baseline)['outcome'] == 'TIMEOUT'
+    timed_out = runner.run_pytest(tree, raw, 'timeout', 1, baseline)
+    assert timed_out['outcome'] == 'TIMEOUT'
+    # Failed, erroring and killed children are retained like passing ones.
+    for label in ('baseline', 'assertion', 'import-error', 'runtime-error', 'skip', 'wrong-source', 'timeout'):
+        record = json.loads((raw / 'basetemp' / label / 'retention.json').read_text())
+        assert record['status'] in {'COMPLETE', 'NOT_CREATED'}, label
+    assert timed_out['retention'] in {'COMPLETE', 'NOT_CREATED'}
 
 
 def test_profiles_and_prior_attempts_survive_new_invocations(tmp_path, monkeypatch):
@@ -346,7 +352,24 @@ def test_each_invocation_gets_an_owned_basetemp_that_is_retained(tmp_path, monke
     assert len(roots) == 2  # one owned root per invocation, never shared or rotated
     for label in ('baseline', 'again'):
         record = json.loads((raw / 'basetemp' / label / 'retention.json').read_text())
-        assert record['status'] == 'COMPLETE' and json.loads(record['owner'])['label'] == 'mutation-' + label
+        owner = json.loads(record['owner'])
+        assert record['status'] == 'COMPLETE' and owner['label'] == 'mutation-' + label
+        assert len(owner['invocation']) == 32
         assert (raw / 'basetemp' / label / 'scratch/test_scratch0/out.txt').read_text() == 'kept'
     # The originals stay in place after the copy.
     assert all((path / 'b/test_scratch0/out.txt').is_file() for path in roots)
+
+
+def test_incomplete_scratch_retention_fails_the_run_and_keeps_every_outcome(tmp_path, monkeypatch):
+    root, _ = fixture_tree(tmp_path)
+    entry = type(runner.selected('pr')[0])('example', 'src/example.py', 'True', 'False', 'T1: synthetic')
+    monkeypatch.setattr(runner, 'selected', lambda profile: (entry,))
+    monkeypatch.setattr(runner, 'run_pytest', lambda tree, raw, label, timeout, baseline=None: counts(
+        outcome='BASELINE_PASS' if baseline is None else 'KILLED', exit_code=0 if baseline is None else 1,
+        failures=0 if baseline is None else 1, assertion_failures=0 if baseline is None else 1,
+        retention='COMPLETE' if baseline is None else 'INCOMPLETE'))
+    assert runner.run(root) == 1
+    report = json.loads((root / 'evidence/mutation-run.json').read_text())
+    assert report['status'] == 'FAIL' and report['scratch_retention'] == 'INCOMPLETE'
+    assert report['reason'] == 'mutation_scratch_retention_incomplete'
+    assert report['mutants'][0]['outcome'] == 'KILLED' and report['counts']['KILLED'] == 1

@@ -1274,7 +1274,9 @@ source-built instance is an author convenience, never a substitute.
 An outside observer can only verify after the fact. It cannot prevent either loss, or prove whose scratch it copied.
 
 **Owned scratch.** `tools/retained_temp.py` gives each pytest invocation of the gate runners its own `--basetemp`:
-- It sits below a fresh `mkdtemp` root whose `OWNER.json` records the label and process. That is positive ownership.
+- It sits below a fresh `mkdtemp` root.
+- Ownership binds a random invocation identity to that root's device and inode, recorded in `OWNER.json` with the
+  label and process. A root that is foreign, or was replaced since, is `NOT_OWNED` and is never copied.
 - An explicit basetemp is never rotated.
 - The root stays short (`/tmp/zab-XXXXXXXX/b`), because fixtures bind Unix sockets below it.
 
@@ -1282,7 +1284,14 @@ An outside observer can only verify after the fact. It cannot prevent either los
 original is left in place:
 - Links are copied as links, never followed.
 - FIFOs, sockets, devices and unreadable entries are listed, with no permission change.
-- `retention.json` inventories every file by size and SHA-256 and states `COMPLETE`, `INCOMPLETE` or `NOT_CREATED`.
+- `retention.json` inventories every file by size and SHA-256.
+- A vanished or changing file, or a copy that does not match its inventory, makes the retention `INCOMPLETE`.
+- **Test status is kept separately.** Each record keeps its tests' own exit status or outcome, and adds the retention
+  status per invocation. An incomplete, not-owned or failed retention alone prevents `PASS`:
+  - the reference record's `all_executed_phases_succeeded`;
+  - the property record;
+  - the mutation record's `scratch_retention`;
+  - quickstart exit 3.
 
 **Where it applies:**
 - `run_reference_suite.py`: all six phases. Its public record names the basetemp as `<owned>`, not its random path.
@@ -1293,6 +1302,6 @@ original is left in place:
   working-copy removal are unchanged.
 - `security_scan.py` keeps its copy of the public selection under `build/` instead of deleting it.
 
-**What does not change:** public records, gate semantics, mutant classification and the tested bytes. Only where
-pytest writes scratch, and what is kept, change. The harness digest moves; source and SQL do not. Focused regressions
+**What does not change:** existing record fields, mutant classification and the tested bytes. The records gain only
+the retention statuses. The harness digest moves; source and SQL do not. Focused regressions
 are in `tests/release/test_retained_temp.py`, `test_gate_scratch_retention.py` and `test_mutation_runner.py`.

@@ -67,6 +67,8 @@ def test_reference_phases_each_get_a_distinct_owned_basetemp_retained(tmp_path, 
         'unit-mocked', 'postgres-wasm', 'worker-sql-wasm', 'alerta-persistence-wasm', 'performance-wasm', 'optional-services'))
     # The published record names the basetemp generically, never its random local path.
     report = json.loads((tmp_path / 'evidence/reference-run.json').read_text())
+    assert [phase['retention'] for phase in report['phases']] == ['COMPLETE'] * 6
+    assert report['scratch_retention'] == 'COMPLETE'
     shown = [part for phase in report['phases'] for part in phase['command'] if part.startswith('--basetemp')]
     assert shown == ['--basetemp=<owned>'] * 6
 
@@ -111,3 +113,72 @@ def test_secret_scan_keeps_the_scanned_public_copy(tmp_path, monkeypatch):
     assert security_scan.scan_secrets(str(executable), raw)['status'] == 'PASS'
     (kept,) = (repository / 'build').glob('public-source-*')
     assert (kept / 'README.md').read_text() == 'synthetic source'
+
+
+def passing_child(commands):
+    """A synthetic child whose pytest writes one passing JUnit case and one scratch file."""
+    def child(command, **kwargs):
+        commands.append(command)
+        junit = [part.split('=', 1)[1] for part in command if part.startswith('--junitxml=')][0]
+        target = Path(junit) if Path(junit).is_absolute() else kwargs['cwd'] / junit
+        target.write_text('<testsuite><testcase classname="tests.test_x" name="test_x" /></testsuite>')
+        basetemp = basetemp_of(command)
+        basetemp.mkdir(parents=True)
+        (basetemp / 'out.txt').write_text('kept')
+        return subprocess.CompletedProcess(command, 0)
+    return child
+
+
+def test_incomplete_reference_retention_alone_prevents_a_pass(tmp_path, temp_root, monkeypatch):
+    (tmp_path / 'build/evidence-raw').mkdir(parents=True)
+    commands = []
+    real = run_reference_suite.retain_status
+    monkeypatch.setattr(run_reference_suite, 'ROOT', tmp_path)
+    monkeypatch.setattr(run_reference_suite.subprocess, 'run', passing_child(commands))
+    monkeypatch.setattr(run_reference_suite, 'retain_status', lambda basetemp, destination:
+                        'INCOMPLETE' if destination.name.startswith('unit-mocked-') else real(basetemp, destination))
+    monkeypatch.setattr(sys, 'argv', ['run_reference_suite.py'])
+    assert run_reference_suite.main() == 1
+    report = json.loads((tmp_path / 'evidence/reference-run.json').read_text())
+    # Every phase's test status is kept as observed; only retention blocks the pass.
+    assert [phase['exit_code'] for phase in report['phases']] == [0, 0]
+    assert [phase['retention'] for phase in report['phases']] == ['INCOMPLETE', 'COMPLETE']
+    assert report['scratch_retention'] == 'INCOMPLETE'
+    assert report['all_executed_phases_succeeded'] is False and report['status'] == 'FAIL'
+
+
+def test_a_timed_out_reference_phase_is_still_retained(tmp_path, temp_root, monkeypatch):
+    (tmp_path / 'build/evidence-raw').mkdir(parents=True)
+
+    def timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 600)
+
+    monkeypatch.setattr(run_reference_suite, 'ROOT', tmp_path)
+    monkeypatch.setattr(run_reference_suite.subprocess, 'run', timeout)
+    monkeypatch.setattr(sys, 'argv', ['run_reference_suite.py'])
+    assert run_reference_suite.main() == 1
+    report = json.loads((tmp_path / 'evidence/reference-run.json').read_text())
+    assert [phase['exit_code'] for phase in report['phases']] == [124, 124]
+    assert [phase['retention'] for phase in report['phases']] == ['NOT_CREATED', 'NOT_CREATED']
+
+
+def test_incomplete_property_retention_alone_prevents_a_pass(tmp_path, temp_root, monkeypatch):
+    commands = []
+    monkeypatch.setattr(run_property_nightly, 'ROOT', tmp_path)
+    monkeypatch.setattr(run_property_nightly.subprocess, 'run', passing_child(commands))
+    monkeypatch.setattr(run_property_nightly, 'retain_status', lambda basetemp, destination: 'INCOMPLETE')
+    assert run_property_nightly.main(['--isolated-lab']) == 1
+    record = json.loads((tmp_path / 'evidence/property-nightly-run.json').read_text())
+    assert record['exit_code'] == 0 and record['counts'] == {'passed': 1, 'skipped': 0, 'failed': 0}
+    assert record['retention'] == 'INCOMPLETE' and record['status'] == 'FAIL'
+
+
+def test_quickstart_reports_incomplete_retention_without_hiding_a_test_failure(tmp_path, temp_root, monkeypatch):
+    monkeypatch.setattr(quickstart, 'ROOT', tmp_path)
+    monkeypatch.setattr(quickstart, 'retain_status', lambda basetemp, destination: 'INCOMPLETE')
+    monkeypatch.setattr(sys, 'argv', ['quickstart.py', '--isolated-lab'])
+    monkeypatch.setattr(quickstart.subprocess, 'run', lambda command, **kwargs: subprocess.CompletedProcess(command, 0))
+    assert quickstart.main() == 3
+    monkeypatch.setattr(quickstart.subprocess, 'run', lambda command, **kwargs: subprocess.CompletedProcess(
+        command, 5 if 'pytest' in command else 0))
+    assert quickstart.main() == 5

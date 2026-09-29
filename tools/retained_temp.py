@@ -11,22 +11,55 @@ with a complete inventory. The original is left in place.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import stat
 import tempfile
+import uuid
 
 from review_runs import atomic_json, now, private_directory
 
+# Statuses that never let a gate record pass; the tests' own exit status is kept separately.
+FAILED_RETENTION = frozenset({'INCOMPLETE', 'NOT_OWNED', 'FAILED'})
+# Roots created by this process: basetemp -> (invocation id, device, inode).
+_OWNED: dict[str, tuple[str, int, int]] = {}
+
 
 def fresh_basetemp(label: str) -> Path:
-    """Return a basetemp that does not exist yet: pytest empties an existing one."""
+    """Return a basetemp that does not exist yet: pytest empties an existing one.
+
+    Ownership binds this invocation's random identity to the root directory's
+    device and inode, so a replaced or foreign root is never taken for it.
+    """
     root = Path(tempfile.mkdtemp(prefix='zab-'))
-    atomic_json(root / 'OWNER.json', {'label': label, 'pid': os.getpid(), 'created_at_utc': now()})
-    return root / 'b'
+    info = os.lstat(root)
+    invocation = uuid.uuid4().hex
+    atomic_json(root / 'OWNER.json', {'label': label, 'invocation': invocation, 'pid': os.getpid(),
+                                      'device': info.st_dev, 'inode': info.st_ino, 'created_at_utc': now()})
+    basetemp = root / 'b'
+    _OWNED[str(basetemp)] = (invocation, info.st_dev, info.st_ino)
+    return basetemp
+
+
+def _owner_error(basetemp: Path) -> str | None:
+    expected = _OWNED.get(str(basetemp))
+    if expected is None:
+        return 'basetemp_not_created_by_this_process'
+    try:
+        info = os.lstat(basetemp.parent)
+        owner = json.loads((basetemp.parent / 'OWNER.json').read_text())
+    except (OSError, ValueError) as error:
+        return type(error).__name__
+    if not stat.S_ISDIR(info.st_mode) or (info.st_dev, info.st_ino) != expected[1:]:
+        return 'root_replaced'
+    if not isinstance(owner, dict) or owner.get('invocation') != expected[0]:
+        return 'owner_record_replaced'
+    return None
 
 
 def _copy_file(source: Path, target: Path) -> dict:
+    before = os.lstat(source)
     digest = hashlib.sha256()
     size = 0
     with source.open('rb') as reader, target.open('xb') as writer:
@@ -35,6 +68,12 @@ def _copy_file(source: Path, target: Path) -> dict:
             writer.write(chunk)
             size += len(chunk)
     os.chmod(target, 0o600)
+    after = os.lstat(source)
+    if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns) \
+            or size != after.st_size:
+        raise OSError('source_changed_during_copy')
+    if hashlib.sha256(target.read_bytes()).hexdigest() != digest.hexdigest():
+        raise OSError('copy_inventory_mismatch')
     return {'size': size, 'sha256': digest.hexdigest()}
 
 
@@ -43,8 +82,9 @@ def retain(basetemp: Path, destination: Path) -> dict:
 
     Links are copied as links. FIFOs, sockets and devices are listed, not opened.
     An entry that cannot be read is listed with its error. Any other failure,
-    including an entry that vanishes, makes the retention INCOMPLETE. The
-    original directory is never removed.
+    including an entry that vanishes or changes while being copied, makes the
+    retention INCOMPLETE. A root this invocation does not own is never copied.
+    The original directory is never removed.
     """
     destination = private_directory(destination)
     if any(destination.iterdir()):
@@ -53,7 +93,11 @@ def retain(basetemp: Path, destination: Path) -> dict:
     owner = basetemp.parent / 'OWNER.json'
     record: dict = {'source': str(basetemp), 'owner': owner.read_text() if owner.is_file() else None,
                     'started_at_utc': now(), 'files': {}, 'links': {}, 'special': {}, 'unreadable': {}, 'errors': {}}
-    if not os.path.lexists(basetemp):
+    ownership = _owner_error(basetemp)
+    if ownership:
+        record['status'] = 'NOT_OWNED'
+        record['errors']['.'] = ownership
+    elif not os.path.lexists(basetemp):
         # pytest creates the basetemp only when a test requests temporary paths.
         record['status'] = 'NOT_CREATED'
     else:
@@ -78,8 +122,16 @@ def retain(basetemp: Path, destination: Path) -> dict:
             except PermissionError as error:
                 record['unreadable'][name] = error.strerror
             except OSError as error:
-                record['errors'][name] = type(error).__name__ + ': ' + (error.strerror or '')
+                record['errors'][name] = type(error).__name__ + ': ' + (error.strerror or str(error))
         record['status'] = 'INCOMPLETE' if record['errors'] else 'COMPLETE'
     record['finished_at_utc'] = now()
     atomic_json(destination / 'retention.json', record)
     return record
+
+
+def retain_status(basetemp: Path, destination: Path) -> str:
+    """Retain and return only the status; a failure to retain is itself a status."""
+    try:
+        return retain(basetemp, destination)['status']
+    except OSError:
+        return 'FAILED'

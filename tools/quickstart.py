@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from retained_temp import fresh_basetemp, retain
+from retained_temp import FAILED_RETENTION, fresh_basetemp, retain_status
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,6 +27,7 @@ def main() -> int:
          [sys.executable, 'lab/pglite_exec.py', '--isolated-lab', '--', sys.executable,
           '-m', 'pytest', 'tests/alerta/test_postgres_http.py', '-q']),
     ]
+    unretained = []
     for number, (description, command) in enumerate(commands):
         print(description, flush=True)
         basetemp = None
@@ -36,9 +37,15 @@ def main() -> int:
             command = [*command, '--basetemp=' + str(basetemp)]
         result = subprocess.run(command, cwd=ROOT, timeout=180)
         if basetemp is not None:
-            retain(basetemp, ROOT / 'build/evidence-raw/basetemp' / f'quickstart-{number}-{basetemp.parent.name}')
+            status = retain_status(basetemp, ROOT / 'build/evidence-raw/basetemp' / f'quickstart-{number}-{basetemp.parent.name}')
+            if status in FAILED_RETENTION:
+                unretained.append(f'quickstart-{number}: {status}')
         if result.returncode:
             return result.returncode
+    if unretained:
+        # The demonstration itself succeeded; its scratch was not fully retained.
+        print('Scratch retention incomplete: ' + ', '.join(unretained), flush=True)
+        return 3
     print('Demonstration complete. Native concurrency, real Zabbix and G1–G8 remain unverified.')
     return 0
 

@@ -80,12 +80,18 @@ Executed material is kept in the same private run directory, before anything can
 - `variants/<name>`: each mutant's exact bytes, read back from the tree before its child starts.
   `variants/index.json` records each variant's path and SHA-256.
 - `basetemp/<label>/`: each child's pytest scratch.
-  - Every invocation gets its own `--basetemp` below a fresh `mkdtemp` root, which records its
-    label and process in `OWNER.json`. pytest's rotation of `/tmp/pytest-of-<user>` never applies.
+  - Every invocation gets its own `--basetemp` below a fresh `mkdtemp` root. pytest's rotation of
+    `/tmp/pytest-of-<user>` never applies.
+  - Ownership binds a random invocation identity to the root directory's device and inode, recorded
+    in `OWNER.json`. A root this process did not create, or one replaced since, is `NOT_OWNED` and is
+    never copied.
   - After the child, the scratch is copied without following links. `retention.json` inventories
-    every file by size and SHA-256, and lists links, special files and unreadable entries. It
-    reports `COMPLETE`, `INCOMPLETE` or `NOT_CREATED`.
+    every file by size and SHA-256, and lists links, special files and unreadable entries.
+  - A file that vanishes, changes during its copy, or whose copy does not match its inventory makes
+    the retention `INCOMPLETE`. Otherwise it is `COMPLETE`, or `NOT_CREATED` when no test used scratch.
   - The original stays in place.
+  - Each child's row keeps its test outcome. `scratch_retention` records whether every child's copy
+    was complete; an incomplete one alone makes the run `FAIL`.
 
 ## What the first run improved
 

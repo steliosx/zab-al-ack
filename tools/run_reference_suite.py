@@ -9,7 +9,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from evidence_utils import redact_junit, cases, code_digests
-from retained_temp import fresh_basetemp, retain
+from retained_temp import FAILED_RETENTION, fresh_basetemp, retain_status
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -72,7 +72,7 @@ def main() -> int:
                 code = run.returncode
             except subprocess.TimeoutExpired:
                 code = 124
-        retain(basetemp, raw_dir / 'basetemp' / (name + '-' + basetemp.parent.name))
+        retention = retain_status(basetemp, raw_dir / 'basetemp' / (name + '-' + basetemp.parent.name))
         phase_cases = []
         if raw_xml.exists():
             redact_junit(raw_xml, public_xml, ROOT)
@@ -88,7 +88,7 @@ def main() -> int:
                  for x in command]
         results.append({'phase': name, 'layer': layer, 'command': shown,
             'exit_code': code, 'started_at': started, 'finished_at': datetime.now(timezone.utc).isoformat(),
-            'junit': str(public_xml.relative_to(ROOT)) if public_xml.exists() else None})
+            'junit': str(public_xml.relative_to(ROOT)) if public_xml.exists() else None, 'retention': retention})
         print(json.dumps({'phase': name, 'exit_code': code, 'layer': layer}), flush=True)
     counts = {status: sum(value == status for value in observed.values()) for status in priority}
     by_layer = {layer: {status: sum(key[1] == layer and value == status for key, value in observed.items())
@@ -97,7 +97,10 @@ def main() -> int:
         'native_postgres': 'NOT_RUN', 'pgbouncer': 'NOT_RUN', 'real_zabbix': 'NOT_RUN',
         'deployment_gates': 'MANUAL_GATE_PENDING', 'hypothesis_profile': env['ACK_HYPOTHESIS_PROFILE'],
         'tree_unchanged': digests == code_digests(ROOT),
-        'all_executed_phases_succeeded': all(x['exit_code'] == 0 for x in results) and digests == code_digests(ROOT)}
+        'scratch_retention': 'INCOMPLETE' if any(x['retention'] in FAILED_RETENTION for x in results) else 'COMPLETE'}
+    # Phase exit codes stay as observed; incomplete retained scratch alone also prevents a pass.
+    report['all_executed_phases_succeeded'] = (all(x['exit_code'] == 0 for x in results) and report['tree_unchanged']
+                                               and report['scratch_retention'] == 'COMPLETE')
     report['status'] = 'PASS' if report['all_executed_phases_succeeded'] else 'FAIL'
     (evidence / 'reference-run.json').write_text(json.dumps(report, indent=2) + '\n')
     (evidence / 'test-summary.json').write_text(json.dumps({k: report[k] for k in

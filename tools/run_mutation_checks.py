@@ -25,7 +25,7 @@ import xml.etree.ElementTree as ET
 
 from evidence_utils import binding_error, code_digests
 from mutation_catalog import TESTS, selected
-from retained_temp import fresh_basetemp, retain
+from retained_temp import FAILED_RETENTION, fresh_basetemp, retain_status
 from review_runs import atomic_json, private_directory, workspace_lock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -228,8 +228,8 @@ def run_pytest(tree: Path, raw: Path, label: str, timeout: int, baseline: dict |
             if process is not None and process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
-    # Retained before the next invocation; its status stays in the private record.
-    retain(basetemp, raw / 'basetemp' / label)
+    # Retained before the next invocation. The status sits beside, never inside, the test outcome.
+    result['retention'] = retain_status(basetemp, raw / 'basetemp' / label)
     result['duration_ms'] = round((time.monotonic() - started) * 1000)
     return result
 
@@ -344,6 +344,12 @@ def _run_locked(root: Path, *, profile: str, timeout: int) -> int:
         report['tree_unchanged'] = report['code_digests'] == code_digests(root)
         if not report['tree_unchanged']:
             report['status'] = 'FAIL'
+        rows = [report['baseline'] or {}, *report['mutants']]
+        report['scratch_retention'] = 'INCOMPLETE' if any(row.get('retention') in FAILED_RETENTION for row in rows) else 'COMPLETE'
+        if report['scratch_retention'] != 'COMPLETE':
+            # Every outcome above is kept as observed; the run just cannot pass.
+            report['status'] = 'FAIL'
+            report.setdefault('reason', 'mutation_scratch_retention_incomplete')
         report['finished_at_utc'] = _now()
         if report['status'] == 'PASS':
             try:
