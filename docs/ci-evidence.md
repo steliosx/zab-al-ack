@@ -114,6 +114,12 @@ Each producer first runs `collect_ci_evidence.py prepare`, which discards
 generated reports inherited from Git and records the source/harness digests and
 authentic Actions repository, run ID, attempt and commit. `GITHUB_SHA` must equal
 the checkout's `HEAD`; a PR run normally tests the synthetic merge commit.
+Preparation and collection keep the evidence index and the checkout-owned
+history under `evidence/history/`.
+- The history is validated against each version's `MANIFEST.json` before anything
+  is removed, and again afterwards; a link, special file, unlisted or altered file
+  refuses.
+- No artifact can supply history, and it never satisfies a current gate.
 For PR events, the context also contains `pull_request.number`, `head_sha` and
 `base_sha` selected from the Actions `GITHUB_EVENT_PATH` payload. The event and
 base repository must match the run repository; a fork's head repository may

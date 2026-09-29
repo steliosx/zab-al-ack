@@ -478,6 +478,233 @@ def test_prepare_discards_committed_prior_run_reports(tmp_path):
     assert [path.name for path in (root / 'evidence').iterdir()] == ['README.md']
 
 
+# Checkout-owned evidence history (DB-2/DB-4): evidence/history/<version>/ holds byte-exact records of an earlier
+# version, bound by its MANIFEST.json. Hosted preparation and collection must keep it byte for byte and never treat
+# it as current-run evidence; an unsafe or altered history refuses before anything is removed.
+HISTORICAL = {
+    'README.md': b'Historical index for 0.1.0a1\n',
+    'reference-run.json': b'{"status": "PASS", "counts": {"passed": 1, "failed": 0, "skipped": 0}}\n',
+    'quality-run.json': b'{"status": "PASS", "checks": []}\n',
+    'native-alerta.xml': b'<testsuites><testsuite><testcase classname="t" name="old"/></testsuite></testsuites>\n',
+}
+
+
+def write_history(root, version='0.1.0a1', files=HISTORICAL):
+    """Write one historical version and its manifest; return the exact expected history bytes."""
+    directory = root / 'evidence/history' / version
+    directory.mkdir(parents=True, exist_ok=True)
+    (root / 'evidence/history/README.md').write_bytes(b'Historical evidence index\n')
+    for name, data in files.items():
+        (directory / name).write_bytes(data)
+    manifest = {'schema_version': 1, 'version': version, 'status': 'HISTORICAL_IMMUTABLE', 'files': [
+        {'path': f'evidence/history/{version}/{name}', 'original_path': f'evidence/{name}',
+         'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)} for name, data in sorted(files.items())]}
+    (directory / 'MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    return history_bytes(root)
+
+
+def history_bytes(root):
+    base = root / 'evidence/history'
+    return {path.relative_to(root).as_posix(): path.read_bytes()
+            for path in sorted(base.rglob('*')) if path.is_file() and not path.is_symlink()}
+
+
+@pytest.fixture
+def history_collection(tmp_path, monkeypatch):
+    monkeypatch.setenv('ACK_HYPOTHESIS_PROFILE', 'pr')
+    root = tmp_path / 'source'
+    (root / 'src/zabalack').mkdir(parents=True)
+    (root / 'src/zabalack/synthetic.py').write_text('SYNTHETIC = True\n')
+    (root / 'tests').mkdir()
+    (root / 'tests/synthetic.py').write_text('SYNTHETIC_HARNESS = True\n')
+    (root / 'evidence').mkdir()
+    (root / 'evidence/README.md').write_text('Evidence interpretation')
+    expected = write_history(root)
+    (root / 'evidence/reference-run.json').write_text('{"status":"PASS","stale":true}')
+    inputs = tmp_path / 'downloads'
+    inputs.mkdir()
+    for kind in ci.KINDS:
+        ci.prepare(root, kind, CONTEXT)
+        assert history_bytes(root) == expected
+        create_reports(root, kind)
+        shutil.copytree(ci.pack(root, kind, CONTEXT), inputs / ci.artifact_name(kind, CONTEXT))
+    return root, inputs, expected
+
+
+def test_prepare_keeps_checkout_history_and_discards_stale_current_reports(tmp_path):
+    root = tmp_path / 'source'
+    (root / 'evidence').mkdir(parents=True)
+    (root / 'evidence/README.md').write_text('Evidence interpretation')
+    expected = write_history(root)
+    (root / 'evidence/reference-run.json').write_text('{"status":"PASS"}')
+    (root / 'evidence/stale-dir').mkdir()
+    (root / 'evidence/stale-dir/report.json').write_text('{}')
+    ci.prepare(root, 'reference', CONTEXT)
+    assert sorted(path.name for path in (root / 'evidence').iterdir()) == ['README.md', 'history']
+    assert history_bytes(root) == expected
+
+
+def test_collect_preserves_history_byte_for_byte_and_keeps_it_out_of_current_evidence(history_collection):
+    root, inputs, expected = history_collection
+    ci.collect(root, inputs, CONTEXT)
+    assert history_bytes(root) == expected
+    collected = ci.read_json(root / 'evidence/ci-collection.json')
+    assert not any(row['path'].startswith('evidence/history/') for row in collected['files'])
+    assert 'stale' not in ci.read_json(root / 'evidence/reference-run.json')
+
+
+def test_repeated_preparation_and_collection_keep_history(history_collection):
+    root, inputs, expected = history_collection
+    for _ in range(2):
+        ci.prepare(root, 'quality', CONTEXT)
+        ci.collect(root, inputs, CONTEXT)
+        assert history_bytes(root) == expected
+
+
+@pytest.mark.parametrize('mutation', ['foreign-artifact', 'malformed-manifest', 'missing-artifact'])
+def test_failed_collection_keeps_history_and_still_invalidates_current_reports(history_collection, mutation):
+    root, inputs, expected = history_collection
+    (root / 'evidence/quality-run.json').write_text('{"status":"PASS","stale":true}')
+    target = inputs / ci.artifact_name('quality', CONTEXT)
+    if mutation == 'foreign-artifact':
+        (inputs / 'zabalack-evidence-999-1-quality').mkdir()
+    elif mutation == 'malformed-manifest':
+        (target / 'manifest.json').write_text('{not json')
+    else:
+        shutil.rmtree(target)
+    with pytest.raises(ci.EvidenceError):
+        ci.collect(root, inputs, CONTEXT)
+    assert history_bytes(root) == expected
+    assert not (root / 'evidence/quality-run.json').exists()
+
+
+def test_stale_historical_pass_never_satisfies_a_current_gate(tmp_path):
+    root = tmp_path / 'source'
+    (root / 'evidence').mkdir(parents=True)
+    expected = write_history(root)
+    ci.prepare(root, 'quality', CONTEXT)
+    with pytest.raises(ci.EvidenceError, match='missing'):
+        ci.pack(root, 'quality', CONTEXT)
+    assert history_bytes(root) == expected
+
+
+@pytest.mark.parametrize('placement', ['manifest-path', 'extra-file'])
+def test_producer_cannot_supply_or_replace_history(history_collection, placement):
+    root, inputs, expected = history_collection
+    directory = inputs / ci.artifact_name('quality', CONTEXT)
+    if placement == 'manifest-path':
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        forged = b'{"status": "PASS", "forged": true}\n'
+        manifest['files'].append({'path': 'evidence/history/0.1.0a1/quality-run.json',
+                                  'sha256': hashlib.sha256(forged).hexdigest(), 'size': len(forged)})
+        (directory / 'evidence/history/0.1.0a1').mkdir(parents=True)
+        (directory / 'evidence/history/0.1.0a1/quality-run.json').write_bytes(forged)
+        (directory / 'manifest.json').write_text(json.dumps(manifest))
+    else:
+        (directory / 'evidence/history/0.1.0a1').mkdir(parents=True)
+        (directory / 'evidence/history/0.1.0a1/quality-run.json').write_text('{"forged": true}')
+    with pytest.raises(ci.EvidenceError):
+        ci.collect(root, inputs, CONTEXT)
+    assert history_bytes(root) == expected
+
+
+@pytest.mark.parametrize('damage', ['changed-byte', 'extra-file', 'missing-file', 'nested-directory',
+                                    'malformed-manifest', 'wrong-version', 'missing-manifest', 'root-file'])
+def test_altered_history_refuses_before_anything_is_removed(tmp_path, damage):
+    root = tmp_path / 'source'
+    (root / 'evidence').mkdir(parents=True)
+    write_history(root)
+    version = root / 'evidence/history/0.1.0a1'
+    if damage == 'changed-byte':
+        (version / 'reference-run.json').write_bytes(b'{"status": "FAIL"}\n')
+    elif damage == 'extra-file':
+        (version / 'extra.json').write_text('{}')
+    elif damage == 'missing-file':
+        (version / 'native-alerta.xml').unlink()
+    elif damage == 'nested-directory':
+        (version / 'nested').mkdir()
+    elif damage == 'malformed-manifest':
+        (version / 'MANIFEST.json').write_text('{"schema_version": 1, "schema_version": 1}')
+    elif damage == 'wrong-version':
+        manifest = json.loads((version / 'MANIFEST.json').read_text())
+        manifest['version'] = '0.1.0a2'
+        (version / 'MANIFEST.json').write_text(json.dumps(manifest))
+    elif damage == 'missing-manifest':
+        (version / 'MANIFEST.json').unlink()
+    else:
+        (root / 'evidence/history/unexpected.json').write_text('{}')
+    before = history_bytes(root)
+    (root / 'evidence/reference-run.json').write_text('{"status":"PASS"}')
+    with pytest.raises(ci.EvidenceError):
+        ci.prepare(root, 'reference', CONTEXT)
+    assert history_bytes(root) == before
+    assert (root / 'evidence/reference-run.json').exists()
+
+
+@pytest.mark.parametrize('link', ['history-directory', 'inner-file', 'inner-directory'])
+def test_linked_history_refuses_and_never_touches_the_target(tmp_path, link):
+    root = tmp_path / 'source'
+    (root / 'evidence').mkdir(parents=True)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'keep.json').write_text('{"outside": true}')
+    if link == 'history-directory':
+        (root / 'evidence/history').symlink_to(outside, target_is_directory=True)
+    else:
+        write_history(root)
+        version = root / 'evidence/history/0.1.0a1'
+        if link == 'inner-file':
+            (version / 'reference-run.json').unlink()
+            (version / 'reference-run.json').symlink_to(outside / 'keep.json')
+        else:
+            (version / 'linked').symlink_to(outside, target_is_directory=True)
+    (root / 'evidence/reference-run.json').write_text('{"status":"PASS"}')
+    with pytest.raises(ci.EvidenceError):
+        ci.prepare(root, 'reference', CONTEXT)
+    assert (outside / 'keep.json').read_text() == '{"outside": true}'
+    assert (root / 'evidence/reference-run.json').exists()
+
+
+def test_history_changed_while_clearing_refuses(tmp_path, monkeypatch):
+    root = tmp_path / 'source'
+    (root / 'evidence').mkdir(parents=True)
+    write_history(root)
+    (root / 'evidence/stale-dir').mkdir()
+    remove = ci.shutil.rmtree
+
+    def remove_and_tamper(path, *args, **kwargs):
+        remove(path, *args, **kwargs)
+        (root / 'evidence/history/0.1.0a1/reference-run.json').write_bytes(b'{"status": "FAIL"}\n')
+
+    monkeypatch.setattr(ci.shutil, 'rmtree', remove_and_tamper)
+    with pytest.raises(ci.EvidenceError, match='changed while clearing|differs from its manifest'):
+        ci.prepare(root, 'reference', CONTEXT)
+
+
+def test_special_file_in_history_refuses(tmp_path):
+    root = tmp_path / 'source'
+    (root / 'evidence').mkdir(parents=True)
+    write_history(root)
+    os.mkfifo(root / 'evidence/history/0.1.0a1/pipe')
+    with pytest.raises(ci.EvidenceError):
+        ci.prepare(root, 'reference', CONTEXT)
+
+
+def test_linked_current_leaf_is_removed_without_following_it(tmp_path):
+    root = tmp_path / 'source'
+    (root / 'evidence').mkdir(parents=True)
+    expected = write_history(root)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'keep.json').write_text('{"outside": true}')
+    (root / 'evidence/linked-dir').symlink_to(outside, target_is_directory=True)
+    (root / 'evidence/linked-file.json').symlink_to(outside / 'keep.json')
+    ci.prepare(root, 'reference', CONTEXT)
+    assert sorted(path.name for path in (root / 'evidence').iterdir()) == ['history']
+    assert (outside / 'keep.json').read_text() == '{"outside": true}'
+    assert history_bytes(root) == expected
+
+
 def test_alpha_workflow_filters_pushes_without_filtering_prs_or_required_events():
     workflow = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
     assert workflow['name'] == 'Alpha reference checks'

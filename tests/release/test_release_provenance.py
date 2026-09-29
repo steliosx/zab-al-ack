@@ -21,7 +21,7 @@ from public_audit import public_files
 from agent_guidance import inspect as inspect_guidance, CONTEXT as GUIDANCE_CONTEXT, SKILLS
 import verify_attestation as signed
 import verify_release as release
-from tests.release.test_ci_collection import CONTEXT, PR_CONTEXT, create_reports
+from tests.release.test_ci_collection import CONTEXT, PR_CONTEXT, create_reports, history_bytes, write_history
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -109,7 +109,10 @@ def edit_json(path, change):
 
 @pytest.fixture
 def candidate(tmp_path, request):
-    context = getattr(request, 'param', CONTEXT)
+    return make_candidate(tmp_path, getattr(request, 'param', CONTEXT))
+
+
+def make_candidate(tmp_path, context, with_history=False):
     root = tmp_path / 'checkout'
     (root / 'src/zabalack').mkdir(parents=True)
     (root / 'src/zabalack/__init__.py').write_text('# Synthetic policy fixture\n')
@@ -124,6 +127,8 @@ def candidate(tmp_path, request):
         target = root / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes((ROOT / name).read_bytes())
+    if with_history:
+        write_history(root)
     inputs = tmp_path / 'ci-inputs'
     for kind in ci.KINDS:
         ci.prepare(root, kind, context)
@@ -134,6 +139,21 @@ def candidate(tmp_path, request):
     shutil.copytree(root / 'evidence', output / 'evidence')
     build_fixture(root, output)
     return root, output
+
+
+def test_checkout_history_survives_producers_collection_and_package_verification(tmp_path):
+    """DB-2/DB-4: the exported candidate carries the trusted checkout history byte for byte, and only fresh reports."""
+    expected = write_history(tmp_path / 'expected-checkout')
+    root, output = make_candidate(tmp_path, CONTEXT, with_history=True)
+    assert history_bytes(root) == history_bytes(output) == expected
+    result = release.verify(root, output / 'dist', candidate=output, context=CONTEXT)
+    assert result['status'] == 'PASS' and result['signed_attestation'] is False
+    with zipfile.ZipFile(output / 'dist/zabalack-0.0.0a7-source.zip') as archive:
+        exported = {name.split('/', 1)[1]: archive.read(name) for name in archive.namelist()
+                    if name.split('/', 1)[1].startswith('evidence/history/')}
+    assert exported == expected
+    collected = ci.read_json(output / 'evidence/ci-collection.json')
+    assert not any(row['path'].startswith('evidence/history/') for row in collected['files'])
 
 
 def test_current_ci_subjects_are_consistent_but_remain_unsigned(candidate):

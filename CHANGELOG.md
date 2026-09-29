@@ -25,6 +25,11 @@
     smoke, collection check, local validation) are kept only in the history, and are NOT_RUN for `0.1.0b1`.
   - **Deferred, Daybreak DB-5:** the unfenced `record_drift` operation is documented, with its release impact,
     in `docs/BETA_READINESS.md`.
+  - **Hosted evidence history:** `tools/collect_ci_evidence.py` keeps `evidence/history/` byte for byte through
+    producer preparation and candidate collection, failed collections included. It validates every version against
+    its `MANIFEST.json` before removing anything, refuses links, special files and unlisted or altered files, and
+    removes stale current reports without following links. Synthetic regressions are in
+    `tests/release/test_ci_collection.py` and `test_release_provenance.py`.
 
 ## Unreleased — S2: webhook transport candidate for A2 (Opus; separate, not integrated)
 

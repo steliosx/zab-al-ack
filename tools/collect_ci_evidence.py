@@ -36,6 +36,9 @@ REFERENCE_PHASES = {
 }
 CONTEXT_KEYS = {'repository', 'run_id', 'run_attempt', 'sha'}
 MAX_FILE_BYTES = 20 * 1024 * 1024
+HISTORY = 'history'
+HISTORY_VERSION = re.compile(r'[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}')
+SHA256 = re.compile(r'[0-9a-f]{64}')
 
 
 class EvidenceError(ValueError):
@@ -127,17 +130,89 @@ def environment_context(root: Path) -> dict:
     return context
 
 
+def entries(directory: Path) -> list[os.DirEntry[str]]:
+    with os.scandir(directory) as found:
+        return sorted(found, key=lambda entry: entry.name)
+
+
+def history_version(root: Path, version: Path) -> dict[str, bytes]:
+    """The exact files of one historical version, which must be exactly those its MANIFEST.json binds."""
+    files = {}
+    for entry in entries(version):
+        require(not entry.is_symlink() and entry.is_file(follow_symlinks=False), 'Unsafe evidence history')
+        files[entry.name] = read_bytes(Path(entry.path))
+    require('MANIFEST.json' in files, 'Evidence history manifest missing')
+    manifest = read_json(version / 'MANIFEST.json')
+    require(type(manifest.get('schema_version')) is int and manifest['schema_version'] == 1
+            and manifest.get('version') == version.name and manifest.get('status') == 'HISTORICAL_IMMUTABLE'
+            and isinstance(manifest.get('files'), list), 'Invalid evidence history manifest')
+    prefix = f'evidence/{HISTORY}/{version.name}/'
+    listed = {}
+    for item in manifest['files']:
+        require(isinstance(item, dict) and isinstance(item.get('path'), str) and item['path'].startswith(prefix)
+                and isinstance(item.get('sha256'), str) and bool(SHA256.fullmatch(item['sha256']))
+                and type(item.get('size')) is int, 'Invalid evidence history manifest entry')
+        name = item['path'][len(prefix):]
+        require(bool(name) and '/' not in name and name != 'MANIFEST.json' and name not in listed,
+                'Invalid evidence history manifest entry')
+        listed[name] = item
+    require(set(listed) == set(files) - {'MANIFEST.json'}, 'Evidence history differs from its manifest')
+    for name, item in listed.items():
+        require(len(files[name]) == item['size'] and hashlib.sha256(files[name]).hexdigest() == item['sha256'],
+                'Evidence history differs from its manifest')
+    return {prefix + name: data for name, data in files.items()}
+
+
+def checkout_history(root: Path) -> dict[str, bytes] | None:
+    """Validate the checkout-owned evidence history and return its exact bytes (None when there is none).
+
+    evidence/history/<version>/ keeps an earlier version's records byte for byte; it is committed provenance, never
+    current-run evidence, and no producer artifact can write there (safe_name admits only evidence/<name>). Each
+    version directory holds exactly the regular files its MANIFEST.json lists, with their sizes and SHA-256s; the
+    history root holds only its README.md and version directories. A link, special file, unlisted or altered file
+    refuses, so an unsafe or changed history is never trusted or exported as preserved.
+    """
+    history = root / 'evidence' / HISTORY
+    if not os.path.lexists(history):
+        return None
+    require(history.is_dir() and not history.is_symlink(), 'Unsafe evidence history')
+    files = {}
+    for entry in entries(history):
+        require(not entry.is_symlink(), 'Unsafe evidence history')
+        if entry.name == 'README.md' and entry.is_file(follow_symlinks=False):
+            files[f'evidence/{HISTORY}/README.md'] = read_bytes(Path(entry.path))
+            continue
+        require(entry.is_dir(follow_symlinks=False) and bool(HISTORY_VERSION.fullmatch(entry.name)),
+                'Unexpected evidence history entry')
+        files.update(history_version(root, Path(entry.path)))
+    return files
+
+
 def clear_evidence(root: Path) -> None:
-    """Remove generated reports, including committed prior-run artifacts."""
+    """Remove generated reports, including committed prior-run artifacts.
+
+    The evidence index and the checkout-owned history (checkout_history) are kept in place, byte for byte. The
+    history is validated before anything is removed and again afterwards; every other entry is removed without
+    following links, so stale current reports never survive and only fresh current reports can be collected.
+    """
     directory = root / 'evidence'
     require(not directory.is_symlink(), 'Unsafe evidence directory')
     readme = directory / 'README.md'
     contents = read_bytes(readme) if readme.exists() else None
-    if directory.exists():
-        shutil.rmtree(directory)
-    directory.mkdir()
-    if contents is not None:
-        readme.write_bytes(contents)
+    if not directory.exists():
+        directory.mkdir()
+        return
+    history = checkout_history(root)
+    for entry in entries(directory):
+        if (entry.name == 'README.md' and contents is not None) or (entry.name == HISTORY and history is not None):
+            continue
+        path = Path(entry.path)
+        if entry.is_dir(follow_symlinks=False):
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    require(checkout_history(root) == history, 'Evidence history changed while clearing')
+    require(contents is None or read_bytes(readme) == contents, 'Evidence index changed while clearing')
 
 
 def artifact_name(kind: str, context: dict) -> str:

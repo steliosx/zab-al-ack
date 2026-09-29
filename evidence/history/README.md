@@ -15,6 +15,12 @@ current `evidence/` paths, byte for byte, under a path that never changes.
 
 `tools/public_audit.py` checks the bindings of the named current records
 only. It scans every exported file, these included, for private material.
-`tools/collect_ci_evidence.py` clears `evidence/`, except its index, in a
-hosted run's checkout. So a hosted candidate export carries only that run's
-evidence. The history stays in the repository and in local exports.
+`tools/collect_ci_evidence.py` keeps this directory in a hosted run's
+checkout, byte for byte, when it clears `evidence/` for that run's reports.
+- Before anything is removed, it checks each version directory: exactly the
+  regular files its `MANIFEST.json` lists, with their sizes and SHA-256s, and no
+  links or special files. Otherwise it refuses.
+- No producer artifact can write here, and history never counts as current-run
+  evidence.
+- A hosted candidate export therefore carries this history unchanged, together
+  with only that run's current reports.
