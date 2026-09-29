@@ -25,7 +25,8 @@ import xml.etree.ElementTree as ET
 
 from evidence_utils import binding_error, code_digests
 from mutation_catalog import TESTS, selected
-from review_runs import private_directory, workspace_lock
+from retained_temp import fresh_basetemp, retain
+from review_runs import atomic_json, private_directory, workspace_lock
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTCOMES = ('KILLED', 'SURVIVED', 'INVALID', 'ERROR', 'TIMEOUT', 'NOT_RUN')
@@ -203,9 +204,12 @@ def run_pytest(tree: Path, raw: Path, label: str, timeout: int, baseline: dict |
                PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', PYTHONDONTWRITEBYTECODE='1',
                ACK_HYPOTHESIS_PROFILE='pr', HYPOTHESIS_STORAGE_DIRECTORY=str(raw / 'hypothesis'),
                ACK_MUTATION_EVENTS=str(raw / (label + '-events.json')))
+    # An owned, explicit basetemp is never rotated by a later invocation.
+    basetemp = fresh_basetemp('mutation-' + label)
     command = [sys.executable, '-B', '-m', 'pytest', '-q', '-o', 'addopts=',
                '-p', 'pytest_asyncio.plugin', '-p', '_zabalack_mutation_guard',
-               '--junitxml=' + str(junit), '-o', 'cache_dir=' + str(raw / 'pytest-cache'), *TESTS]
+               '--junitxml=' + str(junit), '-o', 'cache_dir=' + str(raw / 'pytest-cache'),
+               '--basetemp=' + str(basetemp), *TESTS]
     started = time.monotonic()
     result = {'outcome': 'ERROR', 'exit_code': None}
     process = None
@@ -224,6 +228,8 @@ def run_pytest(tree: Path, raw: Path, label: str, timeout: int, baseline: dict |
             if process is not None and process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
+    # Retained before the next invocation; its status stays in the private record.
+    retain(basetemp, raw / 'basetemp' / label)
     result['duration_ms'] = round((time.monotonic() - started) * 1000)
     return result
 
@@ -295,17 +301,26 @@ def _run_locked(root: Path, *, profile: str, timeout: int) -> int:
         _copy_tree(root, tree)
         if code_digests(root) != report['code_digests']:
             raise ValueError('mutation_tree_changed_during_copy')
+        # The working copy is removed at the end; keep the executed baseline bytes.
+        shutil.copytree(tree, raw / 'tree-baseline')
         baseline = run_pytest(tree, raw, 'baseline', timeout)
         report['baseline'] = baseline
         print(json.dumps({'baseline': baseline['outcome'], 'tests': baseline.get('tests', 0)}), flush=True)
         if baseline['outcome'] != 'BASELINE_PASS':
             raise ValueError('mutation_baseline_failed')
+        variants = private_directory(raw / 'variants')
+        index: list[dict] = []
         for item in catalogue:
             path = tree / item.path
             original = path.read_bytes()
             result = {'name': item.name, 'outcome': 'INVALID', 'exit_code': None}
             try:
                 path.write_text(mutate(original.decode(), item.before, item.after))
+                # Keep the exact executed bytes before the run, not a later reconstruction.
+                executed = path.read_bytes()
+                (variants / item.name).write_bytes(executed)
+                index.append({'name': item.name, 'path': item.path, 'sha256': hashlib.sha256(executed).hexdigest()})
+                atomic_json(variants / 'index.json', {'variants': index})
                 result.update(run_pytest(tree, raw, item.name, timeout, baseline))
             except (SyntaxError, UnicodeError, ValueError):
                 result['outcome'] = 'INVALID'

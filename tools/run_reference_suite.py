@@ -9,6 +9,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from evidence_utils import redact_junit, cases, code_digests
+from retained_temp import fresh_basetemp, retain
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,6 +62,9 @@ def main() -> int:
         raw_xml.unlink(missing_ok=True)
         public_xml.unlink(missing_ok=True)
         command.append('--junitxml=' + str(raw_xml.relative_to(ROOT)))
+        # An owned, explicit basetemp: a later phase's session never rotates it away.
+        basetemp = fresh_basetemp('reference-' + name)
+        command.append('--basetemp=' + str(basetemp))
         started = datetime.now(timezone.utc).isoformat()
         with (raw_dir / (name + '.log')).open('w') as log:
             try:
@@ -68,6 +72,7 @@ def main() -> int:
                 code = run.returncode
             except subprocess.TimeoutExpired:
                 code = 124
+        retain(basetemp, raw_dir / 'basetemp' / (name + '-' + basetemp.parent.name))
         phase_cases = []
         if raw_xml.exists():
             redact_junit(raw_xml, public_xml, ROOT)
@@ -78,7 +83,10 @@ def main() -> int:
                     observed[key] = row['status']
         if code == 0 and not phase_cases:
             code = 3  # A successful process with no executed report is not a pass.
-        results.append({'phase': name, 'layer': layer, 'command': ['python' if x == sys.executable else x for x in command],
+        # The public command names the owned basetemp generically, not its random local path.
+        shown = ['python' if x == sys.executable else '--basetemp=<owned>' if x.startswith('--basetemp=') else x
+                 for x in command]
+        results.append({'phase': name, 'layer': layer, 'command': shown,
             'exit_code': code, 'started_at': started, 'finished_at': datetime.now(timezone.utc).isoformat(),
             'junit': str(public_xml.relative_to(ROOT)) if public_xml.exists() else None})
         print(json.dumps({'phase': name, 'exit_code': code, 'layer': layer}), flush=True)

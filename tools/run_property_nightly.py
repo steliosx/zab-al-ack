@@ -19,6 +19,7 @@ import subprocess
 import sys
 
 from evidence_utils import cases, code_digests, redact_junit
+from retained_temp import fresh_basetemp, retain
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = ['tests/property', 'tests/postgres/test_stateful_ledger.py']
@@ -45,10 +46,13 @@ def main(argv: list[str] | None = None) -> int:
     env = {key: value for key, value in os.environ.items() if not key.startswith('ACK_TEST_')}
     env.update(TZ='UTC', ACK_HYPOTHESIS_PROFILE='nightly', ACK_HYPOTHESIS_SEED=str(args.seed),
                HYPOTHESIS_STORAGE_DIRECTORY=str(ROOT / 'build/private/hypothesis'))
+    basetemp = fresh_basetemp('property-nightly')
     with (raw / 'property-nightly.log').open('w') as log:
         code = subprocess.run([sys.executable, 'lab/pglite_exec.py', '--isolated-lab', '--', sys.executable, '-m', 'pytest',
-                               *TARGETS, '-q', '-p', 'no:cacheprovider', '--junitxml=' + str(raw_xml)],
+                               *TARGETS, '-q', '-p', 'no:cacheprovider', '--junitxml=' + str(raw_xml),
+                               '--basetemp=' + str(basetemp)],
                               cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=3600).returncode
+    retain(basetemp, raw / 'basetemp' / ('property-nightly-' + basetemp.parent.name))
     record['exit_code'] = code
     if raw_xml.is_file():
         redact_junit(raw_xml, public_xml, ROOT)

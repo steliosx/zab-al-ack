@@ -1,7 +1,9 @@
 """Mutation evidence cannot turn test infrastructure failure into a killed mutant."""
+import hashlib
 import json
 from pathlib import Path
 import sys
+import tempfile
 
 import pytest
 
@@ -231,6 +233,7 @@ def test_pytest_callback_and_junit_must_agree(tmp_path, change):
 
 def test_real_pytest_assertion_runtime_skip_and_import_provenance(tmp_path, monkeypatch):
     """Execute the pinned pytest hooks, rather than mocking their report shape."""
+    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
     root, _ = fixture_tree(tmp_path)
     (root / 'src/zabalack').mkdir()
     (root / 'src/zabalack/__init__.py').write_text('value = True\n')
@@ -294,3 +297,56 @@ def test_published_records_are_readable_and_diagnostics_stay_private(tmp_path, m
     private = next((root / 'build/private/mutation').glob('run-*/report.json'))
     assert private.stat().st_mode & 0o777 == 0o600
     assert (root / 'build/private/mutation').stat().st_mode & 0o777 == 0o700
+
+
+def test_baseline_tree_and_each_variant_are_retained_before_they_run(tmp_path, monkeypatch):
+    root, module = fixture_tree(tmp_path)
+    (root / 'tests/test_example.py').write_text('def test_example(): pass\n')
+    entry = type(runner.selected('pr')[0])('example', 'src/example.py', 'True', 'False', 'T1: synthetic')
+    monkeypatch.setattr(runner, 'selected', lambda profile: (entry,))
+    seen = []
+
+    def execute(tree, raw, label, timeout, baseline=None):
+        # Both are already on disk when the child would start: no later reconstruction.
+        assert (raw / 'tree-baseline/src/example.py').read_bytes() == b'value = True\n'
+        assert (raw / 'tree-baseline/tests/test_example.py').is_file()
+        if baseline is not None:
+            assert (raw / 'variants' / label).read_bytes() == (tree / 'src/example.py').read_bytes() == b'value = False\n'
+        seen.append(label)
+        return counts(outcome='BASELINE_PASS' if baseline is None else 'KILLED', exit_code=0 if baseline is None else 1,
+                      failures=0 if baseline is None else 1, assertion_failures=0 if baseline is None else 1)
+
+    monkeypatch.setattr(runner, 'run_pytest', execute)
+    assert runner.run(root) == 0 and seen == ['baseline', 'example']
+    raw = next((root / 'build/private/mutation').glob('run-*'))
+    assert json.loads((raw / 'variants/index.json').read_text()) == {'variants': [
+        {'name': 'example', 'path': 'src/example.py', 'sha256': hashlib.sha256(b'value = False\n').hexdigest()}]}
+    assert (raw / 'variants').stat().st_mode & 0o777 == 0o700
+    # The working copy is still removed and the checkout never changes.
+    assert not (raw / 'tree').exists() and module.read_bytes() == b'value = True\n'
+
+
+def test_each_invocation_gets_an_owned_basetemp_that_is_retained(tmp_path, monkeypatch):
+    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path / 'system-temp'))
+    (tmp_path / 'system-temp').mkdir()
+    root, _ = fixture_tree(tmp_path)
+    (root / 'src/zabalack').mkdir()
+    (root / 'src/zabalack/__init__.py').write_text('value = True\n')
+    (root / 'tests/test_scratch.py').write_text(
+        'import zabalack\ndef test_scratch(tmp_path):\n    (tmp_path / "out.txt").write_text("kept")\n'
+        '    assert zabalack.value is True\n')
+    tree = tmp_path / 'tree'
+    runner._copy_tree(root, tree)
+    raw = tmp_path / 'raw'
+    raw.mkdir()
+    monkeypatch.setattr(runner, 'TESTS', ('tests/test_scratch.py',))
+    assert runner.run_pytest(tree, raw, 'baseline', 10)['outcome'] == 'BASELINE_PASS'
+    assert runner.run_pytest(tree, raw, 'again', 10)['outcome'] == 'BASELINE_PASS'
+    roots = sorted((tmp_path / 'system-temp').glob('zab-*'))
+    assert len(roots) == 2  # one owned root per invocation, never shared or rotated
+    for label in ('baseline', 'again'):
+        record = json.loads((raw / 'basetemp' / label / 'retention.json').read_text())
+        assert record['status'] == 'COMPLETE' and json.loads(record['owner'])['label'] == 'mutation-' + label
+        assert (raw / 'basetemp' / label / 'scratch/test_scratch0/out.txt').read_text() == 'kept'
+    # The originals stay in place after the copy.
+    assert all((path / 'b/test_scratch0/out.txt').is_file() for path in roots)

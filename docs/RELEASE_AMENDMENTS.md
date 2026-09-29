@@ -1263,3 +1263,36 @@ source-built instance is an author convenience, never a substitute.
 - Compatibility is established by the focused Alerta/JWT tests and by the candidate's fresh gates and scans, not
   inferred from the version number.
 - Earlier records keep their original bindings.
+
+## R31 — Retained, owned scratch for local gate runs
+
+**The problem.** A local candidate run lost trial material in two ways:
+- pytest's default base temporary directory is the shared `/tmp/pytest-of-<user>`, where each new session deletes all
+  but the three newest. A later session removed an earlier session's scratch.
+- The mutation runner's variant bytes existed only between its write and its restore.
+
+An outside observer can only verify after the fact. It cannot prevent either loss, or prove whose scratch it copied.
+
+**Owned scratch.** `tools/retained_temp.py` gives each pytest invocation of the gate runners its own `--basetemp`:
+- It sits below a fresh `mkdtemp` root whose `OWNER.json` records the label and process. That is positive ownership.
+- An explicit basetemp is never rotated.
+- The root stays short (`/tmp/zab-XXXXXXXX/b`), because fixtures bind Unix sockets below it.
+
+**Retained copies.** After each invocation the scratch is copied into the run's private raw directory, and the
+original is left in place:
+- Links are copied as links, never followed.
+- FIFOs, sockets, devices and unreadable entries are listed, with no permission change.
+- `retention.json` inventories every file by size and SHA-256 and states `COMPLETE`, `INCOMPLETE` or `NOT_CREATED`.
+
+**Where it applies:**
+- `run_reference_suite.py`: all six phases. Its public record names the basetemp as `<owned>`, not its random path.
+- `run_property_nightly.py`.
+- `quickstart.py`: its pytest steps.
+- `run_mutation_checks.py`: baseline and each mutant. The runner also keeps `tree-baseline/` before the baseline, and
+  each variant's exact executed bytes with `variants/index.json` before that child starts. Its restore and the
+  working-copy removal are unchanged.
+- `security_scan.py` keeps its copy of the public selection under `build/` instead of deleting it.
+
+**What does not change:** public records, gate semantics, mutant classification and the tested bytes. Only where
+pytest writes scratch, and what is kept, change. The harness digest moves; source and SQL do not. Focused regressions
+are in `tests/release/test_retained_temp.py`, `test_gate_scratch_retention.py` and `test_mutation_runner.py`.

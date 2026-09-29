@@ -74,6 +74,19 @@ contain synthetic signing proofs and must not be uploaded as public artifacts.
 The disposable source tree is removed even on failure. The report is consistency
 evidence; cryptographic release provenance is handled separately.
 
+Executed material is kept in the same private run directory, before anything can remove it:
+
+- `tree-baseline/`: the copied tree as the baseline ran.
+- `variants/<name>`: each mutant's exact bytes, read back from the tree before its child starts.
+  `variants/index.json` records each variant's path and SHA-256.
+- `basetemp/<label>/`: each child's pytest scratch.
+  - Every invocation gets its own `--basetemp` below a fresh `mkdtemp` root, which records its
+    label and process in `OWNER.json`. pytest's rotation of `/tmp/pytest-of-<user>` never applies.
+  - After the child, the scratch is copied without following links. `retention.json` inventories
+    every file by size and SHA-256, and lists links, special files and unreadable entries. It
+    reports `COMPLETE`, `INCOMPLETE` or `NOT_CREATED`.
+  - The original stays in place.
+
 ## What the first run improved
 
 The initial expanded run killed 19 of 20 mutants. Removing the exact event/trigger

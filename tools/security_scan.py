@@ -58,37 +58,37 @@ def scan_secrets(executable: str, raw_dir: Path) -> dict:
     if not shutil.which(executable):
         return {'status': 'NOT_RUN', 'reason': 'Gitleaks unavailable; targeted export checks are separate'}
     results = []
-    with tempfile.TemporaryDirectory(prefix='public-source-', dir=ROOT / 'build') as temporary:
-        selected = Path(temporary)
-        for source in public_files(ROOT):
-            if source.is_symlink():
-                raise ValueError('Symlink in public selection')
-            destination = selected / source.relative_to(ROOT)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, destination)
-        modes = [('dir', selected)]
-        if (ROOT / '.git').is_dir():
-            modes.append(('git', ROOT))
-        for mode, target in modes:
-            output = raw_dir / ('gitleaks-' + mode + '.json')
-            output.unlink(missing_ok=True)
-            command = [executable, mode, str(target), '--redact', '--no-banner',
-                       '--report-format', 'json', '--report-path', str(output)]
-            if mode == 'git':
-                command += ['--log-opts=--all']
-            try:
-                with (raw_dir / ('gitleaks-' + mode + '.log')).open('w') as log:
-                    code = subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, timeout=180).returncode
-            except subprocess.TimeoutExpired:
-                results.append({'mode': mode, 'status': 'NOT_RUN', 'reason': 'Scanner did not complete'})
-                continue
-            has_report = output.exists()
-            findings = json.loads(output.read_text()) if has_report else None
-            # Pinned Go JsonReporter encodes a nil []Finding as JSON null.
-            # A missing file is distinct from that valid completed empty report.
-            empty = has_report and (findings is None or findings == [])
-            results.append({'mode': mode, 'status': 'PASS' if code == 0 and empty else 'FAIL',
-                            'exit_code': code, 'finding_count': len(findings or []) if has_report else None})
+    # The scanned copy of the public selection is kept for retained evidence, not removed.
+    selected = Path(tempfile.mkdtemp(prefix='public-source-', dir=ROOT / 'build'))
+    for source in public_files(ROOT):
+        if source.is_symlink():
+            raise ValueError('Symlink in public selection')
+        destination = selected / source.relative_to(ROOT)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    modes = [('dir', selected)]
+    if (ROOT / '.git').is_dir():
+        modes.append(('git', ROOT))
+    for mode, target in modes:
+        output = raw_dir / ('gitleaks-' + mode + '.json')
+        output.unlink(missing_ok=True)
+        command = [executable, mode, str(target), '--redact', '--no-banner',
+                   '--report-format', 'json', '--report-path', str(output)]
+        if mode == 'git':
+            command += ['--log-opts=--all']
+        try:
+            with (raw_dir / ('gitleaks-' + mode + '.log')).open('w') as log:
+                code = subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, timeout=180).returncode
+        except subprocess.TimeoutExpired:
+            results.append({'mode': mode, 'status': 'NOT_RUN', 'reason': 'Scanner did not complete'})
+            continue
+        has_report = output.exists()
+        findings = json.loads(output.read_text()) if has_report else None
+        # Pinned Go JsonReporter encodes a nil []Finding as JSON null.
+        # A missing file is distinct from that valid completed empty report.
+        empty = has_report and (findings is None or findings == [])
+        results.append({'mode': mode, 'status': 'PASS' if code == 0 and empty else 'FAIL',
+                        'exit_code': code, 'finding_count': len(findings or []) if has_report else None})
     return {'status': 'PASS' if results and all(r['status'] == 'PASS' for r in results) else 'FAIL',
             'phases': results, 'history_scanned': any(r['mode'] == 'git' for r in results),
             'scope': 'Public source selection and, when present, this repository history; raw findings remain local'}

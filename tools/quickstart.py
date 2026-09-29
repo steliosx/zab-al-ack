@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from retained_temp import fresh_basetemp, retain
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -25,9 +27,16 @@ def main() -> int:
          [sys.executable, 'lab/pglite_exec.py', '--isolated-lab', '--', sys.executable,
           '-m', 'pytest', 'tests/alerta/test_postgres_http.py', '-q']),
     ]
-    for description, command in commands:
+    for number, (description, command) in enumerate(commands):
         print(description, flush=True)
+        basetemp = None
+        if 'pytest' in command:
+            # An owned, explicit basetemp, retained privately after the run.
+            basetemp = fresh_basetemp(f'quickstart-{number}')
+            command = [*command, '--basetemp=' + str(basetemp)]
         result = subprocess.run(command, cwd=ROOT, timeout=180)
+        if basetemp is not None:
+            retain(basetemp, ROOT / 'build/evidence-raw/basetemp' / f'quickstart-{number}-{basetemp.parent.name}')
         if result.returncode:
             return result.returncode
     print('Demonstration complete. Native concurrency, real Zabbix and G1–G8 remain unverified.')
