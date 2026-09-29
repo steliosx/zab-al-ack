@@ -1280,10 +1280,15 @@ An outside observer can only verify after the fact. It cannot prevent either los
 - An explicit basetemp is never rotated.
 - The root stays short (`/tmp/zab-XXXXXXXX/b`), because fixtures bind Unix sockets below it.
 
-**Retained copies.** After each invocation the scratch is copied into the run's private raw directory, and the
-original is left in place:
-- Links are copied as links, never followed.
-- FIFOs, sockets, devices and unreadable entries are listed, with no permission change.
+**Retained copies.** Before the child starts, a `PENDING` custody record binding the invocation to its root is written
+to the run's private raw directory. However the child ends (including a timeout or interruption, which still
+propagates), the scratch is copied there and the record finalised. The original is left in place.
+- A record left `PENDING` never counts as retained. `retained_temp.recover` retains it later from the record alone.
+- Every open is relative to an already opened directory, refuses a final link, and checks that the opened object is
+  the one listed. So a link swapped in during the copy is never followed.
+- Links are copied as links. FIFOs, sockets and devices are listed, never opened. Nothing is re-permissioned.
+- Unreadable entries are listed. Only the suite's deliberately unreadable fixtures (`EXPECTED_UNREADABLE`) are
+  accepted; any other unreadable entry makes the retention `INCOMPLETE`.
 - `retention.json` inventories every file by size and SHA-256.
 - A vanished or changing file, or a copy that does not match its inventory, makes the retention `INCOMPLETE`.
 - **Test status is kept separately.** Each record keeps its tests' own exit status or outcome, and adds the retention

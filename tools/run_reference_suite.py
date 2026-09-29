@@ -9,7 +9,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from evidence_utils import redact_junit, cases, code_digests
-from retained_temp import FAILED_RETENTION, fresh_basetemp, retain_status
+from retained_temp import FAILED_RETENTION, OwnedScratch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -63,16 +63,17 @@ def main() -> int:
         public_xml.unlink(missing_ok=True)
         command.append('--junitxml=' + str(raw_xml.relative_to(ROOT)))
         # An owned, explicit basetemp: a later phase's session never rotates it away.
-        basetemp = fresh_basetemp('reference-' + name)
-        command.append('--basetemp=' + str(basetemp))
+        # It is retained however the phase ends, including an interruption, which still propagates.
+        scratch = OwnedScratch('reference-' + name, raw_dir / 'basetemp')
+        command.append('--basetemp=' + str(scratch.basetemp))
         started = datetime.now(timezone.utc).isoformat()
-        with (raw_dir / (name + '.log')).open('w') as log:
+        with scratch, (raw_dir / (name + '.log')).open('w') as log:
             try:
                 run = subprocess.run(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=600)
                 code = run.returncode
             except subprocess.TimeoutExpired:
                 code = 124
-        retention = retain_status(basetemp, raw_dir / 'basetemp' / (name + '-' + basetemp.parent.name))
+        retention = scratch.status
         phase_cases = []
         if raw_xml.exists():
             redact_junit(raw_xml, public_xml, ROOT)

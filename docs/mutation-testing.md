@@ -82,13 +82,23 @@ Executed material is kept in the same private run directory, before anything can
 - `basetemp/<label>/`: each child's pytest scratch.
   - Every invocation gets its own `--basetemp` below a fresh `mkdtemp` root. pytest's rotation of
     `/tmp/pytest-of-<user>` never applies.
-  - Ownership binds a random invocation identity to the root directory's device and inode, recorded
-    in `OWNER.json`. A root this process did not create, or one replaced since, is `NOT_OWNED` and is
-    never copied.
-  - After the child, the scratch is copied without following links. `retention.json` inventories
-    every file by size and SHA-256, and lists links, special files and unreadable entries.
-  - A file that vanishes, changes during its copy, or whose copy does not match its inventory makes
-    the retention `INCOMPLETE`. Otherwise it is `COMPLETE`, or `NOT_CREATED` when no test used scratch.
+  - Before the child starts, `custody.json` records the invocation's random identity, its root and
+    that root's device and inode, as `PENDING`. However the child ends (success, failure, timeout or
+    interruption), the scratch is then retained and the record finalised. The child's error still
+    propagates.
+  - A record left `PENDING`, for example after an uncatchable termination, never counts as retained.
+    `retained_temp.recover` retains it later, from the record alone, into a new sibling.
+  - A root whose identity or `OWNER.json` differs from the record is `NOT_OWNED` and is never copied.
+  - The copy never follows a link. Every open is relative to an already opened directory, refuses a
+    final link, and checks that the opened object is the one listed. Links are copied as links;
+    FIFOs, sockets and devices are listed, never opened.
+  - `retention.json` inventories every file by size and SHA-256.
+  - Retention is `INCOMPLETE` when:
+    - an entry vanishes, is replaced or changes during its copy;
+    - a copy does not match its inventory;
+    - a file or directory is unreadable and is not one of the suite's listed deliberate fixtures
+      (`EXPECTED_UNREADABLE`).
+  - Otherwise retention is `COMPLETE`, or `NOT_CREATED` when no test used scratch.
   - The original stays in place.
   - Each child's row keeps its test outcome. `scratch_retention` records whether every child's copy
     was complete; an incomplete one alone makes the run `FAIL`.

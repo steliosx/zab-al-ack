@@ -3,12 +3,12 @@ import hashlib
 import json
 from pathlib import Path
 import sys
-import tempfile
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
+import retained_temp
 import run_mutation_checks as runner
 from evidence_utils import code_digests
 from mutation_catalog import CATALOG, selected
@@ -233,7 +233,7 @@ def test_pytest_callback_and_junit_must_agree(tmp_path, change):
 
 def test_real_pytest_assertion_runtime_skip_and_import_provenance(tmp_path, monkeypatch):
     """Execute the pinned pytest hooks, rather than mocking their report shape."""
-    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
+    monkeypatch.setattr(retained_temp, 'ROOT_PARENT', str(tmp_path))
     root, _ = fixture_tree(tmp_path)
     (root / 'src/zabalack').mkdir()
     (root / 'src/zabalack/__init__.py').write_text('value = True\n')
@@ -333,7 +333,7 @@ def test_baseline_tree_and_each_variant_are_retained_before_they_run(tmp_path, m
 
 
 def test_each_invocation_gets_an_owned_basetemp_that_is_retained(tmp_path, monkeypatch):
-    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path / 'system-temp'))
+    monkeypatch.setattr(retained_temp, 'ROOT_PARENT', str(tmp_path / 'system-temp'))
     (tmp_path / 'system-temp').mkdir()
     root, _ = fixture_tree(tmp_path)
     (root / 'src/zabalack').mkdir()
@@ -352,9 +352,8 @@ def test_each_invocation_gets_an_owned_basetemp_that_is_retained(tmp_path, monke
     assert len(roots) == 2  # one owned root per invocation, never shared or rotated
     for label in ('baseline', 'again'):
         record = json.loads((raw / 'basetemp' / label / 'retention.json').read_text())
-        owner = json.loads(record['owner'])
-        assert record['status'] == 'COMPLETE' and owner['label'] == 'mutation-' + label
-        assert len(owner['invocation']) == 32
+        assert record['status'] == 'COMPLETE' and record['custody']['label'] == 'mutation-' + label
+        assert len(record['custody']['invocation']) == 32
         assert (raw / 'basetemp' / label / 'scratch/test_scratch0/out.txt').read_text() == 'kept'
     # The originals stay in place after the copy.
     assert all((path / 'b/test_scratch0/out.txt').is_file() for path in roots)
@@ -373,3 +372,30 @@ def test_incomplete_scratch_retention_fails_the_run_and_keeps_every_outcome(tmp_
     assert report['status'] == 'FAIL' and report['scratch_retention'] == 'INCOMPLETE'
     assert report['reason'] == 'mutation_scratch_retention_incomplete'
     assert report['mutants'][0]['outcome'] == 'KILLED' and report['counts']['KILLED'] == 1
+
+
+def test_an_interrupted_mutation_child_is_retained_and_still_interrupts(tmp_path, monkeypatch):
+    monkeypatch.setattr(retained_temp, 'ROOT_PARENT', str(tmp_path / 'system-temp'))
+    (tmp_path / 'system-temp').mkdir()
+    raw = tmp_path / 'raw'
+    raw.mkdir()
+
+    class Interrupted:
+        """A synthetic child: it writes scratch, then the parent is interrupted while waiting."""
+        def __init__(self, command, **kwargs):
+            basetemp = Path(next(part for part in command if part.startswith('--basetemp=')).split('=', 1)[1])
+            basetemp.mkdir(parents=True)
+            (basetemp / 'partial.txt').write_text('before the interruption')
+
+        def wait(self, timeout=None):
+            raise KeyboardInterrupt
+
+        def poll(self):
+            return 0  # already stopped: nothing to kill
+
+    monkeypatch.setattr(runner.subprocess, 'Popen', Interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        runner.run_pytest(tmp_path, raw, 'baseline', 10)
+    custody = json.loads((raw / 'basetemp/baseline/custody.json').read_text())
+    assert custody['status'] == 'COMPLETE'
+    assert (raw / 'basetemp/baseline/scratch/partial.txt').read_text() == 'before the interruption'

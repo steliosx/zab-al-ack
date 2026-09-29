@@ -19,7 +19,7 @@ import subprocess
 import sys
 
 from evidence_utils import cases, code_digests, redact_junit
-from retained_temp import FAILED_RETENTION, fresh_basetemp, retain_status
+from retained_temp import FAILED_RETENTION, OwnedScratch
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = ['tests/property', 'tests/postgres/test_stateful_ledger.py']
@@ -46,13 +46,14 @@ def main(argv: list[str] | None = None) -> int:
     env = {key: value for key, value in os.environ.items() if not key.startswith('ACK_TEST_')}
     env.update(TZ='UTC', ACK_HYPOTHESIS_PROFILE='nightly', ACK_HYPOTHESIS_SEED=str(args.seed),
                HYPOTHESIS_STORAGE_DIRECTORY=str(ROOT / 'build/private/hypothesis'))
-    basetemp = fresh_basetemp('property-nightly')
-    with (raw / 'property-nightly.log').open('w') as log:
+    # Retained however the run ends; a timeout or interruption still propagates.
+    scratch = OwnedScratch('property-nightly', raw / 'basetemp')
+    with scratch, (raw / 'property-nightly.log').open('w') as log:
         code = subprocess.run([sys.executable, 'lab/pglite_exec.py', '--isolated-lab', '--', sys.executable, '-m', 'pytest',
                                *TARGETS, '-q', '-p', 'no:cacheprovider', '--junitxml=' + str(raw_xml),
-                               '--basetemp=' + str(basetemp)],
+                               '--basetemp=' + str(scratch.basetemp)],
                               cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=3600).returncode
-    record['retention'] = retain_status(basetemp, raw / 'basetemp' / ('property-nightly-' + basetemp.parent.name))
+    record['retention'] = scratch.status
     record['exit_code'] = code
     if raw_xml.is_file():
         redact_junit(raw_xml, public_xml, ROOT)

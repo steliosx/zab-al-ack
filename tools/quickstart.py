@@ -2,11 +2,12 @@
 """Small isolated demonstration using actual Alerta/PG WASM and a mocked source."""
 from __future__ import annotations
 import argparse
+from contextlib import nullcontext
 import subprocess
 import sys
 from pathlib import Path
 
-from retained_temp import FAILED_RETENTION, fresh_basetemp, retain_status
+from retained_temp import FAILED_RETENTION, OwnedScratch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,16 +31,15 @@ def main() -> int:
     unretained = []
     for number, (description, command) in enumerate(commands):
         print(description, flush=True)
-        basetemp = None
+        scratch = None
         if 'pytest' in command:
-            # An owned, explicit basetemp, retained privately after the run.
-            basetemp = fresh_basetemp(f'quickstart-{number}')
-            command = [*command, '--basetemp=' + str(basetemp)]
-        result = subprocess.run(command, cwd=ROOT, timeout=180)
-        if basetemp is not None:
-            status = retain_status(basetemp, ROOT / 'build/evidence-raw/basetemp' / f'quickstart-{number}-{basetemp.parent.name}')
-            if status in FAILED_RETENTION:
-                unretained.append(f'quickstart-{number}: {status}')
+            # An owned, explicit basetemp, retained privately however the step ends.
+            scratch = OwnedScratch(f'quickstart-{number}', ROOT / 'build/evidence-raw/basetemp')
+            command = [*command, '--basetemp=' + str(scratch.basetemp)]
+        with scratch or nullcontext():
+            result = subprocess.run(command, cwd=ROOT, timeout=180)
+        if scratch is not None and scratch.status in FAILED_RETENTION:
+            unretained.append(f'quickstart-{number}: {scratch.status}')
         if result.returncode:
             return result.returncode
     if unretained:

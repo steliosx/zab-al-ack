@@ -25,7 +25,7 @@ import xml.etree.ElementTree as ET
 
 from evidence_utils import binding_error, code_digests
 from mutation_catalog import TESTS, selected
-from retained_temp import FAILED_RETENTION, fresh_basetemp, retain_status
+from retained_temp import FAILED_RETENTION, OwnedScratch
 from review_runs import atomic_json, private_directory, workspace_lock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -204,16 +204,18 @@ def run_pytest(tree: Path, raw: Path, label: str, timeout: int, baseline: dict |
                PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', PYTHONDONTWRITEBYTECODE='1',
                ACK_HYPOTHESIS_PROFILE='pr', HYPOTHESIS_STORAGE_DIRECTORY=str(raw / 'hypothesis'),
                ACK_MUTATION_EVENTS=str(raw / (label + '-events.json')))
-    # An owned, explicit basetemp is never rotated by a later invocation.
-    basetemp = fresh_basetemp('mutation-' + label)
+    # An owned, explicit basetemp is never rotated by a later invocation. Its custody
+    # record exists before the child starts and is finalised however the child ends.
+    scratch = OwnedScratch('mutation-' + label, raw / 'basetemp', name=label)
     command = [sys.executable, '-B', '-m', 'pytest', '-q', '-o', 'addopts=',
                '-p', 'pytest_asyncio.plugin', '-p', '_zabalack_mutation_guard',
                '--junitxml=' + str(junit), '-o', 'cache_dir=' + str(raw / 'pytest-cache'),
-               '--basetemp=' + str(basetemp), *TESTS]
+               '--basetemp=' + str(scratch.basetemp), *TESTS]
     started = time.monotonic()
     result = {'outcome': 'ERROR', 'exit_code': None}
     process = None
-    with log_path.open('w') as log:
+    # The child is stopped in the inner finally before the scratch is retained on exit.
+    with scratch, log_path.open('w') as log:
         try:
             process = subprocess.Popen(command, cwd=tree, env=env, stdout=log,
                                        stderr=subprocess.STDOUT, start_new_session=True)
@@ -229,7 +231,7 @@ def run_pytest(tree: Path, raw: Path, label: str, timeout: int, baseline: dict |
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
     # Retained before the next invocation. The status sits beside, never inside, the test outcome.
-    result['retention'] = retain_status(basetemp, raw / 'basetemp' / label)
+    result['retention'] = scratch.status
     result['duration_ms'] = round((time.monotonic() - started) * 1000)
     return result
 
