@@ -30,6 +30,9 @@
     its `MANIFEST.json` before removing anything, refuses links, special files and unlisted or altered files, and
     removes stale current reports without following links. Synthetic regressions are in
     `tests/release/test_ci_collection.py` and `test_release_provenance.py`.
+  - **PyJWT advisory (R30):** `requirements.lock` moves PyJWT from 2.13.0 to 2.14.0 to fix GHSA-w6j9-cwv2-h6wq, an
+    availability defect in JWK Set parsing. PyJWT comes in through `alerta-server` in the development and lab-runner
+    environment; the zabalack runtime lock and application code are unchanged.
 
 ## Unreleased — S2: webhook transport candidate for A2 (Opus; separate, not integrated)
 

@@ -1231,3 +1231,35 @@ so the package identities are not reviewed, the pinned version's Ubuntu
 packages are not confirmed and no service run at 7.0.31 exists. Installed
 artifact qualification uses the packaged instance on the runner host; a
 source-built instance is an author convenience, never a substitute.
+
+## R30 — PyJWT advisory in the development and lab-runner lock
+
+**The finding.** A pip-audit 2.9.0 lookup of the pinned `requirements.lock` reported one advisory on 2026-09-29:
+- **Package:** PyJWT 2.13.0.
+- **Advisory:** [GHSA-w6j9-cwv2-h6wq](https://github.com/advisories/GHSA-w6j9-cwv2-h6wq) / CVE-2026-102274.
+- **Effect:** a malformed RSA key in a JWK Set aborts parsing of the whole set. It is an availability defect only,
+  CVSS `A:H`, CWE-755.
+- **Affected versions:** 2.9.0 to 2.13.0; fixed in 2.14.0.
+- **Timing:** the maintainer published it on 2026-09-08. The GitHub database reviewed it on 2026-09-29, after the
+  previous clean scan.
+- The failing scan is retained as its own attempt; the earlier clean scan keeps its original time and scope.
+
+**Where PyJWT is used:**
+- `requirements.lock` pins PyJWT only as a dependency of `alerta-server==9.1.0`, which declares `PyJWT>=2.0.0`.
+- The zabalack package does not import it, and the runtime lock does not contain it.
+- The lab deployment runner installs `requirements.lock`, so the pin is part of the tested lab deployment path. The
+  production shadow installation uses the runtime lock and provides Alerta separately.
+
+**The change:**
+- Only the PyJWT pin changes, from 2.13.0 to 2.14.0.
+- The PyPI wheel `pyjwt-2.14.0-py3-none-any.whl` was downloaded and verified against its PyPI SHA-256,
+  `ad0cef71c756a56e74863c2919cf0985f72decbcfcb550ee2f422e7c62b5eedc`.
+- Its metadata declares `Requires-Python: >=3.9` and needs no new dependency on Python 3.12. `cryptography` stays an
+  optional extra, already pinned.
+
+**What is and is not claimed:**
+- The lock carries versions without hashes, as R23 describes.
+- The change moves the harness binding, not the application or SQL bytes.
+- Compatibility is established by the focused Alerta/JWT tests and by the candidate's fresh gates and scans, not
+  inferred from the version number.
+- Earlier records keep their original bindings.
