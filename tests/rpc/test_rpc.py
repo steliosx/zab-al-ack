@@ -76,6 +76,35 @@ async def test_oversized_stream_marks_write_unknown(endpoint):
     assert error.value.uncertain
 
 
+@pytest.mark.parametrize("excess", [0, 1])
+@pytest.mark.asyncio
+async def test_DB3_configured_ceiling_is_enforced_on_a_real_response(endpoint, excess):
+    """The validated floor reaches the clients the worker and reconciler build. A well-formed reply exactly at it is
+    read, and one byte over it fails closed as oversized; the bound is enforced, not assumed to fit."""
+    from dataclasses import replace
+    from zabalack.config import RESPONSE_LIMIT_MIN, Settings, validate_settings
+    from zabalack.reconciler import Reconciler
+    from zabalack.worker import Worker
+    settings = validate_settings(replace(Settings(config_revision="synthetic-1", deployment_id="synthetic-lab"),
+                                         response_limit_bytes=RESPONSE_LIMIT_MIN))
+    for owner in (Worker(settings, None, {}), Reconciler(settings, None, None, worker_id="synthetic")):
+        assert owner.make_client(endpoint).response_limit == RESPONSE_LIMIT_MIN
+
+    def handle(request):
+        data = json.loads(request.content)
+        body = json.dumps({"jsonrpc": "2.0", "id": data["id"], "result": []}).encode()
+        return httpx.Response(200, content=body + b" " * (RESPONSE_LIMIT_MIN + excess - len(body)))
+
+    client = ZabbixClient(endpoint, transport=httpx.MockTransport(handle), response_limit=settings.response_limit_bytes)
+    cohort = {"group_ids": ["7"]}
+    if excess:
+        with pytest.raises(RPCError) as error:
+            await client.event_get("12001", cohort, history=True)
+        assert error.value.reason == "response_oversized" and not error.value.uncertain
+    else:
+        assert await client.event_get("12001", cohort, history=True) == []
+
+
 @pytest.mark.parametrize("result", [{"eventids": []}, {"eventids": ["different"]}, {"eventids": ["12001", "12002"]}, {"eventids": [True]}, {}, []])
 @pytest.mark.asyncio
 async def test_strict_result_event_ids(endpoint, result):

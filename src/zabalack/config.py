@@ -139,8 +139,9 @@ def validate_settings(settings: Settings) -> Settings:
         raise ConfigError("retirement_timeout_bound")
     if not 0 < settings.health_cache_seconds <= 5:
         raise ConfigError("health_cache_bound")
-    # Every RPC buffers its whole response before parsing, so this bounds per-call memory. The floor keeps a valid
-    # event.get with acknowledgement history from being refused as oversized (DB-3).
+    # A selected configuration policy (DB-3): refuse a response ceiling too small to be usable or excessively large.
+    # A response over the configured ceiling still fails closed at runtime (`response_oversized`). Neither bound
+    # guarantees that every valid response fits, and the ceiling is not a per-process memory cap.
     if (isinstance(settings.response_limit_bytes, bool) or not isinstance(settings.response_limit_bytes, int)
             or not RESPONSE_LIMIT_MIN <= settings.response_limit_bytes <= RESPONSE_LIMIT_MAX):
         raise ConfigError("response_limit_bound")

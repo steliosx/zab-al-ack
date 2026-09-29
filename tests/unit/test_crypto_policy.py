@@ -235,12 +235,20 @@ def test_DB3_response_limit_within_reviewed_bounds_is_accepted(value):
     assert validate_settings(replace(_registry_settings({}), response_limit_bytes=value)).response_limit_bytes == value
 
 
-@pytest.mark.parametrize("text", ["true", "0", "-1", "8388609", "1048576.0"])
+@pytest.mark.parametrize("text", ["true", "0", "-1", "65535", "8388609", "1048576.0", '"1048576"', "null", "[]", "{}"])
 def test_DB3_response_limit_bound_applies_to_loaded_configuration(tmp_path, text):
     path = tmp_path / "settings.json"
     path.write_text('{"config_revision":"synthetic-1","deployment_id":"synthetic-lab","response_limit_bytes":%s}' % text)
     with pytest.raises(ConfigError, match="response_limit_bound"):
         load_settings(path)
+
+
+@pytest.mark.parametrize("value", [65536, 8388608])
+def test_DB3_loaded_configuration_accepts_both_endpoints(tmp_path, value):
+    path = tmp_path / "settings.json"
+    path.write_text('{"config_revision":"synthetic-1","deployment_id":"synthetic-lab","response_limit_bytes":%d}' % value)
+    settings = load_settings(path)
+    assert type(settings.response_limit_bytes) is int and settings.response_limit_bytes == value
 
 
 def test_DB3_schema_mirrors_response_limit_bounds():
