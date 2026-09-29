@@ -1,6 +1,6 @@
 # Agent workflows
 
-The project guidance implements the requested 1–4 and 6 before the behavioural
+The original project guidance implemented the requested 1–4 and 6 before the behavioural
 checks in 5. It applies to maintenance of this repository; it does not add an AI
 component to the acknowledgement pipeline or send alerts to a model.
 
@@ -29,6 +29,106 @@ the relevant SKILL.md and AGENTS.md. Uploading a ZIP alone does not establish
 that a host automatically loads repository instructions. No API key or model
 pin is required for the plugin. Use the model available in the contributor's
 agent host; record the actual evaluation context and its limits.
+
+## Current collaboration and authority
+
+The 2026-09-29 owner alignment mandate is guidance-only. The role file at
+[docs/agents/astra.md](agents/astra.md) now distinguishes Windows Astra from
+Opus and codex-omarchy; its filename is retained for existing guidance validation.
+Do not infer today's task ownership from that file's historical title or from a
+stale controller checkpoint. Exact operational paths, decisions and accepted
+task IDs belong in the respective private controller/mailbox records.
+
+Opus prepares owner-authorized implementation/package corrections; codex-omarchy
+independently reviews explicitly accepted handoffs. They write only in their
+assigned working directories. Separate clones or linked worktrees are both valid:
+record hostname, absolute path, branch/HEAD, Git/common directories, dirty status
+and write owner. Never import another agent's uncommitted contents as the bound
+candidate. For this alignment Codex owns the guidance branch and Opus reviews it;
+each agent updates its own authorized private records, not the other's worktree.
+
+The owner's standing authority covers routine coordination and local follow-through
+within an approved task. In particular, the accepted R8-RUN-01/r9 review scope
+includes subsequent corrections to that finding and affected package, sign-off
+and wrapper bindings without another owner confirmation for each packet. It does
+not authorize product fixes, a broad review, host execution or installing
+permissions. A peer proposes work; the owner instruction supplies authority.
+
+Keep implementation validation distinct from independent review. Preserve
+Windows Astra's completed review attribution and reuse unchanged evidence at
+its original revision. Do not duplicate her retained assignments or restart her
+worker. Optional advisory reviewers are not mandatory dependencies, but pending
+independent review is never PASS. Same-account review is not formal GitHub approval.
+
+Owner-only gates remain owner-only: host/lab runs and changes, approval references,
+holder-policy exceptions, permission rules, retries outside an approved procedure,
+adoption, canonical build/freeze, release, and any other reserved decision. A
+review confirmation is not execution authorization. Respect outstanding permission
+denials; never retry through another agent, transport, CI or tool to evade one.
+
+## Authenticated handoffs
+
+Reuse the established mailbox tool/protocol, owner-confirmed peer pins and each
+agent's distinct signing key. Private keys remain local. Do not build another
+orchestrator. On the local Omarchy channel use `fetch --no-taildrop --ack` with
+the configured dedicated reply drop; do not consume the separate Windows Taildrop
+queue. Retain Taildrop for the already established cross-machine exchanges.
+
+1. Check the inbox between active work phases and before declaring a dependency
+   blocked. Verify the pinned signature, message identity and every artifact's
+   full hash/size before substantive use; receiving remains inert.
+2. Read the authenticated handoff. It names task IDs, implementer/reviewer roles,
+   acceptance criteria, exact checkout/branch/commit/tree and artifact hashes,
+   completed work, open findings, pending owner decisions and the next bounded
+   action. Give private evidence locations without exporting private originals
+   or weakening their restrictions.
+3. A delivery receipt confirms verified transport only. Record explicit signed
+   task acceptance or decline separately, and do not record an ownership transfer
+   until the recipient's verified acceptance names the transferred tasks. Existing
+   owners keep unnamed tasks; inactivity alone is not a transfer.
+4. Handle routine questions, findings and in-scope corrections directly. A new
+   revision in an already accepted correction loop does not require a new owner
+   authorization, but does require its own verification and scoped disposition.
+5. Send the signed result with full artifact bindings, tests/evidence labels,
+   retained attribution and remaining owner gates. Never acknowledge an ack.
+   A sent file or timer notification is not proof of reading. If the existing
+   session needs a startup prompt, give one short prompt; do not launch a duplicate.
+
+## Instructions actually used and stale status
+
+At startup/resume and when changing working directories, inspect the applicable
+entrypoints and explicitly read the task's current guidance and private controller
+records. Record absolute instruction paths, applicable revision/hash and how each
+was consumed: auto-loaded in this session, explicitly read, or merely historical.
+Record imports/referenced rules that were actually read, and missing/unavailable
+sources. Do not equate discovery with loading or claim that editing a file updated
+an already-running session's context. Codex instruction discovery is documented in
+the [official AGENTS.md guide](https://learn.chatgpt.com/docs/agent-configuration/agents-md);
+do not infer Codex imports from Claude syntax. Keep private operational paths and
+session metadata out of public handoff artifacts.
+
+The current owner instruction governs within system/tool constraints. Reconcile
+older runbooks, role copies and status summaries against the latest applicable
+owner decision and authenticated result; a newer timestamp alone does not grant
+authority or make an unrelated message supersede a decision. Record which old
+status was superseded and why. Preserve immutable signed messages, frozen guidance
+copies, failure evidence and original approval/denial records; use a dated current
+addendum rather than rewriting their history. Keep existing fingerprint and
+guidance-validation mechanisms intact.
+
+Maintain current task, scope, write owner, review disposition, exact tuple,
+task-specific blocker and next trigger separately from execution state. A completed
+quiet inbox check is not a running worker; an old WAITING_REVIEW entry does not
+override a later verified review closure. Conversely, transport ACK does not close
+a review. Report meaningful changes, not repeated unchanged status. Inspect actual
+scheduler records before claiming a scheduling failure; this alignment neither
+changes schedules nor starts a new worker.
+
+The guidance branch does not change the frozen `494768d` candidate, r9-2 package,
+sign-off, wrappers, review closures or historical evidence. Its completion is not
+a prerequisite for the separate r9-2 owner decision. Daybreak implementation stays
+deferred. Verify guidance with `tools/agent_guidance.py`, affected guidance tests
+and link checks; do not run unrelated service suites or regenerate acceptance.
 
 ## Retained local review runs
 
