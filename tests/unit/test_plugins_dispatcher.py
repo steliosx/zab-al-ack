@@ -592,15 +592,21 @@ CORRUPTIONS = {
     "removed event id": lambda attrs: attrs.pop("zabbix_event_id"),
     "non-numeric event id": lambda attrs: attrs.update(zabbix_event_id="not-a-number"),
     "removed trigger id": lambda attrs: attrs.pop("zabbix_trigger_id"),
+    "integer trigger id": lambda attrs: attrs.update(zabbix_trigger_id=101),
+    "zero trigger id": lambda attrs: attrs.update(zabbix_trigger_id="0"),
     "invalid instance": lambda attrs: attrs.update(zabbix_instance=None),
+    "URL instance": lambda attrs: attrs.update(zabbix_instance="https://not-a-logical-instance.invalid"),
 }
 
 
+@pytest.mark.parametrize("raise_on_error", [False, True])
 @pytest.mark.parametrize("case", sorted(CORRUPTIONS))
-def test_DB1_corrupted_source_before_final_hook_fails_closed_when_generic_errors_suppressed(context, monkeypatch, case):
+def test_DB1_corrupted_source_before_final_hook_fails_closed_under_either_error_policy(context, monkeypatch, case,
+                                                                                       raise_on_error):
     """Daybreak DB-1: the snapshot's PolicyError is not an AlertaException, so with PLUGINS_RAISE_ON_ERROR False
-    Alerta logged and suppressed it, and the acknowledgement then committed without its signed marker."""
-    assert context.app.config["PLUGINS_RAISE_ON_ERROR"] is False
+    Alerta logged and suppressed it, and the acknowledgement then committed without its signed marker. With the flag
+    True it surfaced only as a generic plugin error; both policies now get the same stable refusal."""
+    monkeypatch.setitem(context.app.config, "PLUGINS_RAISE_ON_ERROR", raise_on_error)
     monkeypatch.setattr(plugins, "plugins", OrderedDict(corruptor=SourceCorruptor(CORRUPTIONS[case]), signer=context.signer))
     alert, action, note, timeout = stage(context)
     assert alert.attributes["zabbix_ack_sync"] == "pending"
@@ -608,9 +614,11 @@ def test_DB1_corrupted_source_before_final_hook_fails_closed_when_generic_errors
         process_status(alert, "ack", note)
 
 
+@pytest.mark.parametrize("raise_on_error", [False, True])
 @pytest.mark.parametrize("corrupt", [False, True])
-def test_DB1_an_eligible_acknowledgement_is_saved_only_with_its_proof(context, monkeypatch, corrupt):
+def test_DB1_an_eligible_acknowledgement_is_saved_only_with_its_proof(context, monkeypatch, corrupt, raise_on_error):
     """Through Alerta's own from_action(): the history row is written only when the final hook signed it."""
+    monkeypatch.setitem(context.app.config, "PLUGINS_RAISE_ON_ERROR", raise_on_error)
     saved = []
     monkeypatch.setattr(alert_model, "db", SimpleNamespace(set_alert=lambda **record: saved.append(record) or record))
     monkeypatch.setattr(Alert, "from_db", classmethod(lambda cls, record: record))
