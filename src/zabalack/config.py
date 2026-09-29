@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
+# Reviewed bounds for `response_limit_bytes`, mirrored in config/settings.schema.json.
+RESPONSE_LIMIT_MIN = 65536
+RESPONSE_LIMIT_MAX = 8388608
+
 class ConfigError(ValueError):
     pass
 
@@ -135,6 +139,11 @@ def validate_settings(settings: Settings) -> Settings:
         raise ConfigError("retirement_timeout_bound")
     if not 0 < settings.health_cache_seconds <= 5:
         raise ConfigError("health_cache_bound")
+    # Every RPC buffers its whole response before parsing, so this bounds per-call memory. The floor keeps a valid
+    # event.get with acknowledgement history from being refused as oversized (DB-3).
+    if (isinstance(settings.response_limit_bytes, bool) or not isinstance(settings.response_limit_bytes, int)
+            or not RESPONSE_LIMIT_MIN <= settings.response_limit_bytes <= RESPONSE_LIMIT_MAX):
+        raise ConfigError("response_limit_bound")
     for name in ("connect_timeout_seconds", "read_timeout_seconds", "overall_timeout_seconds",
                  "background_connect_timeout_seconds", "background_read_timeout_seconds",
                  "background_overall_timeout_seconds", "health_acquire_timeout_seconds",

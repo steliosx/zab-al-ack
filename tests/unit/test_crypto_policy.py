@@ -202,3 +202,52 @@ def test_endpoint_accepted_by_config_is_resolvable(registry):
                                 approved_versions=settings.approved_versions)
     for instance in settings.endpoint_registry:
         assert resolver.resolve(instance).instance == instance
+
+
+@pytest.mark.parametrize("value", [
+    pytest.param(True, id="bool-true"),
+    pytest.param(False, id="bool-false"),
+    pytest.param(0, id="zero"),
+    pytest.param(-1, id="negative"),
+    pytest.param(65535, id="below-floor"),
+    pytest.param(8388609, id="above-ceiling"),
+    pytest.param(2**63, id="oversized"),
+    pytest.param(1048576.0, id="float"),
+    pytest.param("1048576", id="string"),
+    pytest.param(None, id="null"),
+])
+def test_DB3_response_limit_outside_reviewed_bounds_is_refused(value):
+    """The RPC response bound is a memory limit, so configuration must not disable or inflate it.
+
+    `ZabbixClient` buffers a response until it exceeds `response_limit`. `True` compares as 1 and a nonpositive
+    value refuses every response; an unbounded value lets one response consume the process's memory.
+    """
+    from dataclasses import replace
+    from zabalack.config import validate_settings
+    with pytest.raises(ConfigError, match="response_limit_bound"):
+        validate_settings(replace(_registry_settings({}), response_limit_bytes=value))
+
+
+@pytest.mark.parametrize("value", [65536, 1048576, 8388608])
+def test_DB3_response_limit_within_reviewed_bounds_is_accepted(value):
+    from dataclasses import replace
+    from zabalack.config import validate_settings
+    assert validate_settings(replace(_registry_settings({}), response_limit_bytes=value)).response_limit_bytes == value
+
+
+@pytest.mark.parametrize("text", ["true", "0", "-1", "8388609", "1048576.0"])
+def test_DB3_response_limit_bound_applies_to_loaded_configuration(tmp_path, text):
+    path = tmp_path / "settings.json"
+    path.write_text('{"config_revision":"synthetic-1","deployment_id":"synthetic-lab","response_limit_bytes":%s}' % text)
+    with pytest.raises(ConfigError, match="response_limit_bound"):
+        load_settings(path)
+
+
+def test_DB3_schema_mirrors_response_limit_bounds():
+    import json
+    from pathlib import Path
+    from zabalack.config import RESPONSE_LIMIT_MAX, RESPONSE_LIMIT_MIN
+    schema = json.loads((Path(__file__).resolve().parents[2] / "config/settings.schema.json").read_text())
+    entry = schema["properties"]["response_limit_bytes"]
+    assert entry == {"type": "integer", "minimum": RESPONSE_LIMIT_MIN, "maximum": RESPONSE_LIMIT_MAX}
+    assert RESPONSE_LIMIT_MIN <= Settings().response_limit_bytes <= RESPONSE_LIMIT_MAX

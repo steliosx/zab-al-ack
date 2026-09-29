@@ -127,7 +127,9 @@
       "type": "integer"
     },
     "response_limit_bytes": {
-      "type": "integer"
+      "type": "integer",
+      "minimum": 65536,
+      "maximum": 8388608
     },
     "lab_mode": {
       "type": "boolean"
