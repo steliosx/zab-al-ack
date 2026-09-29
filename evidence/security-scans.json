@@ -1,0 +1,31 @@
+{
+  "pip_audit": {
+    "status": "PASS",
+    "exit_code": 0,
+    "package_count": 58,
+    "advisory_count": 0,
+    "skipped_packages": [],
+    "scope": "Known Python advisories for exact lock; no source-code audit"
+  },
+  "gitleaks": {
+    "status": "PASS",
+    "phases": [
+      {
+        "mode": "dir",
+        "status": "PASS",
+        "exit_code": 0,
+        "finding_count": 0
+      },
+      {
+        "mode": "git",
+        "status": "PASS",
+        "exit_code": 0,
+        "finding_count": 0
+      }
+    ],
+    "history_scanned": true,
+    "scope": "Public source selection and, when present, this repository history; raw findings remain local"
+  },
+  "independent_external_security_review": "PENDING",
+  "deployment_gates": "MANUAL_GATE_PENDING"
+}

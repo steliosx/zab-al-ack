@@ -46,19 +46,32 @@ Neither is inferred from the deployment path.
 - `acceptance-results.json` maps 40 checks as PASS and 2 as MANUAL_GATE_PENDING. Every deployment result remains
   MANUAL_GATE_PENDING.
 - `public-audit.json` is PASS with no findings.
-- `sbom.cdx.json` inventories `0.1.0b1`. It does not establish vulnerability clearance.
+- `sbom.cdx.json` inventories `0.1.0b1` and is schema-validated (below). It does not establish vulnerability
+  clearance.
 
-**Legacy a16 records no longer at the current paths.** No tool for this candidate regenerates these seven, so
-they were removed from `evidence/`. Byte-exact copies remain in `history/0.1.0a16/`, and they are not evidence for
-`0.1.0b1`.
+**Scans and schema validation.** These four records come from a local run on 29 September 2026 (16:30–16:31Z)
+over the tree of `d4886059`, in an independent full-history clone. That tree has the same source, harness, locks and
+SBOM as this commit. The scans do not cover this adoption commit's own metadata.
+
+| Record | Result |
+|---|---|
+| `security-scans.json`, `pip-audit.json` | `tools/security_scan.py`, with pip-audit 2.9.0 and Gitleaks 8.24.3. pip-audit: 58 packages, 0 advisories, 0 skipped. Gitleaks: the public selection and the Git history, 0 findings, 245 commits |
+| `npm-audit.json` | `npm audit --prefix lab --legacy-peer-deps`: 0 vulnerabilities |
+| `sbom-validation.json` | `sbom.cdx.json` is valid against CycloneDX 1.6 (61 components). The schema, pinned by SHA-256, is loaded from a local registry only |
+
+- These are scoped checks: known Python and npm advisories at run time, secrets in the public selection and
+  history, and schema validity.
+- They are not licence clearance, application-security review or external review.
+
+**Legacy a16 records still kept only in the history.** No tool for this candidate regenerates these three, so they
+stay out of `evidence/`. Byte-exact copies remain in `history/0.1.0a16/`, and they are not evidence for `0.1.0b1`.
 
 | Historical record (`history/0.1.0a16/…`) | Current status for `0.1.0b1` |
 |---|---|
-| `security-scans.json`, `pip-audit.json` (a16 pins, including wheel 0.46.2) | NOT_RUN: no `tools/security_scan.py` run on this candidate, so no vulnerability clearance for its pins (wheel 0.48.0) |
-| `npm-audit.json` | NOT_RUN for this candidate |
-| `sbom-validation.json` | NOT_RUN: the regenerated `sbom.cdx.json` has not been schema-validated |
 | `wheel-smoke.json` (the a16 wheel) | NOT_RUN as a separate record. The canonical wheel is byte-identical to the preliminary wheel the deployment path installed |
 | `collection-check.json`, `local-validation.json` (a16 / a15) | NOT_RUN as separate records. `reference-run.json` holds this candidate's collection and suite results |
+
+The a16 versions of the four scan and validation records also remain in the history.
 
 `dependency-review.json` is current: the dependency inventory reproduced it for this candidate. The six a16 service
 XMLs, which the NOT_RUN recorders remove from the current paths, also remain in the history. Preparation, local and

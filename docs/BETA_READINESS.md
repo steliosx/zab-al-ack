@@ -31,10 +31,15 @@ The a16 records named above are preserved byte for byte under
 - **Not run:** native PostgreSQL/PgBouncer and real Zabbix.
 - **Acceptance and audit:** 40 checks PASS and 2 manual gates pending; the public audit passes. Canonical build
   verification and the candidate freeze are still to be recorded.
-- **Not carried:** seven legacy a16 records are removed from the current paths and kept only in the history
-  (security scans and pip-audit, npm audit, SBOM validation, wheel smoke, collection check, local validation). For
-  this candidate those checks are NOT_RUN, so neither vulnerability clearance nor SBOM schema validation is
-  established; see the [evidence index](../evidence/README.md).
+- **Scans and schema validation, recorded locally on 29 September 2026:**
+  - security scan: pip-audit found 0 advisories in 58 packages, and Gitleaks found 0 secrets in the export or the
+    history;
+  - npm audit: 0 vulnerabilities;
+  - the SBOM is valid against CycloneDX 1.6.
+
+  These are scoped checks, not licence or external security clearance.
+- **Not carried:** three legacy a16 records (wheel smoke, collection check, local validation) are kept only in the
+  history and are NOT_RUN as separate records; see the [evidence index](../evidence/README.md).
 
 This candidate corrects three findings, each with focused regression tests.
 
