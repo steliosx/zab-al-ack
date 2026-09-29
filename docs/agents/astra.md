@@ -1,7 +1,7 @@
 # Agent roles — Astra, Opus and codex-omarchy
 
-Owner-mandate alignment, 2026-09-29 UTC. This path is retained for the existing
-guidance discovery, validation and fingerprinting contract; it no longer assigns
+This path is retained for the existing guidance discovery, validation and
+fingerprinting contract; it no longer assigns
 every Codex session the identity or broad implementation role of Windows Astra.
 Use it with [AGENTS.md](../../AGENTS.md), [agent workflows](../agent-workflows.md)
 and the current session's private controller records. Guidance records authority;
@@ -12,44 +12,51 @@ it does not create permissions or override system/tool constraints or denials.
 | Agent | Current role and boundary |
 |---|---|
 | Opus, Omarchy | Implementation/package preparation within the owner's approved scope; proposed host operator only after the separate exact owner approval. Never supplies the independent reviewer's verdict. |
-| codex-omarchy, Omarchy | Distinct signing identity and workspace; independent reviewer for named, accepted handoffs. May implement separately assigned work, such as this guidance branch, with a separate reviewer. Not Windows Astra and not the host operator by inheritance. |
-| Windows Astra | Retain her identity, original independent reviews and any untransferred claims. This mandate does not restart her, change her schedule or transfer her tasks. Verify status through established authenticated records; do not infer an active worker from this file. |
+| codex-omarchy, Omarchy | Distinct signing identity and workspace; independent reviewer for named, accepted handoffs. May implement separately assigned work, including guidance, with a separate reviewer. Not Windows Astra and not the host operator by inheritance. |
+| Windows Astra | Retain its identity, original independent reviews and any untransferred claims. Guidance alignment does not restart it, change its schedule or transfer its tasks. Verify status through established authenticated records; do not infer an active worker from this file. |
 
-The last recorded `ZB-HW-COMPARE` claim stays with Windows Astra unless explicitly
-transferred and accepted. An unavailable peer is not an invitation to duplicate
-the work. Keep completed Astra findings and review evidence attributed to her;
+Retained task claims stay with their recorded owner unless explicitly transferred
+and accepted. Record actual paused/active state and acknowledgment status in the
+private task ledger; this role file assigns neither. An unavailable peer is not
+an invitation to duplicate work. Keep completed Astra findings and review evidence
+attributed to Astra;
 credit HP1–HP5 to the original coordination review and retain the independent
 HR2/CR5/R6/R7 review lineage. Unaffected review closures remain closed.
 
 Historical directions making Astra the general implementer/integrator, granting
-her own-branch GitHub activity, or assigning Opus only a future x64 milestone are
+Astra own-branch GitHub activity, or assigning Opus only a future x64 milestone are
 not the current Omarchy sessions' operating instructions. Preserve their historical
 records, but do not inherit those identities, grants or assumed task states.
-Fable remains optional advice, not a required worker or merge operator; this task
-does not activate Fable, Astra or another agent.
+Fable remains optional advice, not a required worker or merge operator; guidance
+alignment does not activate Fable, Astra or another agent.
 
 ## Owner mandate and standing scope
 
 Routine questions, findings and local corrections already covered by an owner's
 named task proceed directly between agents without using the owner as a courier.
-The standing `ZB-B1-R9-REVIEW` authority covers R8-RUN-01 and affected package,
-sign-off and wrapper bindings, including later corrections within that same scope.
-It does not authorize a broad review, product implementation, host execution or
-permission installation. Do not demand a new owner confirmation solely because
-Opus sends another in-scope correction; verify it and issue a bounded disposition.
-Ask again only for scope expansion, missing authority or a reserved owner decision.
+Standing owner authority may span task IDs, revisions and package hashes within
+an approved scope, including routine coordination, local engineering and
+verification, documentation, packaging and independent-review follow-ups. Its
+current extent and exclusions are recorded in private owner-mandate/controller
+addenda, not inferred from a historical task name. Accept covered work without
+another owner question solely for a new identifier; verify each revision's exact
+identity, review affected changes and issue a bounded disposition. Signatures
+never extend the scope. Ask again only for scope expansion, missing authority
+or a reserved owner decision; broad review, host execution, permission installation
+and changes to frozen product bytes require their applicable authorization.
 
-For the present guidance-only task, Codex owns the separate branch changing
-`AGENTS.md`, `docs/agent-workflows.md` and this file. Opus is the requested independent
-guidance reviewer and owner of his authorized private controller/mailbox updates;
-record his verified acceptance before treating either assignment as accepted.
-Codex updates its own records. Neither edits the other's working directory. No push, merge,
-schedule alteration, worker restart or new orchestration is part of this task.
+For guidance-only work, record the named branch owner and independent reviewer in
+the task handoff; verify acceptance before treating an assignment as accepted.
+Each agent updates only its own authorized private controller/mailbox records.
+Neither edits the other's working directory. Guidance alignment does not authorize
+push, merge, schedule alteration, worker restart or new orchestration.
 
-Keep `494768d`, r9-2, frozen artifacts and historical evidence unchanged. Guidance
-alignment proceeds locally and is not a dependency of the separate r9-2 owner
-decision. Daybreak fixes remain deferred. Review satisfaction is not release
-readiness or qualification. Native x64, ARM64, Actions, installed-package and
+Keep frozen candidates, packages and historical evidence unchanged. Guidance
+alignment proceeds locally and is not a prerequisite for an unrelated owner
+decision. Keep current run state, deferred findings and paused assignments in
+private records; do not lift those boundaries through guidance edits.
+Review satisfaction is not release readiness or qualification. Native x64, ARM64,
+Actions, installed-package and
 installed-environment evidence remain distinct; historical diagnostic runs neither
 authorize another run nor satisfy an unperformed qualification gate.
 
@@ -62,7 +69,10 @@ the selected checkout's AGENTS.md, this role file, agent workflows and current
 mailbox/controller status. Mark each source as auto-loaded, explicitly read or
 historical/unavailable; include its exact path and revision/hash. A file's existence
 or a delivered archive does not prove it has been read. Do not assume hot reload
-or Claude-style imports in Codex.
+or Claude-style imports in Codex. For Claude Code, explicitly read AGENTS.md via
+the workspace CLAUDE.md pointer or an explicit instruction; record that as an
+explicit read, not an automatic load. Track the actual CLAUDE.md/import chain
+separately instead of assuming Codex discovery applies to Claude Code.
 
 Windows controller and standing-instruction paths are historical until verified
 in that actual session. Do not use them as the Omarchy controller fallback, edit

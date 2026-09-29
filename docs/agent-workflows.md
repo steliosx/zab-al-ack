@@ -32,33 +32,36 @@ agent host; record the actual evaluation context and its limits.
 
 ## Current collaboration and authority
 
-The 2026-09-29 owner alignment mandate is guidance-only. The role file at
-[docs/agents/astra.md](agents/astra.md) now distinguishes Windows Astra from
+The role file at [docs/agents/astra.md](agents/astra.md) distinguishes Windows Astra from
 Opus and codex-omarchy; its filename is retained for existing guidance validation.
 Do not infer today's task ownership from that file's historical title or from a
 stale controller checkpoint. Exact operational paths, decisions and accepted
 task IDs belong in the respective private controller/mailbox records.
 
-Opus prepares owner-authorized implementation/package corrections; codex-omarchy
-independently reviews explicitly accepted handoffs. They write only in their
-assigned working directories. Separate clones or linked worktrees are both valid:
+Opus prepares owner-authorized implementation/package corrections and operates
+host runs only after the separate exact owner approval. Codex-omarchy independently
+reviews explicitly accepted handoffs. They write only in their assigned working
+directories. Separate clones or linked worktrees are both valid:
 record hostname, absolute path, branch/HEAD, Git/common directories, dirty status
 and write owner. Never import another agent's uncommitted contents as the bound
-candidate. For this alignment Codex owns the guidance branch and requests Opus's
-independent review, subject to his verified task acceptance. Each agent updates
-its own authorized private records, not the other's worktree. Record an unmet
+candidate. Guidance edits also have separate named implementation and independent
+review owners, recorded in the task handoff with verified acceptance. Each agent
+updates its own authorized private records, not the other's worktree. Record an unmet
 peer authority requirement as pending, never as an accepted assignment.
 
-The owner's standing authority covers routine coordination and local follow-through
-within an approved task. In particular, the accepted R8-RUN-01/r9 review scope
-includes subsequent corrections to that finding and affected package, sign-off
-and wrapper bindings without another owner confirmation for each packet. It does
-not authorize product fixes, a broad review, host execution or installing
-permissions. A peer proposes work; the owner instruction supplies authority.
+Standing owner authority may cover routine coordination, local engineering and
+verification, documentation, packaging and independent-review follow-ups across
+task IDs and revisions within an approved scope. Its current extent and exclusions
+belong in private owner-mandate/controller addenda. Accept and coordinate covered
+work without a new owner question merely because a task ID, revision or package
+hash changes; verify that revision's exact identity and review its affected delta.
+This does not authorize scope expansion, a broad review, frozen-product changes,
+host execution or permission installation outside the applicable grant. A peer
+proposes work; the owner instruction supplies authority.
 
 Keep implementation validation distinct from independent review. Preserve
 Windows Astra's completed review attribution and reuse unchanged evidence at
-its original revision. Do not duplicate her retained assignments or restart her
+its original revision. Do not duplicate Astra's retained assignments or restart its
 worker. Optional advisory reviewers are not mandatory dependencies, but pending
 independent review is never PASS. Same-account review is not formal GitHub approval.
 
@@ -109,6 +112,12 @@ the [official AGENTS.md guide](https://learn.chatgpt.com/docs/agent-configuratio
 do not infer Codex imports from Claude syntax. Keep private operational paths and
 session metadata out of public handoff artifacts.
 
+For Claude Code participants, read AGENTS.md explicitly through the workspace
+CLAUDE.md pointer or an explicit instruction, and record that read as explicit,
+not automatic. Do not assume Codex's AGENTS.md discovery applies to Claude Code;
+record the actual CLAUDE.md/import chain separately. No new controller file is
+implied by this guidance.
+
 The current owner instruction governs within system/tool constraints. Reconcile
 older runbooks, role copies and status summaries against the latest applicable
 owner decision and authenticated result; a newer timestamp alone does not grant
@@ -126,11 +135,13 @@ a review. Report meaningful changes, not repeated unchanged status. Inspect actu
 scheduler records before claiming a scheduling failure; this alignment neither
 changes schedules nor starts a new worker.
 
-The guidance branch does not change the frozen `494768d` candidate, r9-2 package,
-sign-off, wrappers, review closures or historical evidence. Its completion is not
-a prerequisite for the separate r9-2 owner decision. Daybreak implementation stays
-deferred. Verify guidance with `tools/agent_guidance.py`, affected guidance tests
-and link checks; do not run unrelated service suites or regenerate acceptance.
+Guidance alignment does not change frozen candidates, packages, sign-offs,
+wrappers, review closures or historical evidence. Keep its task status separate
+from run approval and outcome state; do not make it an unrelated decision's
+prerequisite. Current owner-deferred findings and paused assignments stay in the
+private task records and remain deferred/paused until the applicable decision
+changes them. Verify guidance with `tools/agent_guidance.py`, affected guidance
+tests and link checks; do not run unrelated service suites or regenerate acceptance.
 
 ## Retained local review runs
 
