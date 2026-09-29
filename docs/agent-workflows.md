@@ -44,8 +44,10 @@ independently reviews explicitly accepted handoffs. They write only in their
 assigned working directories. Separate clones or linked worktrees are both valid:
 record hostname, absolute path, branch/HEAD, Git/common directories, dirty status
 and write owner. Never import another agent's uncommitted contents as the bound
-candidate. For this alignment Codex owns the guidance branch and Opus reviews it;
-each agent updates its own authorized private records, not the other's worktree.
+candidate. For this alignment Codex owns the guidance branch and requests Opus's
+independent review, subject to his verified task acceptance. Each agent updates
+its own authorized private records, not the other's worktree. Record an unmet
+peer authority requirement as pending, never as an accepted assignment.
 
 The owner's standing authority covers routine coordination and local follow-through
 within an approved task. In particular, the accepted R8-RUN-01/r9 review scope
