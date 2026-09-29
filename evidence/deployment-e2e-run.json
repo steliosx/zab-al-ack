@@ -1,4 +1,5 @@
 {
+  "artifact_mode": "supplied_wheel",
   "checks": {
     "authenticated_capture": true,
     "cross_customer_denied": true,
@@ -15,15 +16,15 @@
     "worker_denied_table_update": true
   },
   "code_digests": {
-    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93",
-    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b"
+    "harness": "fab2507eafe072e793f4c7c82ee5ef11a7b0263e84249048a25aead23ccef203",
+    "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98"
   },
   "components": {
-    "postgres": "PostgreSQL 18.3 built from the upstream source tarball; fresh cluster on port 5432; host connections scram-sha-256 (password logins for lab_admin, alerta_app, zabalack_worker, zabalack_probe, zabalack_operator, migrator)",
-    "runner": "this host: a Python 3.12 environment with requirements.lock and the built zabalack 0.1.0a16 wheel installed non-editably (sha256 151a4cfcee71f0036c6215951aacd52fd86c15ade484270115bd45b4c0ea43d1); installed package bytes verified against the wheel; provides the Alerta entry points, zabalack CLI and Flask CLI HTTPS server",
-    "zabbix-db": "PostgreSQL 16.15 (Ubuntu package), dedicated database",
-    "zabbix-server": "zabbix_server 7.0.10 built from the Ubuntu archive upstream tarball (--enable-server --with-postgresql --with-libpcre2 --with-libcurl --with-libxml2), fresh database from the tarball schema/images/data before the run, run as an unprivileged user with a clean environment",
-    "zabbix-web": "ui/ from the same tarball served by the PHP 8.3 built-in server on 127.0.0.1:8080"
+    "postgres": "PostgreSQL 18 (alerta database, scram host logins, loopback 5432): postgres (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2); dpkg postgresql-18 18.6-1.pgdg24.04+2 amd64",
+    "runner": "this host: a Python 3.12 environment with requirements.lock and the zabalack 0.1.0b1 wheel installed non-editably (sha256 eaf3c4223637fd2ef1e197155fe567410d0c5123c607b90e2870040d22c8c708); every installed file verified against the wheel inside the runner interpreter; provides the Alerta entry points, zabalack CLI and Flask CLI HTTPS server",
+    "zabbix-db": "PostgreSQL 18 (Zabbix database, loopback 55434): postgres (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2); dpkg postgresql-18 18.6-1.pgdg24.04+2 amd64",
+    "zabbix-server": "zabbix_server: zabbix_server (Zabbix) 7.0.31; dpkg zabbix-server-pgsql 1:7.0.31-1+ubuntu24.04 amd64; reference 7.0.31, observed API 7.0.31",
+    "zabbix-web": "Zabbix frontend: 7.0.31; dpkg zabbix-frontend-php 1:7.0.31-1+ubuntu24.04 all; PHP built-in server (loopback lab convenience, not an official deployment configuration); PHP PHP 8.3.6 (cli) (built: Sep  2 2026 12:56:02) (NTS)"
   },
   "counts": {
     "failed": 0,
@@ -31,20 +32,95 @@
     "skipped": 0
   },
   "deployment_gates": "MANUAL_GATE_PENDING",
-  "finished_at": "2026-09-13T23:04:19Z",
+  "finished_at": "2026-09-29T14:24:24+00:00",
   "image_ids": null,
   "layer": "native_deployment_e2e",
+  "native_lab": {
+    "cleanup": {
+      "cleanup": {
+        "postgres": {
+          "exit_code": 0,
+          "status": "STOPPED"
+        },
+        "zabbix": {
+          "php": {
+            "pid": 138328,
+            "status": "STOPPED"
+          },
+          "postgres": {
+            "exit_code": 0,
+            "pid": 138239,
+            "status": "STOPPED"
+          },
+          "zabbix_server": {
+            "pid": 138259,
+            "status": "STOPPED",
+            "trust_unit": {
+              "ActiveState": "inactive",
+              "InvocationID": "",
+              "MainPID": 0,
+              "SubState": "dead",
+              "ownership": "owned"
+            },
+            "trust_unit_stop_exit_code": 0
+          }
+        }
+      },
+      "state": "stopped"
+    },
+    "cleanup_complete": true,
+    "command": "cycle",
+    "final_state": "absent",
+    "retention": {
+      "absent": 0,
+      "directory": "build/private/retained-phases/faf14f3499ea/deployment-cycle",
+      "label": "deployment-cycle",
+      "manifest_sha256": "08db219d79be2a87872619322005b33f450aeae82f7a1b064abf1aa7652df5ff",
+      "retained": 8,
+      "status": "RETAINED"
+    },
+    "run_exit_code": 0,
+    "run_id": "faf14f3499ea",
+    "runner_record": {
+      "absent": 0,
+      "directory": "build/private/retained-phases/faf14f3499ea/runner-record",
+      "label": "runner-record",
+      "manifest_sha256": "6b2fd0135904aa61b5aa3edac8652ef622e581e4b7a8512d055f92d84f780c92",
+      "retained": 1,
+      "status": "RETAINED"
+    },
+    "wipe": {
+      "state": "absent",
+      "wipe": "done",
+      "zabbix_exit_code": 0
+    }
+  },
   "not_docker": true,
-  "project": "zabalack-e2e-71e29a0d504c",
+  "project": "zabalack-e2e-c9cb56edace3",
+  "reason": null,
   "runner": "lab/deployment_e2e_runtime.py executed unmodified through pytest tests/deployment_e2e on one host without Docker (tools/run_deployment_e2e_local.py): the Compose services were replaced by operator-provided local services with the same hostnames (postgres, zabbix-web, runner) and the same private directory; the runner environment installed the built wheel non-editably; see docs/RELEASE_AMENDMENTS.md R14",
+  "runner_environment": {
+    "dependency_files": "pinned distributions only; each file consistent with its installed RECORD, which is not anchored to trusted digests (requirements.lock carries none)",
+    "startup_hook_policy": "only setuptools' distutils-precedence.pth with its pinned bytes",
+    "startup_hooks": [
+      "distutils-precedence.pth"
+    ],
+    "supplied_wheel_files": "equal to the supplied wheel, whose digest the dispatcher supplied"
+  },
   "runner_shutdown_exit_code": 0,
   "shutdown_exit_code": 0,
-  "started_at": "2026-09-13T23:03:33Z",
+  "started_at": "2026-09-29T14:23:02Z",
   "status": "PASS",
+  "supplied_wheel": {
+    "filename": "zabalack-0.1.0b1-py3-none-any.whl",
+    "installed_bytes_verified": true,
+    "sha256": "eaf3c4223637fd2ef1e197155fe567410d0c5123c607b90e2870040d22c8c708",
+    "version": "0.1.0b1"
+  },
   "tree_unchanged": true,
   "versions": {
     "alerta": "9.1.0",
     "postgres_major": "18",
-    "zabbix": "7.0.10"
+    "zabbix": "7.0.31"
   }
 }

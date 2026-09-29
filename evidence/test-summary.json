@@ -1,23 +1,23 @@
 {
   "counts": {
-    "passed": 865,
-    "skipped": 23,
+    "passed": 2329,
+    "skipped": 57,
     "failed": 0
   },
   "by_layer": {
     "optional_native_real_zabbix": {
       "passed": 0,
-      "skipped": 19,
+      "skipped": 52,
       "failed": 0
     },
     "postgres_wasm": {
-      "passed": 29,
+      "passed": 284,
       "skipped": 4,
       "failed": 0
     },
     "unit_mocked": {
-      "passed": 836,
-      "skipped": 0,
+      "passed": 2045,
+      "skipped": 1,
       "failed": 0
     }
   },

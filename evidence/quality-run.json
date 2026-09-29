@@ -7,6 +7,11 @@
       "status": "PASS"
     },
     {
+      "name": "ruff-infrastructure",
+      "exit_code": 0,
+      "status": "PASS"
+    },
+    {
       "name": "mypy",
       "exit_code": 0,
       "status": "PASS"
@@ -18,10 +23,10 @@
     }
   ],
   "code_digests": {
-    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
-    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+    "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
+    "harness": "fab2507eafe072e793f4c7c82ee5ef11a7b0263e84249048a25aead23ccef203"
   },
-  "started_at_utc": "2026-09-13T23:10:46.533654+00:00",
+  "started_at_utc": "2026-09-29T13:18:12.152884+00:00",
   "scope": "Static checks and installed dependency consistency; no service or deployment evidence",
   "tools": {
     "ruff": "0.16.7",
@@ -29,5 +34,5 @@
     "hypothesis": "6.168.0"
   },
   "tree_unchanged": true,
-  "finished_at_utc": "2026-09-13T23:10:47.535206+00:00"
+  "finished_at_utc": "2026-09-29T13:18:15.569067+00:00"
 }

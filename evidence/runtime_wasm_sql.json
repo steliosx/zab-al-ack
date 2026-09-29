@@ -14,7 +14,7 @@
     },
     {
       "test": "tests/postgres/assertions_extended.sql",
-      "sha256": "b378b5a72e00388736445c5323aeedfa15870aba2a239625380c1e437b495556",
+      "sha256": "a994a9fc3c5ced215910e285cf6d5873cf5cf627bcaca34acfbeb6c4797a1f84",
       "status": "PASS",
       "scope": "SQL assertions only; HMAC verifier/HTTP source effects separately tested"
     },
@@ -44,16 +44,16 @@
     },
     {
       "test": "tests/postgres/assertions_late_response.sql",
-      "sha256": "7f97ad74776ef809d525c3a78e452d9f74c8f91880cf95302cc3202c9fd56f9b",
+      "sha256": "f6f593e4617d763a72587f304b27eeda69fc00a03e7c247bd169aed40c0ee003",
       "status": "PASS",
       "scope": "SQL assertions only; HMAC verifier/HTTP source effects separately tested"
     }
   ],
   "code_digests": {
-    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
-    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+    "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
+    "harness": "fab2507eafe072e793f4c7c82ee5ef11a7b0263e84249048a25aead23ccef203"
   },
-  "started_at_utc": "2026-09-13T23:11:15.762732+00:00",
+  "started_at_utc": "2026-09-29T13:18:15.823804+00:00",
   "deployment_gates": "MANUAL_GATE_PENDING",
   "evidence_layer": "PostgreSQL18 WASM single-backend SQL execution",
   "native_postgresql_status": "BLOCKED_ENVIRONMENT",
@@ -74,11 +74,17 @@
     "004_controls.sql",
     "005_readiness.sql",
     "006_late_response_fencing.sql",
-    "007_settled_expiry.sql"
+    "007_settled_expiry.sql",
+    "008_generation_fence.sql",
+    "009_abandoned_attempt_sweep.sql",
+    "010_ambiguous_api_failure.sql",
+    "011_late_ambiguous_suspension.sql",
+    "012_settled_attempt_suspension.sql",
+    "013_background_fence_null_safety.sql"
   ],
   "server_version_num": "180003",
-  "completed_at_utc": "2026-09-13T23:11:19.267Z",
+  "completed_at_utc": "2026-09-29T13:18:18.291Z",
   "exit_code": 0,
   "tree_unchanged": true,
-  "finished_at_utc": "2026-09-13T23:11:19.399167+00:00"
+  "finished_at_utc": "2026-09-29T13:18:18.401465+00:00"
 }

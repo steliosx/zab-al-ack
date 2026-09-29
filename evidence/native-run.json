@@ -1,94 +1,24 @@
 {
   "layer": "native_postgres18_pgbouncer",
-  "status": "PASS",
-  "phases": [
-    {
-      "phase": "postgres",
-      "exit_code": 0,
-      "status": "PASS",
-      "started_at": "2026-09-13T22:49:59.797145+00:00",
-      "diagnostic_dir": "build/evidence-raw/native-postgres-f93feeccc8",
-      "counts": {
-        "passed": 24,
-        "failed": 0,
-        "skipped": 0
-      },
-      "junit": "evidence/native-postgres.xml",
-      "shutdown_exit_code": 0,
-      "finished_at": "2026-09-13T22:50:07.427336+00:00"
-    },
-    {
-      "phase": "delivery_faults",
-      "exit_code": 0,
-      "status": "PASS",
-      "started_at": "2026-09-13T22:50:07.427681+00:00",
-      "diagnostic_dir": "build/evidence-raw/native-delivery_faults-f93feeccc8",
-      "counts": {
-        "passed": 5,
-        "failed": 0,
-        "skipped": 0
-      },
-      "junit": "evidence/native-delivery_faults.xml",
-      "shutdown_exit_code": 0,
-      "finished_at": "2026-09-13T22:53:52.792678+00:00"
-    },
-    {
-      "phase": "worker",
-      "exit_code": 0,
-      "status": "PASS",
-      "started_at": "2026-09-13T22:53:52.793109+00:00",
-      "diagnostic_dir": "build/evidence-raw/native-worker-f93feeccc8",
-      "counts": {
-        "passed": 4,
-        "failed": 0,
-        "skipped": 0
-      },
-      "junit": "evidence/native-worker.xml",
-      "shutdown_exit_code": 0,
-      "finished_at": "2026-09-13T22:53:55.880458+00:00"
-    },
-    {
-      "phase": "alerta",
-      "exit_code": 0,
-      "status": "PASS",
-      "started_at": "2026-09-13T22:53:55.880891+00:00",
-      "diagnostic_dir": "build/evidence-raw/native-alerta-f93feeccc8",
-      "counts": {
-        "passed": 7,
-        "failed": 0,
-        "skipped": 0
-      },
-      "junit": "evidence/native-alerta.xml",
-      "shutdown_exit_code": 0,
-      "finished_at": "2026-09-13T22:54:00.782275+00:00"
-    },
-    {
-      "phase": "performance",
-      "exit_code": 0,
-      "status": "PASS",
-      "started_at": "2026-09-13T22:54:00.782900+00:00",
-      "diagnostic_dir": "build/evidence-raw/native-performance-f93feeccc8",
-      "counts": {
-        "passed": 2,
-        "failed": 0,
-        "skipped": 0
-      },
-      "junit": "evidence/native-performance.xml",
-      "shutdown_exit_code": 0,
-      "finished_at": "2026-09-13T22:54:28.397034+00:00"
-    }
-  ],
+  "status": "NOT_RUN",
+  "phases": [],
   "code_digests": {
-    "source": "15ec73b619509428a88b6211737e54339147033dfb1d6ea44090538c21806b5b",
-    "harness": "503e26c4d2ca84a7b98fcb0f383b607ddf8fcdaaac9160ee11530ac8dda89c93"
+    "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
+    "harness": "fab2507eafe072e793f4c7c82ee5ef11a7b0263e84249048a25aead23ccef203"
   },
   "real_zabbix": "NOT_RUN",
   "deployment_gates": "MANUAL_GATE_PENDING",
   "not_docker": true,
-  "runner": "tools/native_local.py: same phases, targets and ACK_TEST_* environment as tools/native_ci.py on locally installed PostgreSQL 18 and PgBouncer (fresh loopback cluster per phase); see docs/RELEASE_AMENDMENTS.md R14",
-  "services": {
-    "postgres": "postgres (PostgreSQL) 18.3",
-    "pgbouncer": "PgBouncer 1.24.1"
+  "runner": "tools/native_local.py: same phases, targets and ACK_TEST_* environment as tools/native_ci.py on locally installed PostgreSQL 18 and PgBouncer (fresh loopback cluster per phase); see docs/RELEASE_AMENDMENTS.md R14 and R26",
+  "retention": {
+    "previous_run": {
+      "status": "RETAINED",
+      "label": "previous-run",
+      "directory": "build/private/retained-phases/2009ce7bda/previous-run",
+      "retained": 6,
+      "absent": 13,
+      "manifest_sha256": "05c08bd884314d3b839b2a8b9891939fae9adf994c56665f2138a31dd7cce061"
+    }
   },
-  "tree_unchanged": true
+  "reason": "ACK_LAB_PG_BIN (PostgreSQL 18 bin directory) and ACK_LAB_PGBOUNCER_BIN (PgBouncer executable) required; native service tests NOT_RUN"
 }

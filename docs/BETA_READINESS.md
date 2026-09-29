@@ -20,14 +20,19 @@ are not rebound here. Earlier Ackline results remain historical as well.
 ## Candidate evidence and open findings (29 September 2026)
 
 The a16 records named above are preserved byte for byte under
-`evidence/history/0.1.0a16/`, which lists them in `MANIFEST.json`. Until this
-candidate's own records are adopted, the current `evidence/` paths still hold
-those a16 bytes. They are not evidence for `0.1.0b1`; see the
+`evidence/history/0.1.0a16/`, which lists them in `MANIFEST.json`. The current
+`evidence/` paths now hold this candidate's own records for the tested source
+`34ea703` (digests `c8a7430b…/fab2507e…`); see the
 [evidence index](../evidence/README.md).
+- **Local release checks:** reference 2329 passed and 57 skipped, mutation PR 12 and nightly 20 killed, property
+  46, plus quality, SQL and quickstart.
+- **Deployment path:** PASS on lab run `b1-34ea703-host-01`, with the preliminary wheel `eaf3c422…`. It carries to
+  the canonical wheel only if the bytes are identical.
+- **Not run:** native PostgreSQL/PgBouncer and real Zabbix.
+- **Acceptance and audit:** 40 checks PASS and 2 manual gates pending; the public audit passes. Canonical build
+  verification and the candidate freeze are still to be recorded.
 
 This candidate corrects three findings, each with focused regression tests.
-The fresh required checks and an exact-wheel lab run on the final candidate
-are still to be recorded.
 
 - **ZB-B1-REL-01:** the source distribution now includes the lab-trust
   installer files and the ingestion template. `tools/verify_release.py` can

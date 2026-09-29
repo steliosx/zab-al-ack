@@ -149,7 +149,7 @@
   "database_schema_version": 4,
   "a16_review_base_commit": "14b8c72f34d93b16c102013a232a995d75f7a6eb",
   "review_status": "Zab-al-ack 0.1.0b1: unpublished local beta candidate, not qualified; its evidence status is in evidence/README.md and docs/BETA_READINESS.md. Historical: a16 with A5 stage two under review (PR #11, unreleased, review base a16_review_base_commit): migration 008 moves the schema to 4 and adds the generation fence, zabalack.stage_generation(), the retirement sweep, the application grant (12) and re-seal (13) scripts and the matching plugin, worker and health changes; the a16 review outcome (ten writer regressions, R20 history, R21 verifier dependency) is retained in docs/RELEASE_AMENDMENTS.md",
-  "native_and_real_zabbix_evidence": "0.1.0b1: native PostgreSQL/PgBouncer, real Zabbix and the exact-wheel deployment path are NOT_RUN on this candidate; until its own records are adopted, the files at the current evidence/ paths are the a16 records and are not evidence for 0.1.0b1. Historical a16 evidence, recorded before A5 stage two and predating every T41 case, is preserved byte for byte in evidence/history/0.1.0a16/ (MANIFEST.json): native-run.json 42 passed, real-zabbix-run.json 6 passed, deployment-e2e-run.json 4 passed with 13/13 observations (local services, not_docker: true). The T41 native, worker and HTTP cases run in the native CI job; evidence for schema 4 is recorded as a new run, never by replacing the a16 digests.",
+  "native_and_real_zabbix_evidence": "0.1.0b1 (tested source 34ea703, digests c8a7430b.../fab2507e...): native PostgreSQL/PgBouncer and real Zabbix are NOT_RUN on this candidate (evidence/native-run.json, evidence/real-zabbix-run.json); the deployment path passed on lab run b1-34ea703-host-01 with the preliminary wheel eaf3c422... (evidence/deployment-e2e-run.json, 4 passed, 13/13 checks, own disposable lab services, not_docker: true) and carries to the canonical wheel only if its bytes are identical. Historical a16 evidence, recorded before A5 stage two and predating every T41 case, is preserved byte for byte in evidence/history/0.1.0a16/ (MANIFEST.json): native-run.json 42 passed, real-zabbix-run.json 6 passed, deployment-e2e-run.json 4 passed with 13/13 observations (local services, not_docker: true). The T41 native, worker and HTTP cases run in the native CI job; evidence for schema 4 is recorded as a new run, never by replacing the a16 digests.",
   "quality_tools": {
     "ruff": "0.16.7",
     "mypy": "2.3.1",
@@ -163,7 +163,7 @@
   },
   "new_quality_controls": {
     "mutation": "See evidence/mutation-run.json",
-    "deployment_e2e": "0.1.0b1 NOT_RUN (exact-wheel run pending); historical a16 record in evidence/history/0.1.0a16/deployment-e2e-run.json (installed-wheel local runner, R14); Docker Compose NOT_RUN",
+    "deployment_e2e": "0.1.0b1 PASS with the preliminary wheel eaf3c422... (lab run b1-34ea703-host-01; evidence/deployment-e2e-run.json); canonical-wheel carry-over pending the byte comparison recorded with the freeze; historical a16 record in evidence/history/0.1.0a16/deployment-e2e-run.json (installed-wheel local runner, R14); Docker Compose NOT_RUN",
     "codeql": "SUPPLIED_NOT_RUN_HOSTED",
     "signed_attestation": "INACTIVE_TEMPLATE_NOT_ISSUED",
     "export_file_modes": "public_audit.export_mode_findings rejects exported files that are not group/other readable (R20)"

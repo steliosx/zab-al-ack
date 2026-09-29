@@ -5,28 +5,28 @@
   "backend": "postgres18_wasm",
   "postgres_version": "PostgreSQL 18.3 (PGlite 0.5.8) on wasm32-unknown-emscripten, compiled by emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 3.1.74 (1092ec30a3fb1d46b1782ff1b4db5094d3d06ae5), 32-bit",
   "alerta": "9.1.0",
-  "python": "3.12.3",
+  "python": "3.12.14",
   "platform": "Linux-x86_64",
   "evidence_layer": "actual pinned Alerta Flask HTTP + PostgreSQL SQL persistence/worker, mocked source client",
   "count": 50,
   "api_concurrency": 1,
   "delivery_concurrency": 1,
   "api_action_seconds": {
-    "p50": 0.01831,
-    "p95": 0.029225,
-    "max": 0.036307
+    "p50": 0.014061,
+    "p95": 0.022245,
+    "max": 0.044474
   },
   "capture_to_worker_completion_seconds": {
-    "p50": 1.562961,
-    "p95": 1.628069,
-    "max": 1.630707
+    "p50": 1.211219,
+    "p95": 1.258699,
+    "max": 1.262923
   },
   "mock_validation_through_prewrite_SQL_to_mock_write_seconds": {
-    "p50": 0.005298,
-    "p95": 0.008284,
-    "max": 0.009792
+    "p50": 0.004145,
+    "p95": 0.004577,
+    "max": 0.005407
   },
-  "elapsed_seconds": 2.335235,
+  "elapsed_seconds": 1.796416,
   "captured": 50,
   "peak_outbox_queue": 50,
   "source_validation_reads": 50,
