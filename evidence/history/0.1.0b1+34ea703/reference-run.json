@@ -1,0 +1,172 @@
+{
+  "phases": [
+    {
+      "phase": "unit-mocked",
+      "layer": "unit_mocked",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/unit",
+        "tests/rpc",
+        "tests/security",
+        "tests/release",
+        "tests/property",
+        "tests/native_support",
+        "tests/alerta/test_http_mocked_storage.py",
+        "tests/alerta/test_reader_confidentiality.py",
+        "-q",
+        "--junitxml=build/evidence-raw/unit-mocked.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-29T13:18:18.656212+00:00",
+      "finished_at": "2026-09-29T13:19:33.824415+00:00",
+      "junit": "evidence/unit-mocked.xml"
+    },
+    {
+      "phase": "postgres-wasm",
+      "layer": "postgres_wasm",
+      "command": [
+        "python",
+        "lab/pglite_exec.py",
+        "--isolated-lab",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+        "tests/postgres/test_pglite_socket_adapter.py",
+        "tests/postgres/test_postgres.py",
+        "tests/postgres/test_late_response.py",
+        "tests/postgres/test_ambiguous_api_migration.py",
+        "tests/postgres/test_stateful_ledger.py",
+        "tests/postgres/test_settled_expiry.py",
+        "tests/postgres/test_generation_fence.py",
+        "-q",
+        "--junitxml=build/evidence-raw/postgres-wasm.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-29T13:19:33.824775+00:00",
+      "finished_at": "2026-09-29T13:19:57.243623+00:00",
+      "junit": "evidence/postgres-wasm.xml"
+    },
+    {
+      "phase": "worker-sql-wasm",
+      "layer": "postgres_wasm",
+      "command": [
+        "python",
+        "lab/pglite_exec.py",
+        "--isolated-lab",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+        "tests/postgres/test_worker_path.py",
+        "-q",
+        "--junitxml=build/evidence-raw/worker-sql-wasm.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-29T13:19:57.243895+00:00",
+      "finished_at": "2026-09-29T13:20:00.716968+00:00",
+      "junit": "evidence/worker-sql-wasm.xml"
+    },
+    {
+      "phase": "alerta-persistence-wasm",
+      "layer": "postgres_wasm",
+      "command": [
+        "python",
+        "lab/pglite_exec.py",
+        "--isolated-lab",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+        "tests/alerta/test_postgres_http.py",
+        "tests/alerta/test_health_postgres.py",
+        "tests/alerta/test_docs_walkthrough.py",
+        "tests/alerta/test_postgres_search_confidentiality.py",
+        "-q",
+        "--junitxml=build/evidence-raw/alerta-persistence-wasm.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-29T13:20:00.717242+00:00",
+      "finished_at": "2026-09-29T13:20:13.014606+00:00",
+      "junit": "evidence/alerta-persistence-wasm.xml"
+    },
+    {
+      "phase": "performance-wasm",
+      "layer": "postgres_wasm",
+      "command": [
+        "python",
+        "lab/pglite_exec.py",
+        "--isolated-lab",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+        "tests/performance/test_reference_batches.py",
+        "-q",
+        "--junitxml=build/evidence-raw/performance-wasm.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-29T13:20:13.014917+00:00",
+      "finished_at": "2026-09-29T13:20:25.712949+00:00",
+      "junit": "evidence/performance-wasm.xml"
+    },
+    {
+      "phase": "optional-services",
+      "layer": "optional_native_real_zabbix",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/real_zabbix",
+        "tests/deployment_e2e",
+        "tests/postgres/test_native_login.py",
+        "tests/postgres/test_native_delivery_faults.py",
+        "tests/alerta/test_native_staging_interval.py",
+        "tests/postgres/test_native_generation_fence.py",
+        "tests/postgres/test_native_populated_delivery_upgrade.py",
+        "-q",
+        "--junitxml=build/evidence-raw/optional-services.xml"
+      ],
+      "exit_code": 0,
+      "started_at": "2026-09-29T13:20:25.713235+00:00",
+      "finished_at": "2026-09-29T13:20:26.932686+00:00",
+      "junit": "evidence/optional-services.xml"
+    }
+  ],
+  "counts": {
+    "passed": 2329,
+    "skipped": 57,
+    "failed": 0
+  },
+  "by_layer": {
+    "optional_native_real_zabbix": {
+      "passed": 0,
+      "skipped": 52,
+      "failed": 0
+    },
+    "postgres_wasm": {
+      "passed": 284,
+      "skipped": 4,
+      "failed": 0
+    },
+    "unit_mocked": {
+      "passed": 2045,
+      "skipped": 1,
+      "failed": 0
+    }
+  },
+  "code_digests": {
+    "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
+    "harness": "fab2507eafe072e793f4c7c82ee5ef11a7b0263e84249048a25aead23ccef203"
+  },
+  "native_postgres": "NOT_RUN",
+  "pgbouncer": "NOT_RUN",
+  "real_zabbix": "NOT_RUN",
+  "deployment_gates": "MANUAL_GATE_PENDING",
+  "hypothesis_profile": "pr",
+  "tree_unchanged": true,
+  "all_executed_phases_succeeded": true,
+  "status": "PASS"
+}

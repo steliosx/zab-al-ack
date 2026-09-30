@@ -13,7 +13,7 @@
   },
   "code_digests": {
     "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
-    "harness": "fab2507eafe072e793f4c7c82ee5ef11a7b0263e84249048a25aead23ccef203"
+    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36"
   },
   "test_evidence": [
     {
@@ -37,7 +37,7 @@
       "reason": ""
     },
     {
-      "nodeid": "tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[alert_id-f3088a9f-3518-431d-bc92-ac68c53c8e7c]",
+      "nodeid": "tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[alert_id-bd701e3d-0036-4318-9c99-1a2947b6b02d]",
       "ids": [
         "T8"
       ],
@@ -4183,6 +4183,190 @@
       "reason": ""
     },
     {
+      "nodeid": "tests/release/test_ci_collection.py::test_prepare_keeps_checkout_history_and_discards_stale_current_reports",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_collect_preserves_history_byte_for_byte_and_keeps_it_out_of_current_evidence",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_repeated_preparation_and_collection_keep_history",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_failed_collection_keeps_history_and_still_invalidates_current_reports[foreign-artifact]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_failed_collection_keeps_history_and_still_invalidates_current_reports[malformed-manifest]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_failed_collection_keeps_history_and_still_invalidates_current_reports[missing-artifact]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_stale_historical_pass_never_satisfies_a_current_gate",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_producer_cannot_supply_or_replace_history[manifest-path]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_producer_cannot_supply_or_replace_history[extra-file]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_altered_history_refuses_before_anything_is_removed[changed-byte]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_altered_history_refuses_before_anything_is_removed[extra-file]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_altered_history_refuses_before_anything_is_removed[missing-file]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_altered_history_refuses_before_anything_is_removed[nested-directory]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_altered_history_refuses_before_anything_is_removed[malformed-manifest]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_altered_history_refuses_before_anything_is_removed[wrong-version]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_altered_history_refuses_before_anything_is_removed[missing-manifest]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_altered_history_refuses_before_anything_is_removed[root-file]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_linked_history_refuses_and_never_touches_the_target[history-directory]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_linked_history_refuses_and_never_touches_the_target[inner-file]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_linked_history_refuses_and_never_touches_the_target[inner-directory]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_history_changed_while_clearing_refuses",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_special_file_in_history_refuses",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_ci_collection.py::test_linked_current_leaf_is_removed_without_following_it",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
       "nodeid": "tests/release/test_ci_collection.py::test_alpha_workflow_filters_pushes_without_filtering_prs_or_required_events",
       "ids": [],
       "layer": "unit_mock",
@@ -6815,6 +6999,102 @@
       "reason": ""
     },
     {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_reference_phases_each_get_a_distinct_owned_basetemp_retained",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_property_run_gets_an_owned_basetemp_retained",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_quickstart_retains_only_its_pytest_invocations",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_secret_scan_keeps_the_scanned_public_copy",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_incomplete_reference_retention_alone_prevents_a_pass",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_a_timed_out_reference_phase_is_still_retained",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_incomplete_property_retention_alone_prevents_a_pass",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_quickstart_reports_incomplete_retention_without_hiding_a_test_failure",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_an_interrupted_reference_phase_is_retained_and_still_interrupts",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_a_timed_out_run_is_retained_and_the_timeout_still_propagates[property]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_a_timed_out_run_is_retained_and_the_timeout_still_propagates[quickstart]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_gate_scratch_retention.py::test_the_custody_record_exists_before_the_child_starts",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
       "nodeid": "tests/release/test_interpreter_library_env.py::test_only_the_interpreters_own_library_file_is_named[own-library-file-True-lab]",
       "ids": [],
       "layer": "unit_mock",
@@ -8976,6 +9256,38 @@
     },
     {
       "nodeid": "tests/release/test_mutation_runner.py::test_published_records_are_readable_and_diagnostics_stay_private",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_mutation_runner.py::test_baseline_tree_and_each_variant_are_retained_before_they_run",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_mutation_runner.py::test_each_invocation_gets_an_owned_basetemp_that_is_retained",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_mutation_runner.py::test_incomplete_scratch_retention_fails_the_run_and_keeps_every_outcome",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_mutation_runner.py::test_an_interrupted_mutation_child_is_retained_and_still_interrupts",
       "ids": [],
       "layer": "unit_mock",
       "status": "PASS",
@@ -12575,6 +12887,14 @@
       "reason": ""
     },
     {
+      "nodeid": "tests/release/test_release_provenance.py::test_checkout_history_survives_producers_collection_and_package_verification",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
       "nodeid": "tests/release/test_release_provenance.py::test_current_ci_subjects_are_consistent_but_remain_unsigned",
       "ids": [],
       "layer": "unit_mock",
@@ -13064,6 +13384,174 @@
     },
     {
       "nodeid": "tests/release/test_release_provenance.py::test_guidance_manifest_cannot_be_rehashed_to_hide_missing_instructions",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_an_owned_scratch_binds_invocation_and_root_before_the_child_starts",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_the_default_root_is_persistent_and_short_for_socket_fixtures",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_retain_copies_files_and_lists_links_and_special_entries",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_an_unexpected_unreadable_file_or_directory_is_incomplete",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_file_swapped_for_a_link_after_listing_is_never_followed",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_directory_swapped_for_a_link_after_listing_is_never_entered",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_file_replaced_by_another_file_is_unstable",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_file_changing_during_its_copy_is_incomplete",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_copy_that_does_not_match_its_inventory_is_incomplete",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_vanished_entry_is_incomplete",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_an_unused_basetemp_is_recorded_not_invented",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_replaced_root_or_owner_record_is_never_copied[root_replaced]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_replaced_root_or_owner_record_is_never_copied[owner_record_replaced]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_replaced_root_or_owner_record_is_never_copied[owner_record_linked]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_the_childs_failure_or_interruption_is_never_swallowed",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_pending_record_left_by_a_crashed_parent_is_recoverable",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_retention_never_overwrites_an_earlier_copy",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_only_a_mode_0_regular_file_at_a_fixture_path_is_exempt[directory]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_only_a_mode_0_regular_file_at_a_fixture_path_is_exempt[readable-mode-file]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_named_destination_is_single_use_and_its_records_stay_byte_exact[False]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_retained_temp.py::test_a_named_destination_is_single_use_and_its_records_stay_byte_exact[True]",
       "ids": [],
       "layer": "unit_mock",
       "status": "PASS",
@@ -20358,7 +20846,7 @@
       "required_result": "Rejected; genuine action still processed.",
       "modules": "crypto;sql.ledger;worker",
       "planned_test_references": "tests/postgres;tests/security",
-      "executed_test_references": "tests/postgres/assertions.sql;tests/postgres/test_postgres.py::test_T1_T6_T8_T14_T21_T22_T35_T38_T39_real_composite_and_exact_roles;tests/security/test_binding_boundary.py::test_T8_T37_forged_genuine_action_identity_cannot_reserve_verified_action;tests/security/test_binding_boundary.py::test_T8_rename_rejects_legacy_domain_before_target_access[False];tests/security/test_binding_boundary.py::test_T8_rename_rejects_legacy_domain_before_target_access[True];tests/unit/test_crypto_policy.py::test_T8_forged_action_does_not_validate;tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[alert_id-f3088a9f-3518-431d-bc92-ac68c53c8e7c];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[customer-outside];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[history_type-status];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[history_user-other-person];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[resulting_status-open];tests/unit/test_worker.py::test_T8_forged_capture_cannot_reserve_genuine_action",
+      "executed_test_references": "tests/postgres/assertions.sql;tests/postgres/test_postgres.py::test_T1_T6_T8_T14_T21_T22_T35_T38_T39_real_composite_and_exact_roles;tests/security/test_binding_boundary.py::test_T8_T37_forged_genuine_action_identity_cannot_reserve_verified_action;tests/security/test_binding_boundary.py::test_T8_rename_rejects_legacy_domain_before_target_access[False];tests/security/test_binding_boundary.py::test_T8_rename_rejects_legacy_domain_before_target_access[True];tests/unit/test_crypto_policy.py::test_T8_forged_action_does_not_validate;tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[alert_id-bd701e3d-0036-4318-9c99-1a2947b6b02d];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[customer-outside];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[history_type-status];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[history_user-other-person];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[resulting_status-open];tests/unit/test_worker.py::test_T8_forged_capture_cannot_reserve_genuine_action",
       "evidence_layers": "unit/mock and real lab; deployment acceptance",
       "reference_result": "PASS",
       "deployment_result": "MANUAL_GATE_PENDING",

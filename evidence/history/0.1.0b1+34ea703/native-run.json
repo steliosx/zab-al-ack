@@ -1,0 +1,24 @@
+{
+  "layer": "native_postgres18_pgbouncer",
+  "status": "NOT_RUN",
+  "phases": [],
+  "code_digests": {
+    "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
+    "harness": "fab2507eafe072e793f4c7c82ee5ef11a7b0263e84249048a25aead23ccef203"
+  },
+  "real_zabbix": "NOT_RUN",
+  "deployment_gates": "MANUAL_GATE_PENDING",
+  "not_docker": true,
+  "runner": "tools/native_local.py: same phases, targets and ACK_TEST_* environment as tools/native_ci.py on locally installed PostgreSQL 18 and PgBouncer (fresh loopback cluster per phase); see docs/RELEASE_AMENDMENTS.md R14 and R26",
+  "retention": {
+    "previous_run": {
+      "status": "RETAINED",
+      "label": "previous-run",
+      "directory": "build/private/retained-phases/2009ce7bda/previous-run",
+      "retained": 6,
+      "absent": 13,
+      "manifest_sha256": "05c08bd884314d3b839b2a8b9891939fae9adf994c56665f2138a31dd7cce061"
+    }
+  },
+  "reason": "ACK_LAB_PG_BIN (PostgreSQL 18 bin directory) and ACK_LAB_PGBOUNCER_BIN (PgBouncer executable) required; native service tests NOT_RUN"
+}

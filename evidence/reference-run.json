@@ -16,12 +16,14 @@
         "tests/alerta/test_http_mocked_storage.py",
         "tests/alerta/test_reader_confidentiality.py",
         "-q",
-        "--junitxml=build/evidence-raw/unit-mocked.xml"
+        "--junitxml=build/evidence-raw/unit-mocked.xml",
+        "--basetemp=<owned>"
       ],
       "exit_code": 0,
-      "started_at": "2026-09-29T13:18:18.656212+00:00",
-      "finished_at": "2026-09-29T13:19:33.824415+00:00",
-      "junit": "evidence/unit-mocked.xml"
+      "started_at": "2026-09-29T20:49:25.230546+00:00",
+      "finished_at": "2026-09-29T20:51:20.475403+00:00",
+      "junit": "evidence/unit-mocked.xml",
+      "retention": "COMPLETE"
     },
     {
       "phase": "postgres-wasm",
@@ -42,12 +44,14 @@
         "tests/postgres/test_settled_expiry.py",
         "tests/postgres/test_generation_fence.py",
         "-q",
-        "--junitxml=build/evidence-raw/postgres-wasm.xml"
+        "--junitxml=build/evidence-raw/postgres-wasm.xml",
+        "--basetemp=<owned>"
       ],
       "exit_code": 0,
-      "started_at": "2026-09-29T13:19:33.824775+00:00",
-      "finished_at": "2026-09-29T13:19:57.243623+00:00",
-      "junit": "evidence/postgres-wasm.xml"
+      "started_at": "2026-09-29T20:51:20.476452+00:00",
+      "finished_at": "2026-09-29T20:51:44.649803+00:00",
+      "junit": "evidence/postgres-wasm.xml",
+      "retention": "NOT_CREATED"
     },
     {
       "phase": "worker-sql-wasm",
@@ -62,12 +66,14 @@
         "pytest",
         "tests/postgres/test_worker_path.py",
         "-q",
-        "--junitxml=build/evidence-raw/worker-sql-wasm.xml"
+        "--junitxml=build/evidence-raw/worker-sql-wasm.xml",
+        "--basetemp=<owned>"
       ],
       "exit_code": 0,
-      "started_at": "2026-09-29T13:19:57.243895+00:00",
-      "finished_at": "2026-09-29T13:20:00.716968+00:00",
-      "junit": "evidence/worker-sql-wasm.xml"
+      "started_at": "2026-09-29T20:51:44.650777+00:00",
+      "finished_at": "2026-09-29T20:51:48.330119+00:00",
+      "junit": "evidence/worker-sql-wasm.xml",
+      "retention": "NOT_CREATED"
     },
     {
       "phase": "alerta-persistence-wasm",
@@ -85,12 +91,14 @@
         "tests/alerta/test_docs_walkthrough.py",
         "tests/alerta/test_postgres_search_confidentiality.py",
         "-q",
-        "--junitxml=build/evidence-raw/alerta-persistence-wasm.xml"
+        "--junitxml=build/evidence-raw/alerta-persistence-wasm.xml",
+        "--basetemp=<owned>"
       ],
       "exit_code": 0,
-      "started_at": "2026-09-29T13:20:00.717242+00:00",
-      "finished_at": "2026-09-29T13:20:13.014606+00:00",
-      "junit": "evidence/alerta-persistence-wasm.xml"
+      "started_at": "2026-09-29T20:51:48.331016+00:00",
+      "finished_at": "2026-09-29T20:52:00.728742+00:00",
+      "junit": "evidence/alerta-persistence-wasm.xml",
+      "retention": "NOT_CREATED"
     },
     {
       "phase": "performance-wasm",
@@ -105,12 +113,14 @@
         "pytest",
         "tests/performance/test_reference_batches.py",
         "-q",
-        "--junitxml=build/evidence-raw/performance-wasm.xml"
+        "--junitxml=build/evidence-raw/performance-wasm.xml",
+        "--basetemp=<owned>"
       ],
       "exit_code": 0,
-      "started_at": "2026-09-29T13:20:13.014917+00:00",
-      "finished_at": "2026-09-29T13:20:25.712949+00:00",
-      "junit": "evidence/performance-wasm.xml"
+      "started_at": "2026-09-29T20:52:00.730860+00:00",
+      "finished_at": "2026-09-29T20:52:13.374006+00:00",
+      "junit": "evidence/performance-wasm.xml",
+      "retention": "NOT_CREATED"
     },
     {
       "phase": "optional-services",
@@ -127,16 +137,18 @@
         "tests/postgres/test_native_generation_fence.py",
         "tests/postgres/test_native_populated_delivery_upgrade.py",
         "-q",
-        "--junitxml=build/evidence-raw/optional-services.xml"
+        "--junitxml=build/evidence-raw/optional-services.xml",
+        "--basetemp=<owned>"
       ],
       "exit_code": 0,
-      "started_at": "2026-09-29T13:20:25.713235+00:00",
-      "finished_at": "2026-09-29T13:20:26.932686+00:00",
-      "junit": "evidence/optional-services.xml"
+      "started_at": "2026-09-29T20:52:13.374877+00:00",
+      "finished_at": "2026-09-29T20:52:14.599512+00:00",
+      "junit": "evidence/optional-services.xml",
+      "retention": "COMPLETE"
     }
   ],
   "counts": {
-    "passed": 2329,
+    "passed": 2390,
     "skipped": 57,
     "failed": 0
   },
@@ -152,14 +164,14 @@
       "failed": 0
     },
     "unit_mocked": {
-      "passed": 2045,
+      "passed": 2106,
       "skipped": 1,
       "failed": 0
     }
   },
   "code_digests": {
     "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
-    "harness": "fab2507eafe072e793f4c7c82ee5ef11a7b0263e84249048a25aead23ccef203"
+    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36"
   },
   "native_postgres": "NOT_RUN",
   "pgbouncer": "NOT_RUN",
@@ -167,6 +179,7 @@
   "deployment_gates": "MANUAL_GATE_PENDING",
   "hypothesis_profile": "pr",
   "tree_unchanged": true,
+  "scratch_retention": "COMPLETE",
   "all_executed_phases_succeeded": true,
   "status": "PASS"
 }

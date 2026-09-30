@@ -12,21 +12,21 @@
   "api_concurrency": 1,
   "delivery_concurrency": 1,
   "api_action_seconds": {
-    "p50": 0.013756,
-    "p95": 0.014931,
-    "max": 0.018898
+    "p50": 0.013962,
+    "p95": 0.015125,
+    "max": 0.024082
   },
   "capture_to_worker_completion_seconds": {
-    "p50": 4.394171,
-    "p95": 4.420444,
-    "max": 4.427669
+    "p50": 4.412976,
+    "p95": 4.432469,
+    "max": 4.438549
   },
   "mock_validation_through_prewrite_SQL_to_mock_write_seconds": {
-    "p50": 0.003813,
-    "p95": 0.004662,
-    "max": 0.007255
+    "p50": 0.003847,
+    "p95": 0.005002,
+    "max": 0.007997
   },
-  "elapsed_seconds": 6.430551,
+  "elapsed_seconds": 6.472264,
   "captured": 200,
   "peak_outbox_queue": 200,
   "source_validation_reads": 200,

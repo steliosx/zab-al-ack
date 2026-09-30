@@ -24,9 +24,9 @@
   ],
   "code_digests": {
     "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
-    "harness": "fab2507eafe072e793f4c7c82ee5ef11a7b0263e84249048a25aead23ccef203"
+    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36"
   },
-  "started_at_utc": "2026-09-29T13:18:12.152884+00:00",
+  "started_at_utc": "2026-09-29T20:49:18.626332+00:00",
   "scope": "Static checks and installed dependency consistency; no service or deployment evidence",
   "tools": {
     "ruff": "0.16.7",
@@ -34,5 +34,5 @@
     "hypothesis": "6.168.0"
   },
   "tree_unchanged": true,
-  "finished_at_utc": "2026-09-29T13:18:15.569067+00:00"
+  "finished_at_utc": "2026-09-29T20:49:22.038517+00:00"
 }

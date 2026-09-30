@@ -22,11 +22,12 @@ are not rebound here. Earlier Ackline results remain historical as well.
 The a16 records named above are preserved byte for byte under
 `evidence/history/0.1.0a16/`, which lists them in `MANIFEST.json`. The current
 `evidence/` paths now hold this candidate's own records for the tested source
-`34ea703` (digests `c8a7430b…/fab2507e…`); see the
-[evidence index](../evidence/README.md).
-- **Local release checks:** reference 2329 passed and 57 skipped, mutation PR 12 and nightly 20 killed, property
+`2a4ce07` (digests `c8a7430b…/cbe77055…`); see the
+[evidence index](../evidence/README.md). The records adopted earlier for `34ea703` are preserved byte for byte
+under `evidence/history/0.1.0b1+34ea703/`.
+- **Local release checks:** reference 2390 passed and 57 skipped, mutation PR 12 and nightly 20 killed, property
   46, plus quality, SQL and quickstart.
-- **Deployment path:** PASS on lab run `b1-34ea703-host-01`, with the preliminary wheel `eaf3c422…`. It carries to
+- **Deployment path:** PASS on lab run `b1-2a4ce07-host-01`, with the preliminary wheel `eaf3c422…`. It carries to
   the canonical wheel only if the bytes are identical.
 - **Not run:** native PostgreSQL/PgBouncer and real Zabbix.
 - **Acceptance and audit:** 40 checks PASS and 2 manual gates pending; the public audit passes. Canonical build
@@ -35,7 +36,7 @@ The a16 records named above are preserved byte for byte under
   - security scan: pip-audit found 0 advisories in 58 packages, and Gitleaks found 0 secrets in the export or the
     history;
   - npm audit: 0 vulnerabilities;
-  - the SBOM is valid against CycloneDX 1.6.
+  - the SBOM matches both locks and is valid against CycloneDX 1.6.
 
   These are scoped checks, not licence or external security clearance.
 - **Not carried:** three legacy a16 records (wheel smoke, collection check, local validation) are kept only in the

@@ -10,5 +10,5 @@
     "spdx.SNAPSHOT.schema.json": "c41917196639055e9f9670811bac23ef777732144f3ff5a2f39686f61580dbe6"
   },
   "schema_source": "cyclonedx-python-lib 9.1.0 bundled schemas (hash-pinned wheel via requirements-scanner.lock); local registry, no retrieval",
-  "sbom_sha256": "19f55ba08c010c51a3654797874dbad8748a7c3db3616c00b9b772614f36658e"
+  "sbom_sha256": "ae8ee01851973bd317c21ab6802c0052bb52ab5ee6a5f6ad18891da6912bd402"
 }

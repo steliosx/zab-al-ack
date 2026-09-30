@@ -1,0 +1,1744 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "Zab-al-ack reference evaluation environment",
+      "version": "0.1.0b1"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "alerta-server",
+      "version": "9.1.0",
+      "purl": "pkg:pypi/alerta-server@9.1.0",
+      "bom-ref": "pkg:pypi/alerta-server@9.1.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache License 2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"alerta_server-9.1.0.dist-info/licenses/LICENSE\", \"sha256\": \"b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1\"}, {\"package_path\": \"alerta_server-9.1.0.dist-info/licenses/NOTICE\", \"sha256\": \"ceefe101070e1e46d65c7e15805ec7993b96c917cbcf858fa45b314ef954dab4\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "anyio",
+      "version": "4.15.1",
+      "purl": "pkg:pypi/anyio@4.15.1",
+      "bom-ref": "pkg:pypi/anyio@4.15.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"anyio-4.15.1.dist-info/licenses/LICENSE\", \"sha256\": \"5361ac9dc58f2ef5fd2e9b09c68297c17f04950909bbc8023bdb82eacf22c2b0\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ast-serialize",
+      "version": "0.11.1",
+      "purl": "pkg:pypi/ast-serialize@0.11.1",
+      "bom-ref": "pkg:pypi/ast-serialize@0.11.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"ast_serialize-0.11.1.dist-info/licenses/LICENSE\", \"sha256\": \"db90b8fd0ae1748117ab467680a5193bfd057a3119846cb53ee3b64f16577b3b\"}, {\"package_path\": \"ast_serialize-0.11.1.dist-info/licenses/crates/LICENSE\", \"sha256\": \"2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "backports-zstd",
+      "version": "1.7.0",
+      "purl": "pkg:pypi/backports-zstd@1.7.0",
+      "bom-ref": "pkg:pypi/backports-zstd@1.7.0",
+      "licenses": [
+        {
+          "expression": "PSF-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"backports_zstd-1.7.0.dist-info/licenses/LICENSE.txt\", \"sha256\": \"b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231\"}, {\"package_path\": \"backports_zstd-1.7.0.dist-info/licenses/LICENSE_zstd.txt\", \"sha256\": \"f89ef2b03b52ad7c3342aeb2e1c961737f9de4892d41b1d083b0060c6191e1bf\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "bcrypt",
+      "version": "5.0.0",
+      "purl": "pkg:pypi/bcrypt@5.0.0",
+      "bom-ref": "pkg:pypi/bcrypt@5.0.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"bcrypt-5.0.0.dist-info/licenses/LICENSE\", \"sha256\": \"8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "blinker",
+      "version": "1.9.0",
+      "purl": "pkg:pypi/blinker@1.9.0",
+      "bom-ref": "pkg:pypi/blinker@1.9.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT License"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"blinker-1.9.0.dist-info/LICENSE.txt\", \"sha256\": \"9eb73a1f38597a4aa17025d2ae1be3839624c795e985d4f0e9769ce29faca467\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "brotli",
+      "version": "1.2.0",
+      "purl": "pkg:pypi/brotli@1.2.0",
+      "bom-ref": "pkg:pypi/brotli@1.2.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"brotli-1.2.0.dist-info/licenses/LICENSE\", \"sha256\": \"3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "build",
+      "version": "1.3.0",
+      "purl": "pkg:pypi/build@1.3.0",
+      "bom-ref": "pkg:pypi/build@1.3.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"build-1.3.0.dist-info/licenses/LICENSE\", \"sha256\": \"aaf9a29ca5907971ccf07de025375db34539a8d5eeebce20b46099805722106f\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "certifi",
+      "version": "2026.7.22",
+      "purl": "pkg:pypi/certifi@2026.7.22",
+      "bom-ref": "pkg:pypi/certifi@2026.7.22",
+      "licenses": [
+        {
+          "license": {
+            "name": "MPL-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"certifi-2026.7.22.dist-info/licenses/LICENSE\", \"sha256\": \"e93716da6b9c0d5a4a1df60fe695b370f0695603d21f6f83f053e42cfc10caf7\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cffi",
+      "version": "2.1.1",
+      "purl": "pkg:pypi/cffi@2.1.1",
+      "bom-ref": "pkg:pypi/cffi@2.1.1",
+      "licenses": [
+        {
+          "expression": "MIT-0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"cffi-2.1.1.dist-info/licenses/LICENSE\", \"sha256\": \"5ba24ddc57067f9249add644c3afc41a5d6dc37e23433ef759d95df370b0af63\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "charset-normalizer",
+      "version": "3.5.1",
+      "purl": "pkg:pypi/charset-normalizer@3.5.1",
+      "bom-ref": "pkg:pypi/charset-normalizer@3.5.1",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"charset_normalizer-3.5.1.dist-info/licenses/LICENSE\", \"sha256\": \"6d0d41bfe170ac6c7dc248c9a63e254d0fb45a60d50a8257d0af92c6e249b887\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "click",
+      "version": "8.5.0",
+      "purl": "pkg:pypi/click@8.5.0",
+      "bom-ref": "pkg:pypi/click@8.5.0",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"click-8.5.0.dist-info/licenses/LICENSE.txt\", \"sha256\": \"9a8ad106a394e853bfe21f42f4e72d592819a22805d991b5f3275029292b658d\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "cryptography",
+      "version": "50.0.1",
+      "purl": "pkg:pypi/cryptography@50.0.1",
+      "bom-ref": "pkg:pypi/cryptography@50.0.1",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR BSD-3-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"cryptography-50.0.1.dist-info/licenses/LICENSE\", \"sha256\": \"3e0c7c091a948b82533ba98fd7cbb40432d6f1a9acbf85f5922d2f99a93ae6bb\"}, {\"package_path\": \"cryptography-50.0.1.dist-info/licenses/LICENSE.APACHE\", \"sha256\": \"aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe\"}, {\"package_path\": \"cryptography-50.0.1.dist-info/licenses/LICENSE.BSD\", \"sha256\": \"602c4c7482de6479dd2e9793cda275e5e63d773dacd1eca689232ab7008fb4fb\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "defusedxml",
+      "version": "0.7.1",
+      "purl": "pkg:pypi/defusedxml@0.7.1",
+      "bom-ref": "pkg:pypi/defusedxml@0.7.1",
+      "licenses": [
+        {
+          "license": {
+            "name": "PSFL"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"defusedxml-0.7.1.dist-info/LICENSE\", \"sha256\": \"b80ce9da8c42a1f91079627fbbe2bf27210ae108a0ffe5f077d5b08e076c24c8\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "flask",
+      "version": "3.1.3",
+      "purl": "pkg:pypi/flask@3.1.3",
+      "bom-ref": "pkg:pypi/flask@3.1.3",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"flask-3.1.3.dist-info/licenses/LICENSE.txt\", \"sha256\": \"489a8e1108509ed98a37bb983e11e0f7e1d31f0bd8f99a79c8448e7ff37d07ea\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "flask-compress",
+      "version": "1.24",
+      "purl": "pkg:pypi/flask-compress@1.24",
+      "bom-ref": "pkg:pypi/flask-compress@1.24",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"flask_compress-1.24.dist-info/licenses/LICENSE.txt\", \"sha256\": \"a19e75a2c6ab5168e1c0f185f6d14b4f0130cd926511b88f3382833a211e2269\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "flask-cors",
+      "version": "6.0.5",
+      "purl": "pkg:pypi/flask-cors@6.0.5",
+      "bom-ref": "pkg:pypi/flask-cors@6.0.5",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "h11",
+      "version": "0.16.0",
+      "purl": "pkg:pypi/h11@0.16.0",
+      "bom-ref": "pkg:pypi/h11@0.16.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"h11-0.16.0.dist-info/licenses/LICENSE.txt\", \"sha256\": \"37db5bb85926db28a427a25867f10b1232003aea1be69ccb851138adb8e6f361\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "httpcore",
+      "version": "1.0.9",
+      "purl": "pkg:pypi/httpcore@1.0.9",
+      "bom-ref": "pkg:pypi/httpcore@1.0.9",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"httpcore-1.0.9.dist-info/licenses/LICENSE.md\", \"sha256\": \"fdcb59154c74cbaba16a11242f7740bea9f23d6feb5547917d8c5f94a80392a5\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "httpx",
+      "version": "0.28.1",
+      "purl": "pkg:pypi/httpx@0.28.1",
+      "bom-ref": "pkg:pypi/httpx@0.28.1",
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"httpx-0.28.1.dist-info/licenses/LICENSE.md\", \"sha256\": \"4ec59d544f12b5f539a3a716fd321ac58ccd8030b465221f2c880200cdf28d8d\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "hypothesis",
+      "version": "6.168.0",
+      "purl": "pkg:pypi/hypothesis@6.168.0",
+      "bom-ref": "pkg:pypi/hypothesis@6.168.0",
+      "licenses": [
+        {
+          "expression": "MPL-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"hypothesis-6.168.0.dist-info/licenses/LICENSE.txt\", \"sha256\": \"ac89037bac63550644dce8cf32c6765e5fab9dc1a1ce94b89f8a805f341a6750\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "idna",
+      "version": "3.19",
+      "purl": "pkg:pypi/idna@3.19",
+      "bom-ref": "pkg:pypi/idna@3.19",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"idna-3.19.dist-info/licenses/LICENSE.md\", \"sha256\": \"1a9a4f0e3d479a27240ddd59a9137a66ab4a0f9dfdc8ca6188cc0bfd85187f04\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "iniconfig",
+      "version": "2.3.0",
+      "purl": "pkg:pypi/iniconfig@2.3.0",
+      "bom-ref": "pkg:pypi/iniconfig@2.3.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"iniconfig-2.3.0.dist-info/licenses/LICENSE\", \"sha256\": \"3409fa91f7ace557894632676656e32264fe5ef7581535725dc9a23774551bd4\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "itsdangerous",
+      "version": "2.2.0",
+      "purl": "pkg:pypi/itsdangerous@2.2.0",
+      "bom-ref": "pkg:pypi/itsdangerous@2.2.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD License"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"itsdangerous-2.2.0.dist-info/LICENSE.txt\", \"sha256\": \"63af09891b6be8ad1a4252ed43af0f4efba7fc948e228367bed7f3c5ae0b09d7\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "jinja2",
+      "version": "3.1.6",
+      "purl": "pkg:pypi/jinja2@3.1.6",
+      "bom-ref": "pkg:pypi/jinja2@3.1.6",
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD License"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"jinja2-3.1.6.dist-info/licenses/LICENSE.txt\", \"sha256\": \"3b49dcee4105eb37bac10faf1be260408fe85d252b8e9df2e0979fc1e094437b\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "librt",
+      "version": "0.15.0",
+      "purl": "pkg:pypi/librt@0.15.0",
+      "bom-ref": "pkg:pypi/librt@0.15.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"librt-0.15.0.dist-info/licenses/LICENSE\", \"sha256\": \"88f9e379c684580053c58e75e296ca2eb243b6edcc6e5357f247310e96eeef8a\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "markupsafe",
+      "version": "3.0.3",
+      "purl": "pkg:pypi/markupsafe@3.0.3",
+      "bom-ref": "pkg:pypi/markupsafe@3.0.3",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"markupsafe-3.0.3.dist-info/licenses/LICENSE.txt\", \"sha256\": \"489a8e1108509ed98a37bb983e11e0f7e1d31f0bd8f99a79c8448e7ff37d07ea\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "mohawk",
+      "version": "1.1.0",
+      "purl": "pkg:pypi/mohawk@1.1.0",
+      "bom-ref": "pkg:pypi/mohawk@1.1.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "MPL 2.0 (Mozilla Public License)"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"mohawk-1.1.0.dist-info/LICENSE.txt\", \"sha256\": \"c74b7b8ce89e4f9fb976beea547a3590216a319e0715e276faf2aeaa8f7fc295\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "mypy",
+      "version": "2.3.1",
+      "purl": "pkg:pypi/mypy@2.3.1",
+      "bom-ref": "pkg:pypi/mypy@2.3.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"mypy-2.3.1.dist-info/licenses/LICENSE\", \"sha256\": \"fdf1cd17f50e1305ed8cfd37467312d27a984648dba622cef70573b5512e4e1b\"}, {\"package_path\": \"mypy-2.3.1.dist-info/licenses/mypy/typeshed/LICENSE\", \"sha256\": \"295f8538c94ae5c3043301cf7cff1c852dab6a786a8ddee471e061b40d5ecabe\"}, {\"package_path\": \"mypy/typeshed/LICENSE\", \"sha256\": \"295f8538c94ae5c3043301cf7cff1c852dab6a786a8ddee471e061b40d5ecabe\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "mypy-extensions",
+      "version": "1.1.0",
+      "purl": "pkg:pypi/mypy-extensions@1.1.0",
+      "bom-ref": "pkg:pypi/mypy-extensions@1.1.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"mypy_extensions-1.1.0.dist-info/licenses/LICENSE\", \"sha256\": \"a50450da1d53cd777b80ced77c58ff96abe0ccd879706bd142c3ec20e245f0b4\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "packaging",
+      "version": "26.3",
+      "purl": "pkg:pypi/packaging@26.3",
+      "bom-ref": "pkg:pypi/packaging@26.3",
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR BSD-2-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"packaging-26.3.dist-info/licenses/LICENSE\", \"sha256\": \"cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48\"}, {\"package_path\": \"packaging-26.3.dist-info/licenses/LICENSE.APACHE\", \"sha256\": \"0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594\"}, {\"package_path\": \"packaging-26.3.dist-info/licenses/LICENSE.BSD\", \"sha256\": \"b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5\"}, {\"package_path\": \"packaging/licenses/__init__.py\", \"sha256\": \"590d12eee73ddbec53b4e9ee5bfc64d9cb3aacb4940e8ebcba260757ce56740b\"}, {\"package_path\": \"packaging/licenses/__pycache__/__init__.cpython-312.pyc\", \"sha256\": \"216ad2bdfef5d15d895a6d21e8e7e5bb7b39a5d442c2b307cd77b04b8136431d\"}, {\"package_path\": \"packaging/licenses/__pycache__/_spdx.cpython-312.pyc\", \"sha256\": \"1a3f82ec4c22e946760d2b9217078a31dd7a9b9663cb821065f45e5aeb892881\"}, {\"package_path\": \"packaging/licenses/_spdx.py\", \"sha256\": \"596ec35e2ca0ebcba9fd8343ff0a51625af548786257815f24b41f7e08613314\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pathspec",
+      "version": "1.1.1",
+      "purl": "pkg:pypi/pathspec@1.1.1",
+      "bom-ref": "pkg:pypi/pathspec@1.1.1",
+      "licenses": [
+        {
+          "license": {
+            "name": "Mozilla Public License 2.0 (MPL 2.0)"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pathspec-1.1.1.dist-info/licenses/LICENSE\", \"sha256\": \"fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pluggy",
+      "version": "1.6.0",
+      "purl": "pkg:pypi/pluggy@1.6.0",
+      "bom-ref": "pkg:pypi/pluggy@1.6.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pluggy-1.6.0.dist-info/licenses/LICENSE\", \"sha256\": \"d6b65e6c213a5d0b577911d34d6e5949b9f59d76c238c5071a2f3fc16cfb2606\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "psycopg",
+      "version": "3.2.10",
+      "purl": "pkg:pypi/psycopg@3.2.10",
+      "bom-ref": "pkg:pypi/psycopg@3.2.10",
+      "licenses": [
+        {
+          "license": {
+            "name": "GNU Lesser General Public License v3 (LGPLv3)"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"psycopg-3.2.10.dist-info/licenses/LICENSE.txt\", \"sha256\": \"e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "psycopg-binary",
+      "version": "3.2.10",
+      "purl": "pkg:pypi/psycopg-binary@3.2.10",
+      "bom-ref": "pkg:pypi/psycopg-binary@3.2.10",
+      "licenses": [
+        {
+          "license": {
+            "name": "GNU Lesser General Public License v3 (LGPLv3)"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"psycopg_binary-3.2.10.dist-info/licenses/LICENSE.txt\", \"sha256\": \"e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "psycopg2-binary",
+      "version": "2.9.10",
+      "purl": "pkg:pypi/psycopg2-binary@2.9.10",
+      "bom-ref": "pkg:pypi/psycopg2-binary@2.9.10",
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPL with exceptions"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"psycopg2_binary-2.9.10.dist-info/LICENSE\", \"sha256\": \"9614b85dfc9a72c5b2ca33144c1d7e1ed3b1c297459d9fb28a6a5762c2e8d71b\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pycparser",
+      "version": "3.0",
+      "purl": "pkg:pypi/pycparser@3.0",
+      "bom-ref": "pkg:pypi/pycparser@3.0",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pycparser-3.0.dist-info/licenses/LICENSE\", \"sha256\": \"0c846399369ea76ddd7b5c44fe6d16497415fcf015f5cbb508c24bf98b81c5b1\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pygments",
+      "version": "2.21.0",
+      "purl": "pkg:pypi/pygments@2.21.0",
+      "bom-ref": "pkg:pypi/pygments@2.21.0",
+      "licenses": [
+        {
+          "expression": "BSD-2-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pygments-2.21.0.dist-info/licenses/AUTHORS\", \"sha256\": \"71a83872ad82f57be692cf827e048e2cd51d45169cfa1ea3f28706d97a872c0f\"}, {\"package_path\": \"pygments-2.21.0.dist-info/licenses/LICENSE\", \"sha256\": \"a9d66f1d526df02e29dce73436d34e56e8632f46c275bbdffc70569e882f9f17\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pyjwt",
+      "version": "2.13.0",
+      "purl": "pkg:pypi/pyjwt@2.13.0",
+      "bom-ref": "pkg:pypi/pyjwt@2.13.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pyjwt-2.13.0.dist-info/licenses/AUTHORS.rst\", \"sha256\": \"925ce43461029eedbf558ec0b7cf7fc4b045def5120ebb97937c70814071cf07\"}, {\"package_path\": \"pyjwt-2.13.0.dist-info/licenses/LICENSE\", \"sha256\": \"797a7a20231d4c433e9f1911db1731d06b5828b98f499819a034f7c0f56f5ce5\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pyparsing",
+      "version": "3.3.2",
+      "purl": "pkg:pypi/pyparsing@3.3.2",
+      "bom-ref": "pkg:pypi/pyparsing@3.3.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pyparsing-3.3.2.dist-info/licenses/LICENSE\", \"sha256\": \"a5425f9dc14ac74d4c5f0b679e941f2442e32cca7452a4418d5b1a49893ebe4e\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pyproject-hooks",
+      "version": "1.2.0",
+      "purl": "pkg:pypi/pyproject-hooks@1.2.0",
+      "bom-ref": "pkg:pypi/pyproject-hooks@1.2.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT License"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pyproject_hooks-1.2.0.dist-info/LICENSE\", \"sha256\": \"1b22b049b5267d6dfc23a67bf4a84d8ec04b9fdfb1a51d360e42b4342c8b4154\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pytest",
+      "version": "9.0.3",
+      "purl": "pkg:pypi/pytest@9.0.3",
+      "bom-ref": "pkg:pypi/pytest@9.0.3",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pytest-9.0.3.dist-info/licenses/LICENSE\", \"sha256\": \"ca836a5f9ecca3b2f350230faa20a48fb8b145653b5568d784862df864706b9b\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pytest-asyncio",
+      "version": "1.3.0",
+      "purl": "pkg:pypi/pytest-asyncio@1.3.0",
+      "bom-ref": "pkg:pypi/pytest-asyncio@1.3.0",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pytest_asyncio-1.3.0.dist-info/licenses/LICENSE\", \"sha256\": \"a8ad31b1c3f40dca5a84119351b8fa8ddc868edd77fad8a8ebf6d8f2d16fa4ae\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "purl": "pkg:pypi/python-dateutil@2.9.0.post0",
+      "bom-ref": "pkg:pypi/python-dateutil@2.9.0.post0",
+      "licenses": [
+        {
+          "license": {
+            "name": "Dual License"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"python_dateutil-2.9.0.post0.dist-info/LICENSE\", \"sha256\": \"ba00f51a0d92823b5a1cde27d8b5b9d2321e67ed8da9bc163eff96d5e17e577e\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pytz",
+      "version": "2026.3.post1",
+      "purl": "pkg:pypi/pytz@2026.3.post1",
+      "bom-ref": "pkg:pypi/pytz@2026.3.post1",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pytz-2026.3.post1.dist-info/LICENSE.txt\", \"sha256\": \"be8b1a37ebe26c592a90f6c0eb33103a7f383ce2f4d7498c0af9a526990a07b8\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "purl": "pkg:pypi/pyyaml@6.0.3",
+      "bom-ref": "pkg:pypi/pyyaml@6.0.3",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"pyyaml-6.0.3.dist-info/licenses/LICENSE\", \"sha256\": \"8d3928f9dc4490fd635707cb88eb26bd764102a7282954307d3e5167a577e8a4\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "requests",
+      "version": "2.34.2",
+      "purl": "pkg:pypi/requests@2.34.2",
+      "bom-ref": "pkg:pypi/requests@2.34.2",
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"requests-2.34.2.dist-info/licenses/LICENSE\", \"sha256\": \"09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b\"}, {\"package_path\": \"requests-2.34.2.dist-info/licenses/NOTICE\", \"sha256\": \"f5110972dedad2b4e9d314518daf3b7d72d6e02e499acd802181de6f74571dcc\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "requests-hawk",
+      "version": "1.2.1",
+      "purl": "pkg:pypi/requests-hawk@1.2.1",
+      "bom-ref": "pkg:pypi/requests-hawk@1.2.1",
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache License (2.0)"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"requests_hawk-1.2.1.dist-info/LICENSE.txt\", \"sha256\": \"a0d108313b93273a69479644ca2f3acafbed49a82f78c6174d8167e7acc5d149\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ruff",
+      "version": "0.16.7",
+      "purl": "pkg:pypi/ruff@0.16.7",
+      "bom-ref": "pkg:pypi/ruff@0.16.7",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"ruff-0.16.7.dist-info/licenses/LICENSE\", \"sha256\": \"2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sentry-sdk",
+      "version": "2.69.1",
+      "purl": "pkg:pypi/sentry-sdk@2.69.1",
+      "bom-ref": "pkg:pypi/sentry-sdk@2.69.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"sentry_sdk-2.69.1.dist-info/licenses/LICENSE\", \"sha256\": \"2a140d660f462812fa290bc740d04633126c5ec45d84b79b569e127b0eeddd0b\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "setuptools",
+      "version": "83.0.0",
+      "purl": "pkg:pypi/setuptools@83.0.0",
+      "bom-ref": "pkg:pypi/setuptools@83.0.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"setuptools-83.0.0.dist-info/licenses/LICENSE\", \"sha256\": \"86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741\"}, {\"package_path\": \"setuptools/_vendor/autocommand-2.2.2.dist-info/LICENSE\", \"sha256\": \"ade78d04982d69972d444a8e14a94f87a2334dd3855cc80348ea8e240aa0df2d\"}, {\"package_path\": \"setuptools/_vendor/backports.tarfile-1.2.0.dist-info/LICENSE\", \"sha256\": \"86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741\"}, {\"package_path\": \"setuptools/_vendor/importlib_metadata-8.7.1.dist-info/licenses/LICENSE\", \"sha256\": \"458502e12d97bbf64438606a20044aa85eb05fb0a8a807bb35dbec253fd1fc04\"}, {\"package_path\": \"setuptools/_vendor/jaraco.text-4.0.0.dist-info/LICENSE\", \"sha256\": \"86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741\"}, {\"package_path\": \"setuptools/_vendor/jaraco_context-6.1.0.dist-info/licenses/LICENSE\", \"sha256\": \"9755a18519666e5f0f4cae3daad3d7012bcae48a600b31237d75e9fe134e6683\"}, {\"package_path\": \"setuptools/_vendor/jaraco_functools-4.4.0.dist-info/licenses/LICENSE\", \"sha256\": \"5a57cb4db85e2a2dd88c290628908add57e3451449e0a9a71fdfb38776fd759d\"}, {\"package_path\": \"setuptools/_vendor/more_itertools-10.8.0.dist-info/licenses/LICENSE\", \"sha256\": \"09f1c8c9e941af3e584d59641ea9b87d83c0cb0fd007eb5ef391a7e2643c1a46\"}, {\"package_path\": \"setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE\", \"sha256\": \"cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48\"}, {\"package_path\": \"setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE.APACHE\", \"sha256\": \"0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594\"}, {\"package_path\": \"setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE.BSD\", \"sha256\": \"b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/__init__.py\", \"sha256\": \"4f05cb1d9097c1281d17044b3f15bad364fa99289eba74851cce9fa7ca605bbf\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/__pycache__/__init__.cpython-312.pyc\", \"sha256\": \"b460b248816584c2e1f51bfb529c5dcd96d10c3781a744fc7f30fdb7df5e3580\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/__pycache__/_spdx.cpython-312.pyc\", \"sha256\": \"1a6ff2cf72bcdc8c5b971243e984eaa7272ec3289b850a685d96faac531b7e0a\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/_spdx.py\", \"sha256\": \"596ec35e2ca0ebcba9fd8343ff0a51625af548786257815f24b41f7e08613314\"}, {\"package_path\": \"setuptools/_vendor/platformdirs-4.4.0.dist-info/licenses/LICENSE\", \"sha256\": \"29e0fd62e929850e86eb28c3fdccf0cefdf4fa94879011cffb3d0d4bed6d4db6\"}, {\"package_path\": \"setuptools/_vendor/tomli-2.4.0.dist-info/licenses/LICENSE\", \"sha256\": \"b80816b0d530b8accb4c2211783790984a6e3b61922c2b5ee92f3372ab2742fe\"}, {\"package_path\": \"setuptools/_vendor/wheel-0.46.3.dist-info/licenses/LICENSE.txt\", \"sha256\": \"30c23618679108f3e8ea1d2a658c7ca417bdfc891c98ef1a89fa4ff0c9828654\"}, {\"package_path\": \"setuptools/_vendor/zipp-3.23.0.dist-info/licenses/LICENSE\", \"sha256\": \"5a57cb4db85e2a2dd88c290628908add57e3451449e0a9a71fdfb38776fd759d\"}, {\"package_path\": \"setuptools/config/NOTICE\", \"sha256\": \"2dddf08818297a3b89d43d95ff659d8da85741108c9136dfa3a4d856c0623bd8\"}, {\"package_path\": \"setuptools/config/_validate_pyproject/NOTICE\", \"sha256\": \"09c9bcea95ca086f8bc5bed174e40bc835b297d40fb5f86bbbb570fe0a5581a7\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "six",
+      "version": "1.17.0",
+      "purl": "pkg:pypi/six@1.17.0",
+      "bom-ref": "pkg:pypi/six@1.17.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"six-1.17.0.dist-info/LICENSE\", \"sha256\": \"4375ba20e2b9c6c4e7cad2940a628fd90e95cc3d50ee92aae755715d8ba1fbd0\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "sortedcontainers",
+      "version": "2.4.0",
+      "purl": "pkg:pypi/sortedcontainers@2.4.0",
+      "bom-ref": "pkg:pypi/sortedcontainers@2.4.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "Apache 2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"sortedcontainers-2.4.0.dist-info/LICENSE\", \"sha256\": \"1db7cae7fce6452e2e608e401a0f953e0133e4c2d75db69fb8ae851d2086f5b6\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "strenum",
+      "version": "0.4.15",
+      "purl": "pkg:pypi/strenum@0.4.15",
+      "bom-ref": "pkg:pypi/strenum@0.4.15",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT License"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"StrEnum-0.4.15.dist-info/LICENSE\", \"sha256\": \"bcd733d0a46522162b95dbab61f7cdc1c3e36861dfa127d68a4435240d36ad36\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "purl": "pkg:pypi/typing-extensions@4.16.0",
+      "bom-ref": "pkg:pypi/typing-extensions@4.16.0",
+      "licenses": [
+        {
+          "expression": "PSF-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"typing_extensions-4.16.0.dist-info/licenses/LICENSE\", \"sha256\": \"3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "urllib3",
+      "version": "2.7.0",
+      "purl": "pkg:pypi/urllib3@2.7.0",
+      "bom-ref": "pkg:pypi/urllib3@2.7.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"urllib3-2.7.0.dist-info/licenses/LICENSE.txt\", \"sha256\": \"130e3a64d5fdd5d096a752694634a7d9df284469de86e5732100268041e3d686\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "werkzeug",
+      "version": "3.1.8",
+      "purl": "pkg:pypi/werkzeug@3.1.8",
+      "bom-ref": "pkg:pypi/werkzeug@3.1.8",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"werkzeug-3.1.8.dist-info/licenses/LICENSE.txt\", \"sha256\": \"3b49dcee4105eb37bac10faf1be260408fe85d252b8e9df2e0979fc1e094437b\"}, {\"package_path\": \"werkzeug/debug/shared/ICON_LICENSE.md\", \"sha256\": \"0e103a6358149792707e0d0d14df518f8556213b7cb54c7422f7467f4bb1f7eb\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "wheel",
+      "version": "0.48.0",
+      "purl": "pkg:pypi/wheel@0.48.0",
+      "bom-ref": "pkg:pypi/wheel@0.48.0",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"wheel-0.48.0.dist-info/licenses/LICENSE.txt\", \"sha256\": \"30c23618679108f3e8ea1d2a658c7ca417bdfc891c98ef1a89fa4ff0c9828654\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "zabalack",
+      "version": "0.1.0b1",
+      "purl": "pkg:pypi/zabalack@0.1.0b1",
+      "bom-ref": "pkg:pypi/zabalack@0.1.0b1",
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "zabalack:license-files",
+          "value": "[{\"package_path\": \"zabalack-0.1.0b1.dist-info/licenses/LICENSE\", \"sha256\": \"b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1\"}, {\"package_path\": \"zabalack-0.1.0b1.dist-info/licenses/NOTICE\", \"sha256\": \"44120455e7682946fd74a29f4a2c865abcb39c0fcce47f78b700dbf6eb3be62f\"}]"
+        },
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "reference build/test environment"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "@electric-sql/pglite",
+      "version": "0.5.8",
+      "purl": "pkg:npm/%40electric-sql/pglite@0.5.8",
+      "bom-ref": "pkg:npm/%40electric-sql/pglite@0.5.8",
+      "properties": [
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "supplemental WASM lab only"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "9fdb6c6d43a1c31d9ea4ad55d191bd02be121d6523bb4e1d866cd95e24815f006895e3af21f6a5b37dcd01a5a06a041500be116efc7f3edb2edcffa9034f5fe9"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "@electric-sql/pglite-socket",
+      "version": "0.2.11",
+      "purl": "pkg:npm/%40electric-sql/pglite-socket@0.2.11",
+      "bom-ref": "pkg:npm/%40electric-sql/pglite-socket@0.2.11",
+      "properties": [
+        {
+          "name": "zabalack:inventory-scope",
+          "value": "supplemental WASM lab only"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "0ca9c905fefee731425d719900652f1a858a7ad3cfbda43b7cb48656a3f9a27ce006157dbef4dc1e2822ade31138c825828bef8685c768c38aaadebdfefb6ce0"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:pypi/alerta-server@9.1.0",
+      "dependsOn": [
+        "pkg:pypi/bcrypt@5.0.0",
+        "pkg:pypi/blinker@1.9.0",
+        "pkg:pypi/cryptography@50.0.1",
+        "pkg:pypi/defusedxml@0.7.1",
+        "pkg:pypi/flask-compress@1.24",
+        "pkg:pypi/flask-cors@6.0.5",
+        "pkg:pypi/flask@3.1.3",
+        "pkg:pypi/mohawk@1.1.0",
+        "pkg:pypi/pyjwt@2.13.0",
+        "pkg:pypi/pyparsing@3.3.2",
+        "pkg:pypi/python-dateutil@2.9.0.post0",
+        "pkg:pypi/pytz@2026.3.post1",
+        "pkg:pypi/pyyaml@6.0.3",
+        "pkg:pypi/requests-hawk@1.2.1",
+        "pkg:pypi/requests@2.34.2",
+        "pkg:pypi/sentry-sdk@2.69.1",
+        "pkg:pypi/strenum@0.4.15"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/anyio@4.15.1",
+      "dependsOn": [
+        "pkg:pypi/idna@3.19",
+        "pkg:pypi/typing-extensions@4.16.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/ast-serialize@0.11.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/backports-zstd@1.7.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/bcrypt@5.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/blinker@1.9.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/brotli@1.2.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/build@1.3.0",
+      "dependsOn": [
+        "pkg:pypi/packaging@26.3",
+        "pkg:pypi/pyproject-hooks@1.2.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/certifi@2026.7.22",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/cffi@2.1.1",
+      "dependsOn": [
+        "pkg:pypi/pycparser@3.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/charset-normalizer@3.5.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/click@8.5.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/cryptography@50.0.1",
+      "dependsOn": [
+        "pkg:pypi/cffi@2.1.1"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/defusedxml@0.7.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/flask@3.1.3",
+      "dependsOn": [
+        "pkg:pypi/blinker@1.9.0",
+        "pkg:pypi/click@8.5.0",
+        "pkg:pypi/itsdangerous@2.2.0",
+        "pkg:pypi/jinja2@3.1.6",
+        "pkg:pypi/markupsafe@3.0.3",
+        "pkg:pypi/werkzeug@3.1.8"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/flask-compress@1.24",
+      "dependsOn": [
+        "pkg:pypi/backports-zstd@1.7.0",
+        "pkg:pypi/brotli@1.2.0",
+        "pkg:pypi/flask@3.1.3"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/flask-cors@6.0.5",
+      "dependsOn": [
+        "pkg:pypi/flask@3.1.3",
+        "pkg:pypi/werkzeug@3.1.8"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/h11@0.16.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/httpcore@1.0.9",
+      "dependsOn": [
+        "pkg:pypi/certifi@2026.7.22",
+        "pkg:pypi/h11@0.16.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/httpx@0.28.1",
+      "dependsOn": [
+        "pkg:pypi/anyio@4.15.1",
+        "pkg:pypi/certifi@2026.7.22",
+        "pkg:pypi/httpcore@1.0.9",
+        "pkg:pypi/idna@3.19"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/hypothesis@6.168.0",
+      "dependsOn": [
+        "pkg:pypi/sortedcontainers@2.4.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/idna@3.19",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/iniconfig@2.3.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/itsdangerous@2.2.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/jinja2@3.1.6",
+      "dependsOn": [
+        "pkg:pypi/markupsafe@3.0.3"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/librt@0.15.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/markupsafe@3.0.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/mohawk@1.1.0",
+      "dependsOn": [
+        "pkg:pypi/six@1.17.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/mypy@2.3.1",
+      "dependsOn": [
+        "pkg:pypi/ast-serialize@0.11.1",
+        "pkg:pypi/librt@0.15.0",
+        "pkg:pypi/mypy-extensions@1.1.0",
+        "pkg:pypi/pathspec@1.1.1",
+        "pkg:pypi/typing-extensions@4.16.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/mypy-extensions@1.1.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/packaging@26.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/pathspec@1.1.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/pluggy@1.6.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/psycopg@3.2.10",
+      "dependsOn": [
+        "pkg:pypi/typing-extensions@4.16.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/psycopg-binary@3.2.10",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/psycopg2-binary@2.9.10",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/pycparser@3.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/pygments@2.21.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/pyjwt@2.13.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/pyparsing@3.3.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/pyproject-hooks@1.2.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/pytest@9.0.3",
+      "dependsOn": [
+        "pkg:pypi/iniconfig@2.3.0",
+        "pkg:pypi/packaging@26.3",
+        "pkg:pypi/pluggy@1.6.0",
+        "pkg:pypi/pygments@2.21.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/pytest-asyncio@1.3.0",
+      "dependsOn": [
+        "pkg:pypi/pytest@9.0.3",
+        "pkg:pypi/typing-extensions@4.16.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/python-dateutil@2.9.0.post0",
+      "dependsOn": [
+        "pkg:pypi/six@1.17.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/pytz@2026.3.post1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/pyyaml@6.0.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/requests@2.34.2",
+      "dependsOn": [
+        "pkg:pypi/certifi@2026.7.22",
+        "pkg:pypi/charset-normalizer@3.5.1",
+        "pkg:pypi/idna@3.19",
+        "pkg:pypi/urllib3@2.7.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/requests-hawk@1.2.1",
+      "dependsOn": [
+        "pkg:pypi/mohawk@1.1.0",
+        "pkg:pypi/requests@2.34.2"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/ruff@0.16.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/sentry-sdk@2.69.1",
+      "dependsOn": [
+        "pkg:pypi/certifi@2026.7.22",
+        "pkg:pypi/urllib3@2.7.0"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/setuptools@83.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/six@1.17.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/sortedcontainers@2.4.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/strenum@0.4.15",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/typing-extensions@4.16.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/urllib3@2.7.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:pypi/werkzeug@3.1.8",
+      "dependsOn": [
+        "pkg:pypi/markupsafe@3.0.3"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/wheel@0.48.0",
+      "dependsOn": [
+        "pkg:pypi/packaging@26.3"
+      ]
+    },
+    {
+      "ref": "pkg:pypi/zabalack@0.1.0b1",
+      "dependsOn": [
+        "pkg:pypi/httpx@0.28.1",
+        "pkg:pypi/psycopg@3.2.10"
+      ]
+    }
+  ]
+}
