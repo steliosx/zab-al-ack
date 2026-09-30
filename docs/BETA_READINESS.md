@@ -9,8 +9,10 @@ historical executed results.
 The original a16 release narrative below is historical. Its reference, mutation,
 property, native, real-Zabbix and deployment-path records retain their original
 revision bindings (42 native, 6 real Zabbix 7.0.10, 4 deployment-path cases with
-13/13 observations from the installed wheel). Use the dated current ARM64
-assessment below for the later PR #24 qualification; do not rebind older results.
+13/13 observations from the installed wheel). The dated ARM64 assessment below
+is historical PR #24 evidence; do not rebind older results. Linux x64 on the
+shared self-hosted runner VM is the current beta target, and ARM64
+qualification is deferred until after the x64 beta.
 Unchanged service-path code supports an inference about a14 and a15; a14's own
 records remain NOT_RUN and a15's stand on a15's runs. The independent a12 and
 a15 reviews' records — including the a15 review's local Gitleaks result — and
@@ -254,13 +256,15 @@ and branch protections remain in force.
 
 Still required before calling this beta ready:
 
-- Preserve the completed exact-candidate Actions and Compose results above.
-  Do not restart the completed runner migration. Use the functioning ARM64
-  self-hosted runner without paid-hosted fallback. Reassess required checks and
-  affected validation if the implementation or final integration identity changes.
-  Native x86_64 is **DEFERRED** to its authorized qualification milestone; it is
-  not a pass or acceptance. ARM64 and x64 installation pins do not establish
-  native x64 execution or installed-environment acceptance.
+- Qualify the exact candidate on Linux x64 first, on the shared self-hosted
+  runner VM, without paid-hosted fallback: native PostgreSQL/PgBouncer and the
+  Actions producer-to-package path. Neither has executed for this candidate; that
+  is not a pass or acceptance. Reassess required checks and affected validation if
+  the implementation or final integration identity changes. The completed PR #24
+  ARM64 Actions and Compose results above stay historical ARM64 evidence at their
+  revisions. ARM64 qualification follows the x64 beta and does not block it.
+  Installation pins do not establish native execution or installed-environment
+  acceptance.
 - Resolve reference webhook transport amendment A2 with inspected installed
   controls and negative certificate/hostname/redirect tests before deployment.
 - Observe media, macro and update-operation behaviour on a production-like
@@ -288,13 +292,17 @@ private report destination and disposition process. Arrange review before beta
 under the existing checklist; completed external review is also a stable-support
 requirement. A dependency/secret scan is not an application-security review.
 Decide the applicable CodeQL, signed-attestation and second-platform release
-policy without silently waiving an existing requirement. Native x64 remains
-deferred until an authorized native host and bounded qualification inputs exist.
+policy without silently waiving an existing requirement. Native x64
+qualification runs on the shared Linux x64 runner VM once its reviewed admission
+and access changes and the separate GitHub grant are in place. ARM64
+qualification is deferred until after the x64 beta.
 
 Proposed sequence, subject to the existing gates and separate authorization:
 
-1. Finish the frozen ARM64 assessments and retain exact-artifact evidence;
-   resolve demonstrated defects with a documented revalidation decision.
+1. Qualify the exact candidate on the shared Linux x64 runner and retain
+   exact-artifact evidence; resolve demonstrated defects with a documented
+   revalidation decision. The frozen ARM64 assessments remain historical; ARM64
+   qualification follows the x64 beta.
 2. Obtain installed-account inputs and applicable acceptance/review evidence;
    resolve substantive findings and publication-owner decisions.
 3. Prepare and review the integration order and exact candidate/base identities.
