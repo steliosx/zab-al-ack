@@ -5,14 +5,15 @@ The in-job flock on the legacy lab lock is retired (shared-CI Phase B prerequisi
 only under an external whole-job exclusion; this step verifies that exclusion before any service starts. It never
 grants, extends or releases anything, and it trusts nothing the job could have written:
 
-  phase-b   the broker status socket exists: its read-only status must answer ok, with quarantined exactly false (a
+  phase-b   lstat(broker socket) succeeds and it is a socket: its read-only status must answer ok, with quarantined exactly false (a
             null, missing or latched value refuses), not paused or pausing, and an active lifecycle whose unit and
             InvocationID are this job's own unit and invocation (from the manager), in phase "running", for this
             project.
-  phase-a   no broker socket: this job's own unit must be the persistent runner unit gated by the shared-ci window,
-            with its FragmentPath under /etc/systemd/system and an ExecCondition that runs
-            `shared-ci-window runner-may-start`.
-  anything else refuses: no unit cgroup, a transient or ungated unit, an unreadable observation, a malformed reply.
+  phase-a   lstat(broker socket) is ENOENT: this job's own unit must be the persistent runner unit gated by the
+            shared-ci window: FragmentPath under /etc/systemd/system, no drop-ins, and an effective ExecCondition entry
+            whose path and argv are exactly the helper and `runner-may-start` with ignore_errors=no.
+  anything else refuses: any other lstat error or a non-socket at the broker path, no unit cgroup, a transient,
+  overridden or ungated unit, an unreadable observation, a malformed reply.
 
 Exit 0 when admitted, 1 when refused, 2 for usage errors. It prints one JSON object. It reads only /proc/self/cgroup,
 `systemctl show` for its own unit and the broker status socket.
@@ -20,17 +21,20 @@ Exit 0 when admitted, 1 when refused, 2 for usage errors. It prints one JSON obj
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 from pathlib import Path
 import re
 import socket
+import stat
 import subprocess
 import sys
 
 BROKER_SOCKET = Path('/run/shared-ci/broker.sock')
 UNIT_DIR = '/etc/systemd/system/'
-WINDOW_CONDITION = re.compile(r'/usr/local/sbin/shared-ci-window\s.*\brunner-may-start\b|argv\[\]=/usr/local/sbin/shared-ci-window runner-may-start')
+WINDOW_HELPER = '/usr/local/sbin/shared-ci-window'
+WINDOW_ARGV = WINDOW_HELPER + ' runner-may-start'
 UNIT_NAME = re.compile(r'actions\.runner\.[A-Za-z0-9_.-]+\.service')
 MAX_REPLY = 65536
 
@@ -108,22 +112,54 @@ def check_phase_b(unit: str, invocation: str, status: dict[str, object], project
     return {'mode': 'phase-b', 'unit': unit, 'invocation': invocation}
 
 
-def check_phase_a(unit: str, fragment: str, condition: str) -> dict[str, object]:
+def condition_entries(value: str) -> list[dict[str, str]]:
+    """Parse `systemctl show -p ExecCondition --value`: one `{ key=value ; ... }` group per command."""
+    entries = []
+    for group in re.findall(r'\{([^{}]*)\}', value):
+        fields: dict[str, str] = {}
+        for part in group.split(' ; '):
+            key, sep, val = part.strip().partition('=')
+            if sep:
+                fields[key] = val
+        entries.append(fields)
+    return entries
+
+
+def check_phase_a(unit: str, fragment: str, dropins: str, condition: str) -> dict[str, object]:
     if fragment != UNIT_DIR + unit:
         raise Refused(f'unit {unit} is not the persistent runner unit (FragmentPath {fragment!r})')
-    if not WINDOW_CONDITION.search(condition):
+    if dropins.strip():
+        raise Refused(f'unit {unit} has drop-in overrides ({dropins!r})')
+    gated = [e for e in condition_entries(condition)
+             if e.get('path') == WINDOW_HELPER and e.get('argv[]') == WINDOW_ARGV and e.get('ignore_errors') == 'no']
+    if not gated:
         raise Refused(f'unit {unit} is not gated by the shared-ci window (ExecCondition {condition!r})')
     return {'mode': 'phase-a', 'unit': unit}
 
 
+def broker_present(path: Path) -> bool:
+    """True for a socket at the path, False only for ENOENT; any other result refuses (unknown is not absent)."""
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        code = errno.errorcode.get(error.errno, str(error.errno)) if error.errno is not None else 'unknown'
+        raise Refused(f'broker path unobservable: {code}') from None
+    if not stat.S_ISSOCK(info.st_mode):
+        raise Refused('broker path exists but is not a socket')
+    return True
+
+
 def admit(cgroup_file: Path, broker: Path, systemctl: str, project: str, timeout: float) -> dict[str, object]:
     unit = own_unit(cgroup_file)
-    if os.path.lexists(broker):
+    if broker_present(broker):
         invocation = systemctl_show(unit, 'InvocationID', systemctl)
         if not re.fullmatch(r'[0-9a-f]{32}', invocation):
             raise Refused('own InvocationID unavailable')
         return check_phase_b(unit, invocation, broker_status(broker, timeout), project)
     return check_phase_a(unit, systemctl_show(unit, 'FragmentPath', systemctl),
+                         systemctl_show(unit, 'DropInPaths', systemctl),
                          systemctl_show(unit, 'ExecCondition', systemctl))
 
 

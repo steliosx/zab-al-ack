@@ -72,7 +72,7 @@ def run(tmp_path, cg, broker_path, systemctl, capsys):
 
 
 def test_phase_a_admits_the_persistent_window_gated_unit(tmp_path, capsys):
-    sc = fake_systemctl(tmp_path, {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'ExecCondition': GATED})
+    sc = fake_systemctl(tmp_path, {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'ExecCondition': GATED})
     rc, out = run(tmp_path, cgroup(tmp_path), tmp_path / 'absent.sock', sc, capsys)
     assert rc == 0 and out == {'admitted': True, 'mode': 'phase-a', 'unit': UNIT}
 
@@ -149,3 +149,38 @@ def test_phase_b_refuses_a_malformed_reply_a_dead_socket_and_a_missing_invocatio
     path, _ = broker(tmp_path, status(), name='second.sock')
     rc, out = run(tmp_path, cgroup(tmp_path), path, fake_systemctl(tmp_path, {'InvocationID': ''}), capsys)
     assert rc == 1 and 'own InvocationID unavailable' in out['reason']
+
+
+ECHO_WRAPPED = ('{ path=/usr/bin/echo ; argv[]=/usr/bin/echo /usr/local/sbin/shared-ci-window runner-may-start ; '
+                'ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }')
+IGNORED = GATED.replace('ignore_errors=no', 'ignore_errors=yes')
+
+
+@pytest.mark.parametrize('values, needle', [
+    ({'ExecCondition': ECHO_WRAPPED}, 'not gated'),          # C6-ADMISSION-02: the helper text only as an argument
+    ({'ExecCondition': IGNORED}, 'not gated'),               # a non-mandatory (ignore_errors=yes) condition
+    ({'DropInPaths': '/etc/systemd/system/actions.runner.zabalack-attended.service.d/override.conf'}, 'drop-in overrides'),
+])
+def test_phase_a_requires_the_exact_mandatory_condition_and_no_override(tmp_path, capsys, values, needle):
+    base = {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'ExecCondition': GATED}
+    rc, out = run(tmp_path, cgroup(tmp_path), tmp_path / 'absent.sock', fake_systemctl(tmp_path, {**base, **values}), capsys)
+    assert rc == 1 and needle in out['reason']
+
+
+def test_an_unobservable_or_wrong_type_broker_path_refuses_instead_of_selecting_phase_a(tmp_path, capsys):
+    """C6-ADMISSION-01: only ENOENT means no broker; EACCES, ENOTDIR or a non-socket refuse."""
+    sc = fake_systemctl(tmp_path, {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'ExecCondition': GATED})
+    locked = tmp_path / 'locked'
+    locked.mkdir()
+    locked.chmod(0)
+    try:
+        rc, out = run(tmp_path, cgroup(tmp_path), locked / 'broker.sock', sc, capsys)
+    finally:
+        locked.chmod(0o700)
+    assert rc == 1 and 'unobservable: EACCES' in out['reason']
+    plain = tmp_path / 'plainfile'
+    plain.write_text('x')
+    rc, out = run(tmp_path, cgroup(tmp_path), plain / 'broker.sock', sc, capsys)
+    assert rc == 1 and 'unobservable: ENOTDIR' in out['reason']
+    rc, out = run(tmp_path, cgroup(tmp_path), plain, sc, capsys)
+    assert rc == 1 and 'not a socket' in out['reason']

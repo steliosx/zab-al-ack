@@ -1346,7 +1346,12 @@ prerequisite for the shared-ci broker.
   - **Phase B:** the broker's read-only status must show the job's own unit and manager InvocationID as the active
     lifecycle in phase `running`, with `quarantined` exactly false, `quarantine_state` `clear`, no pause and no pause
     requested;
-  - **Phase A:** the job's own unit must be the persistent runner unit gated by the shared-ci window;
+  - **Phase A:** `lstat` of the broker socket path is ENOENT, and the job's own unit is the persistent runner unit: its
+    fragment is in `/etc/systemd/system`, it has no drop-ins, and its effective `ExecCondition` has an entry whose
+    `path` and `argv[]` are exactly the helper and `runner-may-start`, with `ignore_errors=no`. The helper text inside
+    another command's arguments does not count;
+  - any other `lstat` result (EACCES, ENOTDIR, I/O error) or a non-socket at the broker path refuses, never selects
+    Phase A;
   - the historical transient runner, an unreadable observation or a malformed reply refuses.
 - **Not until the exclusion exists:** these workflows are not run on a runner without the exclusion. The step refuses
   there.
@@ -1374,9 +1379,27 @@ prerequisite for the shared-ci broker.
 - Both reach the development and lab-runner environment through `alerta-server` and `requests` (which accepts
   urllib3 `<3`). urllib3 also reaches the scanner environment through pip-audit's `requests`.
 
+**Applicability, per advisory** (the pins are those of this candidate):
+
+| Advisory | Package and fix | Where the package runs | Assessment |
+|---|---|---|---|
+| GHSA-42vr-xj54-vc7v | PyJWT, 2.15.0 | the lab Alerta server and the development environment | The maintainer confirms an uncaught request-level exception in pre-verification parsing; not demonstrated process termination or authentication bypass. Not reproduced here |
+| GHSA-x33g-cr3x-6449 | PyJWT, 2.15.0 | as above | An inconsistent OKP private-JWK identity. Whether the lab Alerta ever handles OKP keys is not assessed |
+| GHSA-8988-9cw3-xx77 | urllib3, 2.8.0 | Alerta (through requests) and the scanner (pip-audit through requests) | HTTPS-proxy TLS configuration ignored or overridden. No lab or CI path is configured with an HTTPS proxy, and no test exercises one |
+| GHSA-vxq7-64xx-v4gw | urllib3, 2.8.0 | as above | Unbounded chunk-size line buffering when reading responses. Not exercised |
+| GHSA-gh4c-6fx4-qh6g | urllib3, 2.8.0 | as above | An infinite loop in chunked Deflate streaming. Not exercised |
+
+None of the five reaches the shipped zabalack package: it imports neither library, and the runtime lock carries
+neither (asserted by `tests/release/test_dependency_advisory_pins.py`). Daybreak's aggregate count of 13 PyJWT
+advisories on 2.13.0 is attributed to Daybreak and not reproduced here; the fresh exact-lock pip-audit scan of this
+candidate is the advisory check.
+
 **What is and is not claimed:**
 - Both locks install cleanly with `pip check` passing.
 - The installed set differs from C5's only in these two packages.
-- The focused Alerta HTTP and JWT tests pass.
-- Compatibility for the candidate rests on its fresh gates and scans. HTTPS-proxy behaviour is not exercised by any
-  current test, and request-level reachability within Alerta is not demonstrated.
+- The focused Alerta HTTP and JWT tests pass. They are compatibility checks, not negative or proxy coverage.
+- `test_dependency_advisory_pins.py` asserts that every lock carrying either package pins at or above each recorded
+  first patched version, and that the runtime lock carries neither. With PyJWT 2.14.0 and urllib3 2.7.0 restored, its
+  five R33 cases fail, as they should.
+- Compatibility for the candidate rests on its fresh gates and scans. HTTPS-proxy behaviour and the advisories' own
+  failure modes are not exercised by any test here.
