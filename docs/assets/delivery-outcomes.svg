@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="680" viewBox="0 0 1280 680" role="img" aria-labelledby="diagram-title diagram-description">
+<title id="diagram-title">When the outcome is uncertain, preserve it.</title>
+<desc id="diagram-description">Three illustrative situations around Zabalack's PostgreSQL ledger; this is not an exhaustive implementation state diagram. An already-acknowledged source problem is observed and recorded with no extra acknowledgement or comment. An eligible delivery checks the original problem and scope and delivers only a bounded acknowledgement. An unknown remote outcome remains recorded as uncertain; reconciliation investigates by source reads and does not blindly resend a write. Alpha design for development and isolated evaluation; no production validation is implied.</desc>
+<rect x="0" y="0" width="1280" height="680" rx="0" fill="#FAF9F6"/>
+<g aria-hidden="true" transform="translate(64 42) scale(0.09946236559139784) translate(0 0)"><path d="M0.000 8.000Q0.000 0.000 8.000 0.000L296.000 0.000Q304.000 0.000 304.000 8.000L304.000 56.000Q304.000 64.000 298.343 69.657L133.657 234.343Q128.000 240.000 136.000 240.000L198.000 240.000Q206.000 240.000 211.448 234.141L306.552 131.859Q312.000 126.000 317.946 131.352L366.054 174.648Q372.000 180.000 366.556 185.862L247.444 314.138Q242.000 320.000 234.000 320.000L8.000 320.000Q0.000 320.000 0.000 312.000L0.000 264.000Q0.000 256.000 5.657 250.343L186.343 69.657Q192.000 64.000 184.000 64.000L8.000 64.000Q0.000 64.000 0.000 56.000Z" fill="#E59732"/></g>
+<text x="117" y="68" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#1C2936" font-weight="700" text-anchor="start" letter-spacing="1.6">ZABALACK / OUTCOME HANDLING</text>
+<rect x="1045" y="43" width="171" height="36" rx="18" fill="#F5E5CF"/>
+<text x="1130.5" y="67" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#1C2936" font-weight="700" text-anchor="middle" letter-spacing="1.1">ALPHA DESIGN</text>
+<text x="64" y="143" font-family="Arial, Helvetica, sans-serif" font-size="46" fill="#1C2936" font-weight="700" text-anchor="start">When the outcome is uncertain, preserve it.</text>
+<text x="64" y="183" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="#5E6974" font-weight="400" text-anchor="start">A durable record keeps intent, observations and uncertainty attached.</text>
+<rect x="414" y="224" width="452" height="86" rx="18" fill="#1C2936"/>
+<rect x="441" y="244" width="42" height="46" rx="5" fill="none" stroke="#FFFFFF" stroke-width="2.2"/><path d="M451 257H471M451 267H469M451 277H461" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="480" cy="285" r="7" fill="#E59732"/>
+<text x="507" y="260" font-family="Arial, Helvetica, sans-serif" font-size="23" fill="#FFFFFF" font-weight="700" text-anchor="start">PostgreSQL ledger</text>
+<text x="507" y="288" font-family="Arial, Helvetica, sans-serif" font-size="20" fill="#D6DEE4" font-weight="400" text-anchor="start">Signed intent + observations</text>
+<path d="M640 310V343M244 373V343H1036V373M640 343V373" fill="none" stroke="#C8CFD3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="528" y="331" width="224" height="25" rx="0" fill="#FAF9F6"/>
+<text x="640" y="349" font-family="Arial, Helvetica, sans-serif" font-size="13.5" fill="#5E6974" font-weight="700" text-anchor="middle" letter-spacing="1.1">OBSERVED SITUATIONS</text>
+<rect x="64" y="373" width="360" height="222" rx="18" fill="#FFFFFF" stroke="#D8DDDF" stroke-width="1.5"/>
+<rect x="88" y="396" width="44" height="44" rx="10" fill="#F5E5CF"/><path d="M99 418l8 8 15-17" fill="none" stroke="#1C2936" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="145" y="423" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#5E6974" font-weight="700" text-anchor="start" letter-spacing="0.55">SOURCE ALREADY ACKED</text>
+<text x="88" y="476" font-family="Arial, Helvetica, sans-serif" font-size="27" fill="#1C2936" font-weight="700" text-anchor="start">Already acknowledged</text>
+<text x="88" y="510" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Record the observation.</text>
+<text x="88" y="538" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">No extra ack or comment.</text>
+<rect x="460" y="373" width="360" height="222" rx="18" fill="#FFF8EC" stroke="#D8DDDF" stroke-width="1.5"/>
+<rect x="484" y="396" width="44" height="44" rx="10" fill="#E59732"/><path d="M495 418H516M508 410l8 8-8 8" fill="none" stroke="#1C2936" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="541" y="423" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#5E6974" font-weight="700" text-anchor="start" letter-spacing="0.55">ALL CHECKS PERMIT</text>
+<text x="484" y="476" font-family="Arial, Helvetica, sans-serif" font-size="27" fill="#1C2936" font-weight="700" text-anchor="start">Eligible delivery</text>
+<text x="484" y="510" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Check original problem + scope.</text>
+<text x="484" y="538" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Deliver a bounded ack.</text>
+<rect x="856" y="373" width="360" height="222" rx="18" fill="#F0F3F4" stroke="#D8DDDF" stroke-width="1.5"/>
+<rect x="880" y="396" width="44" height="44" rx="10" fill="#1C2936"/><circle cx="892" cy="418" r="2.7" fill="#E59732"/><circle cx="902" cy="418" r="2.7" fill="#E59732"/><circle cx="912" cy="418" r="2.7" fill="#E59732"/>
+<text x="937" y="423" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#5E6974" font-weight="700" text-anchor="start" letter-spacing="0.55">EFFECT NOT CONFIRMED</text>
+<text x="880" y="476" font-family="Arial, Helvetica, sans-serif" font-size="27" fill="#1C2936" font-weight="700" text-anchor="start">Unknown outcome</text>
+<text x="880" y="510" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Investigate by source reads.</text>
+<text x="880" y="538" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Preserve uncertainty.</text>
+<text x="880" y="566" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">No blind resend.</text>
+<path d="M64 622H1216" fill="none" stroke="#D8DDDF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64" y="652" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#5E6974" font-weight="400" text-anchor="start">Illustrative outcomes · Single-alert scope</text>
+<text x="1216" y="652" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#5E6974" font-weight="700" text-anchor="end">Alpha evaluation only</text>
+</svg>

@@ -1,0 +1,78 @@
+{
+  "name": "Zab-al-ack",
+  "display_wordmark": "zabalack.",
+  "concept": "Ack Relay",
+  "version": "1.0",
+  "date": "2026-10-01",
+  "status": "Refined identity; original vector construction.",
+  "meaning": "A single Z route ends in a lifted acknowledgement terminal, reflecting durable delivery from one human action in Alerta to its original scoped Zabbix problem.",
+  "palette": {
+    "amber": "#E59732",
+    "navy": "#1C2936",
+    "ivory": "#FAF9F6",
+    "white": "#FFFFFF"
+  },
+  "canonical_mark_viewbox": [
+    0,
+    0,
+    372,
+    320
+  ],
+  "canonical_logo_viewbox": [
+    0,
+    0,
+    1760,
+    320
+  ],
+  "construction": {
+    "mark": "One solid path; no detached badge, strokes, gradients or embedded imagery.",
+    "corner_radius_units": 8,
+    "wordmark": "Eight outlined lowercase letters and a circular amber period; no runtime font dependency.",
+    "wordmark_origin": [
+      428,
+      49
+    ],
+    "mark_to_wordmark_gap_units": 56,
+    "top_bar_thickness_units": 64,
+    "icon": "Navy mark on an amber rounded square; the same mark geometry at every size."
+  },
+  "clear_space": {
+    "minimum_mark_units": 64,
+    "rule": "Keep at least one top-bar thickness (64 mark units) clear on every side of the complete mark or wordmark.",
+    "compact_ui_exception": "Supplied favicon and app icon include their own optical padding; do not add external padding inside their square."
+  },
+  "minimum_sizes": {
+    "standalone_mark_width_px": 24,
+    "full_wordmark_width_px": 176,
+    "recommended_desktop_header_width_px": 208,
+    "recommended_mobile_header_width_px": 180,
+    "favicon_px": 16,
+    "guidance": "At 16–23 px, prefer the supplied favicon composition; reserve the full wordmark for widths of 176 px or more."
+  },
+  "variants": {
+    "zabalack-mark.svg": "Amber on ivory or navy.",
+    "zabalack-mark-dark.svg": "Ivory for dark backgrounds or reversed monochrome use.",
+    "zabalack-mark-mono.svg": "Navy for light backgrounds and one-color output.",
+    "zabalack-logo-light.svg": "Amber mark and period with navy letters on ivory or white.",
+    "zabalack-logo-dark.svg": "Amber mark and period with ivory letters on navy.",
+    "zabalack-logo-mono.svg": "All navy, including the period.",
+    "favicon.svg": "Navy mark on amber, optimized padded composition for 16–32 px.",
+    "zabalack-app-icon.svg": "512 px master of the same icon composition."
+  },
+  "usage": [
+    "Preserve the silhouette, clear inner pocket and lifted terminal.",
+    "Use the matching logo variant for the background.",
+    "Keep the amber period in primary wordmarks; keep it monochrome in the mono version.",
+    "Do not stretch, outline, rotate, add gradients, shadows, textures or detached check badges.",
+    "The visual wordmark is zabalack.; the official project name remains Zab-al-ack. This identity does not rename a repository, package, API or command.",
+    "Do not describe the mark as many-alert aggregation, automatic re-acknowledgement, full synchronization or bidirectional writes."
+  ],
+  "license": "Apache-2.0",
+  "rights_note": "Original, project-owned branding supplied under the project Apache-2.0 license. No trademark registration or affiliation claim is made.",
+  "validation": [
+    "All SVG lettering is real paths; no fonts or bitmap embeds.",
+    "Every mark variant uses the same canonical path.",
+    "No scripts, external URLs, filters, masks or clipping dependencies.",
+    "Rendered and inspected at 16, 24 and 32 px; header lockups checked at 180 and 208 px."
+  ]
+}

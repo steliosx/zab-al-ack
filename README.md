@@ -1,6 +1,14 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/zabalack-logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/brand/zabalack-logo-light.svg">
+  <img src="docs/brand/zabalack-logo-light.svg" alt="Zabalack — Ack Relay identity" width="420">
+</picture>
+
 # Zab-al-ack
 
 **0.1.0a17 · public alpha candidate · development and isolated evaluation**
+
+![Zabalack editorial illustration: one amber acknowledgement path carried between two endpoints.](docs/assets/readme-hero.png)
 
 Formerly **Ackline**. 0.1.0a9 renamed the package, CLI, Alerta entry points,
 configuration, services, database namespace and signing domain to `zabalack`;
@@ -52,6 +60,19 @@ This is a Python package **plus PostgreSQL migrations, an Alerta application
 adapter and background services**. Installing the wheel alone does not activate
 write-back. Production examples have external writes disabled and no active
 cohorts or endpoints. No production environment has been validated.
+
+## One acknowledgement. One careful handoff.
+
+![A high-level acknowledgement journey: an authorised action in Alerta is captured durably in PostgreSQL; a worker verifies the intent, checks the original Zabbix problem and records the delivery outcome.](docs/assets/acknowledgement-journey.svg)
+
+*Illustrative overview of the alpha design. The scope, compatibility and evaluation
+limits below remain authoritative.*
+
+![Delivery outcomes: an already acknowledged event needs no additional write; an eligible event can receive a bounded acknowledgement; an uncertain write outcome is preserved and investigated by reads.](docs/assets/delivery-outcomes.svg)
+
+The complete [architecture and implementation design](docs/DESIGN.md) explains
+the capture, delivery and reconciliation boundaries. Reusable logos and
+illustrations are in the [brand guide](docs/brand/BRAND.md).
 
 ## Try the isolated reference lab
 
@@ -154,3 +175,4 @@ independent integration project; it is not an official Alerta or Zabbix product.
 Project-owned material is licensed under [Apache-2.0](LICENSE); upstream material
 retains its licence and attribution in [NOTICE](NOTICE) and
 [THIRD_PARTY.md](THIRD_PARTY.md).
+
