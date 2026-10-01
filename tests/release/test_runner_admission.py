@@ -72,7 +72,7 @@ def run(tmp_path, cg, broker_path, systemctl, capsys):
 
 
 def test_phase_a_admits_the_persistent_window_gated_unit(tmp_path, capsys):
-    sc = fake_systemctl(tmp_path, {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'ExecCondition': GATED})
+    sc = fake_systemctl(tmp_path, {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'SuccessExitStatus': '', 'ExecCondition': GATED})
     rc, out = run(tmp_path, cgroup(tmp_path), tmp_path / 'absent.sock', sc, capsys)
     assert rc == 0 and out == {'admitted': True, 'mode': 'phase-a', 'unit': UNIT}
 
@@ -80,7 +80,7 @@ def test_phase_a_admits_the_persistent_window_gated_unit(tmp_path, capsys):
 @pytest.mark.parametrize('values, needle', [
     ({'FragmentPath': f'/run/systemd/transient/{UNIT}', 'ExecCondition': ''}, 'not the persistent runner unit'),
     ({'FragmentPath': f'/etc/systemd/system/{UNIT}', 'ExecCondition': ''}, 'not gated by the shared-ci window'),
-    ({'FragmentPath': f'/etc/systemd/system/{UNIT}', 'ExecCondition': '{ argv[]=/bin/true }'}, 'not gated'),
+    ({'FragmentPath': f'/etc/systemd/system/{UNIT}', 'ExecCondition': '{ argv[]=/bin/true }'}, 'without path and argv'),  # now refused as malformed
 ])
 def test_phase_a_refuses_the_historical_or_an_ungated_unit(tmp_path, capsys, values, needle):
     rc, out = run(tmp_path, cgroup(tmp_path), tmp_path / 'absent.sock', fake_systemctl(tmp_path, values), capsys)
@@ -162,14 +162,14 @@ IGNORED = GATED.replace('ignore_errors=no', 'ignore_errors=yes')
     ({'DropInPaths': '/etc/systemd/system/actions.runner.zabalack-attended.service.d/override.conf'}, 'drop-in overrides'),
 ])
 def test_phase_a_requires_the_exact_mandatory_condition_and_no_override(tmp_path, capsys, values, needle):
-    base = {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'ExecCondition': GATED}
+    base = {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'SuccessExitStatus': '', 'ExecCondition': GATED}
     rc, out = run(tmp_path, cgroup(tmp_path), tmp_path / 'absent.sock', fake_systemctl(tmp_path, {**base, **values}), capsys)
     assert rc == 1 and needle in out['reason']
 
 
 def test_an_unobservable_or_wrong_type_broker_path_refuses_instead_of_selecting_phase_a(tmp_path, capsys):
     """C6-ADMISSION-01: only ENOENT means no broker; EACCES, ENOTDIR or a non-socket refuse."""
-    sc = fake_systemctl(tmp_path, {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'ExecCondition': GATED})
+    sc = fake_systemctl(tmp_path, {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'SuccessExitStatus': '', 'ExecCondition': GATED})
     locked = tmp_path / 'locked'
     locked.mkdir()
     locked.chmod(0)
@@ -184,3 +184,17 @@ def test_an_unobservable_or_wrong_type_broker_path_refuses_instead_of_selecting_
     assert rc == 1 and 'unobservable: ENOTDIR' in out['reason']
     rc, out = run(tmp_path, cgroup(tmp_path), plain, sc, capsys)
     assert rc == 1 and 'not a socket' in out['reason']
+
+
+@pytest.mark.parametrize('values, needle', [
+    ({'SuccessExitStatus': '1'}, 'extra success exit statuses'),     # C6-ADMISSION-02: exit 1 would count as success
+    ({'ExecCondition': GATED + ' trailing'}, 'outside its command groups'),
+    ({'ExecCondition': '{ path=/x ; argv[]=/x ; path=/y }'}, 'malformed or duplicate field'),
+    ({'ExecCondition': '{ path=/usr/local/sbin/shared-ci-window ; junk ; argv[]=/usr/local/sbin/shared-ci-window runner-may-start }'}, 'malformed or duplicate field'),
+    ({'ExecCondition': '{ ignore_errors=no }'}, 'without path and argv'),
+    ({'ExecCondition': '{ path=/a { nested } }'}, 'outside its command groups'),
+])
+def test_phase_a_refuses_extra_success_statuses_and_malformed_conditions(tmp_path, capsys, values, needle):
+    base = {'FragmentPath': f'/etc/systemd/system/{UNIT}', 'DropInPaths': '', 'SuccessExitStatus': '', 'ExecCondition': GATED}
+    rc, out = run(tmp_path, cgroup(tmp_path), tmp_path / 'absent.sock', fake_systemctl(tmp_path, {**base, **values}), capsys)
+    assert rc == 1 and needle in out['reason']

@@ -1347,9 +1347,11 @@ prerequisite for the shared-ci broker.
     lifecycle in phase `running`, with `quarantined` exactly false, `quarantine_state` `clear`, no pause and no pause
     requested;
   - **Phase A:** `lstat` of the broker socket path is ENOENT, and the job's own unit is the persistent runner unit: its
-    fragment is in `/etc/systemd/system`, it has no drop-ins, and its effective `ExecCondition` has an entry whose
-    `path` and `argv[]` are exactly the helper and `runner-may-start`, with `ignore_errors=no`. The helper text inside
-    another command's arguments does not count;
+    fragment is in `/etc/systemd/system`, it has no drop-ins, it declares no extra `SuccessExitStatus` (so a condition
+    exit of 1 cannot count as success), and its effective `ExecCondition` has an entry whose `path` and `argv[]` are
+    exactly the helper and `runner-may-start`, with `ignore_errors=no`. The helper text inside another command's
+    arguments does not count. `ExecCondition` text that is malformed or ambiguous refuses: text outside the command
+    groups, a part that is not `key=value`, a duplicate key, or a group without `path` and `argv[]`;
   - any other `lstat` result (EACCES, ENOTDIR, I/O error) or a non-socket at the broker path refuses, never selects
     Phase A;
   - the historical transient runner, an unreadable observation or a malformed reply refuses.

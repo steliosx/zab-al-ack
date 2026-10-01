@@ -10,8 +10,10 @@ grants, extends or releases anything, and it trusts nothing the job could have w
             InvocationID are this job's own unit and invocation (from the manager), in phase "running", for this
             project.
   phase-a   lstat(broker socket) is ENOENT: this job's own unit must be the persistent runner unit gated by the
-            shared-ci window: FragmentPath under /etc/systemd/system, no drop-ins, and an effective ExecCondition entry
-            whose path and argv are exactly the helper and `runner-may-start` with ignore_errors=no.
+            shared-ci window: FragmentPath under /etc/systemd/system, no drop-ins, no extra SuccessExitStatus (so a
+            condition exit 1 cannot count as success), and an effective ExecCondition entry whose path and argv are
+            exactly the helper and `runner-may-start` with ignore_errors=no; malformed or ambiguous ExecCondition text
+            refuses.
   anything else refuses: any other lstat error or a non-socket at the broker path, no unit cgroup, a transient,
   overridden or ungated unit, an unreadable observation, a malformed reply.
 
@@ -113,23 +115,35 @@ def check_phase_b(unit: str, invocation: str, status: dict[str, object], project
 
 
 def condition_entries(value: str) -> list[dict[str, str]]:
-    """Parse `systemctl show -p ExecCondition --value`: one `{ key=value ; ... }` group per command."""
+    """Strictly parse `systemctl show -p ExecCondition --value`: whitespace-separated `{ key=value ; ... }` groups.
+
+    Text outside the groups, nested or unbalanced braces, a part that is not key=value, a duplicate key or a group
+    without path and argv[] is malformed or ambiguous and refuses.
+    """
+    groups = re.findall(r'\{([^{}]*)\}', value)
+    if re.sub(r'\{[^{}]*\}', '', value).strip():
+        raise Refused('ExecCondition has text outside its command groups')
     entries = []
-    for group in re.findall(r'\{([^{}]*)\}', value):
+    for group in groups:
         fields: dict[str, str] = {}
         for part in group.split(' ; '):
             key, sep, val = part.strip().partition('=')
-            if sep:
-                fields[key] = val
+            if not sep or not key or key in fields:
+                raise Refused('ExecCondition has a malformed or duplicate field')
+            fields[key] = val
+        if 'path' not in fields or 'argv[]' not in fields:
+            raise Refused('ExecCondition group without path and argv[]')
         entries.append(fields)
     return entries
 
 
-def check_phase_a(unit: str, fragment: str, dropins: str, condition: str) -> dict[str, object]:
+def check_phase_a(unit: str, fragment: str, dropins: str, success: str, condition: str) -> dict[str, object]:
     if fragment != UNIT_DIR + unit:
         raise Refused(f'unit {unit} is not the persistent runner unit (FragmentPath {fragment!r})')
     if dropins.strip():
         raise Refused(f'unit {unit} has drop-in overrides ({dropins!r})')
+    if success.strip():
+        raise Refused(f'unit {unit} declares extra success exit statuses ({success!r})')
     gated = [e for e in condition_entries(condition)
              if e.get('path') == WINDOW_HELPER and e.get('argv[]') == WINDOW_ARGV and e.get('ignore_errors') == 'no']
     if not gated:
@@ -160,6 +174,7 @@ def admit(cgroup_file: Path, broker: Path, systemctl: str, project: str, timeout
         return check_phase_b(unit, invocation, broker_status(broker, timeout), project)
     return check_phase_a(unit, systemctl_show(unit, 'FragmentPath', systemctl),
                          systemctl_show(unit, 'DropInPaths', systemctl),
+                         systemctl_show(unit, 'SuccessExitStatus', systemctl),
                          systemctl_show(unit, 'ExecCondition', systemctl))
 
 
