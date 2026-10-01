@@ -20,7 +20,7 @@ architecture, artifact results and Opus technical review retained together.
 | Job temporary directory | `/opt/zabalack-actions/_work/_temp` |
 | Durable private attempts | `/var/lib/zabalack-evidence`, service-owned, mode 0700 |
 | Trusted hooks | `/etc/zabalack-actions`, root-owned and not service-writable |
-| Shared service-lab lock | `/home/codex/zabalack-task-runs/shared-linux-lab.lock` |
+| Whole-job exclusion (R32) | external: the shared-ci window with the gated persistent runner unit (Phase A), or the shared-ci broker (Phase B); verified in-job by `tools/runner_admission.py` |
 
 Install only the workflow dependencies and verified runner distribution.
 The service account's authorized Docker group membership permits synthetic
@@ -191,17 +191,18 @@ cleanup as hostile-job isolation or reuse leftover temp files as evidence.
 Keep required diagnostics under the retained workspace, not only in temp;
 investigate a reported cleanup error before assuming a clean environment.
 
-Both native workflow entrypoints hold the shared Linux lab lock for their
-complete service/test/normal-cleanup invocation. Direct agent labs must use the
-same lock. The lock is taken explicitly in the workflow command, not by the
-service unit or hook: `ci.yml` wraps `tools/native_local.py --isolated-lab`
-(R26; previously `tools/native_ci.py` with its network-retention arguments) and
-`deployment-e2e.yml` wraps `lab/deployment_native_lab.py cycle --isolated-lab`
-(R29; previously `tools/run_deployment_e2e.py`) with
-`exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock`. The
-`exec` and `-F` (no fork) make Python the step's own process holding the lock,
-so the runner's cancellation signal reaches it and its cleanup path runs; a
-forking `flock` would absorb the signal and leave Python running unsignalled.
+Both native workflow entrypoints start services only under an external whole-job exclusion (R32). The in-job lock on
+the legacy lab lock path is retired. Before any service starts, each job runs `python tools/runner_admission.py`, which
+admits only when it can prove the exclusion and refuses otherwise:
+- **Phase B:** the shared-ci broker's read-only status shows this job's own unit and manager InvocationID as the active
+  lifecycle in phase `running`, with the quarantine explicitly clear and no pause.
+- **Phase A:** this job's own unit is the persistent runner unit gated by the shared-ci window.
+- The historical transient runner unit is refused.
+
+`ci.yml` then runs `exec python tools/native_local.py --isolated-lab` (R26), and `deployment-e2e.yml` runs
+`exec python lab/deployment_native_lab.py cycle --isolated-lab` (R29). The `exec` makes Python the step's own process,
+so the runner's cancellation signal reaches it and its cleanup path runs. Direct agent labs acquire the shared-ci
+window as `operator` first.
 A stopped hook/process does not prove services stopped; retain the
 attempt and inspect exact owned resources before another service lab starts.
 Never reset resources belonging to another agent or job.

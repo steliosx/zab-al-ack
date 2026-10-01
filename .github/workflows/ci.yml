@@ -179,6 +179,10 @@ jobs:
           python -m venv "$RUNNER_TEMP/venv"
           printf '%s\n' "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - run: python tools/collect_ci_evidence.py prepare --kind native
+      - name: Refuse to start services without the external whole-job exclusion (R32)
+        # The in-job lab lock is retired: the broker lifecycle (Phase B) or the
+        # window-gated persistent runner unit (Phase A) must be proven first.
+        run: python tools/runner_admission.py
       - run: python -m pip install -r requirements.lock
       - run: python -m pip install --require-hashes -r requirements-quality.lock
       - run: python -m pip install --no-deps --no-build-isolation -e .
@@ -188,9 +192,9 @@ jobs:
           # Reviewed package paths (lab/native_service_identities.json); no Docker.
           ACK_LAB_PG_BIN: /usr/lib/postgresql/18/bin
           ACK_LAB_PGBOUNCER_BIN: /usr/sbin/pgbouncer
-        # exec + flock -F: python replaces the step shell and holds the lock itself,
-        # so a job cancellation signals python and its cleanup path runs.
-        run: exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock python tools/native_local.py --isolated-lab
+        # exec: python replaces the step shell, so a job cancellation signals
+        # python and its cleanup path runs. Exclusion is external (R32).
+        run: exec python tools/native_local.py --isolated-lab
       - run: python tools/collect_ci_evidence.py pack --kind native
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

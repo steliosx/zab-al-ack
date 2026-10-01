@@ -34,6 +34,10 @@
   - **PyJWT advisory (R30):** `requirements.lock` moves PyJWT from 2.13.0 to 2.14.0 to fix GHSA-w6j9-cwv2-h6wq, an
     availability defect in JWK Set parsing. PyJWT comes in through `alerta-server` in the development and lab-runner
     environment; the zabalack runtime lock and application code are unchanged.
+  - **Reviewed runner identities and external exclusion (R32):** the native policy lists the reviewed x64 runner
+    identities (`postgresql-18` 18.6, `pgbouncer` 1.25.2). Service jobs drop the in-job lab lock and verify the
+    external whole-job exclusion with `tools/runner_admission.py` before starting services.
+  - **Dependency advisories (R33):** PyJWT 2.15.1 and urllib3 2.8.0 in the development, lab and scanner locks.
   - **Retained gate scratch (R31):** every pytest invocation of the local gate runners gets its own never-rotated
     basetemp, copied with a full inventory into the private raw directory. The mutation runner keeps the baseline
     tree and each variant's executed bytes before the child runs, and the secret scan keeps its scanned copy.

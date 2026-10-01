@@ -1316,3 +1316,67 @@ propagates), the scratch is copied there and the record finalised. The original 
 **What does not change:** existing record fields, mutant classification and the tested bytes. The records gain only
 the retention statuses. The harness digest moves; source and SQL do not. Focused regressions
 are in `tests/release/test_retained_temp.py`, `test_gate_scratch_retention.py` and `test_mutation_runner.py`.
+
+## R32 — Reviewed x64 runner service identities; external whole-job exclusion replaces the in-job lab lock
+
+**Reviewed identities.** `lab/native_service_identities.json` `reviewed` now holds exactly the identities approved from
+the x64 runner's provisioning record:
+- **Record:** `e4064e342636b6a6aaf6d58d1fe56b770f381d990277cf74fa509b9cfbdfb448`, collected read-only on the runner by
+  `tools/collect_package_identities.py collect` as the runner account, 2026-10-01T01:01:45Z.
+- **Validation:** `validate` reports CONFORMS.
+- **Review:** codex-omarchy confirmed the record, disposition
+  `e816ec5bc20f6da8c8a01f225348b22851bc3bc25c0a40963e25fed3904d28d4`.
+- **The two entries,** produced by `approve` and entered by hand, unchanged:
+  - `postgresql-18` `18.6-1.pgdg24.04+2` amd64, `.deb` `c0773357…fa3d`, with members initdb, pg_ctl and psql (the
+    last from `postgresql-client-18`);
+  - `pgbouncer` `1.25.2-1.pgdg24.04+1` amd64, `.deb` `660146d7…c47e`.
+- **Origin:** both come from `https://apt.postgresql.org/pub/repos/apt` `noble-pgdg/main`, with the InRelease verified
+  by `B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8`.
+- **Not added:** the proposal's `postgresql_client` and `zabbix_reference.ubuntu_packages.verified` entries. No tool
+  consumes them. They stay in the retained proposal.
+- **Matching scope:** the matcher compares package, version and architecture, so run acceptance must compare the
+  observed executable hashes with the record. A re-collection is required after any package change on the runner.
+
+**External whole-job exclusion.** `ci.yml` (native) and `deployment-e2e.yml` no longer take
+`flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock`. That in-job lock could not stop work in another
+runner instance before its job began, and a held descriptor does not survive replacement of the file. Retiring it is a
+prerequisite for the shared-ci broker.
+- **The admission step:** both jobs run `tools/runner_admission.py` after evidence invalidation and before any service.
+  It admits only under a proven exclusion and refuses anything else:
+  - **Phase B:** the broker's read-only status must show the job's own unit and manager InvocationID as the active
+    lifecycle in phase `running`, with `quarantined` exactly false, `quarantine_state` `clear`, no pause and no pause
+    requested;
+  - **Phase A:** the job's own unit must be the persistent runner unit gated by the shared-ci window;
+  - the historical transient runner, an unreadable observation or a malformed reply refuses.
+- **Not until the exclusion exists:** these workflows are not run on a runner without the exclusion. The step refuses
+  there.
+- **Signals:** the service invocations keep `exec`, so cancellation still reaches their cleanup.
+- **Tests:** `tests/release/test_runner_admission.py`; `test_ci_collection.py` now asserts no flock or legacy path and
+  admission before the service; `test_collect_package_identities.py` asserts the exact reviewed entries.
+- The harness digest moves; source and SQL do not.
+
+## R33 — Dependency advisory refresh: PyJWT 2.15.1 and urllib3 2.8.0
+
+**The findings** (Daybreak, 2026-10-01, recorded by codex-omarchy as ZB-B1-DEPENDENCY-ADVISORY-REFRESH):
+- PyJWT 2.14.0 is affected by GHSA-42vr-xj54-vc7v and GHSA-x33g-cr3x-6449, fixed in 2.15.0.
+- urllib3 2.7.0 is affected by GHSA-8988-9cw3-xx77, GHSA-vxq7-64xx-v4gw and GHSA-gh4c-6fx4-qh6g, fixed in 2.8.0.
+
+**The change:**
+- `requirements.lock`: PyJWT `2.14.0` to `2.15.1` (Daybreak's proposal and the latest patch); urllib3 `2.7.0` to
+  `2.8.0`.
+- `requirements-scanner.lock`: urllib3 `2.8.0`, hashed by its wheel
+  `0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3`.
+- Both wheels were downloaded and verified against their PyPI SHA-256 (PyJWT `42d59d631f7768a1…e193`).
+- Neither adds a required dependency on Python 3.12.
+
+**Where they are used:**
+- Neither is imported by the zabalack package, and neither is in `requirements-runtime.lock`.
+- Both reach the development and lab-runner environment through `alerta-server` and `requests` (which accepts
+  urllib3 `<3`). urllib3 also reaches the scanner environment through pip-audit's `requests`.
+
+**What is and is not claimed:**
+- Both locks install cleanly with `pip check` passing.
+- The installed set differs from C5's only in these two packages.
+- The focused Alerta HTTP and JWT tests pass.
+- Compatibility for the candidate rests on its fresh gates and scans. HTTPS-proxy behaviour is not exercised by any
+  current test, and request-level reachability within Alerta is not demonstrated.

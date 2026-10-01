@@ -19,7 +19,7 @@ INFRASTRUCTURE = (
     'lab/deployment_native_lab.py', 'lab/local_runtime.py', 'lab/real_zabbix_prepare.py', 'lab/zabbix_native_lab.py',
     'lab/zabbix_reference.py', 'tools/cancellation.py', 'tools/collect_package_identities.py', 'tools/deployment_evidence.py', 'tools/evidence_bundle.py',
     'tools/lab_retention.py', 'tools/native_local.py', 'tools/record_real_zabbix.py', 'tools/run_deployment_e2e_local.py',
-    'tools/runner_account_check.py', 'tools/self_hosted_job.py', 'tools/supplied_wheel.py',
+    'tools/runner_account_check.py', 'tools/runner_admission.py', 'tools/self_hosted_job.py', 'tools/supplied_wheel.py',
 )
 CHECKS = {
     'ruff': ['-m', 'ruff', 'check', 'src'],

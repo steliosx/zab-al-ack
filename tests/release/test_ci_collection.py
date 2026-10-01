@@ -784,8 +784,7 @@ def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_re
     assert all(item['required'] == 'true' and item['type'] == 'string' for item in inputs.values())
     job = value['jobs']['service-lab']
     assert job['if'] == "${{ vars.ZABALACK_DEPLOYMENT_E2E_ENABLED == 'true' }}"
-    assert any(line.strip().startswith('exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock '
-                                       'python lab/deployment_native_lab.py cycle --isolated-lab ')
+    assert any(line.strip().startswith('exec python lab/deployment_native_lab.py cycle --isolated-lab ')
                for step in job['steps'] for line in step.get('run', '').splitlines())
     uploads = [step for step in job['steps'] if step.get('uses', '').startswith('actions/upload-artifact@')]
     assert len(uploads) == 1 and uploads[0]['with']['path'] == 'evidence/deployment-e2e-run.json'
@@ -807,7 +806,7 @@ def test_deployment_job_consumes_the_verified_candidate_wheel_and_cycles_the_nat
     confirm = next(i for i, line in enumerate(commands) if 'actions/runs/$CANDIDATE_RUN_ID' in line)
     verify = next(i for i, line in enumerate(commands) if line == 'printf \'%s  %s\\n\' "$WHEEL_SHA256" "$WHEEL" | sha256sum -c --strict -')
     prepare = next(i for i, line in enumerate(commands) if line.startswith('python lab/deployment_native_lab.py prepare-runner --isolated-lab'))
-    cycle = next(i for i, line in enumerate(commands) if line.startswith('exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock '))
+    cycle = next(i for i, line in enumerate(commands) if line.startswith('exec python lab/deployment_native_lab.py cycle '))
     assert bind < confirm < verify < prepare < cycle
     # The inputs are validated as fixed shapes before anything uses them.
     assert commands[bind - 3:bind] == ['printf \'%s\' "$CANDIDATE_RUN_ID" | grep -Eq \'^[0-9]{1,20}$\'',
@@ -876,16 +875,23 @@ def test_dependency_installations_use_a_new_environment_before_any_installs_or_e
                        if 'pip install' in script or 'collect_ci_evidence.py' in script)
 
 
-def test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner():
+def test_both_service_entrypoints_start_services_only_after_the_external_exclusion_check():
+    """R32: the in-job legacy lab lock is retired; an admission step that proves the external whole-job exclusion
+    (broker lifecycle or window-gated runner unit) runs before the one service invocation, which execs python so a
+    cancellation still reaches its cleanup path."""
     targets = {'ci.yml': ('native', 'python tools/native_local.py --isolated-lab'),
                'deployment-e2e.yml': ('service-lab', 'python lab/deployment_native_lab.py cycle --isolated-lab')}
     for filename, (job_name, invocation) in targets.items():
         workflow = yaml.load((ROOT / '.github/workflows' / filename).read_text(), Loader=yaml.BaseLoader)
-        scripts = [step['run'] for step in workflow['jobs'][job_name]['steps'] if 'run' in step]
-        # Every line that starts services (the runner invocation, not its prepare step) holds the lock.
+        steps = workflow['jobs'][job_name]['steps']
+        scripts = [step['run'] for step in steps if 'run' in step]
         lines = [line.strip() for script in scripts for line in script.splitlines()
                  if invocation in line and not line.strip().startswith('#')]
-        assert len(lines) == 1 and lines[0].startswith('exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock ' + invocation)
+        assert len(lines) == 1 and lines[0].startswith('exec ' + invocation)
+        assert not any('flock' in script or 'shared-linux-lab.lock' in script for script in scripts)
+        admission = next(i for i, step in enumerate(steps) if step.get('run', '').strip() == 'python tools/runner_admission.py')
+        service = next(i for i, step in enumerate(steps) if invocation in step.get('run', ''))
+        assert admission < service
         assert not any('docker system prune' in script or 'down --volumes' in script for script in scripts)
 
 
@@ -899,8 +905,8 @@ def test_routine_native_job_runs_the_local_form_on_reviewed_service_paths_withou
                    or '--retire-empty-networks' in line for line in commands)
     native = next(step for step in steps if 'tools/native_local.py' in step.get('run', ''))
     assert native['env'] == {'ACK_LAB_PG_BIN': '/usr/lib/postgresql/18/bin', 'ACK_LAB_PGBOUNCER_BIN': '/usr/sbin/pgbouncer'}
-    # The whole service/test/cleanup invocation still runs under the shared host lab lock.
-    assert native['run'].startswith('exec flock -n -F /home/codex/zabalack-task-runs/shared-linux-lab.lock ')
+    # The whole service/test/cleanup invocation runs under the external whole-job exclusion (R32).
+    assert native['run'] == 'exec python tools/native_local.py --isolated-lab'
 
 
 def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():

@@ -448,9 +448,26 @@ def test_validate_exit_codes(tmp_path, mutate, code, capsys):
     assert json.loads(capsys.readouterr().out)['result'] == {0: 'CONFORMS', 1: 'DEVIATES', 2: 'INCOMPLETE'}[code]
 
 
-def test_reference_and_policy_files_still_carry_no_approved_identities():
-    """The x64 host's identities are collected there and reviewed; nothing here pre-populates them."""
-    assert IDENTITIES['reviewed'] == {'postgres': [], 'pgbouncer': []}
+def test_policy_carries_exactly_the_reviewed_x64_runner_identities_and_the_reference_none():
+    """R32: the reviewed lists hold exactly the identities approved from the x64 runner record e4064e34 (reviewed by
+    codex-omarchy, disposition e816ec5b), nothing pre-populated and nothing else; the Zabbix reference still carries
+    no verified section."""
+    pgdg = {'index': 'main/binary-amd64/Packages', 'inrelease': 'apt.postgresql.org_pub_repos_apt_dists_noble-pgdg_InRelease',
+            'signed_by': ['B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'], 'suite': 'noble-pgdg/main',
+            'uri': 'https://apt.postgresql.org/pub/repos/apt'}
+    postgres, = IDENTITIES['reviewed']['postgres']
+    pgbouncer, = IDENTITIES['reviewed']['pgbouncer']
+    assert set(IDENTITIES['reviewed']) == {'postgres', 'pgbouncer'}
+    assert (postgres['kind'], postgres['package'], postgres['version'], postgres['architecture']) == (
+        'dpkg', 'postgresql-18', '18.6-1.pgdg24.04+2', 'amd64')
+    assert postgres['deb_sha256'] == 'c0773357df8769abb70e92722196d9b53422d71c0f29a4f39c834b94276cfa3d'
+    assert postgres['executable_sha256'] == '492c356851c073d65e77b8cc5d22d10e05a07d54699c6427dcb01d36567af7d5'
+    assert set(postgres['members']) == {'initdb', 'pg_ctl', 'psql'} and postgres['origin'] == pgdg
+    assert (pgbouncer['kind'], pgbouncer['package'], pgbouncer['version'], pgbouncer['architecture']) == (
+        'dpkg', 'pgbouncer', '1.25.2-1.pgdg24.04+1', 'amd64')
+    assert pgbouncer['deb_sha256'] == '660146d7e434f1a74b3514dffd29519cb9c7882dd4aa40ac1d47ad8a42e7c47e'
+    assert pgbouncer['executable_sha256'] == '95fac81304ae04fba37ca70326c753d99e866d3a7237371ad821f72401fd077f'
+    assert pgbouncer['origin'] == pgdg
     assert 'verified' not in REFERENCE['ubuntu_packages']
     assert REFERENCE['selected']['fallback']['version'] is None
     assert len(ZABBIX_FPR) == 40 and ZABBIX_FPR.endswith(REFERENCE['ubuntu_packages']['expected_signing_key']['long_id'])
