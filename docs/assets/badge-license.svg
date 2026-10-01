@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="179" height="28" viewBox="0 0 179 28" role="img" aria-labelledby="title desc">
+<title id="title">License: Apache-2.0</title><desc id="desc">Static project information; not a live test or release result.</desc>
+<rect width="179" height="28" rx="5" fill="#1C2936"/>
+<path d="M80 0H174Q179 0 179 5V23Q179 28 174 28H80Z" fill="#E7EBEE"/>
+<text x="40.0" y="18.5" text-anchor="middle" fill="#FAF9F6" font-family="DejaVu Sans,Arial,sans-serif" font-size="10.5" font-weight="700" letter-spacing=".4">LICENSE</text>
+<text x="129.5" y="18.5" text-anchor="middle" fill="#1C2936" font-family="DejaVu Sans,Arial,sans-serif" font-size="11.5" font-weight="700">Apache-2.0</text>
+</svg>

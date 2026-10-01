@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="184" height="28" viewBox="0 0 184 28" role="img" aria-labelledby="title desc">
+<title id="title">Database: PostgreSQL</title><desc id="desc">Static project information; not a live test or release result.</desc>
+<rect width="184" height="28" rx="5" fill="#1C2936"/>
+<path d="M89 0H179Q184 0 184 5V23Q184 28 179 28H89Z" fill="#E7EBEE"/>
+<text x="44.5" y="18.5" text-anchor="middle" fill="#FAF9F6" font-family="DejaVu Sans,Arial,sans-serif" font-size="10.5" font-weight="700" letter-spacing=".4">DATABASE</text>
+<text x="136.5" y="18.5" text-anchor="middle" fill="#1C2936" font-family="DejaVu Sans,Arial,sans-serif" font-size="11.5" font-weight="700">PostgreSQL</text>
+</svg>
