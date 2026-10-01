@@ -141,8 +141,10 @@ New documentation is not retroactively included in the qualified artifact.
   on the 500-row same-run dataset. Production-like retained volume, state/age
   distribution, arrival/concurrency targets and SLOs remain owner inputs.
 
-Fable is advisory. An unanswered request does not block implementation, focused
-tests or candidate preparation. Consume substantive findings from all reviewers;
+Review is assigned per task ([agent workflows](agent-workflows.md#review)); this
+paragraph earlier named Fable as advisory. An unanswered optional request does not
+block implementation, focused tests or candidate preparation. Consume substantive
+findings from all reviewers;
 material permission, migration, concurrency and failure-recovery changes still
 need appropriate review before readiness. Record each reviewed SHA and scope.
 Automatic Codex PR review counts only for its actual coverage; same-account
@@ -152,11 +154,13 @@ and branch protections remain in force.
 Still required before calling this beta ready:
 
 - Preserve the completed exact-candidate Actions and Compose results above.
-  Do not restart the completed runner migration. Use the functioning ARM64
-  self-hosted runner without paid-hosted fallback. Reassess required checks and
-  affected validation if the implementation or final integration identity changes.
-  Native x86_64 is **DEFERRED** to its authorized qualification milestone; it is
-  not a pass or acceptance. ARM64 and x64 installation pins do not establish
+  Do not restart the completed runner migration. Use the dedicated self-hosted
+  runner that the workflows select, without paid-hosted fallback. Reassess required
+  checks and affected validation if the implementation or final integration
+  identity changes. Native x86_64 qualification, recorded here as **DEFERRED**
+  until 2026-09-22, is now assigned per task on an authorized native host; each
+  result covers only its tested artifact and scope, and the target x86_64
+  acceptance gate stays open. ARM64 and x64 installation pins do not establish
   native x64 execution or installed-environment acceptance.
 - Resolve reference webhook transport amendment A2 with inspected installed
   controls and negative certificate/hostname/redirect tests before deployment.
@@ -185,8 +189,8 @@ private report destination and disposition process. Arrange review before beta
 under the existing checklist; completed external review is also a stable-support
 requirement. A dependency/secret scan is not an application-security review.
 Decide the applicable CodeQL, signed-attestation and second-platform release
-policy without silently waiving an existing requirement. Native x64 remains
-deferred until an authorized native host and bounded qualification inputs exist.
+policy without silently waiving an existing requirement. Native x64 work needs
+an authorized native host and bounded qualification inputs for each task.
 
 Proposed sequence, subject to the existing gates and separate authorization:
 

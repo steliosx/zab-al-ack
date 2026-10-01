@@ -6,6 +6,12 @@ confirmation. Complete the requested implementation, verification and handoff.
 Production access, publication, remote pushes, notifications and credential
 changes require explicit user authorization; repository guidance grants none.
 
+Roles (implementation, review, integration, documentation, validation) are
+assigned per task, not fixed to an agent name. Claim one bounded task in issue
+#13 before edits; never take over another agent's claim, branch, worktree or
+controller. Follow `docs/agent-workflows.md` for task records, authority, review,
+runner and lock rules; agent-specific startup is in `docs/agents/`.
+
 Preserve release one: authorised human single-alert `/action`, atomic PostgreSQL
 composite-history capture, signature verification before target access, separate
 verification/delivery leases, bounded delivery, read-only reconciliation and
