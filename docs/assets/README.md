@@ -5,14 +5,16 @@ These illustrations accompany the **Ack Relay** identity in
 
 | File | Purpose |
 | --- | --- |
-| `readme-hero.png` | Editorial artwork: one amber route and the line “One action. Carried through.” |
+| `readme-hero.png`, `readme-hero-dark.png` | Light and dark editorial artwork: one amber route and the line “One action. Carried through.” |
+| `badge-alpha.svg`, `badge-python.svg`, `badge-postgresql.svg`, `badge-license.svg` | Static project information for the README navigation; no live CI or release result is implied |
 | `acknowledgement-journey.svg` | A high-level view of human action, durable capture, verification and bounded delivery |
 | `delivery-outcomes.svg` | Three observed situations: already acknowledged, eligible delivery and an unknown outcome |
 
-The hero is generated brand artwork derived from the original Alrust style
-reference and the canonical Zabalack vector identity. It is not an interface,
-architecture diagram or record of a live delivery. Use the actual SVG logo files
-for standalone logo placement; the hero is an illustration.
+The heroes are generated brand artwork derived from the original Alrust style
+reference and the canonical Zabalack vector identity. They are not interfaces,
+architecture diagrams or records of a live delivery. Use the actual SVG logo files
+for standalone logo placement; the heroes are illustrations. The README uses
+picture sources to select the light or dark hero.
 
 The two diagrams use exact vector labels and the canonical mark. They describe
 the alpha's single-alert acknowledgement design. They add no new implementation

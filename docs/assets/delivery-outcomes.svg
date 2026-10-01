@@ -19,22 +19,22 @@
 <rect x="64" y="373" width="360" height="222" rx="18" fill="#FFFFFF" stroke="#D8DDDF" stroke-width="1.5"/>
 <rect x="88" y="396" width="44" height="44" rx="10" fill="#F5E5CF"/><path d="M99 418l8 8 15-17" fill="none" stroke="#1C2936" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="145" y="423" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#5E6974" font-weight="700" text-anchor="start" letter-spacing="0.55">SOURCE ALREADY ACKED</text>
-<text x="88" y="476" font-family="Arial, Helvetica, sans-serif" font-size="27" fill="#1C2936" font-weight="700" text-anchor="start">Already acknowledged</text>
-<text x="88" y="510" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Record the observation.</text>
-<text x="88" y="538" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">No extra ack or comment.</text>
+<text x="88" y="476" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#1C2936" font-weight="700" text-anchor="start">Already acknowledged</text>
+<text x="88" y="510" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#5E6974" font-weight="400" text-anchor="start">Record the observation.</text>
+<text x="88" y="538" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#5E6974" font-weight="400" text-anchor="start">No extra ack or comment.</text>
 <rect x="460" y="373" width="360" height="222" rx="18" fill="#FFF8EC" stroke="#D8DDDF" stroke-width="1.5"/>
 <rect x="484" y="396" width="44" height="44" rx="10" fill="#E59732"/><path d="M495 418H516M508 410l8 8-8 8" fill="none" stroke="#1C2936" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="541" y="423" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#5E6974" font-weight="700" text-anchor="start" letter-spacing="0.55">ALL CHECKS PERMIT</text>
-<text x="484" y="476" font-family="Arial, Helvetica, sans-serif" font-size="27" fill="#1C2936" font-weight="700" text-anchor="start">Eligible delivery</text>
-<text x="484" y="510" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Check original problem + scope.</text>
-<text x="484" y="538" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Deliver a bounded ack.</text>
+<text x="484" y="476" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#1C2936" font-weight="700" text-anchor="start">Eligible delivery</text>
+<text x="484" y="510" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#5E6974" font-weight="400" text-anchor="start">Check original problem + scope.</text>
+<text x="484" y="538" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#5E6974" font-weight="400" text-anchor="start">Deliver a bounded ack.</text>
 <rect x="856" y="373" width="360" height="222" rx="18" fill="#F0F3F4" stroke="#D8DDDF" stroke-width="1.5"/>
 <rect x="880" y="396" width="44" height="44" rx="10" fill="#1C2936"/><circle cx="892" cy="418" r="2.7" fill="#E59732"/><circle cx="902" cy="418" r="2.7" fill="#E59732"/><circle cx="912" cy="418" r="2.7" fill="#E59732"/>
 <text x="937" y="423" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#5E6974" font-weight="700" text-anchor="start" letter-spacing="0.55">EFFECT NOT CONFIRMED</text>
-<text x="880" y="476" font-family="Arial, Helvetica, sans-serif" font-size="27" fill="#1C2936" font-weight="700" text-anchor="start">Unknown outcome</text>
-<text x="880" y="510" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Investigate by source reads.</text>
-<text x="880" y="538" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">Preserve uncertainty.</text>
-<text x="880" y="566" font-family="Arial, Helvetica, sans-serif" font-size="21" fill="#5E6974" font-weight="400" text-anchor="start">No blind resend.</text>
+<text x="880" y="476" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#1C2936" font-weight="700" text-anchor="start">Unknown outcome</text>
+<text x="880" y="510" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#5E6974" font-weight="400" text-anchor="start">Investigate by source reads.</text>
+<text x="880" y="538" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#5E6974" font-weight="400" text-anchor="start">Preserve uncertainty.</text>
+<text x="880" y="566" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#5E6974" font-weight="400" text-anchor="start">No blind resend.</text>
 <path d="M64 622H1216" fill="none" stroke="#D8DDDF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="64" y="652" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#5E6974" font-weight="400" text-anchor="start">Illustrative outcomes · Single-alert scope</text>
 <text x="1216" y="652" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#5E6974" font-weight="700" text-anchor="end">Alpha evaluation only</text>

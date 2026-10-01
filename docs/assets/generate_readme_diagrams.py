@@ -245,10 +245,10 @@ def delivery_outcomes() -> str:
             rect(x, 373, 360, 222, fill, 18, LINE),
             outcome_icon(x+24, 396, kind),
             text(x+81, 423, eyebrow, 13, MUTED, weight=700, spacing=0.55),
-            text(x+24, 476, title, 27, NAVY, weight=700),
+            text(x+24, 476, title, 24, NAVY, weight=700),
         ])
         for index, line in enumerate(lines):
-            body.append(text(x+24, 510+28*index, line, 21, MUTED))
+            body.append(text(x+24, 510+28*index, line, 19, MUTED))
     body.extend(footer("Illustrative outcomes · Single-alert scope"))
     return shell(
         "When the outcome is uncertain, preserve it.",
