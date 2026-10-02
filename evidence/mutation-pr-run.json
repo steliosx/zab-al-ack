@@ -4,9 +4,9 @@
   "profile": "pr",
   "code_digests": {
     "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
-    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36"
+    "harness": "0640884d4f90f8bf581f3fed9b0cbc6bdfa5fba612b2c72c11a7d7ca4a7cbb0d"
   },
-  "started_at_utc": "2026-09-29T20:52:14.943229+00:00",
+  "started_at_utc": "2026-10-01T15:25:10.690111+00:00",
   "selected_count": 12,
   "baseline": {
     "outcome": "BASELINE_PASS",
@@ -18,7 +18,7 @@
     "assertion_failures": 0,
     "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
     "retention": "COMPLETE",
-    "duration_ms": 875
+    "duration_ms": 929
   },
   "mutants": [
     {
@@ -32,7 +32,7 @@
       "assertion_failures": 3,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 926
+      "duration_ms": 930
     },
     {
       "name": "observed_source_binding_removed",
@@ -45,7 +45,7 @@
       "assertion_failures": 2,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 926
+      "duration_ms": 979
     },
     {
       "name": "history_actor_binding_removed",
@@ -58,7 +58,7 @@
       "assertion_failures": 2,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 927
+      "duration_ms": 934
     },
     {
       "name": "capture_window_removed",
@@ -84,7 +84,7 @@
       "assertion_failures": 2,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 931
+      "duration_ms": 976
     },
     {
       "name": "host_drift_gate_removed",
@@ -97,7 +97,7 @@
       "assertion_failures": 1,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 928
+      "duration_ms": 978
     },
     {
       "name": "unknown_delivery_gate_removed",
@@ -110,7 +110,7 @@
       "assertion_failures": 1,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 925
+      "duration_ms": 1029
     },
     {
       "name": "execution_expiry_gate_removed",
@@ -136,7 +136,7 @@
       "assertion_failures": 1,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 982
+      "duration_ms": 1026
     },
     {
       "name": "presend_fence_removed",
@@ -149,7 +149,7 @@
       "assertion_failures": 2,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 928
+      "duration_ms": 977
     },
     {
       "name": "attempt_ownership_guard_removed",
@@ -162,7 +162,7 @@
       "assertion_failures": 1,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 929
+      "duration_ms": 979
     },
     {
       "name": "full_host_set_weakened_to_overlap",
@@ -175,7 +175,7 @@
       "assertion_failures": 2,
       "case_digest": "04c8023cb470ec3068ae58c6c976e3d35098b3a5064f6374d2fdf1a670e9dd4e",
       "retention": "COMPLETE",
-      "duration_ms": 936
+      "duration_ms": 976
     }
   ],
   "scope": "Curated Python trust/worker/RPC assertion mutations with mocked dependencies; no SQL/native/deployment coverage",
@@ -189,5 +189,5 @@
   },
   "tree_unchanged": true,
   "scratch_retention": "COMPLETE",
-  "finished_at_utc": "2026-09-29T20:52:27.302957+00:00"
+  "finished_at_utc": "2026-10-01T15:25:23.540880+00:00"
 }

@@ -1,0 +1,126 @@
+{
+  "artifact_mode": "supplied_wheel",
+  "checks": {
+    "authenticated_capture": true,
+    "cross_customer_denied": true,
+    "exactly_one_effect": true,
+    "human_update_recorded": true,
+    "ingest_key_local_only": true,
+    "media_macro_ingestion": true,
+    "neutral_update_filtered": true,
+    "probe_denied_table_read": true,
+    "projection": true,
+    "recovery_macro_ingestion": true,
+    "repeat_409": true,
+    "separate_native_logins": true,
+    "worker_denied_table_update": true
+  },
+  "code_digests": {
+    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36",
+    "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98"
+  },
+  "components": {
+    "postgres": "PostgreSQL 18 (alerta database, scram host logins, loopback 5432): postgres (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2); dpkg postgresql-18 18.6-1.pgdg24.04+2 amd64",
+    "runner": "this host: a Python 3.12 environment with requirements.lock and the zabalack 0.1.0b1 wheel installed non-editably (sha256 eaf3c4223637fd2ef1e197155fe567410d0c5123c607b90e2870040d22c8c708); every installed file verified against the wheel inside the runner interpreter; provides the Alerta entry points, zabalack CLI and Flask CLI HTTPS server",
+    "zabbix-db": "PostgreSQL 18 (Zabbix database, loopback 55434): postgres (PostgreSQL) 18.6 (Ubuntu 18.6-1.pgdg24.04+2); dpkg postgresql-18 18.6-1.pgdg24.04+2 amd64",
+    "zabbix-server": "zabbix_server: zabbix_server (Zabbix) 7.0.31; dpkg zabbix-server-pgsql 1:7.0.31-1+ubuntu24.04 amd64; reference 7.0.31, observed API 7.0.31",
+    "zabbix-web": "Zabbix frontend: 7.0.31; dpkg zabbix-frontend-php 1:7.0.31-1+ubuntu24.04 all; PHP built-in server (loopback lab convenience, not an official deployment configuration); PHP PHP 8.3.6 (cli) (built: Sep  2 2026 12:56:02) (NTS)"
+  },
+  "counts": {
+    "failed": 0,
+    "passed": 4,
+    "skipped": 0
+  },
+  "deployment_gates": "MANUAL_GATE_PENDING",
+  "finished_at": "2026-09-30T16:45:48+00:00",
+  "image_ids": null,
+  "layer": "native_deployment_e2e",
+  "native_lab": {
+    "cleanup": {
+      "cleanup": {
+        "postgres": {
+          "exit_code": 0,
+          "status": "STOPPED"
+        },
+        "zabbix": {
+          "php": {
+            "pid": 150104,
+            "status": "STOPPED"
+          },
+          "postgres": {
+            "exit_code": 0,
+            "pid": 150015,
+            "status": "STOPPED"
+          },
+          "zabbix_server": {
+            "pid": 150035,
+            "status": "STOPPED",
+            "trust_unit": {
+              "ActiveState": "inactive",
+              "InvocationID": "",
+              "MainPID": 0,
+              "SubState": "dead",
+              "ownership": "owned"
+            },
+            "trust_unit_stop_exit_code": 0
+          }
+        }
+      },
+      "state": "stopped"
+    },
+    "cleanup_complete": true,
+    "command": "cycle",
+    "final_state": "absent",
+    "retention": {
+      "absent": 0,
+      "directory": "build/private/retained-phases/0d4738e69784/deployment-cycle",
+      "label": "deployment-cycle",
+      "manifest_sha256": "30b10406673c83dcc224d882a43a51d2de16ca25fbd12ca44a075d7464384936",
+      "retained": 8,
+      "status": "RETAINED"
+    },
+    "run_exit_code": 0,
+    "run_id": "0d4738e69784",
+    "runner_record": {
+      "absent": 0,
+      "directory": "build/private/retained-phases/0d4738e69784/runner-record",
+      "label": "runner-record",
+      "manifest_sha256": "334b4a80f4ba32fd43e395652f48b6fb8be606a74de80c1cca64edca99f08b0b",
+      "retained": 1,
+      "status": "RETAINED"
+    },
+    "wipe": {
+      "state": "absent",
+      "wipe": "done",
+      "zabbix_exit_code": 0
+    }
+  },
+  "not_docker": true,
+  "project": "zabalack-e2e-5af756095299",
+  "reason": null,
+  "runner": "lab/deployment_e2e_runtime.py executed unmodified through pytest tests/deployment_e2e on one host without Docker (tools/run_deployment_e2e_local.py): the Compose services were replaced by operator-provided local services with the same hostnames (postgres, zabbix-web, runner) and the same private directory; the runner environment installed the built wheel non-editably; see docs/RELEASE_AMENDMENTS.md R14",
+  "runner_environment": {
+    "dependency_files": "pinned distributions only; each file consistent with its installed RECORD, which is not anchored to trusted digests (requirements.lock carries none)",
+    "startup_hook_policy": "only setuptools' distutils-precedence.pth with its pinned bytes",
+    "startup_hooks": [
+      "distutils-precedence.pth"
+    ],
+    "supplied_wheel_files": "equal to the supplied wheel, whose digest the dispatcher supplied"
+  },
+  "runner_shutdown_exit_code": 0,
+  "shutdown_exit_code": 0,
+  "started_at": "2026-09-30T16:44:26Z",
+  "status": "PASS",
+  "supplied_wheel": {
+    "filename": "zabalack-0.1.0b1-py3-none-any.whl",
+    "installed_bytes_verified": true,
+    "sha256": "eaf3c4223637fd2ef1e197155fe567410d0c5123c607b90e2870040d22c8c708",
+    "version": "0.1.0b1"
+  },
+  "tree_unchanged": true,
+  "versions": {
+    "alerta": "9.1.0",
+    "postgres_major": "18",
+    "zabbix": "7.0.31"
+  }
+}

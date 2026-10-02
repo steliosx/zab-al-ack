@@ -19,26 +19,27 @@ a15 reviews' records — including the a15 review's local Gitleaks result — an
 a14's qualitative agent evaluations are retained in the handoff as received and
 are not rebound here. Earlier Ackline results remain historical as well.
 
-## Candidate evidence and open findings (29 September 2026)
+## Candidate evidence and open findings (updated 2 October 2026)
 
 The a16 records named above are preserved byte for byte under
 `evidence/history/0.1.0a16/`, which lists them in `MANIFEST.json`. The current
 `evidence/` paths now hold this candidate's own records for the tested source
-`2a4ce07` (digests `c8a7430b…/cbe77055…`); see the
-[evidence index](../evidence/README.md). The records adopted earlier for `34ea703` are preserved byte for byte
-under `evidence/history/0.1.0b1+34ea703/`.
-- **Local release checks:** reference 2390 passed and 57 skipped, mutation PR 12 and nightly 20 killed, property
+`3392d39` (digests `c8a7430b…/0640884d…`); see the
+[evidence index](../evidence/README.md). The records adopted earlier for `2a4ce07` and `34ea703` are preserved
+byte for byte under `evidence/history/0.1.0b1+2a4ce07/` and `evidence/history/0.1.0b1+34ea703/`.
+- **Local release checks:** reference 2428 passed and 57 skipped, mutation PR 12 and nightly 20 killed, property
   46, plus quality, SQL and quickstart.
-- **Deployment path:** PASS on lab run `b1-2a4ce07-host-01`, with the preliminary wheel `eaf3c422…`. It carries to
-  the canonical wheel only if the bytes are identical.
+- **Deployment path:** PASS on lab run `b1-3392d39-host-02`, with the preliminary wheel `eaf3c422…`. It carries to
+  the canonical wheel only if the bytes are identical. The lock's PyJWT 2.15.1 and urllib3 2.8.0 were enforced by the
+  run's verified-records gate, not read back, and the lock carries no package hashes: no dependency-hash attestation.
 - **Not run:** native PostgreSQL/PgBouncer and real Zabbix.
 - **Acceptance and audit:** 40 checks PASS and 2 manual gates pending; the public audit passes. Canonical build
   verification and the candidate freeze are still to be recorded.
-- **Scans and schema validation, recorded locally on 29 September 2026:**
+- **Scans and schema validation, recorded locally on 1 October 2026:**
   - security scan: pip-audit found 0 advisories in 58 packages, and Gitleaks found 0 secrets in the export or the
     history;
   - npm audit: 0 vulnerabilities;
-  - the SBOM matches both locks and is valid against CycloneDX 1.6.
+  - the SBOM matches the locks (PyJWT 2.15.1, urllib3 2.8.0) and is valid against CycloneDX 1.6.
 
   These are scoped checks, not licence or external security clearance.
 - **Not carried:** three legacy a16 records (wheel smoke, collection check, local validation) are kept only in the

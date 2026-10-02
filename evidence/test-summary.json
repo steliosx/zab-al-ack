@@ -1,6 +1,6 @@
 {
   "counts": {
-    "passed": 2390,
+    "passed": 2428,
     "skipped": 57,
     "failed": 0
   },
@@ -16,7 +16,7 @@
       "failed": 0
     },
     "unit_mocked": {
-      "passed": 2106,
+      "passed": 2144,
       "skipped": 1,
       "failed": 0
     }

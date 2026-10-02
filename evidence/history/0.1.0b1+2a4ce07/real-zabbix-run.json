@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "layer": "real_zabbix_7_0",
+  "runner": "tools/record_real_zabbix.py --run",
+  "started_at": "2026-09-29T20:56:02Z",
+  "status": "NOT_RUN",
+  "counts": {
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0
+  },
+  "code_digests": {
+    "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
+    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36"
+  },
+  "reason": "operator_declared_unavailable",
+  "recorded_at": "2026-09-29T20:56:03Z"
+}

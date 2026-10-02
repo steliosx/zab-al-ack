@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "file_count": 468,
+  "findings": [],
+  "scope": "Targeted file, metadata, inert-default and common-secret checks; not an exhaustive secret or legal audit",
+  "publication_authorized": false,
+  "deployment_gates": "MANUAL_GATE_PENDING"
+}

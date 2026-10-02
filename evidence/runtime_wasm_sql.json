@@ -51,9 +51,9 @@
   ],
   "code_digests": {
     "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
-    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36"
+    "harness": "0640884d4f90f8bf581f3fed9b0cbc6bdfa5fba612b2c72c11a7d7ca4a7cbb0d"
   },
-  "started_at_utc": "2026-09-29T20:49:22.282190+00:00",
+  "started_at_utc": "2026-10-01T15:22:08.696635+00:00",
   "deployment_gates": "MANUAL_GATE_PENDING",
   "evidence_layer": "PostgreSQL18 WASM single-backend SQL execution",
   "native_postgresql_status": "BLOCKED_ENVIRONMENT",
@@ -83,8 +83,8 @@
     "013_background_fence_null_safety.sql"
   ],
   "server_version_num": "180003",
-  "completed_at_utc": "2026-09-29T20:49:24.911Z",
+  "completed_at_utc": "2026-10-01T15:22:11.672Z",
   "exit_code": 0,
   "tree_unchanged": true,
-  "finished_at_utc": "2026-09-29T20:49:25.012714+00:00"
+  "finished_at_utc": "2026-10-01T15:22:11.841060+00:00"
 }

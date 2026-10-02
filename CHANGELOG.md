@@ -10,7 +10,7 @@
 - The two sections below preserve their original, separate-lineage change histories. The S2 heading describes
   its pre-integration review state.
 - Corrections on 29 September 2026. Each has focused regression tests. The local release checks and the
-  exact-wheel lab run have been recorded on the tested source `2a4ce07`; canonical build verification is still
+  exact-wheel lab run have been recorded on the tested source `3392d39`; canonical build verification is still
   to be recorded.
   - **ZB-B1-REL-01:** `MANIFEST.in` includes the lab-trust installer files and the ingestion template, so the
     sdist matches the source archive.
@@ -19,9 +19,10 @@
   - **Daybreak DB-3:** `response_limit_bytes` must be an integer from 65536 to 8388608, in both the
     validation and the schema.
   - **Evidence history (Daybreak DB-2/DB-4):** the a16 evidence is preserved byte for byte under
-    `evidence/history/0.1.0a16/`. The current records are those of `2a4ce07`, adopted together with the
+    `evidence/history/0.1.0a16/`. The current records are those of `3392d39`, adopted together with the
     evidence index, the compatibility manifest and the version narrative; the records they replaced, adopted for
-    `34ea703`, are preserved byte for byte under `evidence/history/0.1.0b1+34ea703/`. Fresh local security scans
+    `2a4ce07`, are preserved byte for byte under `evidence/history/0.1.0b1+2a4ce07/`, as the ones adopted for
+    `34ea703` are under `evidence/history/0.1.0b1+34ea703/`. Fresh local security scans
     (pip-audit, Gitleaks), npm audit, the SBOM and its schema validation replace their earlier records. Three legacy a16 records (wheel
     smoke, collection check, local validation) are kept only in the history, and are NOT_RUN for `0.1.0b1`.
   - **Deferred, Daybreak DB-5:** the unfenced `record_drift` operation is documented, with its release impact,

@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "version": "0.1.0b1+2a4ce07",
+  "status": "HISTORICAL_IMMUTABLE",
+  "candidate_version": "0.1.0b1",
+  "tested_source_commit": "2a4ce0701e2719038bd49f460117c3714127f0f7",
+  "code_digests": {
+    "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
+    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36",
+    "scope": "as bound by each run record that carries code_digests"
+  },
+  "origin_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2",
+  "origin_commits": [
+    "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+  ],
+  "unchanged_through": [
+    "3392d39951f6691eaffc24e408c599226bd87b38"
+  ],
+  "rule": "Byte-exact copies of every current-path file under evidence/ that the adoption of the 3392d39 records replaced: the 0.1.0b1 records adopted for the tested source 2a4ce07, including their index. Each record keeps the source, harness and wheel bindings of the run that produced it; none is evidence for a later source. Never edit, rebind or replace these files; record a later run as a new record at the current path.",
+  "files": [
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/README.md",
+      "original_path": "evidence/README.md",
+      "sha256": "c47b51a1801cd4abb307889831535c5bcdaa975bf00a0fa4e45ac5b7b3f79054",
+      "size": 6896,
+      "git_blob": "9328906a83ea55e3ff2acd150965904b1337d785",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/acceptance-results.json",
+      "original_path": "evidence/acceptance-results.json",
+      "sha256": "3cfb9839c756e508862cdad233cf04b98f8436efa5eaa13d6326151009e0648a",
+      "size": 853393,
+      "git_blob": "5f92fc20882467a5b0a3ba4868e04dcd6fac8fca",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/alerta-persistence-wasm.xml",
+      "original_path": "evidence/alerta-persistence-wasm.xml",
+      "sha256": "60b83b12e37b4140193a1a0cd6592cbdfdc42bf7beca239f43f7adc242c5247a",
+      "size": 15232,
+      "git_blob": "99ffcbfe23477da650440d905baed566e4cc22d2",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/batch-200-supplemental.json",
+      "original_path": "evidence/batch-200-supplemental.json",
+      "sha256": "1df3498ab6cae5054bfc81967078c0a5540b34896a7aed0f811fd5759bf73fe8",
+      "size": 1875,
+      "git_blob": "80d69c8e0079084380b5032d7193ae8802bdbd51",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/batch-50-supplemental.json",
+      "original_path": "evidence/batch-50-supplemental.json",
+      "sha256": "3532319baf4ebd6b1b45d32846e29709d188d9243b04f63deebdfe78ff566a42",
+      "size": 1865,
+      "git_blob": "35ee61624414db6b64a7b8928d7492d91ff32ff4",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/deployment-e2e-run.json",
+      "original_path": "evidence/deployment-e2e-run.json",
+      "sha256": "15ad59bd655b26312975e19369fa4a05047f556b5c0f00756e53d67460fa9ed5",
+      "size": 5111,
+      "git_blob": "74082a16c59d9e364911c47948e9bdb76153019e",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/mutation-nightly-run.json",
+      "original_path": "evidence/mutation-nightly-run.json",
+      "sha256": "08ece924fe40a63119aecfcdd551d1cab6ea225b2ed6b9748db6524c2603901b",
+      "size": 8328,
+      "git_blob": "390f0b398c48831652e7cc9fc438179e795b642b",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/mutation-pr-run.json",
+      "original_path": "evidence/mutation-pr-run.json",
+      "sha256": "f59b83cfd1b73ad9cc5715117b8ef32cfe75faa25e443a1e821939aaf78132c3",
+      "size": 5379,
+      "git_blob": "06fed59633f16602a6fb8613d4a533091efccb42",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/mutation-run.json",
+      "original_path": "evidence/mutation-run.json",
+      "sha256": "08ece924fe40a63119aecfcdd551d1cab6ea225b2ed6b9748db6524c2603901b",
+      "size": 8328,
+      "git_blob": "390f0b398c48831652e7cc9fc438179e795b642b",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/native-run.json",
+      "original_path": "evidence/native-run.json",
+      "sha256": "ec34c6556d8bd59e671738f5c944aad14d208ecdcf435fcff71d49a25fb2f7b5",
+      "size": 1070,
+      "git_blob": "cd343e202b26cbbba2614b3243bf991294d31546",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/optional-services.xml",
+      "original_path": "evidence/optional-services.xml",
+      "sha256": "a377d5612d2307dcf92db91d2f8157a2fab5783784821b67be376cec00c5e31e",
+      "size": 24920,
+      "git_blob": "8c29af0fea1c2fbda78573b7548661afdd019db8",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/performance-wasm.xml",
+      "original_path": "evidence/performance-wasm.xml",
+      "sha256": "b3ac2ddb37695d4af8fc54fc78708958c0acbdceea44600f2272c5e15f501334",
+      "size": 1044,
+      "git_blob": "f72d36100c7fe7e3625252811e24a53407ea074f",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/pip-audit.json",
+      "original_path": "evidence/pip-audit.json",
+      "sha256": "14b8bfa5ce06f052f7fc3e051e76d1e9628d06f9355f041b62f935127489d785",
+      "size": 3300,
+      "git_blob": "bf8c1c2ab3dfcbd2847118ad9e0ec15c7b6db561",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/postgres-wasm-combined.xml",
+      "original_path": "evidence/postgres-wasm-combined.xml",
+      "sha256": "e984b8d8f6a91f18af7e978657a0739474ac841bb941a381766482c212f8fb4f",
+      "size": 59384,
+      "git_blob": "8da6fc9511202caba795d76a51edfb7c9a37c3ae",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/postgres-wasm.xml",
+      "original_path": "evidence/postgres-wasm.xml",
+      "sha256": "2a7704d8ba820817e6ec2d60de2ba1ef3078ed826476520008904ad11ae220d4",
+      "size": 42318,
+      "git_blob": "533b0d67e03d53b2cfe6f88c92f3d27f729c04bb",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/property-nightly-run.json",
+      "original_path": "evidence/property-nightly-run.json",
+      "sha256": "00b11f8d4fb28f4a3a734c8fc7d5a1991cc5e47fd3cd24464f0ae36862ff173a",
+      "size": 667,
+      "git_blob": "1e78bc6d8ce89ef6d54ba11f4a705250b16e2633",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/property-nightly.xml",
+      "original_path": "evidence/property-nightly.xml",
+      "sha256": "8ab13effe91e298f7d27134b41775b8c4498544f931efe7ca538def69c8115a2",
+      "size": 33951,
+      "git_blob": "85251a648784d3ee67d31269c0afc08f5365a354",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/public-audit.json",
+      "original_path": "evidence/public-audit.json",
+      "sha256": "436c596e185da48bde166cff5486fb1efdcc9b6c19068ae8fb08f7c566781b63",
+      "size": 261,
+      "git_blob": "52bf9d474358a26484a22c171e4fbb6c58d3967f",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/quality-run.json",
+      "original_path": "evidence/quality-run.json",
+      "sha256": "8a1d8ce4b4a9a43622d7651c1ea0e6c044ee0075d9ff12ef78dfdb6ef8bba86f",
+      "size": 898,
+      "git_blob": "43e47eb1e90b575defbddaca1d4b00fc85b979f1",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/real-zabbix-run.json",
+      "original_path": "evidence/real-zabbix-run.json",
+      "sha256": "a1b08e8d71af342cd78de608ad81403b57eeb04ff7b78eea6655a48489c25a00",
+      "size": 513,
+      "git_blob": "dd8f63ebe56fd956da0e194d4ebc2a17c4e5480f",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/reference-run.json",
+      "original_path": "evidence/reference-run.json",
+      "sha256": "b24f02234c72df3e3c76c466b4e0f0bf0f56c7b56de2be3c8fc21ad4046f9b9a",
+      "size": 5364,
+      "git_blob": "bee1f40e348507953998388b7d0a9bca389937ce",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/runtime_wasm_sql.json",
+      "original_path": "evidence/runtime_wasm_sql.json",
+      "sha256": "b44c4184fbaab7ac28b970bd38e19937abddbcb5ccee384d286aa8bfd76d1584",
+      "size": 3647,
+      "git_blob": "6b119b9864c2faa26722bce2111490782b3cbcb8",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/sbom-validation.json",
+      "original_path": "evidence/sbom-validation.json",
+      "sha256": "457fb3557b2041220f33c3ff8504938ea25b763c893dde70512b4a98828efbc1",
+      "size": 743,
+      "git_blob": "639edd7a626e80ff84563887318b232b50163b5b",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/sbom.cdx.json",
+      "original_path": "evidence/sbom.cdx.json",
+      "sha256": "ae8ee01851973bd317c21ab6802c0052bb52ab5ee6a5f6ad18891da6912bd402",
+      "size": 53990,
+      "git_blob": "247567f42dc4877d20114c13e325c4e8e5b213d8",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/test-summary.json",
+      "original_path": "evidence/test-summary.json",
+      "sha256": "d84894ea219afa80fa292e02b95889b46817fd5e7be583cecb95789005e4825e",
+      "size": 507,
+      "git_blob": "302a96e28e34b38ee4129ce0c7582a59153d3867",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/unit-mocked.xml",
+      "original_path": "evidence/unit-mocked.xml",
+      "sha256": "73e5533a6c06efa97f9ae44e49c568c55d1c62208ee5c8165dcebb061b1e7b52",
+      "size": 350812,
+      "git_blob": "40d49a41cfb0b7b141b4f16c55a15dc83ecc258b",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    },
+    {
+      "path": "evidence/history/0.1.0b1+2a4ce07/worker-sql-wasm.xml",
+      "original_path": "evidence/worker-sql-wasm.xml",
+      "sha256": "0a5ae84953290730cdfe8d67f549b03eeb3e46be2706293c9e57187988c49134",
+      "size": 1062,
+      "git_blob": "c882831eefa344e0160732a14b3280540503e7db",
+      "last_changed_commit": "a8989f229ac80a54f699599eeb5c3b4b5f79e7b2"
+    }
+  ]
+}

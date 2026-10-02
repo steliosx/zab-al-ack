@@ -13,6 +13,7 @@ current `evidence/` paths, byte for byte, under a path that never changes.
 |---|---|---|---|
 | [0.1.0a16/](0.1.0a16/) | `0.1.0a16` | import commit `d68fa91`, unchanged through `494768d` and `44f3ce4` | [MANIFEST.json](0.1.0a16/MANIFEST.json) |
 | [0.1.0b1+34ea703/](0.1.0b1+34ea703/) | `0.1.0b1`, tested source `34ea703` | adoption commits `3e58c63` and `1a6f0da`, unchanged through `2a4ce07` | [MANIFEST.json](0.1.0b1+34ea703/MANIFEST.json) |
+| [0.1.0b1+2a4ce07/](0.1.0b1+2a4ce07/) | `0.1.0b1`, tested source `2a4ce07` | adoption commit `a8989f2`, unchanged through `3392d39` | [MANIFEST.json](0.1.0b1+2a4ce07/MANIFEST.json) |
 
 `tools/public_audit.py` checks the bindings of the named current records
 only. It scans every exported file, these included, for private material.

@@ -13,7 +13,7 @@
   },
   "code_digests": {
     "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
-    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36"
+    "harness": "0640884d4f90f8bf581f3fed9b0cbc6bdfa5fba612b2c72c11a7d7ca4a7cbb0d"
   },
   "test_evidence": [
     {
@@ -37,7 +37,7 @@
       "reason": ""
     },
     {
-      "nodeid": "tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[alert_id-bd701e3d-0036-4318-9c99-1a2947b6b02d]",
+      "nodeid": "tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[alert_id-2846c7e8-1ed4-4c16-bdfb-adfd9881ada3]",
       "ids": [
         "T8"
       ],
@@ -4423,7 +4423,7 @@
       "reason": ""
     },
     {
-      "nodeid": "tests/release/test_ci_collection.py::test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner",
+      "nodeid": "tests/release/test_ci_collection.py::test_both_service_entrypoints_start_services_only_after_the_external_exclusion_check",
       "ids": [],
       "layer": "unit_mock",
       "status": "PASS",
@@ -5095,7 +5095,7 @@
       "reason": ""
     },
     {
-      "nodeid": "tests/release/test_collect_package_identities.py::test_reference_and_policy_files_still_carry_no_approved_identities",
+      "nodeid": "tests/release/test_collect_package_identities.py::test_policy_carries_exactly_the_reviewed_x64_runner_identities_and_the_reference_none",
       "ids": [],
       "layer": "unit_mock",
       "status": "PASS",
@@ -5296,6 +5296,62 @@
     },
     {
       "nodeid": "tests/release/test_collect_package_identities.py::test_real_gpgv_output_is_the_signed_body_dash_unescaped_and_ignores_appended_text",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_dependency_advisory_pins.py::test_every_lock_carrying_the_package_pins_at_least_the_first_patched_version[GHSA-w6j9-cwv2-h6wq]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_dependency_advisory_pins.py::test_every_lock_carrying_the_package_pins_at_least_the_first_patched_version[GHSA-42vr-xj54-vc7v]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_dependency_advisory_pins.py::test_every_lock_carrying_the_package_pins_at_least_the_first_patched_version[GHSA-x33g-cr3x-6449]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_dependency_advisory_pins.py::test_every_lock_carrying_the_package_pins_at_least_the_first_patched_version[GHSA-8988-9cw3-xx77]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_dependency_advisory_pins.py::test_every_lock_carrying_the_package_pins_at_least_the_first_patched_version[GHSA-vxq7-64xx-v4gw]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_dependency_advisory_pins.py::test_every_lock_carrying_the_package_pins_at_least_the_first_patched_version[GHSA-gh4c-6fx4-qh6g]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_dependency_advisory_pins.py::test_the_runtime_lock_carries_neither_advisory_package",
       "ids": [],
       "layer": "unit_mock",
       "status": "PASS",
@@ -14335,6 +14391,254 @@
       "reason": ""
     },
     {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_admits_the_persistent_window_gated_unit",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_refuses_the_historical_or_an_ungated_unit[values0-not the persistent runner unit]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_refuses_the_historical_or_an_ungated_unit[values1-not gated by the shared-ci window]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_refuses_the_historical_or_an_ungated_unit[values2-without path and argv]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_refuses_outside_a_runner_unit[0::/user.slice/user-1000.slice/session-1.scope-not inside exactly one runner service unit]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_refuses_outside_a_runner_unit[1:name=systemd:/x-no cgroup v2 entry]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_refuses_an_unreadable_cgroup_and_a_failing_systemctl",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_admits_only_its_own_running_lifecycle",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override0-not explicitly clear]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override1-not explicitly clear]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override2-not explicitly clear]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override3-not ok]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override4-paused]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override5-paused]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override6-paused]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override7-no active broker lifecycle]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override8-unit]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override9-invocation]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override10-phase]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_every_unproven_state[override11-project]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_b_refuses_a_malformed_reply_a_dead_socket_and_a_missing_invocation",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_requires_the_exact_mandatory_condition_and_no_override[values0-not gated]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_requires_the_exact_mandatory_condition_and_no_override[values1-not gated]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_requires_the_exact_mandatory_condition_and_no_override[values2-drop-in overrides]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_an_unobservable_or_wrong_type_broker_path_refuses_instead_of_selecting_phase_a",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_refuses_extra_success_statuses_and_malformed_conditions[values0-extra success exit statuses]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_refuses_extra_success_statuses_and_malformed_conditions[values1-outside its command groups]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_refuses_extra_success_statuses_and_malformed_conditions[values2-malformed or duplicate field]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_refuses_extra_success_statuses_and_malformed_conditions[values3-malformed or duplicate field]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_refuses_extra_success_statuses_and_malformed_conditions[values4-without path and argv]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
+      "nodeid": "tests/release/test_runner_admission.py::test_phase_a_refuses_extra_success_statuses_and_malformed_conditions[values5-outside its command groups]",
+      "ids": [],
+      "layer": "unit_mock",
+      "status": "PASS",
+      "evidence_file": "evidence/unit-mocked.xml",
+      "reason": ""
+    },
+    {
       "nodeid": "tests/release/test_sdist_manifest.py::test_the_nine_deploy_files_are_in_the_sdist_byte_for_byte",
       "ids": [],
       "layer": "unit_mock",
@@ -20846,7 +21150,7 @@
       "required_result": "Rejected; genuine action still processed.",
       "modules": "crypto;sql.ledger;worker",
       "planned_test_references": "tests/postgres;tests/security",
-      "executed_test_references": "tests/postgres/assertions.sql;tests/postgres/test_postgres.py::test_T1_T6_T8_T14_T21_T22_T35_T38_T39_real_composite_and_exact_roles;tests/security/test_binding_boundary.py::test_T8_T37_forged_genuine_action_identity_cannot_reserve_verified_action;tests/security/test_binding_boundary.py::test_T8_rename_rejects_legacy_domain_before_target_access[False];tests/security/test_binding_boundary.py::test_T8_rename_rejects_legacy_domain_before_target_access[True];tests/unit/test_crypto_policy.py::test_T8_forged_action_does_not_validate;tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[alert_id-bd701e3d-0036-4318-9c99-1a2947b6b02d];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[customer-outside];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[history_type-status];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[history_user-other-person];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[resulting_status-open];tests/unit/test_worker.py::test_T8_forged_capture_cannot_reserve_genuine_action",
+      "executed_test_references": "tests/postgres/assertions.sql;tests/postgres/test_postgres.py::test_T1_T6_T8_T14_T21_T22_T35_T38_T39_real_composite_and_exact_roles;tests/security/test_binding_boundary.py::test_T8_T37_forged_genuine_action_identity_cannot_reserve_verified_action;tests/security/test_binding_boundary.py::test_T8_rename_rejects_legacy_domain_before_target_access[False];tests/security/test_binding_boundary.py::test_T8_rename_rejects_legacy_domain_before_target_access[True];tests/unit/test_crypto_policy.py::test_T8_forged_action_does_not_validate;tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[alert_id-2846c7e8-1ed4-4c16-bdfb-adfd9881ada3];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[customer-outside];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[history_type-status];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[history_user-other-person];tests/unit/test_crypto_policy.py::test_T8_snapshot_actor_history_binding[resulting_status-open];tests/unit/test_worker.py::test_T8_forged_capture_cannot_reserve_genuine_action",
       "evidence_layers": "unit/mock and real lab; deployment acceptance",
       "reference_result": "PASS",
       "deployment_result": "MANUAL_GATE_PENDING",

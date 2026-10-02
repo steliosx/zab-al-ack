@@ -4,7 +4,7 @@
   "phases": [],
   "code_digests": {
     "source": "c8a7430bea0ecb1b5adeca5df3a3d0c64f3e97fb7d92fe22219f6c1d59c8fe98",
-    "harness": "cbe77055955e71d0005f6f564f295a294613a42fdf360bdb35d3d02025298d36"
+    "harness": "0640884d4f90f8bf581f3fed9b0cbc6bdfa5fba612b2c72c11a7d7ca4a7cbb0d"
   },
   "real_zabbix": "NOT_RUN",
   "deployment_gates": "MANUAL_GATE_PENDING",
@@ -14,10 +14,10 @@
     "previous_run": {
       "status": "RETAINED",
       "label": "previous-run",
-      "directory": "build/private/retained-phases/f0db0bf5fb/previous-run",
+      "directory": "build/private/retained-phases/335775510f/previous-run",
       "retained": 1,
       "absent": 18,
-      "manifest_sha256": "d8c61e198fc6d76e90f6a56c05ae9d887f33a2687f0b39559a6ceebea14415ed"
+      "manifest_sha256": "1667dff4d27c09e2727fe71bade70f426872f6e9892d718ea11090540c8a5eb9"
     }
   },
   "reason": "ACK_LAB_PG_BIN (PostgreSQL 18 bin directory) and ACK_LAB_PGBOUNCER_BIN (PgBouncer executable) required; native service tests NOT_RUN"
