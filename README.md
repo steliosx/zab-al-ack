@@ -137,6 +137,28 @@ revision and artifact that produced it.
 | Evidence | Unit/mock, PostgreSQL WASM, native-service and installed-path records have distinct scopes | [Evidence guide](evidence/README.md) · [Compatibility and evidence](#compatibility-and-evidence) |
 | Production use | No production environment validated; external writes disabled by default | [Deployment](docs/deployment.md) · [Runbook](docs/runbook.md) |
 
+### Unmerged beta work — 2 October 2026
+
+Main remains the a17 baseline above. The separate B1 work branch,
+[`opus/b1-beta-reconciliation-20260929` at `cd36053`](https://github.com/steliosx/zab-al-ack/tree/cd36053b6cc6ec1db8ae21a7fd386640fc720c7c),
+is **unmerged and not beta-accepted**. Its version label does not establish readiness.
+
+- Adopted [local reference evidence](https://github.com/steliosx/zab-al-ack/blob/cd36053b6cc6ec1db8ae21a7fd386640fc720c7c/evidence/reference-run.json)
+  reports **2,428 passed / 57 skipped** for tested source `3392d39`.
+- The [installed deployment-path record](https://github.com/steliosx/zab-al-ack/blob/cd36053b6cc6ec1db8ae21a7fd386640fc720c7c/evidence/deployment-e2e-run.json)
+  records **4 cases and 13/13 observations** on native x64 with the preliminary
+  B1 wheel `eaf3c422…`. Carry-over to a canonical artifact requires byte equality.
+  This scoped lab result does not replace the separate native/PgBouncer or
+  real-Zabbix qualification profiles, which remain `NOT_RUN` in the adopted records.
+- [Actions run 37075775473](https://github.com/steliosx/zab-al-ack/actions/runs/37075775473)
+  **failed at `cd36053`**. Runner hooks refused retained state in several jobs;
+  reference also returned a failing unit/mocked phase. Packaging was skipped.
+  Earlier local passes do not make this Actions run successful.
+
+See the branch's [beta-readiness record](https://github.com/steliosx/zab-al-ack/blob/cd36053b6cc6ec1db8ae21a7fd386640fc720c7c/docs/BETA_READINESS.md)
+for the remaining artifact, installed-account, security and deployment gates.
+These source and published-record checks do not independently verify private retention.
+
 Use [the changelog](CHANGELOG.md) for the release narrative and
 [open pull requests](https://github.com/steliosx/zab-al-ack/pulls) for proposed work.
 
