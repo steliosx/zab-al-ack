@@ -155,7 +155,7 @@
     "security-scans.json": "tools/security_scan.py with pip-audit 2.9.0 (requirements-scanner.lock, hash-verified) and Gitleaks 8.24.3 (archive 9991e0b2...): pip-audit PASS 58 packages 0 advisories 0 skipped; Gitleaks PASS, dir and git phases 0 findings, history_scanned (the record reproduced its earlier bytes)",
     "pip-audit.json": "exact-lock advisory report for the current pins (wheel 0.48.0)",
     "npm-audit.json": "npm audit --prefix lab --legacy-peer-deps: 0 vulnerabilities",
-    "sbom.cdx.json": "tools/dependency_inventory.py at 3392d39 in that run's environment, adopted as generated (483b9b76...): matches the locks (PyJWT 2.15.1 and urllib3 2.8.0 as requirements.lock); hashes taken from installed files describe that environment; requirements.lock carries no package hashes, so this is not a dependency-hash attestation",
+    "sbom.cdx.json": "tools/dependency_inventory.py at 3392d39 in that run's environment, adopted as generated (483b9b76...): matches both locks (59 Python, 2 npm components, no mismatch; PyJWT 2.15.1 and urllib3 2.8.0); hashes taken from installed files describe that environment; requirements.lock carries no package hashes, so this is not a dependency-hash attestation",
     "sbom-validation.json": "evidence/sbom.cdx.json valid against CycloneDX 1.6 (schema cb88c812..., bundled in hash-pinned cyclonedx-python-lib 9.1.0; local registry, no retrieval); 61 components",
     "scope": "known advisories at run time, secrets in the public selection and history, schema validity; not licence clearance, application-security review or external review"
   },

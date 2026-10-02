@@ -39,7 +39,7 @@ byte for byte under `evidence/history/0.1.0b1+2a4ce07/` and `evidence/history/0.
   - security scan: pip-audit found 0 advisories in 58 packages, and Gitleaks found 0 secrets in the export or the
     history;
   - npm audit: 0 vulnerabilities;
-  - the SBOM matches the locks (PyJWT 2.15.1, urllib3 2.8.0) and is valid against CycloneDX 1.6.
+  - the SBOM matches both locks (PyJWT 2.15.1, urllib3 2.8.0) and is valid against CycloneDX 1.6.
 
   These are scoped checks, not licence or external security clearance.
 - **Not carried:** three legacy a16 records (wheel smoke, collection check, local validation) are kept only in the

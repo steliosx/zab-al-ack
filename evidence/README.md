@@ -62,9 +62,9 @@ harness and locks as this commit. The scans do not cover this adoption commit's 
 
 | Record | Result |
 |---|---|
-| `security-scans.json`, `pip-audit.json` | `tools/security_scan.py`, with pip-audit 2.9.0 and Gitleaks 8.24.3. pip-audit: 58 packages, 0 advisories, 0 skipped. Gitleaks: the public selection and the Git history, 0 findings. `security-scans.json` reproduced its earlier bytes; `pip-audit.json` is new |
+| `security-scans.json`, `pip-audit.json` | `tools/security_scan.py`, with pip-audit 2.9.0 and Gitleaks 8.24.3. pip-audit: 58 packages, 0 advisories, 0 skipped. Gitleaks: the public selection and the Git history, 0 findings. `security-scans.json` reproduced its earlier bytes; `pip-audit.json` was regenerated with new bytes |
 | `npm-audit.json` | `npm audit --prefix lab --legacy-peer-deps`: 0 vulnerabilities (bytes unchanged) |
-| `sbom.cdx.json`, `dependency-review.json` | `tools/dependency_inventory.py` at `3392d39`. The SBOM matches the locks (PyJWT 2.15.1 and urllib3 2.8.0, as `requirements.lock`); `dependency-review.json` reproduced its earlier bytes |
+| `sbom.cdx.json`, `dependency-review.json` | `tools/dependency_inventory.py` at `3392d39`. The SBOM matches both locks (59 Python and 2 npm components, no mismatch; PyJWT 2.15.1 and urllib3 2.8.0); `dependency-review.json` reproduced its earlier bytes |
 | `sbom-validation.json` | `sbom.cdx.json` is valid against CycloneDX 1.6 (61 components). The schema, pinned by SHA-256, is loaded from a local registry only |
 
 - A separate local audit of `requirements-scanner.lock` (27 exact pins, including urllib3 2.8.0) found 0 advisories;
