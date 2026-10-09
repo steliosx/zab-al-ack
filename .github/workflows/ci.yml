@@ -312,7 +312,8 @@ jobs:
       - name: Require the existing synthetic HTTPS helper without installing host tools
         run: command -v openssl >/dev/null
       - run: python -m pip install -r requirements.lock
-      - run: python -m pip install --require-hashes --only-binary=:all: -r requirements-quality.lock
+      - run: |
+          python -m pip install --require-hashes --only-binary=:all: -r requirements-quality.lock
       - run: python -m pip install --no-deps --no-build-isolation -e .
       - run: python -m pip check
       - name: Run only quality and the existing unit-mocked target set
