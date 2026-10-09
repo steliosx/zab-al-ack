@@ -459,13 +459,21 @@ def test_alpha_workflow_filters_pushes_without_filtering_prs_or_required_events(
     # filter would silently remove tag validation. No PR base/path filter may
     # drop required checks for stacked PRs or documentation-only changes.
     assert events['push'] == {'branches': ['main'], 'tags': ['**']}
-    for event in ('pull_request', 'workflow_dispatch', 'workflow_call'):
+    for event in ('pull_request', 'workflow_call'):
         assert events[event] == ''
+    assert events['workflow_dispatch'] == {'inputs': {
+        'diagnostic': {'description': 'Full reference checks or the separately reviewed hosted diagnostic',
+                       'required': 'true', 'default': 'full-reference', 'type': 'choice',
+                       'options': ['full-reference', 'hosted-x64-quality-unit-mocked']},
+        'reviewed_commit': {'description': 'Exact reviewed diagnostic branch commit (40 lowercase hex)',
+                            'required': 'false', 'default': '', 'type': 'string'}}}
     assert events['schedule'] == [{'cron': '23 3 * * *'}]
-    assert set(workflow['jobs']) == {'quality', 'reference', 'native', 'mutation', 'package'}
+    assert set(workflow['jobs']) == {'quality', 'reference', 'native', 'mutation', 'package',
+                                     'quality-unit-mocked'}
+    full_guard = "${{ !(github.event_name == 'workflow_dispatch' && (github.event.inputs.diagnostic == 'hosted-x64-quality-unit-mocked' || github.ref == 'refs/heads/diagnostic/hosted-x64-20261008')) }}"
     for name, job in workflow['jobs'].items():
         assert job.get('name', name) == name
-        assert 'if' not in job
+        assert job['if'] == ("${{ github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostic == 'hosted-x64-quality-unit-mocked' && github.ref == 'refs/heads/diagnostic/hosted-x64-20261008' && github.event.inputs.reviewed_commit == github.sha }}" if name == 'quality-unit-mocked' else full_guard)
 
 
 def test_ci_package_waits_for_same_run_required_jobs_and_rebuilds_mapping():
@@ -533,13 +541,21 @@ def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_re
     assert uploads[0]['if'] == 'always()'
 
 
-def test_every_active_job_requires_the_dedicated_arm64_runner_without_hosted_fallback():
+def test_original_arm64_routes_have_only_the_explicit_branch_diagnostic_exception():
     paths = list((ROOT / '.github/workflows').glob('*.yml'))
     assert {path.name for path in paths} == {'ci.yml', 'security.yml', 'codeql.yml', 'deployment-e2e.yml'}
+    routed = 0
     for path in paths:
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
-        for job in workflow['jobs'].values():
+        for name, job in workflow['jobs'].items():
+            if path.name == 'ci.yml' and name == 'quality-unit-mocked':
+                assert job['runs-on'] == 'ubuntu-24.04'
+                assert job['timeout-minutes'] == '25'
+                assert job['if'] == "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostic == 'hosted-x64-quality-unit-mocked' && github.ref == 'refs/heads/diagnostic/hosted-x64-20261008' && github.event.inputs.reviewed_commit == github.sha }}"
+                assert 'uses' not in job['steps'][0]
+                continue
             assert job['runs-on'] == ['self-hosted', 'Linux', 'ARM64', 'zabalack']
+            routed += 1
             assert 'continue-on-error' not in job
             for step in job['steps']:
                 # Context comes from Actions; local preflight must never forge it.
@@ -547,6 +563,8 @@ def test_every_active_job_requires_the_dedicated_arm64_runner_without_hosted_fal
                 if step.get('uses', '').startswith('actions/upload-artifact@'):
                     assert step['with']['retention-days'] == '3'
                     assert step['with']['if-no-files-found'] == 'error'
+
+    assert routed == 8, routed
 
 
 def test_dependency_installations_use_a_new_environment_before_any_installs_or_evidence():
@@ -600,7 +618,8 @@ def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         for name, job in workflow['jobs'].items():
             if job.get('runs-on') != ['self-hosted', 'Linux', 'ARM64', 'zabalack']:
-                continue  # Nothing else may use this runner; see the assertion below.
+                assert path.name == 'ci.yml' and name == 'quality-unit-mocked'
+                continue  # Only the separately tested branch diagnostic exception.
             guarded += 1
             name = f'{path.name}/{name}'
             gate = job['steps'][0]

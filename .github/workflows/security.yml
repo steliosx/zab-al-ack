@@ -2,6 +2,8 @@ name: Public dependency and secret checks
 on:
   pull_request:
   push:
+    branches-ignore: ['diagnostic/hosted-x64-20261008']
+    tags: ['**']
   workflow_dispatch:
 permissions:
   contents: read

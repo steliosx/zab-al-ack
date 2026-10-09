@@ -3,6 +3,8 @@ name: CodeQL security analysis
 on:
   pull_request:
   push:
+    branches-ignore: ['diagnostic/hosted-x64-20261008']
+    tags: ['**']
   workflow_dispatch:
   schedule:
     - cron: '17 5 * * 1'
