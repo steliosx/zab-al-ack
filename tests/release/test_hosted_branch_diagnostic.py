@@ -38,7 +38,7 @@ def hosted_contract(workflow):
     originals = {'quality', 'mutation', 'reference', 'native', 'package'}
     assert set(workflow['jobs']) == originals | {'quality-unit-mocked'}
     for name in originals:
-        assert workflow['jobs'][name]['if'] == full_guard
+        assert workflow['jobs'][name].get('if') == full_guard
         assert workflow['jobs'][name]['runs-on'] == ['self-hosted', 'Linux', 'ARM64', 'zabalack']
     assert workflow['jobs']['package']['needs'] == ['quality', 'reference', 'native', 'mutation']
     job = workflow['jobs']['quality-unit-mocked']
@@ -72,7 +72,7 @@ def hosted_contract(workflow):
         'test ! -e "$RUNNER_TEMP/venv"', 'python -m venv "$RUNNER_TEMP/venv"',
         'printf \'%s\\n\' "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"']
     assert steps[5]['run'] == 'command -v openssl >/dev/null'
-    assert [step['run'] for step in steps[6:11]] == [
+    assert [step['run'].removesuffix('\n') for step in steps[6:11]] == [
         'python -m pip install -r requirements.lock',
         'python -m pip install --require-hashes --only-binary=:all: -r requirements-quality.lock',
         'python -m pip install --no-deps --no-build-isolation -e .',
