@@ -115,6 +115,17 @@ survivors, errors and timeouts fail the mutation gate. It copies only
 the selected redacted reports and records their byte hashes and sizes in a
 manifest. Raw logs and Hypothesis examples remain in the private build area.
 
+A local Preloop engine run is not an Actions run: it names the run with a UUID
+and always reports attempt 1, so `prepare` refuses its context. For that lane
+only, `prepare --kind quality --preloop-alpha` and `pack --kind quality
+--preloop-alpha` record the engine's own UUID run ID with the producer
+`preloop-local-alpha`. They require a `workflow_dispatch` event and accept only
+the quality kind. The same checkout, digest, preparation and quality-report
+checks apply. `collect`, package verification and release verification keep the
+strict GitHub context, so they refuse such an artifact. It is local alpha
+evidence for one job and never counts toward collection, packaging or
+acceptance.
+
 The package job downloads only artifact names containing its current run ID and
 attempt. Each artifact stays in its own directory. Collection rejects missing
 jobs, foreign context, stale source/harness digests, changed report bytes,

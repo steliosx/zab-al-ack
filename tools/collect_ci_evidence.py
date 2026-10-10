@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Collect fresh, source-bound reports from one GitHub Actions run and attempt.
 
+`prepare`/`pack --preloop-alpha` instead label quality evidence from a local
+Preloop engine run, whose UUID run id GitHub collection deliberately refuses.
+
 The manifest is a transport-integrity check, not a signed attestation. Workflow
 dependencies and the Actions artifact boundary establish which jobs produced it.
 No network, publication, or operational-system access occurs in this tool.
@@ -35,6 +38,9 @@ REFERENCE_PHASES = {
     'optional-services': 'optional_native_real_zabbix',
 }
 CONTEXT_KEYS = {'repository', 'run_id', 'run_attempt', 'sha'}
+# A local Preloop engine names each run with a UUID and always reports attempt 1.
+PRELOOP_PRODUCER = 'preloop-local-alpha'
+PRELOOP_KINDS = ('quality',)
 MAX_FILE_BYTES = 20 * 1024 * 1024
 
 
@@ -95,6 +101,20 @@ def validate_context(context: object) -> dict:
     return context
 
 
+def validate_preloop_context(context: object) -> dict:
+    # Deliberately disjoint from validate_context: the producer field and the
+    # UUID run id keep this evidence out of GitHub collection and acceptance.
+    require(isinstance(context, dict) and set(context) == CONTEXT_KEYS | {'producer'},
+            'Invalid Preloop context fields')
+    require(all(isinstance(value, str) for value in context.values()), 'Invalid Preloop context types')
+    require(context['producer'] == PRELOOP_PRODUCER, 'Invalid Preloop producer')
+    require(bool(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', context['repository'])), 'Invalid repository context')
+    require(bool(re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', context['run_id']))
+            and context['run_attempt'] == '1', 'Invalid Preloop run context')
+    require(bool(re.fullmatch(r'[0-9a-f]{40}', context['sha'])), 'Invalid commit context')
+    return context
+
+
 def pull_request_context(repository: str) -> dict:
     """Select only PR identities from the Actions webhook, never its raw body."""
     path = Path(os.environ.get('GITHUB_EVENT_PATH', ''))
@@ -114,12 +134,18 @@ def pull_request_context(repository: str) -> dict:
     return {'number': number, 'head_sha': head.get('sha'), 'base_sha': base.get('sha')}
 
 
-def environment_context(root: Path) -> dict:
+def environment_context(root: Path, preloop: bool = False) -> dict:
     require(os.environ.get('GITHUB_ACTIONS') == 'true', 'This command requires GitHub Actions context')
-    context = validate_context({key: os.environ.get('GITHUB_' + key.upper(), '') for key in CONTEXT_KEYS})
+    context = {key: os.environ.get('GITHUB_' + key.upper(), '') for key in CONTEXT_KEYS}
+    if not preloop:
+        validate_context(context)
     event_name = os.environ.get('GITHUB_EVENT_NAME', '')
     require(bool(re.fullmatch(r'[a-z][a-z0-9_]*', event_name)), 'Missing or invalid Actions event name')
-    if event_name in ('pull_request', 'pull_request_target'):
+    if preloop:
+        # The local engine accepts only REST dispatches; no pull request identity applies.
+        require(event_name == 'workflow_dispatch', 'Preloop evidence requires a dispatched run')
+        context = validate_preloop_context(dict(context, producer=PRELOOP_PRODUCER))
+    elif event_name in ('pull_request', 'pull_request_target'):
         context['pull_request'] = pull_request_context(context['repository'])
         validate_context(context)
     actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True, timeout=10).strip()
@@ -144,9 +170,16 @@ def artifact_name(kind: str, context: dict) -> str:
     return f'zabalack-evidence-{context["run_id"]}-{context["run_attempt"]}-{kind}'
 
 
-def prepare(root: Path, kind: str, context: dict) -> None:
+def validate_producer_context(context: object, kind: str, preloop: bool) -> dict:
+    if preloop:
+        require(kind in PRELOOP_KINDS, 'Preloop evidence covers only the quality job')
+        return validate_preloop_context(context)
+    return validate_context(context)
+
+
+def prepare(root: Path, kind: str, context: dict, preloop: bool = False) -> None:
     require(kind in KINDS, 'Unknown CI evidence kind')
-    validate_context(context)
+    validate_producer_context(context, kind, preloop)
     clear_evidence(root)
     output = root / 'build/ci-artifacts' / kind
     if output.exists():
@@ -262,11 +295,11 @@ def validate_reports(root: Path, directory: Path, kind: str) -> set[str]:
     return selected
 
 
-def pack(root: Path, kind: str, context: dict) -> Path:
+def pack(root: Path, kind: str, context: dict, preloop: bool = False) -> Path:
     require(kind in KINDS, 'Unknown CI evidence kind')
-    validate_context(context)
+    validate_producer_context(context, kind, preloop)
     preparation = read_json(root / 'build/ci-preparation' / f'{kind}.json')
-    validate_context(preparation.get('context'))
+    validate_producer_context(preparation.get('context'), kind, preloop)
     require(preparation.get('context') == context and preparation.get('kind') == kind, 'CI preparation context mismatch')
     require(binding_error(preparation, root, 'Preparation') is None, 'Tree changed after CI preparation')
     names = validate_reports(root, root, kind)
@@ -351,15 +384,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subcommands = parser.add_subparsers(dest='command', required=True)
     for name in ('prepare', 'pack'):
-        subcommands.add_parser(name).add_argument('--kind', choices=KINDS, required=True)
+        producer = subcommands.add_parser(name)
+        producer.add_argument('--kind', choices=KINDS, required=True)
+        producer.add_argument('--preloop-alpha', action='store_true',
+                              help='label quality evidence from a local Preloop run; GitHub collection refuses it')
     subcommands.add_parser('collect').add_argument('--input', type=Path, required=True)
     args = parser.parse_args()
     try:
-        context = environment_context(ROOT)
+        preloop = getattr(args, 'preloop_alpha', False)
+        context = environment_context(ROOT, preloop)
         if args.command == 'prepare':
-            prepare(ROOT, args.kind, context)
+            prepare(ROOT, args.kind, context, preloop)
         elif args.command == 'pack':
-            pack(ROOT, args.kind, context)
+            pack(ROOT, args.kind, context, preloop)
         else:
             collect(ROOT, args.input, context)
     except (EvidenceError, OSError, subprocess.SubprocessError) as error:

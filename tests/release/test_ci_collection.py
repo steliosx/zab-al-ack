@@ -18,6 +18,9 @@ from mutation_fixtures import passing_mutation_record
 ROOT = Path(__file__).resolve().parents[2]
 CONTEXT = {'repository': 'synthetic/zabalack', 'run_id': '123', 'run_attempt': '2', 'sha': 'a' * 40}
 PR_CONTEXT = dict(CONTEXT, pull_request={'number': 17, 'head_sha': 'b' * 40, 'base_sha': 'c' * 40})
+# Shape of a local Preloop engine run: lowercase hyphenated UUID, attempt always 1.
+PRELOOP_CONTEXT = {'repository': 'synthetic/zabalack', 'run_id': '3b5c1d2e-4f60-4a7b-8c9d-0e1f2a3b4c5d',
+                   'run_attempt': '1', 'sha': 'a' * 40, 'producer': 'preloop-local-alpha'}
 
 
 def write_record(root, name, value):
@@ -449,6 +452,107 @@ def test_prepare_discards_committed_prior_run_reports(tmp_path):
     ci.prepare(root, 'reference', CONTEXT)
     assert [path.name for path in (root / 'evidence').iterdir()] == ['README.md']
 
+
+
+def preloop_quality(tmp_path):
+    root = tmp_path / 'source'
+    (root / 'src/zabalack').mkdir(parents=True)
+    (root / 'src/zabalack/synthetic.py').write_text('SYNTHETIC = True\n')
+    ci.prepare(root, 'quality', PRELOOP_CONTEXT, preloop=True)
+    create_reports(root, 'quality')
+    return root, ci.pack(root, 'quality', PRELOOP_CONTEXT, preloop=True)
+
+
+def test_preloop_quality_evidence_keeps_the_native_uuid_and_producer(tmp_path):
+    root, output = preloop_quality(tmp_path)
+    manifest = ci.read_json(output / 'manifest.json')
+    assert manifest['context'] == PRELOOP_CONTEXT
+    assert [item['path'] for item in manifest['files']] == ['evidence/quality-run.json']
+    assert ci.artifact_name('quality', PRELOOP_CONTEXT) == (
+        'zabalack-evidence-3b5c1d2e-4f60-4a7b-8c9d-0e1f2a3b4c5d-1-quality')
+
+
+def test_github_validation_and_collection_refuse_preloop_evidence(tmp_path):
+    root, output = preloop_quality(tmp_path)
+    for context in (PRELOOP_CONTEXT, CONTEXT):
+        with pytest.raises(ci.EvidenceError, match='Invalid CI context fields|Foreign CI run'):
+            ci.validate_artifact(root, output, 'quality', context)
+    inputs = tmp_path / 'downloads'
+    shutil.copytree(output, inputs / ci.artifact_name('quality', PRELOOP_CONTEXT))
+    with pytest.raises(ci.EvidenceError, match='Invalid CI context fields'):
+        ci.collect(root, inputs, PRELOOP_CONTEXT)
+    without_producer = {key: value for key, value in PRELOOP_CONTEXT.items() if key != 'producer'}
+    with pytest.raises(ci.EvidenceError, match='Invalid run context'):
+        ci.validate_context(without_producer)
+
+
+@pytest.mark.parametrize('kind', ['reference', 'native', 'mutation'])
+def test_preloop_mode_covers_only_the_quality_job(tmp_path, kind):
+    with pytest.raises(ci.EvidenceError, match='only the quality job'):
+        ci.prepare(tmp_path, kind, PRELOOP_CONTEXT, preloop=True)
+    with pytest.raises(ci.EvidenceError, match='only the quality job'):
+        ci.pack(tmp_path, kind, PRELOOP_CONTEXT, preloop=True)
+
+
+@pytest.mark.parametrize('field, value', [
+    ('run_id', '123'), ('run_id', '3B5C1D2E-4F60-4A7B-8C9D-0E1F2A3B4C5D'),
+    ('run_id', '3b5c1d2e4f604a7b8c9d0e1f2a3b4c5d'), ('run_id', '3b5c1d2e-4f60-4a7b-8c9d-0e1f2a3b4c5d\n'),
+    ('run_attempt', '2'), ('run_attempt', 1), ('producer', 'github-actions'), ('producer', None),
+    ('repository', 'synthetic'), ('sha', 'A' * 40), ('pull_request', {'number': 17}), ('run_number', '1'),
+])
+def test_preloop_context_refuses_each_invalid_field(field, value):
+    ci.validate_preloop_context(dict(PRELOOP_CONTEXT))
+    context = {key: item for key, item in PRELOOP_CONTEXT.items() if key != field or value is not None}
+    if value is not None:
+        context[field] = value
+    with pytest.raises(ci.EvidenceError):
+        ci.validate_preloop_context(context)
+
+
+def test_pack_refuses_a_preparation_from_the_other_producer(tmp_path):
+    ci.prepare(tmp_path, 'quality', CONTEXT)
+    create_reports(tmp_path, 'quality')
+    with pytest.raises(ci.EvidenceError, match='Invalid Preloop context fields'):
+        ci.pack(tmp_path, 'quality', PRELOOP_CONTEXT, preloop=True)
+    ci.prepare(tmp_path, 'quality', PRELOOP_CONTEXT, preloop=True)
+    create_reports(tmp_path, 'quality')
+    with pytest.raises(ci.EvidenceError, match='Invalid CI context fields'):
+        ci.pack(tmp_path, 'quality', CONTEXT)
+
+
+@pytest.fixture
+def preloop_event(actions_event, monkeypatch):
+    monkeypatch.setenv('GITHUB_RUN_ID', PRELOOP_CONTEXT['run_id'])
+    monkeypatch.setenv('GITHUB_RUN_ATTEMPT', '1')
+    monkeypatch.setenv('GITHUB_EVENT_NAME', 'workflow_dispatch')
+    actions_event.unlink()
+
+
+def test_preloop_environment_context_labels_a_dispatched_engine_run(preloop_event, tmp_path):
+    assert ci.environment_context(tmp_path, preloop=True) == PRELOOP_CONTEXT
+    with pytest.raises(ci.EvidenceError, match='Invalid run context'):
+        ci.environment_context(tmp_path)
+
+
+@pytest.mark.parametrize('change', ['pull_request', 'push', 'not_actions', 'wrong_checkout', 'decimal_run'])
+def test_preloop_environment_context_refuses_each_unsupported_run(preloop_event, tmp_path, monkeypatch, change):
+    if change in {'pull_request', 'push'}:
+        monkeypatch.setenv('GITHUB_EVENT_NAME', change)
+    elif change == 'not_actions':
+        monkeypatch.setenv('GITHUB_ACTIONS', 'false')
+    elif change == 'wrong_checkout':
+        monkeypatch.setattr(ci.subprocess, 'check_output', lambda *args, **kwargs: 'e' * 40)
+    else:
+        monkeypatch.setenv('GITHUB_RUN_ID', '123')
+    with pytest.raises(ci.EvidenceError):
+        ci.environment_context(tmp_path, preloop=True)
+
+
+def test_collect_has_no_preloop_switch(monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['collect_ci_evidence.py', 'collect', '--input', 'downloads', '--preloop-alpha'])
+    with pytest.raises(SystemExit) as error:
+        ci.main()
+    assert error.value.code == 2
 
 def test_alpha_workflow_filters_pushes_without_filtering_prs_or_required_events():
     workflow = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
