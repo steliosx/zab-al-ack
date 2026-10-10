@@ -35,10 +35,10 @@ jobs:
           # runner account's root-equivalent Docker access, its retained private
           # attempts or its installed hooks.
           test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
       - name: Create a fresh job environment
@@ -53,7 +53,7 @@ jobs:
       - run: python -m pip check
       - run: python tools/run_quality.py
       - run: python tools/collect_ci_evidence.py pack --kind quality
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: zabalack-evidence-${{ github.run_id }}-${{ github.run_attempt }}-quality
           path: build/ci-artifacts/quality/
@@ -77,10 +77,10 @@ jobs:
           # runner account's root-equivalent Docker access, its retained private
           # attempts or its installed hooks.
           test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
       - name: Create a fresh job environment
@@ -95,7 +95,7 @@ jobs:
       - run: python -m pip check
       - run: python tools/run_mutation_checks.py --profile "${ACK_HYPOTHESIS_PROFILE}"
       - run: python tools/collect_ci_evidence.py pack --kind mutation
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: zabalack-evidence-${{ github.run_id }}-${{ github.run_attempt }}-mutation
           path: build/ci-artifacts/mutation/
@@ -119,10 +119,10 @@ jobs:
           # runner account's root-equivalent Docker access, its retained private
           # attempts or its installed hooks.
           test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
       - name: Create a fresh job environment
@@ -130,7 +130,7 @@ jobs:
           test ! -e "$RUNNER_TEMP/venv"
           python -m venv "$RUNNER_TEMP/venv"
           printf '%s\n' "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
       - run: python tools/collect_ci_evidence.py prepare --kind reference
@@ -143,7 +143,7 @@ jobs:
       - run: python tools/run_sql_checks.py --isolated-lab
       - run: python tools/run_reference_suite.py --wasm
       - run: python tools/collect_ci_evidence.py pack --kind reference
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: zabalack-evidence-${{ github.run_id }}-${{ github.run_attempt }}-reference
           path: build/ci-artifacts/reference/
@@ -167,10 +167,10 @@ jobs:
           # runner account's root-equivalent Docker access, its retained private
           # attempts or its installed hooks.
           test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
       - name: Create a fresh job environment
@@ -185,7 +185,7 @@ jobs:
       - run: python -m pip check
       - run: flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock python tools/native_ci.py --isolated-lab --retire-empty-networks --network-evidence-root /var/lib/zabalack-evidence/native-networks
       - run: python tools/collect_ci_evidence.py pack --kind native
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: zabalack-evidence-${{ github.run_id }}-${{ github.run_attempt }}-native
           path: build/ci-artifacts/native/
@@ -193,7 +193,7 @@ jobs:
           retention-days: 3
       - run: python tools/native_failure_summary.py
         if: always()
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: zabalack-native-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
@@ -219,10 +219,10 @@ jobs:
           # runner account's root-equivalent Docker access, its retained private
           # attempts or its installed hooks.
           test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
       - name: Create a fresh job environment
@@ -235,7 +235,7 @@ jobs:
       - run: python -m pip install --no-deps --no-build-isolation -e .
       - run: python -m pip check
       # No token or cross-run inputs: downloads are scoped to this workflow run.
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: zabalack-evidence-${{ github.run_id }}-${{ github.run_attempt }}-*
           path: build/ci-download/
@@ -245,7 +245,7 @@ jobs:
       - run: python tools/dependency_inventory.py
       - run: python tools/public_audit.py --write-report
       - run: python tools/build_release.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: zabalack-candidate-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
