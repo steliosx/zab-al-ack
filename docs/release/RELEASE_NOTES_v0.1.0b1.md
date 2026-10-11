@@ -55,6 +55,13 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 
 These are open at this release. Each is tracked in `docs/BETA_READINESS.md`.
 
+An internal adversarial review of this revision (11 October 2026, retained privately,
+SHA-256 0bd8c5a9…) found no path for an unauthorised actor to acknowledge or close an
+event and no credential exposure. Its finding F2 (non-200 write responses recorded as
+definite failure) is fixed in the candidate revision; F3 was disproved against Alerta
+9.1.0; F1 is disclosed below. The external review (xAI Grok 4.7) starts after the
+repository is public.
+
 | Item | Meaning | Status |
 |---|---|---|
 | CodeQL | Static analysis workflow | Enabled 11 Oct; run 38144863693 **FAILED at ingestion**; earlier runs skipped; **no clean scan**; policy unresolved |
@@ -64,6 +71,7 @@ These are open at this release. Each is tracked in `docs/BETA_READINESS.md`.
 | A4/G5 | Permission tests on the real installed Zabbix account | **Not executed** |
 | G1–G8 | Deployment gates (inventory, ingestion contract, cohort, ownership, records) | **Planned, not verified** |
 | Independent security review | External review of this exact revision | **Pending** |
+| Internal review finding F1 | An Alerta principal with write access for the customer may edit an alert's Zabbix source attributes before acknowledging, retargeting the acknowledgement to another event of an enabled cohort (depends on Alerta's attribute-update path, unverified) | **Disclosed**; fix planned: bind alert to event at ingestion |
 
 ## Upgrade and compatibility
 
