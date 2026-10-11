@@ -970,9 +970,13 @@ release or deployment is authorized by this amendment.
 Owner decision 11 October 2026: Zabalack and Voalack must work alone and coexist inside one
 Alerta. The signer previously refused to act unless it was the sole and final plugin
 in the effective routed chain. It now requires that it appears exactly once and that
-every plugin after it declares, as a class attribute, `ACK_FOREIGN_SOURCE_PASSTHROUGH
-= True`: the plugin returns alerts of sources it does not own unchanged and raises
-nothing for them. An undeclared trailing plugin still blocks signing
+every plugin after it declares, as class attributes, `ACK_FOREIGN_SOURCE_PASSTHROUGH
+= True` and `ACK_OWNED_SOURCE_SYSTEMS` (a non-empty frozenset of owned `source_system`
+values) that does not contain this alert's source: the plugin then provably treats the
+alert as foreign, returns it unchanged and raises nothing. The flag alone is not enough,
+because a same-source owner could legitimately alter the signed text later in Alerta's
+loop (independent review finding F1P1). A trailing plugin without both declarations,
+or one owning the same source, still blocks signing
 (`skipped_routing_order` / `zabalack_final_routing_invalid`); an instance-level
 attribute is not trusted. Zabalack declares the same contract for itself (it already
 returns early for alerts whose `source_system` is not `zabbix`). The attribute name is
