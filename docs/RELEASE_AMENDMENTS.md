@@ -947,10 +947,10 @@ Owner decisions recorded 11 October 2026 (see `docs/release/POLICY_DECISIONS_v0.
   `Resource not accessible by integration`; the code-scanning API reports that
   code scanning is not enabled for this repository. The cause is not established.
   Earlier runs remain SKIPPED in history. A failed or skipped CodeQL job is not a
-  clean or triaged scan. Open owner decision: keep the gate off until the
-  repository is public, or change the workflow to retain SARIF as a run artifact
-  without ingestion. The beta tag waits for that decision and, if CodeQL is kept,
-  for one completed run and triage.
+  clean or triaged scan. Owner decision (14:11Z, 11 October 2026): the variable is
+  set back to `false`; the job skips until the repository is public, is then
+  re-enabled, and one completed run is triaged before the tag. Scheduled
+  enablement, not a waiver.
 - Signed attestation and second-platform reproduction: **deferred to the first
   stable release**. The beta wheel carries local provenance only
   (`dist/BUILD_PROVENANCE.json`, two-build hash comparison). The inactive

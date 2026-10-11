@@ -10,7 +10,9 @@ Nothing here waives an existing requirement silently; a waiver must be written.
 (security-extended queries, Python and JavaScript/TypeScript) on every push,
 pull request and weekly. The job is gated by the repository variable
 `ZABALACK_CODEQL_ENABLED`; when the variable is not `true` the job is
-visibly skipped. Today every run shows SKIPPED.
+visibly skipped. History: every run before 11 October 2026 shows SKIPPED; one
+dispatched run (38144863693) FAILED at ingestion; the variable was then set back to
+`false` with the owner's agreement (14:11Z, 11 October 2026), so runs skip again.
 
 **Enable.** Set one repository variable to `true`. Cost: about 5–10 hosted
 minutes per run; code-scanning alerts appear on the repository's Security tab.
@@ -24,9 +26,10 @@ CodeQL and why. Cost: a visible gap in the release notes and the readiness list.
 was dispatched. Both jobs failed at "Analyze and wait for Code Scanning ingestion"
 with `Resource not accessible by integration`; the code-scanning API reports code
 scanning is not enabled for this repository. Cause not established. This is not a
-clean or triaged scan. Remaining options: (a) gate off until the repository is
-public; (b) retain SARIF as a run artifact without ingestion (workflow change,
-reviewed).
+clean or triaged scan. Owner decision (14:11Z, 11 October 2026): option (a) — the
+variable is set back to `false`, the job skips until the repository is public, then
+it is re-enabled and one completed run is triaged before the tag. This is a
+scheduled enablement, not a waiver.
 
 **Original recommendation: enable now.** It is one variable, the repository is private
 to you today, and a first result before the tag is cheaper than a first result
@@ -81,6 +84,6 @@ ARM64 self-hosted runner; correct that sentence in the same PR as the decision.
 
 | Decision | Choice | Date (Nassau) | Recorded in |
 |---|---|---|---|
-| CodeQL | **enable attempted; run 38144863693 FAILED at ingestion; policy unresolved** | 2026-10-11 | R24 |
+| CodeQL | **enable attempted; run 38144863693 FAILED at ingestion; variable set back to `false` 11 Oct (owner agreed); gate off until the repository is public, then re-enable and triage; not a waiver** | 2026-10-11 | R24 |
 | Attestation + second platform | **defer to stable** | 2026-10-11 | R24 |
 | Supported environments | **A (state today's truth)** | 2026-10-11 | R24, release notes |

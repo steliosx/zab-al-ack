@@ -52,9 +52,9 @@ acceptance (see `docs/BETA_READINESS.md`).
   repository is public): this revision reviewed, findings settled (see
   `SECURITY_REVIEW_REQUEST_v0.1.0b1.md`). Internal adversarial pass completed
   11 October 2026; report retained privately (sha256 0bd8c5a9…).
-- Owner policy decisions: attestation and environment statement recorded (R24);
-  CodeQL policy still unresolved after the failed run 38144863693 (see
-  `POLICY_DECISIONS_v0.1.0b1.md`).
+- Owner policy decisions recorded (R24): attestation deferred; environment statement
+  as tested; CodeQL gate off until the repository is public, then one completed run
+  and triage before the tag (see `POLICY_DECISIONS_v0.1.0b1.md`).
 - Release notes reviewed (`RELEASE_NOTES_v0.1.0b1.md`).
 
 ## Approval record (fill in)

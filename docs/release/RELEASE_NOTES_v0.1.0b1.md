@@ -64,7 +64,7 @@ repository is public.
 
 | Item | Meaning | Status |
 |---|---|---|
-| CodeQL | Static analysis workflow | Enabled 11 Oct; run 38144863693 **FAILED at ingestion**; earlier runs skipped; **no clean scan**; policy unresolved |
+| CodeQL | Static analysis workflow | Run 38144863693 **FAILED at ingestion** (11 Oct); all other runs skipped; gate set back off until the repository is public, then re-enabled and triaged before the tag; **no clean scan yet** |
 | Signed attestation | SLSA provenance of the wheel via GitHub attestations | Template supplied, **not run** |
 | Native x64 qualification | Bounded native run on an authorised x86_64 host | **Deferred**; hosted CI native pass is run evidence only |
 | A2 | Reference webhook transport does not authenticate TLS peers | **Open**; do not deploy the reference webhook as shipped |
