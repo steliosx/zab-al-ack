@@ -45,8 +45,8 @@ importing an arbitrary historical JUnit is refused. Run native checks on a
 supported lab host before mapping; an unavailable native runner writes
 `NOT_RUN` and returns 2. Local alpha builds may retain this explicit limitation;
 the Actions packaging job requires native success. Active workflows select the
-dedicated Linux ARM64 self-hosted runner with no paid-hosted fallback; see
-`docs/ci-evidence.md`. Review that execution-policy change with Opus and retain
+GitHub-hosted `ubuntu-24.04` runner (owner decision of 10 October 2026, while
+the dedicated ARM64 runner is held); see `docs/ci-evidence.md`. Review that execution-policy change with Opus and retain
 actual Actions allocation, same-run producer/package artifacts and exact tested
 SHA before marking CI validated. Local wrapper runs remain local evidence.
 
@@ -73,10 +73,11 @@ names/versions go to advisory services. Source/history scans stay local and
 raw findings are excluded from release artifacts. Exit 2 means a required
 scanner did not run, and is never a clean scan. The source export check is a
 separate targeted check. Current availability and results are in
-`evidence/security-scans.json`. The active security workflow uses the dedicated
-self-hosted runner and verifies the pinned Linux ARM64 Gitleaks release archive;
-workflow configuration alone is not a scan result. Its three-day Actions
-artifacts supplement durable private attempt copies on the runner host. Run
+`evidence/security-scans.json`. The active security workflow uses the hosted
+`ubuntu-24.04` runner and verifies the pinned Linux x64 Gitleaks release archive;
+workflow configuration alone is not a scan result. On hosted runners its
+three-day Actions artifacts are the only retained copies (there is no durable
+runner host while the ARM64 runner is held). Run
 `npm audit --prefix lab --legacy-peer-deps --json` for Node lab dependencies.
 Review all findings; do not add broad path exclusions for test fixtures.
 

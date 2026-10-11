@@ -19,7 +19,7 @@ tag-triggered validation. The dependency/secret and CodeQL workflows retain
 their existing events, check names and enablement conditions. Automatic PR
 reviews, the separate daily security scan and website automation are unchanged.
 
-## Dedicated self-hosted execution
+## Dedicated self-hosted execution (superseded on 2026-10-10 — see "Hosted execution for the beta" below)
 
 All active workflow jobs select `[self-hosted, Linux, ARM64, zabalack]`. This
 explicitly replaces GitHub-hosted execution with one repository-specific Linux
@@ -64,14 +64,16 @@ projects and preserves synthetic volumes. Cancellation or process termination
 does not prove cleanup; preserve the interrupted attempt and inspect its exact
 owned resources before another lab starts. Never prune shared Docker resources.
 
-The security job installs the official Gitleaks 8.24.3 Linux ARM64 release binary
+The security job installs the official Gitleaks 8.24.3 Linux x64 release binary (ARM64 before 2026-10-10)
 instead of requiring a Go compiler. The release corresponds to the existing
 `107a41827bb6698dbbff756b2300537774a1d84c` source pin. The
-[`gitleaks_8.24.3_linux_arm64.tar.gz` archive](https://github.com/gitleaks/gitleaks/releases/tag/v8.24.3)
+[`gitleaks_8.24.3_linux_x64.tar.gz` archive](https://github.com/gitleaks/gitleaks/releases/tag/v8.24.3)
 is verified before extraction against SHA-256
-`5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07`, inspected in the
+`9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c`, read from the
 [official checksum file](https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_checksums.txt)
-on 2026-09-16. The executable must report 8.24.3 before scanning.
+on 2026-10-10 (the ARM64 archive used before that date was
+`5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07`, inspected
+in the same file on 2026-09-16). The executable must report 8.24.3 before scanning.
 
 CodeQL retains its explicit repository enablement gate and pinned action/CLI.
 [CLI 2.27.0 supports native Linux ARM64](https://github.com/github/codeql-cli-binaries/releases/tag/v2.27.0),
@@ -227,3 +229,22 @@ security-results permissions; it does not grant write access to packaging jobs.
 Changes to deployment configuration, service definitions, release templates and
 all `.github/` policy files now invalidate the harness digest as well. A passing
 run against an older security or deployment policy cannot be exported as current.
+
+## Hosted execution for the beta (owner decision, 10 October 2026)
+
+The dedicated ARM64 runner (`zabalack-fusion-arm64`) is offline under an open
+incident hold, so every active workflow job now selects the GitHub-hosted
+`ubuntu-24.04` runner. The owner made this decision first-hand on 10 October 2026
+to release the beta; the earlier "no paid-hosted fallback" policy above is
+superseded for the beta and may be revisited once the ARM64 runner returns.
+Consequences recorded honestly: hosted minutes are billed for this private
+repository; the native lab's shared lock and its network-retention store move to
+runner-local paths under `$HOME` (`tools/native_network_retention.prepare_store`
+refuses `RUNNER_TEMP` and the workspace), so retained network evidence is
+ephemeral on hosted runners and only the uploaded job artifacts persist; the
+security job verifies the Linux x64 Gitleaks 8.24.3 archive against the hash
+read from upstream `gitleaks_8.24.3_checksums.txt`
+(`9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c`); the
+trust gate that refuses outside revisions is kept as defence in depth. Workflow
+configuration alone is not a run result: the PR introducing this change is the
+first execution of the hosted lane for the full job set.

@@ -526,20 +526,22 @@ def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_re
     assert value['permissions'] == {'contents': 'read'}
     job = value['jobs']['service-lab']
     assert job['if'] == "${{ vars.ZABALACK_DEPLOYMENT_E2E_ENABLED == 'true' }}"
-    assert any(step.get('run') == 'flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
+    assert any(step.get('run') == 'flock -n "$HOME/zabalack-shared-linux-lab.lock" '
                'python tools/run_deployment_e2e.py --isolated-lab' for step in job['steps'])
     uploads = [step for step in job['steps'] if step.get('uses', '').startswith('actions/upload-artifact@')]
     assert len(uploads) == 1 and uploads[0]['with']['path'] == 'evidence/deployment-e2e-run.json'
     assert uploads[0]['if'] == 'always()'
 
 
-def test_every_active_job_requires_the_dedicated_arm64_runner_without_hosted_fallback():
+def test_every_active_job_runs_on_the_hosted_ubuntu_2404_runner_by_owner_decision():
+    # Owner decision 2026-10-10: GitHub-hosted ubuntu-24.04 for every job while the dedicated
+    # ARM64 runner is held; see docs/ci-evidence.md "Hosted execution for the beta".
     paths = list((ROOT / '.github/workflows').glob('*.yml'))
     assert {path.name for path in paths} == {'ci.yml', 'security.yml', 'codeql.yml', 'deployment-e2e.yml'}
     for path in paths:
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         for job in workflow['jobs'].values():
-            assert job['runs-on'] == ['self-hosted', 'Linux', 'ARM64', 'zabalack']
+            assert job['runs-on'] == 'ubuntu-24.04'
             assert 'continue-on-error' not in job
             for step in job['steps']:
                 # Context comes from Actions; local preflight must never forge it.
@@ -577,9 +579,9 @@ def test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner
         workflow = yaml.load((ROOT / '.github/workflows' / filename).read_text(), Loader=yaml.BaseLoader)
         scripts = [step['run'] for step in workflow['jobs'][job_name]['steps'] if 'run' in step]
         invocations = [script for script in scripts if runner in script]
-        retirement = (' --retire-empty-networks --network-evidence-root /var/lib/zabalack-evidence/native-networks'
+        retirement = (' --retire-empty-networks --network-evidence-root "$HOME/zabalack-native-networks"'
                       if filename == 'ci.yml' else '')
-        assert invocations == ['flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock '
+        assert invocations == ['flock -n "$HOME/zabalack-shared-linux-lab.lock" '
                                f'python {runner} --isolated-lab' + retirement]
         assert not any('docker system prune' in script or 'down --volumes' in script for script in scripts)
 
@@ -587,9 +589,11 @@ def test_both_service_entrypoints_hold_the_shared_host_lock_for_the_whole_runner
 def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():
     """Every privileged job stops an outside revision before it runs anything.
 
-    The jobs run on a persistent self-hosted runner whose account has
-    root-equivalent Docker access and owns the retained private attempts, so a
-    pull request from outside this repository must not reach a checkout. This
+    The jobs ran on a persistent self-hosted runner whose account had
+    root-equivalent Docker access and owned the retained private attempts, so a
+    pull request from outside this repository must not reach a checkout. On the
+    hosted runners selected by the owner on 2026-10-10 the gate is kept as the
+    same defence in depth; it costs nothing and preserves the policy. This
     gate is defence in depth and not the trust boundary — a pull request can
     edit this file — so `docs/self-hosted-runner.md` carries the boundary it
     supplements. What is asserted here is that the gate exists, is first, and
@@ -599,8 +603,8 @@ def test_alpha_workflow_refuses_untrusted_revisions_before_any_checkout():
     for path in sorted((ROOT / '.github/workflows').glob('*.yml')):
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         for name, job in workflow['jobs'].items():
-            if job.get('runs-on') != ['self-hosted', 'Linux', 'ARM64', 'zabalack']:
-                continue  # Nothing else may use this runner; see the assertion below.
+            if job.get('runs-on') != 'ubuntu-24.04':
+                continue  # Every job uses the hosted runner; see the assertion below.
             guarded += 1
             name = f'{path.name}/{name}'
             gate = job['steps'][0]

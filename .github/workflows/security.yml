@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   scan:
-    runs-on: [self-hosted, Linux, ARM64, zabalack]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Refuse an untrusted revision on the persistent runner
@@ -38,16 +38,16 @@ jobs:
           printf '%s\n' "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - name: Install the pinned advisory scanner with hash verification
         run: python -m pip install --require-hashes -r requirements-scanner.lock
-      - name: Install the pinned Linux ARM64 public scanner
+      - name: Install the pinned Linux x64 public scanner
         # Official v8.24.3 release for commit 107a41827bb6698dbbff756b2300537774a1d84c.
         # Hash inspected in upstream gitleaks_8.24.3_checksums.txt; see ci-evidence.md.
         run: |
-          test "$(uname -m)" = aarch64
+          test "$(uname -m)" = x86_64
           mkdir "$RUNNER_TEMP/gitleaks"
           curl --fail --location --proto '=https' --tlsv1.2 \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_arm64.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz \
             --output "$RUNNER_TEMP/gitleaks/archive.tar.gz"
-          printf '%s  %s\n' 5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07 "$RUNNER_TEMP/gitleaks/archive.tar.gz" | sha256sum --check --strict
+          printf '%s  %s\n' 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c "$RUNNER_TEMP/gitleaks/archive.tar.gz" | sha256sum --check --strict
           tar --extract --gzip --file "$RUNNER_TEMP/gitleaks/archive.tar.gz" --directory "$RUNNER_TEMP/gitleaks" --no-same-owner gitleaks
       - run: '"$RUNNER_TEMP/gitleaks/gitleaks" version | grep -x 8.24.3'
       - name: Scan dependency lock, public export and public Git history

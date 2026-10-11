@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   quality:
-    runs-on: [self-hosted, Linux, ARM64, zabalack]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Refuse an untrusted revision on the persistent runner
@@ -60,7 +60,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
   mutation:
-    runs-on: [self-hosted, Linux, ARM64, zabalack]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Refuse an untrusted revision on the persistent runner
@@ -102,7 +102,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
   reference:
-    runs-on: [self-hosted, Linux, ARM64, zabalack]
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Refuse an untrusted revision on the persistent runner
@@ -150,7 +150,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
   native:
-    runs-on: [self-hosted, Linux, ARM64, zabalack]
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Refuse an untrusted revision on the persistent runner
@@ -183,7 +183,7 @@ jobs:
       - run: python -m pip install --require-hashes -r requirements-quality.lock
       - run: python -m pip install --no-deps --no-build-isolation -e .
       - run: python -m pip check
-      - run: flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock python tools/native_ci.py --isolated-lab --retire-empty-networks --network-evidence-root /var/lib/zabalack-evidence/native-networks
+      - run: flock -n "$HOME/zabalack-shared-linux-lab.lock" python tools/native_ci.py --isolated-lab --retire-empty-networks --network-evidence-root "$HOME/zabalack-native-networks"
       - run: python tools/collect_ci_evidence.py pack --kind native
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
@@ -202,7 +202,7 @@ jobs:
           retention-days: 3
   package:
     needs: [quality, reference, native, mutation]
-    runs-on: [self-hosted, Linux, ARM64, zabalack]
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Refuse an untrusted revision on the persistent runner
