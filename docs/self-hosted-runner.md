@@ -237,6 +237,10 @@ bindings separately, using `tools/run_review.py` for local work. Then inspect
 real Actions allocation, the unchanged producer requirements and package's
 same-run artifact download/collection on the reviewed commit.
 
+A separate local alpha lane, which runs only the `quality` job in a SmolVM
+microVM, is described in [preloop-local-ci.md](preloop-local-ci.md). It does not
+change this runner's policy.
+
 Actions artifacts retain their existing allowlists. All active artifact uploads
 now request three days: Alpha (including candidate packages) and deployment-lab
 uploads previously requested 14, while security used the repository default.
