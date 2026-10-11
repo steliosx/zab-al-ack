@@ -72,7 +72,7 @@ captures added, including a real Zabbix frontend screenshot of the lab event.
 
 ## a17 revalidation decision (18 September 2026)
 
-PR25 assigns version `0.1.0b1` to the integrated correction. This version change
+PR25 assigns version `0.1.0a17` to the integrated correction. This version change
 does not change SQL, dependency pins or recovery behavior relative to head
 `1f23cc25a0c4b386f4799a7cc71bd3f1c6451e21`, but it changes the source/harness
 identities used by export validation. Freeze these inputs before the new required
@@ -176,11 +176,11 @@ Still required before calling this beta ready:
 
 ## Owner decisions and proposed integration/release sequence
 
-The ten publication inputs in `config/publication.pending.json` remain unset:
-repository URL/namespace, package owner, primary and backup maintainers, verified
-private security reporting, private conduct contact, copyright/third-party
-approval, public-content approval, PyPI namespace confirmation and explicit
-publication authorization. Repository visibility is not publication approval.
+Of the ten publication inputs in `config/publication.pending.json`, three are
+recorded (repository URL, package owner, primary maintainer; 11 October 2026) and
+seven remain unset or unapproved: backup maintainer, verified private security
+reporting, private conduct contact, copyright/third-party approval, public-content
+approval, PyPI namespace confirmation and explicit publication authorization. Repository visibility is not publication approval.
 
 Name the independent security reviewer and agree scope, candidate revision,
 private report destination and disposition process. Arrange review before beta
