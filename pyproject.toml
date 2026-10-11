@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zabalack"
-version = "0.1.0a17"
+version = "0.1.0b1"
 description = "Durable scoped acknowledgement capture and delivery for Alerta 9.1 and Zabbix 7.0"
 requires-python = ">=3.12,<3.13"
 readme = "README.md"
@@ -13,13 +13,17 @@ license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "Zab-al-ack contributors"}]
 keywords = ["alerta", "zabbix", "acknowledgement", "postgresql", "monitoring"]
 classifiers = [
- "Development Status :: 3 - Alpha",
+ "Development Status :: 4 - Beta",
  "Intended Audience :: System Administrators",
  "Operating System :: POSIX :: Linux",
  "Programming Language :: Python :: 3.12",
  "Topic :: System :: Monitoring",
 ]
 dependencies = ["psycopg[binary]==3.2.10", "httpx==0.28.1"]
+
+[project.urls]
+Repository = "https://github.com/steliosx/zab-al-ack"
+Issues = "https://github.com/steliosx/zab-al-ack/issues"
 
 [project.optional-dependencies]
 alerta = ["alerta-server==9.1.0", "psycopg2-binary==2.9.10"]

@@ -917,3 +917,21 @@ The a16 narrative and qualified artifacts are retained. Native x64 remains defer
 installed-account permissions, current security review, owner publication inputs
 and all applicable beta, amendment and deployment requirements remain open.
 No tag, upload, merge, release or deployment is authorized by this amendment.
+
+## R23 — 0.1.0b1: beta candidate identity on the hosted lane
+
+The integrated main after PRs #33, #34, #35, #36 and #37 receives version
+0.1.0b1 before artifact qualification (11 October 2026). Active workflows run on the
+GitHub-hosted `ubuntu-24.04` runner while the ARM64 runner is held; main passed
+every active job and scan on that lane at `347bca378711ad788e49484072a15287ea9a7c10`
+(ci.yml run 38137813413; run-specific CI evidence only). This version/export metadata update adds no runtime feature and
+changes no SQL body. It deliberately changes source/harness identities; a17 and
+earlier evidence stays historical and cannot satisfy the new builder by relabelling.
+
+Minimal publication inputs are recorded (repository, package owner, primary
+maintainer, package URLs). Backup maintainer, private conduct contact, the three
+review approvals, PyPI namespace confirmation, publication authorization and the
+independent external security review remain unset. Native x64 qualification,
+installed-account permissions (A4/G5), transport amendment A2 and deployment
+gates G1–G8 remain open and are disclosed as such. No tag, upload, release or
+deployment is authorized by this amendment.

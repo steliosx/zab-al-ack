@@ -1,6 +1,6 @@
 # Beta readiness
 
-The candidate under qualification is 0.1.0a17. A beta requires the intended automation to
+The candidate under qualification is 0.1.0b1 (assigned 11 October 2026; see amendment R23). Earlier results remain bound to a17 and before. A beta requires the intended automation to
 execute successfully on its exact commit in supported environments, plus the
 publication-owner inputs. See `ALPHA_REPORT.md` for current executed results.
 The original a16 release narrative below is historical. Its reference, mutation,
@@ -72,7 +72,7 @@ captures added, including a real Zabbix frontend screenshot of the lab event.
 
 ## a17 revalidation decision (18 September 2026)
 
-PR25 assigns version `0.1.0a17` to the integrated correction. This version change
+PR25 assigns version `0.1.0b1` to the integrated correction. This version change
 does not change SQL, dependency pins or recovery behavior relative to head
 `1f23cc25a0c4b386f4799a7cc71bd3f1c6451e21`, but it changes the source/harness
 identities used by export validation. Freeze these inputs before the new required

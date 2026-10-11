@@ -1,5 +1,19 @@
 # Zab-al-ack changelog
 
+## 0.1.0b1 — 2026-10-11 (beta candidate, unpublished)
+
+- Assign the beta candidate identity to the integrated main after PRs #33, #34,
+  #35, #36 and #37. This version change adds no runtime feature and changes no
+  SQL body. Historical a17 and earlier evidence stays bound to its own revisions.
+- Run all active workflows on the GitHub-hosted `ubuntu-24.04` runner while the
+  dedicated ARM64 runner is held (owner decision, 10 October 2026). Pin actions
+  to Node 24 releases.
+- Bump PyJWT to 2.15.0, urllib3 to 2.8.0 and Werkzeug to 3.1.9 to clear 18
+  known advisories; allow exactly the two README hero PNGs in the public export.
+- Record the minimal publication inputs (repository, package owner, primary
+  maintainer) and the repository URLs in package metadata. The remaining
+  publication, review and deployment inputs stay unset until the owner records them.
+
 ## 0.1.0a17 — 2026-09-18 (qualification candidate, unpublished)
 
 - Give the integrated recovery correction an explicit new artifact identity;

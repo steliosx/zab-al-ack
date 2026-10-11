@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "version": "0.1.0a17",
-  "repository_url": null,
-  "package_owner": null,
-  "primary_maintainer": null,
+  "version": "0.1.0b1",
+  "repository_url": "https://github.com/steliosx/zab-al-ack",
+  "package_owner": "steliosx",
+  "primary_maintainer": "steliosx",
   "backup_maintainer": null,
   "private_security_reporting_verified": false,
   "private_conduct_contact": null,
