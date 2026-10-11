@@ -164,3 +164,36 @@ async def test_boolean_error_code_is_not_an_integer_rejection(endpoint):
     with pytest.raises(RPCError, match="jsonrpc_error_invalid") as error:
         await client.call("event.acknowledge", {"eventids": ["12001"], "action": 2})
     assert error.value.uncertain
+
+
+@pytest.mark.parametrize("status", [501, 505, 520, 522, 524, 400, 403, 404], ids=lambda s: f"http-{s}")
+@pytest.mark.asyncio
+async def test_any_non_200_write_response_is_uncertain_not_rejected(endpoint, status):
+    """Internal adversarial pass F2 (11 Oct 2026): an intermediary may answer with a
+    status outside the transient set after the origin applied the write."""
+    client = ZabbixClient(endpoint, transport=httpx.MockTransport(lambda _: httpx.Response(status)))
+    with pytest.raises(RPCError) as error:
+        await client.acknowledge("12001", comment=False, public_reference="publicreference0123456", issued_at="2026-01-01T01:00:00Z")
+    assert error.value.reason == "http_rejected"
+    assert error.value.uncertain is True
+    assert error.value.transient is False
+
+
+@pytest.mark.parametrize("status", [502, 503, 504, 429], ids=lambda s: f"http-{s}")
+@pytest.mark.asyncio
+async def test_transient_write_response_stays_uncertain_and_transient(endpoint, status):
+    client = ZabbixClient(endpoint, transport=httpx.MockTransport(lambda _: httpx.Response(status)))
+    with pytest.raises(RPCError) as error:
+        await client.acknowledge("12001", comment=False, public_reference="publicreference0123456", issued_at="2026-01-01T01:00:00Z")
+    assert error.value.reason == "http_transient" and error.value.uncertain and error.value.transient
+
+
+@pytest.mark.parametrize("status", [501, 520, 403], ids=lambda s: f"http-{s}")
+@pytest.mark.asyncio
+async def test_non_200_read_response_is_rejected_and_certain(endpoint, status):
+    """Reads have no effect to be uncertain about; a refusal stays a definite refusal."""
+    client = ZabbixClient(endpoint, transport=httpx.MockTransport(lambda _: httpx.Response(status)))
+    with pytest.raises(RPCError) as error:
+        await client.call("event.get", {"eventids": ["12001"]}, background=True)
+    assert error.value.reason == "http_rejected"
+    assert error.value.uncertain is False
