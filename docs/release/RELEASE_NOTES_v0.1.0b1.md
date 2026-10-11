@@ -17,10 +17,12 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 | Item | Value |
 |---|---|
 | Version | 0.1.0b1 |
-| Commit | `fee1528a6853cc3f5a19d41594fcf72f0e186f59` |
-| Wheel SHA-256 | `38161158addaeb7795f2df0633663d84554c26046fdf7cea7a25be558868941a` |
-| sdist SHA-256 | `df9a3e79f530c248cd159248defefef6025957eb086ed07ac4b8229412b3166e` |
-| CI run | 38140956596 (GitHub-hosted ubuntu-24.04) |
+| Commit | `3c3c0dfbf02f74ae3abe38ec136037afabde48b5` |
+| Wheel SHA-256 | `pypi/zabalack-0.1.0b1-py3-none-any.whl: OK
+c88dee99900b0da9761cbec082745c45ed8f81e5163b9ca82fa3d619f8d57a9d` |
+| sdist SHA-256 | `pypi/zabalack-0.1.0b1.tar.gz: OK
+830bcbe654092874451c8cdb005c7be529a9dc6b76a12340997eba3dce1be715` |
+| CI run | 38147339640 (GitHub-hosted ubuntu-24.04) |
 
 ## Tested environment
 
@@ -48,6 +50,7 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 - All active workflows run on GitHub-hosted `ubuntu-24.04` while the dedicated
   ARM64 runner is held. Actions pinned to Node 24 releases.
 - Public export allows exactly the two README hero images.
+- Every non-200 response to a sent Zabbix write is now treated as uncertain (internal review F2).
 - Minimal publication inputs recorded (repository, package owner, primary maintainer).
 - No runtime feature change. No SQL body change. See `CHANGELOG.md`.
 
@@ -58,7 +61,7 @@ These are open at this release. Each is tracked in `docs/BETA_READINESS.md`.
 An internal adversarial review of this revision (11 October 2026, retained privately,
 SHA-256 0bd8c5a9…) found no path for an unauthorised actor to acknowledge or close an
 event and no credential exposure. Its finding F2 (non-200 write responses recorded as
-definite failure) is fixed in the candidate revision; F3 was disproved against Alerta
+definite failure) is fixed in this revision (PR #40, merged into `3c3c0dfb`); F3 was disproved against Alerta
 9.1.0; F1 is disclosed below. The external review (xAI Grok 4.7) starts after the
 repository is public.
 

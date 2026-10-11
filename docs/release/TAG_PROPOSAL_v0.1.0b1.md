@@ -10,21 +10,30 @@ zero. No upload, release or deployment is authorized by this proposal.
 | Item | Value |
 |---|---|
 | Tag name | `v0.1.0b1` |
-| Commit | `fee1528a6853cc3f5a19d41594fcf72f0e186f59` (main, 11 October 2026) |
+| Commit | `3c3c0dfbf02f74ae3abe38ec136037afabde48b5` (main, 11 October 2026) |
 | Version | `0.1.0b1` (pyproject, package, manifests, register) |
-| CI run | 38140956596 attempt 1 (ci.yml, GitHub-hosted ubuntu-24.04) |
-| Scan run | 38140956520 (security.yml) |
-| Candidate artifact | `zabalack-candidate-38140956596-1` (7,618,009 B) |
+| CI run | 38147339640 attempt 1 (ci.yml, GitHub-hosted ubuntu-24.04) |
+| Scan run | 38147339650 (security.yml) |
+| Candidate artifact | `zabalack-candidate-38147339640-1` (7,619,869 B) |
+
+## Superseded candidate
+
+The earlier candidate `fee1528a6853cc3f5a19d41594fcf72f0e186f59` (run 38140956596, wheel
+`38161158…`) is superseded by the F2 fix (#40) and retained privately unchanged. Its
+results are not rebound to this commit.
 
 ## Artifact hashes (SHA-256, from the run's own SHA256SUMS; verified)
 
 | File | SHA-256 |
 |---|---|
-| `zabalack-0.1.0b1-py3-none-any.whl` | `38161158addaeb7795f2df0633663d84554c26046fdf7cea7a25be558868941a` |
-| `zabalack-0.1.0b1.tar.gz` | `df9a3e79f530c248cd159248defefef6025957eb086ed07ac4b8229412b3166e` |
-| `zabalack-0.1.0b1-source.zip` | `d53e7458d2820509434b020ece742fefead9245eaf1e40daeaf03ff461099126` |
-| `SHA256SUMS` | `a528f040006a339176d4651a9f44f1e5b831c7726a84c63ed03d5ea09331f180` |
-| `BUILD_PROVENANCE.json` | `2004cf8b442449da5fcebd84c95986bacf751cefe8e532aa5968b22d2a685539` |
+| `zabalack-0.1.0b1-py3-none-any.whl` | `pypi/zabalack-0.1.0b1-py3-none-any.whl: OK
+c88dee99900b0da9761cbec082745c45ed8f81e5163b9ca82fa3d619f8d57a9d` |
+| `zabalack-0.1.0b1.tar.gz` | `pypi/zabalack-0.1.0b1.tar.gz: OK
+830bcbe654092874451c8cdb005c7be529a9dc6b76a12340997eba3dce1be715` |
+| `zabalack-0.1.0b1-source.zip` | `zabalack-0.1.0b1-source.zip: OK
+485bd6ed0d9236b6f5a31322f2ca6dc62fd63bfaf57d1fe7d9254331053e8b8e` |
+| `SHA256SUMS` | `4b1f8037f688601f6fd409f6a7194c8e1336b1109c9cb31adbb8a756915252b1` |
+| `BUILD_PROVENANCE.json` | `f262ad2281041967fb87d3b8be1dae3756a6651eac0ecda3443d321e6b30f193` |
 
 ## What passed at this commit
 
@@ -66,7 +75,7 @@ acceptance (see `docs/BETA_READINESS.md`).
 
 ## Procedure after approval
 
-1. Re-read live `main`; confirm it is still `fee1528a6853cc3f5a19d41594fcf72f0e186f59`.
+1. Re-read live `main`; confirm it is still `3c3c0dfbf02f74ae3abe38ec136037afabde48b5`.
 2. Run `python tools/public_audit.py --publication`; require exit 0.
 3. Create an annotated tag `v0.1.0b1` on that commit; push the tag only.
 4. Review the tag's Actions run; compare its artifact hashes with the table above.

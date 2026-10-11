@@ -20,10 +20,12 @@ Zabbix problem event. Report findings privately. Do not publish them.
 | Item | Value |
 |---|---|
 | Repository | https://github.com/steliosx/zab-al-ack |
-| Commit | `fee1528a6853cc3f5a19d41594fcf72f0e186f59` |
+| Commit | `3c3c0dfbf02f74ae3abe38ec136037afabde48b5` |
 | Version | 0.1.0b1 |
-| Wheel SHA-256 | `38161158addaeb7795f2df0633663d84554c26046fdf7cea7a25be558868941a` |
-| sdist SHA-256 | `df9a3e79f530c248cd159248defefef6025957eb086ed07ac4b8229412b3166e` |
+| Wheel SHA-256 | `pypi/zabalack-0.1.0b1-py3-none-any.whl: OK
+c88dee99900b0da9761cbec082745c45ed8f81e5163b9ca82fa3d619f8d57a9d` |
+| sdist SHA-256 | `pypi/zabalack-0.1.0b1.tar.gz: OK
+830bcbe654092874451c8cdb005c7be529a9dc6b76a12340997eba3dce1be715` |
 
 Review this commit only. Later commits are out of scope unless we send a new request.
 
@@ -33,8 +35,9 @@ Owner decision (11 October 2026): the external review starts after the repositor
 is published publicly. The reviewer then reads the public repository at the exact
 commit above and, as a fixed-bytes cross-check, the source zip:
 
-- `zabalack-0.1.0b1-source.zip` (SHA-256 `d53e7458d2820509434b020ece742fefead9245eaf1e40daeaf03ff461099126`),
-  the public source export built by CI run 38140956596 from the commit above.
+- `zabalack-0.1.0b1-source.zip` (SHA-256 `zabalack-0.1.0b1-source.zip: OK
+485bd6ed0d9236b6f5a31322f2ca6dc62fd63bfaf57d1fe7d9254331053e8b8e`),
+  the public source export built by CI run 38147339640 from the commit above.
 - From inside the zip: `docs/DESIGN.md`, `docs/security_and_data.md`, `SECURITY.md`,
   `config/production.example.json`, the `sql/` tree and `src/zabalack/`.
 - This request document.
