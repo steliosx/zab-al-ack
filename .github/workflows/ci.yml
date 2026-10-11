@@ -53,7 +53,7 @@ jobs:
       - run: python -m pip check
       - run: python tools/run_quality.py
       - run: python tools/collect_ci_evidence.py pack --kind quality
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zabalack-evidence-${{ github.run_id }}-${{ github.run_attempt }}-quality
           path: build/ci-artifacts/quality/
@@ -95,7 +95,7 @@ jobs:
       - run: python -m pip check
       - run: python tools/run_mutation_checks.py --profile "${ACK_HYPOTHESIS_PROFILE}"
       - run: python tools/collect_ci_evidence.py pack --kind mutation
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zabalack-evidence-${{ github.run_id }}-${{ github.run_attempt }}-mutation
           path: build/ci-artifacts/mutation/
@@ -143,7 +143,7 @@ jobs:
       - run: python tools/run_sql_checks.py --isolated-lab
       - run: python tools/run_reference_suite.py --wasm
       - run: python tools/collect_ci_evidence.py pack --kind reference
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zabalack-evidence-${{ github.run_id }}-${{ github.run_attempt }}-reference
           path: build/ci-artifacts/reference/
@@ -185,7 +185,7 @@ jobs:
       - run: python -m pip check
       - run: flock -n "$HOME/zabalack-shared-linux-lab.lock" python tools/native_ci.py --isolated-lab --retire-empty-networks --network-evidence-root "$HOME/zabalack-native-networks"
       - run: python tools/collect_ci_evidence.py pack --kind native
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zabalack-evidence-${{ github.run_id }}-${{ github.run_attempt }}-native
           path: build/ci-artifacts/native/
@@ -193,7 +193,7 @@ jobs:
           retention-days: 3
       - run: python tools/native_failure_summary.py
         if: always()
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: zabalack-native-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
@@ -245,7 +245,7 @@ jobs:
       - run: python tools/dependency_inventory.py
       - run: python tools/public_audit.py --write-report
       - run: python tools/build_release.py
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zabalack-candidate-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
