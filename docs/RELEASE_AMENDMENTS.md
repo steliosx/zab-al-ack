@@ -935,3 +935,24 @@ independent external security review remain unset. Native x64 qualification,
 installed-account permissions (A4/G5), transport amendment A2 and deployment
 gates G1–G8 remain open and are disclosed as such. No tag, upload, release or
 deployment is authorized by this amendment.
+
+## R24 — 0.1.0b1 release-policy decisions
+
+Owner decisions recorded 11 October 2026 (see `docs/release/POLICY_DECISIONS_v0.1.0b1.md`):
+
+- CodeQL: **enabled**. The repository variable `ZABALACK_CODEQL_ENABLED` is set to
+  `true`; the `analyze` job runs on push, pull request and weekly. A skipped or
+  failed CodeQL job is not a clean scan; the beta tag waits for one completed run
+  and triage of its findings.
+- Signed attestation and second-platform reproduction: **deferred to the first
+  stable release**. The beta wheel carries local provenance only
+  (`dist/BUILD_PROVENANCE.json`, two-build hash comparison). The inactive
+  attestation template and verifier are unchanged.
+- Supported environments: the beta states today's tested environment exactly
+  (Python 3.12; Alerta 9.1.0; PostgreSQL 18.3, pin 18.0; PgBouncer 1.24.1;
+  Zabbix 7.0.10 lab target; Linux x86_64 reference in a Docker lab on a hosted
+  runner; other platforms unvalidated). Native x64 qualification on an authorised
+  host remains deferred and is disclosed in the release notes.
+
+No requirement is waived silently; the deferral is explicit. No tag, upload,
+release or deployment is authorized by this amendment.

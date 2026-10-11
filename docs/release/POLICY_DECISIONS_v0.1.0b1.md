@@ -69,10 +69,10 @@ the x64 lab result in a point release when it exists. One housekeeping item:
 `docs/release-provenance.md` lines 37–38 still say routine CI targets the
 ARM64 self-hosted runner; correct that sentence in the same PR as the decision.
 
-## Decision record (owner fills in)
+## Decision record (owner approved the recommendations in session, 11 October 2026)
 
 | Decision | Choice | Date (Nassau) | Recorded in |
 |---|---|---|---|
-| CodeQL | enable / waive | | R24 |
-| Attestation + second platform | require / defer | | R24 |
-| Supported environments | A / B | | R24, release notes |
+| CodeQL | **enable** | 2026-10-11 | R24 |
+| Attestation + second platform | **defer to stable** | 2026-10-11 | R24 |
+| Supported environments | **A (state today's truth)** | 2026-10-11 | R24, release notes |
