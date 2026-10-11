@@ -48,8 +48,10 @@ acceptance (see `docs/BETA_READINESS.md`).
   copyright/third-party approval, public-content approval, PyPI namespace
   confirmation, explicit publication authorization, verified private security
   reporting. `python tools/public_audit.py --publication` must return 0.
-- Independent external security review: reviewer named, scope agreed, this
-  revision reviewed, findings settled (see `SECURITY_REVIEW_REQUEST_v0.1.0b1.md`).
+- Independent external security review (xAI Grok 4.7, AI-assisted; starts after the
+  repository is public): this revision reviewed, findings settled (see
+  `SECURITY_REVIEW_REQUEST_v0.1.0b1.md`). Internal adversarial pass completed
+  11 October 2026; report retained privately (sha256 0bd8c5a9…).
 - Owner policy decisions: attestation and environment statement recorded (R24);
   CodeQL policy still unresolved after the failed run 38144863693 (see
   `POLICY_DECISIONS_v0.1.0b1.md`).

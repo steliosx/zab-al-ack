@@ -29,7 +29,9 @@ Review this commit only. Later commits are out of scope unless we send a new req
 
 ## Material supplied to the reviewer
 
-The repository is private, so the reviewer receives files, not a link:
+Owner decision (11 October 2026): the external review starts after the repository
+is published publicly. The reviewer then reads the public repository at the exact
+commit above and, as a fixed-bytes cross-check, the source zip:
 
 - `zabalack-0.1.0b1-source.zip` (SHA-256 `d53e7458d2820509434b020ece742fefead9245eaf1e40daeaf03ff461099126`),
   the public source export built by CI run 38140956596 from the commit above.
