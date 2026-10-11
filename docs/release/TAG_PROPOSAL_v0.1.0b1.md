@@ -26,12 +26,9 @@ results are not rebound to this commit.
 
 | File | SHA-256 |
 |---|---|
-| `zabalack-0.1.0b1-py3-none-any.whl` | `pypi/zabalack-0.1.0b1-py3-none-any.whl: OK
-c88dee99900b0da9761cbec082745c45ed8f81e5163b9ca82fa3d619f8d57a9d` |
-| `zabalack-0.1.0b1.tar.gz` | `pypi/zabalack-0.1.0b1.tar.gz: OK
-830bcbe654092874451c8cdb005c7be529a9dc6b76a12340997eba3dce1be715` |
-| `zabalack-0.1.0b1-source.zip` | `zabalack-0.1.0b1-source.zip: OK
-485bd6ed0d9236b6f5a31322f2ca6dc62fd63bfaf57d1fe7d9254331053e8b8e` |
+| `zabalack-0.1.0b1-py3-none-any.whl` | `c88dee99900b0da9761cbec082745c45ed8f81e5163b9ca82fa3d619f8d57a9d` |
+| `zabalack-0.1.0b1.tar.gz` | `830bcbe654092874451c8cdb005c7be529a9dc6b76a12340997eba3dce1be715` |
+| `zabalack-0.1.0b1-source.zip` | `485bd6ed0d9236b6f5a31322f2ca6dc62fd63bfaf57d1fe7d9254331053e8b8e` |
 | `SHA256SUMS` | `4b1f8037f688601f6fd409f6a7194c8e1336b1109c9cb31adbb8a756915252b1` |
 | `BUILD_PROVENANCE.json` | `f262ad2281041967fb87d3b8be1dae3756a6651eac0ecda3443d321e6b30f193` |
 

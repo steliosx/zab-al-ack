@@ -18,10 +18,8 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 |---|---|
 | Version | 0.1.0b1 |
 | Commit | `3c3c0dfbf02f74ae3abe38ec136037afabde48b5` |
-| Wheel SHA-256 | `pypi/zabalack-0.1.0b1-py3-none-any.whl: OK
-c88dee99900b0da9761cbec082745c45ed8f81e5163b9ca82fa3d619f8d57a9d` |
-| sdist SHA-256 | `pypi/zabalack-0.1.0b1.tar.gz: OK
-830bcbe654092874451c8cdb005c7be529a9dc6b76a12340997eba3dce1be715` |
+| Wheel SHA-256 | `c88dee99900b0da9761cbec082745c45ed8f81e5163b9ca82fa3d619f8d57a9d` |
+| sdist SHA-256 | `830bcbe654092874451c8cdb005c7be529a9dc6b76a12340997eba3dce1be715` |
 | CI run | 38147339640 (GitHub-hosted ubuntu-24.04) |
 
 ## Tested environment
