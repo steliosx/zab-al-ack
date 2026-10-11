@@ -6,8 +6,11 @@ in a single-use SmolVM microVM on an x86_64 Linux laptop. Its GitHub App
 reported check run `114114591155` as `success` on pilot commit `5095eb48`
 (branch `ci/preloop-quality`). ruff, mypy and `pip check` passed with
 `tree_unchanged: true`. That commit differs from `main` (`3fb266d3`) only in
-the pilot workflow `.github/workflows/preloop-quality.yml`; source and harness
-files are identical. This is not full CI, not a substitute for the dedicated
+the added pilot workflow `.github/workflows/preloop-quality.yml`. The workload
+files the job evaluated (`src/`, `sql/`, lock files, quality configuration) are
+identical to `main`; the full harness binding is not, because `.github/` is part
+of the harness digest and the pilot adds a file there. The retained A7 digests
+are therefore the pilot commit's own and transfer nothing to `main`. This is not full CI, not a substitute for the dedicated
 runner described in [self-hosted-runner.md](self-hosted-runner.md), and not
 release acceptance.
 
@@ -63,8 +66,10 @@ engine's status to show the expected pool labels, dispatches the workflow once
 over the engine's local REST endpoint and never retries. It then polls the
 GitHub check. It stops on check completion, the episode budget, a gate
 refusal before completion, more than one VM or a registration deadline.
-Cleanup runs once from an exit trap within 120 s. It cancels the one run,
-stops the units, and requires all of the following:
+Cleanup runs once from an exit trap. It cancels the one run and stops the
+units with a 120 s TERM deadline followed by a 5 s KILL grace; each child's
+disposition is recorded separately, and total completion within 120 s is not
+promised. Cleanup then requires all of the following:
 - unit `MainPID` 0;
 - an empty SmolVM registry;
 - no `libkrun VM`, `preloop` or `smolvm-bin` process;
