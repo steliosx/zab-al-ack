@@ -17,10 +17,10 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 | Item | Value |
 |---|---|
 | Version | 0.1.0b1 |
-| Commit | `3c3c0dfbf02f74ae3abe38ec136037afabde48b5` |
-| Wheel SHA-256 | `c88dee99900b0da9761cbec082745c45ed8f81e5163b9ca82fa3d619f8d57a9d` |
-| sdist SHA-256 | `830bcbe654092874451c8cdb005c7be529a9dc6b76a12340997eba3dce1be715` |
-| CI run | 38147339640 (GitHub-hosted ubuntu-24.04) |
+| Commit | `132a5440df88ce2ce2ce5d8ec40bbf845d5f34b6` |
+| Wheel SHA-256 | `bf5b017111742c7c6c90a8701286987b20649a05a8aa7fa12515803f1617719b` |
+| sdist SHA-256 | `e08c33789784486f87f5617a194a12228ca9594353fde554689ec23be9385563` |
+| CI run | 38154875005 (GitHub-hosted ubuntu-24.04) |
 
 ## Tested environment
 
@@ -28,7 +28,7 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 |---|---|
 | Python | 3.12 |
 | Alerta server | 9.1.0 |
-| PostgreSQL | 18.3 (reference pin 18.0) |
+| PostgreSQL | 18.6 (reference pin; R25) |
 | PgBouncer | 1.24.1 |
 | Zabbix | 7.0.10 lab target (7.0.0 reference) |
 | Platform | Linux x86_64 in a Docker lab on a hosted runner; other platforms unvalidated |
@@ -36,7 +36,7 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 ## What was executed for this candidate
 
 - Reference suite: 1,503 passed, 47 skipped, 0 failed.
-- Native lab (PostgreSQL 18.3 + PgBouncer, five phases): 311 passed, 0 failed.
+- Native lab (PostgreSQL 18.6 + PgBouncer, five phases): all phases passed (run 38154875005).
 - Mutation gate: 12 mutants killed, 0 survived.
 - Public export audit, reproducible build and acceptance mapping: passed.
 - Dependency advisories: 58 exact pins, 0 advisories. Secret scan of source and
@@ -49,6 +49,9 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
   ARM64 runner is held. Actions pinned to Node 24 releases.
 - Public export allows exactly the two README hero images.
 - Every non-200 response to a sent Zabbix write is now treated as uncertain (internal review F2).
+- PostgreSQL reference pin moves to 18.6, the latest 18.x minor (R25).
+- Coexistence contract: the signer no longer requires being the sole/last plugin; trailing
+  plugins must declare `ACK_FOREIGN_SOURCE_PASSTHROUGH` and a disjoint `ACK_OWNED_SOURCE_SYSTEMS` (R26).
 - Minimal publication inputs recorded (repository, package owner, primary maintainer).
 - No runtime feature change. No SQL body change. See `CHANGELOG.md`.
 
@@ -59,7 +62,7 @@ These are open at this release. Each is tracked in `docs/BETA_READINESS.md`.
 An internal adversarial review of this revision (11 October 2026, retained privately,
 SHA-256 0bd8c5a9…) found no path for an unauthorised actor to acknowledge or close an
 event and no credential exposure. Its finding F2 (non-200 write responses recorded as
-definite failure) is fixed in this revision (PR #40, merged into `3c3c0dfb`); F3 was disproved against Alerta
+definite failure) is fixed in this revision (PR #40); F3 was disproved against Alerta
 9.1.0; F1 is disclosed below. The external review (xAI Grok 4.7) starts after the
 repository is public.
 
