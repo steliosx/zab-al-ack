@@ -9,7 +9,7 @@ jobs:
   service-lab:
     # Review the repository's self-hosted lab policy before explicit enablement.
     if: ${{ vars.ZABALACK_DEPLOYMENT_E2E_ENABLED == 'true' }}
-    runs-on: [self-hosted, Linux, ARM64, zabalack]
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Refuse an untrusted revision on the persistent runner
@@ -39,7 +39,7 @@ jobs:
           printf '%s\n' "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - run: python -m pip install -r requirements.lock
       - run: python -m pip check
-      - run: flock -n /home/codex/zabalack-task-runs/shared-linux-lab.lock python tools/run_deployment_e2e.py --isolated-lab
+      - run: flock -n "$HOME/zabalack-shared-linux-lab.lock" python tools/run_deployment_e2e.py --isolated-lab
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
