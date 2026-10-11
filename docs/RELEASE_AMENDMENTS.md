@@ -997,3 +997,16 @@ returns early for alerts whose `source_system` is not `zabbix`). The attribute n
 intended to be standardised in alerta-ack-core; the shared install of the global
 Alerta patches, the shared-core pin and the coexistence lab profile follow the beta
 tag. Runtime change: a new candidate revision and run are required.
+
+## R28 — CodeQL first completed run and triage (11 October 2026)
+
+After the repository became public, the CodeQL variable was set back to `true` and
+run 38157736793 on `main` 1a498f51 completed both analyses with ingestion accepted.
+Eight alerts, all in harness paths, are triaged in
+`docs/release/CODEQL_TRIAGE_20261011.md`: seven accepted-by-design or false positive
+(public evidence file modes required by R20; lab-only synthetic credential files;
+non-sensitive report printing) and one low-severity fix recommended (lab HTTPS server
+TLS minimum version). Alerts are dismissed in GitHub only after the owner and the
+independent reviewer agree with the dispositions. This supersedes R24's "scheduled
+enablement" wording: CodeQL is enabled and has one completed run; the beta tag waits
+for the dispositions to be agreed. No tag, release or deployment is authorized here.
