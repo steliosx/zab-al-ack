@@ -185,13 +185,25 @@ artifact results and independent review status retained together.
 
 ## Inspected artifact-action interface
 
-Existing checkout, Python, Node and upload action commit pins are preserved.
-The new download action is pinned to
-[`actions/download-artifact` v4.3.0](https://github.com/actions/download-artifact/tree/d3f86a106a0bac45b974a628896c90dbdf5c8093),
-commit `d3f86a106a0bac45b974a628896c90dbdf5c8093`, inspected from the official Git
-repository on 2026-09-11. `action.yml` and `src/download-artifact.ts` establish
+GitHub removed the Node.js 20 runtime for JavaScript actions on 2026-09-23, so
+every action pin moved to a release whose own `action.yml` declares
+`runs.using: node24`: checkout v5.1.0, setup-python v6.3.0, setup-node v5.0.0,
+upload-artifact v6.0.0 and download-artifact v7.0.0 (commits and fetched
+`action.yml` hashes in `ci_reference_manifest.json`). Every input these
+workflows pass exists in the new versions; upload-artifact's `action.yml`
+differs from v4.6.2 only in its runtime.
+
+The download action is pinned to
+[`actions/download-artifact` v7.0.0](https://github.com/actions/download-artifact/tree/37930b1c2abaa49bbe596cd826c3c89aef350131),
+commit `37930b1c2abaa49bbe596cd826c3c89aef350131`, inspected from the official Git
+repository on 2026-10-09 (v4.3.0, commit `d3f86a106a0bac45b974a628896c90dbdf5c8093`,
+was inspected on 2026-09-11). `action.yml` and `src/download-artifact.ts` establish
 that omitting `github-token` selects the current workflow run; `pattern`
-filters artifact names and `merge-multiple: false` retains separate directories.
+filters artifact names and `merge-multiple: false` retains separate directories
+when more than one artifact matches. The one source change from v4.3.0 is that a
+pattern matching a single artifact now extracts it directly into `path`; the
+collector requires exactly the four named evidence directories, so that layout
+is refused rather than accepted.
 The implementation warns about artifact-service digest mismatches, so the
 collector independently requires matching manifest byte hashes and refuses a
 mismatch. The workflow retains `contents: read` and does not supply a token for
@@ -199,9 +211,9 @@ cross-run or cross-repository downloads.
 
 | Inspected file | SHA-256 |
 |---|---|
-| `action.yml` | `f81d687a5bb7c2c9428a2cfc32fc099c823d56faf533e7d0e1f3cdc0e10f9cc7` |
-| `src/download-artifact.ts` | `1c67eb1bb4f77a462522341189f433422c4d35a6999d0dea2a1846e6edfedd80` |
-| `README.md` | `c088294825e648f9f1baf71deefd0a401984d97f0fc43d5c5be9a4ed64211639` |
+| `action.yml` | `834f2e0884ebc4b61150ecb61b3538786ee2f9e9910740a74463246268db3bd2` |
+| `src/download-artifact.ts` | `f14131bb3c2023b678a13ae75a76523cd945eb58d18154817fd84ea9422b1916` |
+| `README.md` | `9925d2eeb338b5462202a2babc074a5becdfd2d4e736c6cd4604dd8b0ed4c286` |
 
 `tests/release/test_ci_collection.py` exercises synthetic artifacts and checks
 the workflow dependency/collection order. These are unit tests of the evidence
