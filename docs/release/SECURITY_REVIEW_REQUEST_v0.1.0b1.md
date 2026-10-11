@@ -3,9 +3,11 @@
 Prepared 11 October 2026 for the owner to send. Replace the bracketed fields. Nothing
 else needs to change.
 
-**To:** [reviewer name, organisation]
-**From:** [owner name], package owner, Zabalack
-**Private report destination:** [email or GitHub private vulnerability report URL]
+**Reviewer:** xAI Grok 4.7, operated by the owner (independent AI-assisted external review;
+not a security firm). **Internal reviewer, first pass:** Claude Fable 5.1 (this project's
+implementing agent; not independent). **From:** the package owner.
+**Report destination:** the owner's session with the reviewer; the owner stores the
+report privately under `evidence/` and records its SHA-256 in `docs/RELEASE_AMENDMENTS.md`.
 
 ## What we ask
 
@@ -24,6 +26,33 @@ Zabbix problem event. Report findings privately. Do not publish them.
 | sdist SHA-256 | `df9a3e79f530c248cd159248defefef6025957eb086ed07ac4b8229412b3166e` |
 
 Review this commit only. Later commits are out of scope unless we send a new request.
+
+## Material supplied to the reviewer
+
+The repository is private, so the reviewer receives files, not a link:
+
+- `zabalack-0.1.0b1-source.zip` (SHA-256 `d53e7458d2820509434b020ece742fefead9245eaf1e40daeaf03ff461099126`),
+  the public source export built by CI run 38140956596 from the commit above.
+- From inside the zip: `docs/DESIGN.md`, `docs/security_and_data.md`, `SECURITY.md`,
+  `config/production.example.json`, the `sql/` tree and `src/zabalack/`.
+- This request document.
+
+The reviewer must not receive credentials, private evidence, signing material or
+operational endpoints. Nothing in the zip contains them; verify the hash before use.
+
+## Required output format
+
+One report, plain text or Markdown, containing:
+
+1. The commit and zip hash reviewed, as read from the material.
+2. For each of the five questions below: a verdict (HOLDS / WEAK / BROKEN) and the
+   code paths traced, with file and line.
+3. A numbered list of findings. Each finding: severity (high / medium / low / info),
+   title, file and line, what an attacker does, what happens, a minimal synthetic
+   reproduction, a suggested fix. Write "no finding" where a question holds.
+4. Files actually read. Anything not read is out of the review's coverage.
+
+Speculation without a code reference is not a finding.
 
 ## Scope
 
@@ -55,10 +84,10 @@ Out of scope:
 
 ## How to report
 
-Send findings to the private destination above. Include affected files and
-lines, a minimal synthetic reproduction, expected versus actual behaviour and
-impact. Do not include live credentials or operational endpoints. We will
-acknowledge receipt within [N] business days.
+The owner pastes the complete report, unedited, to the implementing agent's
+session. The agent hashes it, stores it under private evidence, and records the
+hash. The report is not committed to the repository; a summary with the
+reviewer's label goes in the release notes.
 
 ## How findings are settled
 
@@ -71,4 +100,4 @@ the release notes.
 
 ## Timeline
 
-Requested completion: [date]. The beta tag waits for this review.
+The beta tag waits for this review and for a written disposition of every finding.
