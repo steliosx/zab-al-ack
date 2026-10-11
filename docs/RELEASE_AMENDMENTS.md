@@ -940,7 +940,8 @@ deployment is authorized by this amendment.
 
 Owner decisions recorded 11 October 2026 (see `docs/release/POLICY_DECISIONS_v0.1.0b1.md`):
 
-- CodeQL: **enablement attempted; policy unresolved.** The repository variable
+- CodeQL: **enablement attempted on 11 October 2026; gate set back off until the
+  repository is public (owner decision, scheduled enablement, not a waiver).** The repository variable
   `ZABALACK_CODEQL_ENABLED` was set to `true` on 11 October 2026 and one run was
   dispatched on `main` (run 38144863693). Both jobs (python, javascript-typescript)
   FAILED at the step "Analyze and wait for Code Scanning ingestion" with

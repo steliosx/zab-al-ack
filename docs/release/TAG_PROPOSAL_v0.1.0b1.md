@@ -42,7 +42,7 @@ results are not rebound to this commit.
 | native (Docker lab, x86_64 hosted runner) | SUCCESS, 311 passed across 5 phases |
 | package (public audit, build, acceptance mapping) | SUCCESS |
 | scan (pip-audit 58 pins, Gitleaks dir + history) | SUCCESS, 0 advisories, 0 findings |
-| CodeQL | SKIPPED at this commit's push run; later dispatched run 38144863693 FAILED at ingestion (not a clean scan) |
+| CodeQL | SKIPPED at this commit's push run (variable off). Earlier on 11 October, dispatched run 38144863693 on the superseded commit fee1528 FAILED at ingestion; no clean scan exists |
 
 The native result is CI evidence for this run on a hosted x86_64 runner. It
 is not the deferred native x64 qualification milestone and not installed
