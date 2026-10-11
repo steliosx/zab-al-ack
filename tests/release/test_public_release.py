@@ -40,6 +40,26 @@ def test_export_audit_rejects_sensitive_artifacts(name, content, rule):
     assert rule in inspect_file(name, content)
 
 
+PNG = b'\x89PNG\r\n\x1a\n'
+
+
+@pytest.mark.parametrize('name,content,expected', [
+    ('docs/assets/readme-hero.png', PNG + b'\x00' * 16, []),
+    ('docs/assets/readme-hero-dark.png', PNG + b'\x00' * 16, []),
+    ('docs/assets/other.png', PNG + b'\x00' * 16, ['unexpected-binary-file']),
+    ('docs/readme-hero.png', PNG + b'\x00' * 16, ['unexpected-binary-file']),
+    ('docs/assets/readme-hero.png', b'\xff\xd8\xff' + b'\x00' * 16, ['unexpected-binary-file']),
+    ('docs/assets/readme-hero.png', PNG + b'\x00' * (2 * 1024 * 1024), ['unexpected-binary-file']),
+], ids=['hero-light', 'hero-dark', 'other-png-name', 'other-path', 'not-a-png', 'over-size'])
+def test_only_the_readme_hero_pngs_are_allowed_binaries(name, content, expected):
+    assert inspect_file(name, content) == expected
+
+
+def test_committed_readme_hero_pngs_pass_the_export_audit():
+    for name in ('docs/assets/readme-hero.png', 'docs/assets/readme-hero-dark.png'):
+        assert inspect_file(name, (ROOT / name).read_bytes()) == []
+
+
 def test_evidence_redaction_retains_failed_and_skipped_outcomes(tmp_path):
     raw, output = tmp_path / 'raw.xml', tmp_path / 'public.xml'
     raw.write_text('<testsuite hostname="private-host"><testcase classname="tests.a" name="bad">'
