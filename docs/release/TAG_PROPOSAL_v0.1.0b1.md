@@ -36,7 +36,7 @@ zero. No upload, release or deployment is authorized by this proposal.
 | native (Docker lab, x86_64 hosted runner) | SUCCESS, 311 passed across 5 phases |
 | package (public audit, build, acceptance mapping) | SUCCESS |
 | scan (pip-audit 58 pins, Gitleaks dir + history) | SUCCESS, 0 advisories, 0 findings |
-| CodeQL | SKIPPED (repository variable not set) |
+| CodeQL | SKIPPED at this commit's push run; later dispatched run 38144863693 FAILED at ingestion (not a clean scan) |
 
 The native result is CI evidence for this run on a hosted x86_64 runner. It
 is not the deferred native x64 qualification milestone and not installed
@@ -50,8 +50,9 @@ acceptance (see `docs/BETA_READINESS.md`).
   reporting. `python tools/public_audit.py --publication` must return 0.
 - Independent external security review: reviewer named, scope agreed, this
   revision reviewed, findings settled (see `SECURITY_REVIEW_REQUEST_v0.1.0b1.md`).
-- Owner policy decisions recorded: CodeQL, signed attestation and second-platform
-  build, supported-environment statement (see `POLICY_DECISIONS_v0.1.0b1.md`).
+- Owner policy decisions: attestation and environment statement recorded (R24);
+  CodeQL policy still unresolved after the failed run 38144863693 (see
+  `POLICY_DECISIONS_v0.1.0b1.md`).
 - Release notes reviewed (`RELEASE_NOTES_v0.1.0b1.md`).
 
 ## Approval record (fill in)

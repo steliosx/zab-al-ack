@@ -940,10 +940,17 @@ deployment is authorized by this amendment.
 
 Owner decisions recorded 11 October 2026 (see `docs/release/POLICY_DECISIONS_v0.1.0b1.md`):
 
-- CodeQL: **enabled**. The repository variable `ZABALACK_CODEQL_ENABLED` is set to
-  `true`; the `analyze` job runs on push, pull request and weekly. A skipped or
-  failed CodeQL job is not a clean scan; the beta tag waits for one completed run
-  and triage of its findings.
+- CodeQL: **enablement attempted; policy unresolved.** The repository variable
+  `ZABALACK_CODEQL_ENABLED` was set to `true` on 11 October 2026 and one run was
+  dispatched on `main` (run 38144863693). Both jobs (python, javascript-typescript)
+  FAILED at the step "Analyze and wait for Code Scanning ingestion" with
+  `Resource not accessible by integration`; the code-scanning API reports that
+  code scanning is not enabled for this repository. The cause is not established.
+  Earlier runs remain SKIPPED in history. A failed or skipped CodeQL job is not a
+  clean or triaged scan. Open owner decision: keep the gate off until the
+  repository is public, or change the workflow to retain SARIF as a run artifact
+  without ingestion. The beta tag waits for that decision and, if CodeQL is kept,
+  for one completed run and triage.
 - Signed attestation and second-platform reproduction: **deferred to the first
   stable release**. The beta wheel carries local provenance only
   (`dist/BUILD_PROVENANCE.json`, two-build hash comparison). The inactive

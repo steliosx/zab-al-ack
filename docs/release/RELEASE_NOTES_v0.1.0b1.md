@@ -57,7 +57,7 @@ These are open at this release. Each is tracked in `docs/BETA_READINESS.md`.
 
 | Item | Meaning | Status |
 |---|---|---|
-| CodeQL | Static analysis workflow | Supplied, **not run** (repository variable unset) |
+| CodeQL | Static analysis workflow | Enabled 11 Oct; run 38144863693 **FAILED at ingestion**; earlier runs skipped; **no clean scan**; policy unresolved |
 | Signed attestation | SLSA provenance of the wheel via GitHub attestations | Template supplied, **not run** |
 | Native x64 qualification | Bounded native run on an authorised x86_64 host | **Deferred**; hosted CI native pass is run evidence only |
 | A2 | Reference webhook transport does not authenticate TLS peers | **Open**; do not deploy the reference webhook as shipped |
