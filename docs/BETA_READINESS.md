@@ -1,6 +1,6 @@
 # Beta readiness
 
-The candidate under qualification is 0.1.0a17. A beta requires the intended automation to
+The candidate under qualification is 0.1.0b1 (assigned 11 October 2026; see amendment R23). Earlier results remain bound to a17 and before. A beta requires the intended automation to
 execute successfully on its exact commit in supported environments, plus the
 publication-owner inputs. See `ALPHA_REPORT.md` for current executed results.
 The original a16 release narrative below is historical. Its reference, mutation,
@@ -176,11 +176,11 @@ Still required before calling this beta ready:
 
 ## Owner decisions and proposed integration/release sequence
 
-The ten publication inputs in `config/publication.pending.json` remain unset:
-repository URL/namespace, package owner, primary and backup maintainers, verified
-private security reporting, private conduct contact, copyright/third-party
-approval, public-content approval, PyPI namespace confirmation and explicit
-publication authorization. Repository visibility is not publication approval.
+Of the ten publication inputs in `config/publication.pending.json`, three are
+recorded (repository URL, package owner, primary maintainer; 11 October 2026) and
+seven remain unset or unapproved: backup maintainer, verified private security
+reporting, private conduct contact, copyright/third-party approval, public-content
+approval, PyPI namespace confirmation and explicit publication authorization. Repository visibility is not publication approval.
 
 Name the independent security reviewer and agree scope, candidate revision,
 private report destination and disposition process. Arrange review before beta

@@ -1,5 +1,9 @@
 # Zab-al-ack 0.1.0a17 — integrated recovery candidate
 
+> **Superseded identity (11 October 2026).** The current candidate is `0.1.0b1`; see
+> `CHANGELOG.md`, `docs/BETA_READINESS.md` and amendment R23. This a17 report is
+> retained as history and is not rebound to the beta candidate.
+
 This is an unpublished candidate under qualification, not beta acceptance.
 It assigns a new version to PR25's integrated correction so that the previously
 qualified a16 wheel is never silently replaced. The runtime/SQL correction and

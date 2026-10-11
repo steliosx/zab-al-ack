@@ -6,7 +6,7 @@
     "component": {
       "type": "application",
       "name": "Zab-al-ack reference evaluation environment",
-      "version": "0.1.0a17"
+      "version": "0.1.0b1"
     }
   },
   "components": [
@@ -1343,9 +1343,9 @@
     {
       "type": "library",
       "name": "zabalack",
-      "version": "0.1.0a17",
-      "purl": "pkg:pypi/zabalack@0.1.0a17",
-      "bom-ref": "pkg:pypi/zabalack@0.1.0a17",
+      "version": "0.1.0b1",
+      "purl": "pkg:pypi/zabalack@0.1.0b1",
+      "bom-ref": "pkg:pypi/zabalack@0.1.0b1",
       "licenses": [
         {
           "expression": "Apache-2.0"
@@ -1354,7 +1354,7 @@
       "properties": [
         {
           "name": "zabalack:license-files",
-          "value": "[{\"package_path\": \"zabalack-0.1.0a17.dist-info/licenses/LICENSE\", \"sha256\": \"b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1\"}, {\"package_path\": \"zabalack-0.1.0a17.dist-info/licenses/NOTICE\", \"sha256\": \"44120455e7682946fd74a29f4a2c865abcb39c0fcce47f78b700dbf6eb3be62f\"}]"
+          "value": "[{\"package_path\": \"zabalack-0.1.0b1.dist-info/licenses/LICENSE\", \"sha256\": \"b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1\"}, {\"package_path\": \"zabalack-0.1.0b1.dist-info/licenses/NOTICE\", \"sha256\": \"44120455e7682946fd74a29f4a2c865abcb39c0fcce47f78b700dbf6eb3be62f\"}]"
         },
         {
           "name": "zabalack:inventory-scope",
@@ -1734,7 +1734,7 @@
       ]
     },
     {
-      "ref": "pkg:pypi/zabalack@0.1.0a17",
+      "ref": "pkg:pypi/zabalack@0.1.0b1",
       "dependsOn": [
         "pkg:pypi/httpx@0.28.1",
         "pkg:pypi/psycopg@3.2.10"
