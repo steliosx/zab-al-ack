@@ -964,3 +964,18 @@ Owner decisions recorded 11 October 2026 (see `docs/release/POLICY_DECISIONS_v0.
 
 No requirement is waived silently; the deferral is explicit. No tag, upload,
 release or deployment is authorized by this amendment.
+
+## R25 — PostgreSQL reference pin moves to the latest 18.x minor (18.6)
+
+Owner decision 11 October 2026: Zabalack and Voalack use the latest PostgreSQL 18.x minor
+release. The reference pin moves from 18.0 (18.3 in practice) to 18.6: source
+archive SHA-256 `555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f`,
+Docker image `postgres:18.6-bookworm` for the native and deployment labs,
+`docs/compatibility_manifest.json` reference. 18.0 and 18.3 archives remain
+accepted by `lab/build_postgres.sh` so historical evidence stays reproducible.
+Minor releases keep the on-disk format and wire protocol; PgBouncer 1.24.1 and
+Patroni bind to the major. This is a lab/pin change, not a runtime change, but it
+changes the harness identity: the native and deployment results recorded on 18.3
+stay bound to their revisions and are not rebound. New native and deployment runs
+on 18.6 are required before the beta tag; the manifest's "observed" fields are
+updated only from those runs. No tag, release or deployment is authorized here.
