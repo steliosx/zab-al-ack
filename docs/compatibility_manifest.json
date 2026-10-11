@@ -63,7 +63,7 @@
       "deployed": "NOT_VERIFIED"
     },
     "postgresql_native": {
-      "reference": "18.0",
+      "reference": "18.6",
       "commit": "3d6a828938a5fa0444275d3d2f67b64ec3199eb7",
       "status": "EXECUTED_LOCAL_SOURCE_BUILT_A16",
       "evidence": "evidence/native-run.json",
