@@ -979,3 +979,21 @@ changes the harness identity: the native and deployment results recorded on 18.3
 stay bound to their revisions and are not rebound. New native and deployment runs
 on 18.6 are required before the beta tag; the manifest's "observed" fields are
 updated only from those runs. No tag, release or deployment is authorized here.
+## R26 — Coexistence contract replaces the sole/last-plugin requirement
+
+Owner decision 11 October 2026: Zabalack and Voalack must work alone and coexist inside one
+Alerta. The signer previously refused to act unless it was the sole and final plugin
+in the effective routed chain. It now requires that it appears exactly once and that
+every plugin after it declares, as class attributes, `ACK_FOREIGN_SOURCE_PASSTHROUGH
+= True` and `ACK_OWNED_SOURCE_SYSTEMS` (a non-empty frozenset of owned `source_system`
+values) that does not contain this alert's source: the plugin then provably treats the
+alert as foreign, returns it unchanged and raises nothing. The flag alone is not enough,
+because a same-source owner could legitimately alter the signed text later in Alerta's
+loop (independent review finding F1P1). A trailing plugin without both declarations,
+or one owning the same source, still blocks signing
+(`skipped_routing_order` / `zabalack_final_routing_invalid`); an instance-level
+attribute is not trusted. Zabalack declares the same contract for itself (it already
+returns early for alerts whose `source_system` is not `zabbix`). The attribute name is
+intended to be standardised in alerta-ack-core; the shared install of the global
+Alerta patches, the shared-core pin and the coexistence lab profile follow the beta
+tag. Runtime change: a new candidate revision and run are required.
