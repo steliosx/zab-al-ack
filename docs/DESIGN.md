@@ -235,7 +235,7 @@ Rationale: `from_action()` passes `text` through the status-change hook and uses
 
 Context invariants: full canonical alert ID; no fallback between alerts; existence of the dictionary does not enable excluded routes; duplicate hook invocation for the same action creates no new identity and no second proof.
 
-Plugin ordering: the signer must be last in the **effective routed** status chain for every eligible cohort, not merely last in `PLUGINS`. Routing rules may reorder plugins; contract tests assert the effective order. Other plugins are audited for pre-commit use of `text` (HTTP calls, logging, exception formatting, tracing, signal subscribers).
+Plugin ordering: the signer must appear once in the **effective routed** status chain for every eligible cohort, and every plugin after it must declare the coexistence contract `ACK_FOREIGN_SOURCE_PASSTHROUGH = True` (it returns alerts of foreign sources unchanged and raises nothing for them); an undeclared trailing plugin blocks signing, as before. Position in `PLUGINS` alone is not sufficient. Routing rules may reorder plugins; contract tests assert the effective order. Other plugins are audited for pre-commit use of `text` (HTTP calls, logging, exception formatting, tracing, signal subscribers).
 
 ### 5.2 Intent and proof
 

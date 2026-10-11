@@ -154,6 +154,49 @@ def test_T18_effective_routing_reorders_or_omits_signer(context, monkeypatch, ru
     assert context.probe.calls == 0
 
 
+class PassthroughAckPlugin(Observer):
+    """A second acknowledgement plugin that declares the coexistence contract."""
+    name = "synthetic_passthrough_ack"
+    ACK_FOREIGN_SOURCE_PASSTHROUGH = True
+
+
+class UndeclaredTrailingPlugin(Observer):
+    name = "synthetic_undeclared_trailing"
+
+
+def test_coexistence_declared_passthrough_plugin_may_follow_the_signer(context, monkeypatch):
+    trailing = PassthroughAckPlugin()
+    monkeypatch.setattr(plugins, "rules", lambda a, p, **kw: [p["signer"], trailing])
+    alert, action, note, timeout = stage(context)
+    assert "zabbix_ack_sync_intent" in alert.attributes
+    _, status, text = process_status(alert, "ack", note)
+    assert text.count("[zabalack:") == 1
+
+
+def test_coexistence_undeclared_trailing_plugin_still_blocks_signing(context, monkeypatch):
+    trailing = UndeclaredTrailingPlugin()
+    monkeypatch.setattr(plugins, "rules", lambda a, p, **kw: [p["signer"], trailing])
+    alert, action, note, timeout = stage(context)
+    assert "zabbix_ack_sync_intent" not in alert.attributes
+    assert alert.attributes["zabbix_ack_sync_reason"] == "skipped_routing_order"
+    assert context.probe.calls == 0
+
+
+def test_coexistence_instance_level_declaration_is_not_trusted(context, monkeypatch):
+    trailing = UndeclaredTrailingPlugin()
+    trailing.ACK_FOREIGN_SOURCE_PASSTHROUGH = True  # instance attribute, not the class contract
+    monkeypatch.setattr(plugins, "rules", lambda a, p, **kw: [p["signer"], trailing])
+    alert, action, note, timeout = stage(context)
+    assert "zabbix_ack_sync_intent" not in alert.attributes
+
+
+def test_coexistence_signer_declares_the_contract_itself():
+    from zabalack.plugins import ACK_PASSTHROUGH_ATTRIBUTE, AckSigningPlugin
+    assert ACK_PASSTHROUGH_ATTRIBUTE == "ACK_FOREIGN_SOURCE_PASSTHROUGH"
+    assert getattr(AckSigningPlugin, ACK_PASSTHROUGH_ATTRIBUTE) is True
+    assert AckSigningPlugin.__doc__.startswith("Stage unsigned intent")
+
+
 def test_T18_routing_snapshot_is_actual_not_second_rules_evaluation(context, monkeypatch):
     calls = []
 

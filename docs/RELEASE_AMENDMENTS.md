@@ -964,3 +964,18 @@ Owner decisions recorded 11 October 2026 (see `docs/release/POLICY_DECISIONS_v0.
 
 No requirement is waived silently; the deferral is explicit. No tag, upload,
 release or deployment is authorized by this amendment.
+
+## R26 — Coexistence contract replaces the sole/last-plugin requirement
+
+Owner decision 11 October 2026: Zabalack and Voalack must work alone and coexist inside one
+Alerta. The signer previously refused to act unless it was the sole and final plugin
+in the effective routed chain. It now requires that it appears exactly once and that
+every plugin after it declares, as a class attribute, `ACK_FOREIGN_SOURCE_PASSTHROUGH
+= True`: the plugin returns alerts of sources it does not own unchanged and raises
+nothing for them. An undeclared trailing plugin still blocks signing
+(`skipped_routing_order` / `zabalack_final_routing_invalid`); an instance-level
+attribute is not trusted. Zabalack declares the same contract for itself (it already
+returns early for alerts whose `source_system` is not `zabbix`). The attribute name is
+intended to be standardised in alerta-ack-core; the shared install of the global
+Alerta patches, the shared-core pin and the coexistence lab profile follow the beta
+tag. Runtime change: a new candidate revision and run are required.

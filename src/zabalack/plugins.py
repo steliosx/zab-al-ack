@@ -321,8 +321,17 @@ def stage_generation(alert_id: str, intent: dict[str, Any]) -> int:
     return int(row[0])
 
 
+# Class attribute another Alerta acknowledgement plugin sets to declare that it returns
+# alerts of foreign sources unchanged and raises nothing for them. Shared contract name;
+# the same string is intended for alerta-ack-core.
+ACK_PASSTHROUGH_ATTRIBUTE = "ACK_FOREIGN_SOURCE_PASSTHROUGH"
+
+
 class AckSigningPlugin(PluginBase):
     """Stage unsigned intent; append binding only in the final effective hook."""
+
+    # Coexistence contract (R26): alerts whose source_system is not "zabbix" are returned unchanged.
+    ACK_FOREIGN_SOURCE_PASSTHROUGH = True
 
     def __init__(self, name: str | None = None, *, settings: Settings | None = None,
                  probe: Any = None, keys: dict[str, bytes] | None = None,
@@ -343,11 +352,22 @@ class AckSigningPlugin(PluginBase):
         return None
 
     def _last(self, alert: Any) -> bool:
+        """The signer appears exactly once, and nothing after it may alter the alert.
+
+        Coexistence contract (owner decision, 11 October 2026): another acknowledgement
+        plugin may follow the signer in the effective routed chain only if it declares
+        ``ACK_FOREIGN_SOURCE_PASSTHROUGH = True`` on its class, meaning it returns
+        alerts whose source it does not own unchanged and raises nothing for them.
+        A trailing plugin without that declaration keeps the original refusal.
+        """
         routed = g.get("zabalack_effective_route") if has_request_context() else None
         if not routed or routed[0] != str(alert.id):
             return False
         chain = routed[1]
-        return bool(chain and chain[-1] is self and sum(item is self for item in chain) == 1)
+        if not chain or sum(item is self for item in chain) != 1:
+            return False
+        trailing = chain[chain.index(self) + 1:]
+        return all(getattr(type(item), ACK_PASSTHROUGH_ATTRIBUTE, False) is True for item in trailing)
 
     def _check_health(self, settings: Settings) -> None:
         try:
