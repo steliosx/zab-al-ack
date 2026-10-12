@@ -133,6 +133,8 @@ def source_tls_proxy():
             pass
     server = ThreadingHTTPServer(("127.0.0.1", 58443), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    # CodeQL py/insecure-protocol (R28 alert 5): refuse TLS 1.0/1.1 even on the loopback lab server.
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(PRIVATE / "server.crt", PRIVATE / "server.key")
     server.socket = context.wrap_socket(server.socket, server_side=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)

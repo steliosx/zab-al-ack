@@ -998,6 +998,17 @@ intended to be standardised in alerta-ack-core; the shared install of the global
 Alerta patches, the shared-core pin and the coexistence lab profile follow the beta
 tag. Runtime change: a new candidate revision and run are required.
 
+## R27 — Publication register: owner inputs recorded 11 October 2026
+
+The owner recorded, in session: backup maintainer `steliosx`; private conduct
+contact `stelios@steliosx.com`; `publication_authorized = true` (publication of the
+beta tag and GitHub prerelease; distinct from deployment). The owner also made the
+repository public and enabled GitHub private vulnerability reporting the same day.
+Still unset or false: `private_security_reporting_verified` (owner test report
+pending), `copyright_and_third_party_review_approved`,
+`public_content_review_approved`, `pypi_namespace_confirmed`. The publication audit
+therefore still returns 2 ("inputs required"); no tag may be created until all are
+true. No tag, upload or deployment is authorized by this amendment.
 ## R28 — CodeQL first completed run and triage (11 October 2026)
 
 After the repository became public, the CodeQL variable was set back to `true` and
