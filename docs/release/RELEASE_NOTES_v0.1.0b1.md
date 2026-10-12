@@ -17,7 +17,8 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 | Item | Value |
 |---|---|
 | Version | 0.1.0b1 |
-| Commit | `f85212e238fb6322802b163219096db48e428291` |
+| Tagged commit (frozen producer) | `f85212e238fb6322802b163219096db48e428291` |
+| Release documents | on `main` `ac0a5511a1d4…` and later; not in the tagged tree |
 | Wheel SHA-256 | `bf5b017111742c7c6c90a8701286987b20649a05a8aa7fa12515803f1617719b` |
 | sdist SHA-256 | `ce346c9d562dc80ae094a16df4491d3812c47d1383f57eeaedf13051dbb0b821` |
 | CI run | 38187030741 (GitHub-hosted ubuntu-24.04) |
@@ -70,7 +71,7 @@ repository is public.
 
 | Item | Meaning | Status |
 |---|---|---|
-| CodeQL | Static analysis workflow | Enabled on the public repository; completed runs on main; 8 harness-path alerts (none in runtime or SQL) triaged with dispositions in `CODEQL_TRIAGE_20261011.md`; one fixed (#46) |
+| CodeQL | Static analysis workflow | Enabled on the public repository; completed runs on the producer commit; 8 harness-path alerts (none in runtime or SQL) have proposed dispositions in `docs/release/CODEQL_TRIAGE_20261011.md` at `main` `ac0a5511a1d4…` (not part of the tagged tree); one alert fixed (#46); dismissal awaits owner + reviewer agreement |
 | Signed attestation | SLSA provenance of the wheel via GitHub attestations | Template supplied, **not run** |
 | Native x64 qualification | Bounded native run on an authorised x86_64 host | **Deferred**; hosted CI native pass is run evidence only |
 | A2 | Reference webhook transport does not authenticate TLS peers | **Open**; do not deploy the reference webhook as shipped |
