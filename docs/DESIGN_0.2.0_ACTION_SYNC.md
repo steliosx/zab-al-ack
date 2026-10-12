@@ -26,8 +26,7 @@ a design. Nothing here changes the frozen 0.1.0b1 candidate.
 |---|---|
 | Direction | Alerta → Zabbix only. No import of Zabbix operations. |
 | Alerta actions in scope | `ack` (existing), `unack`, `close`, Alerta's automatic `timeout` on an acknowledged alert (ack-timeout, `system` actor), and severity-change reopen (correlate path, `model` actor). **Suppression kinds** (`shelve`, `unshelve`, `timeout_unshelve`) are **recorded only, never written, in 0.2.0** (owner decision §9 Q1): they settle `skipped: suppression_fence_unavailable` because pinned Zabbix 7.0.10 offers no fence for other users' suppression (T2). **Notes are deferred to 0.2.1** (owner decision §9 Q4; D1, §4.4). `expired` produces no Zabbix write (owner decision §9 Q3). |
-| Zabbix operations | acknowledge (2, or 6 with message), unacknowledge (16), close (1, or 5 with message). Suppress (32) and unsuppress (64) are **not sent in 0.2.0** (step 0,
-§9 Q1; future specification in Appendix A). Message (4) is used only as the companion of ack/close, never alone in 0.2.0. Not in scope: severity (8), cause/symptom rank (128/256). |
+| Zabbix operations | acknowledge (2, or 6 with message), unacknowledge (16), close (1, or 5 with message). Suppress (32) and unsuppress (64) are **not sent in 0.2.0** (step 0, §9 Q1; future specification in Appendix A). Message (4) is used only as the companion of ack/close, never alone in 0.2.0. Not in scope: severity (8), cause/symptom rank (128/256). |
 | Entry paths | `PUT /alert/<id>/action` and Alerta housekeeping (`GET /management/housekeeping`, which runs `process_action` with `timeout`/`expired`); the dedupe/correlate ingestion path for severity-change reopen. Out of scope, recorded as skipped: direct `PUT /alert/<id>/status`, every `/_bulk/*` route, tag/attribute edits, `DELETE /alert/<id>`. |
 | Failure semantics | Asynchronous with projection for every kind, exactly as release one: Alerta applies the action; the worker delivers; the outcome (`ok`, `refused` with reason, `uncertain`) is projected into alert attributes. No synchronous Zabbix pre-checks. |
 | Sources | Zabbix-sourced alerts only (`source_system == "zabbix"`, one-to-one cohorts). |
@@ -53,7 +52,7 @@ read-based no-op, refusal or write, **whatever** the cohort's risk-policy value 
 false, true, unbound or invalid). No suppression kind produces `ok`, `ok_noop`, `accepted`
 or a remote write in 0.2.0, and none contributes to the suppression desired state. This gate
 does not change capture: an action Alerta rejects locally is still never captured. All other
-kinds continue with: **no-op** (a freshthe steps below. Then: **no-op** (a fresh
+kinds continue with: **no-op** (a fresh
 read-only `event.get` shows the bound event already in the target state → `ok_noop`, with the
 event snapshot as evidence, no write); **refused** (authoritative pre-write evidence that the
 write cannot apply) → `refused: <reason>`; **write** (exactly one `event.acknowledge`). For the
@@ -134,19 +133,9 @@ includes one, is the neutral team text naming the trigger or cause.
 
 Baseline rule (DESIGN 5.3) stays: a kind is captured only when the committed Alerta history
 row and resulting status match that kind's **capture predicate**; the predicate is evaluated by
-the capture trigger inside Alerta's transaction, not by the request path alone. The restricted
-capture-record allowlist (DESIGN 5.3) gains two columns for 0.2.0: `history_timeout` (the
-newly prepended history row's `timeout`, integer seconds) and `history_update_time`
-(already captured). Both are copied from `NEW.history[1]` at capture, immutable afterwards;
-verification and delivery derive the suppression deadline from this captured snapshot only,
-never from live history or any other timestamp-matching row (S4). The duration snapshot and deadline derivation below are part of the future
-suppression specification (Appendix A) and are not used by any 0.2.0 write. Deadline derivation:
-`suppress_until = floor(epoch_seconds(history_update_time at UTC)) + history_timeout`, an
-integer; for suppression kinds only, `history_timeout` must be a positive integer, otherwise
-the capture is `skipped: invalid_duration`; a suppress is eligible to send only while the
-worker's clock (integer UTC seconds) is strictly **before** the derived deadline; at or after it
-the operation settles `skipped: deadline_passed`. Ack/unack/close captures carry no duration
-validation (T4).
+the capture trigger inside Alerta's transaction, not by the request path alone. 0.2.0 adds no suppression capture columns and no
+duration or deadline handling; the suppression duration snapshot and deadline rules are
+future-only and live in Appendix A.
 
 | Kind | Route predicate | Committed history row (`type`, `change_type`) | Resulting status | Actor types |
 |---|---|---|---|---|
@@ -285,7 +274,7 @@ suppress task from creating a manual row. History timestamps are integer seconds
   attempt: the maximum `acknowledgeid` seen and the set of `acknowledgeid`s present (S1);
   (3) suppression kinds never reach this sequence in 0.2.0: step 0 (§2) has already settled
   them `skipped: suppression_fence_unavailable`; for every other kind, the
-  no-op branch per kind (below) → `ok_noop` with the snapshot as evidence; (4) pre-writeno-op branch per kind (below) → `ok_noop` with the snapshot as evidence; (4) pre-write
+  no-op branch per kind (below) → `ok_noop` with the snapshot as evidence; (4) pre-write
   refusal branch on authoritative data only; (5) exactly one `event.acknowledge` with the kind's
   bitmask and typed params; (6) **acceptance evidence**: a fresh read must show a **new**
   `acknowledges[]` entry with `acknowledgeid` greater than the watermark and not in the seen
@@ -451,3 +440,16 @@ risk acceptance, not a technical fence.
   `ok_noop` records "no manual row" and folds to absent.
 - Lab (future): manual, maintenance-only and mixed-row cases; shelve accepted then unshelve;
   unsuppress accepted then shelve; foreign row replacement between read and write.
+- Duration snapshot and deadline (moved from §4 in r9; future-only, including the
+  `invalid_duration` and `deadline_passed` dispositions, none of which exists in 0.2.0):
+  The restricted capture-record allowlist (DESIGN 5.3) would gain two columns: `history_timeout` (the
+  newly prepended history row's `timeout`, integer seconds) and `history_update_time`
+  (already captured). Both are copied from `NEW.history[1]` at capture, immutable afterwards;
+  verification and delivery derive the suppression deadline from this captured snapshot only,
+  never from live history or any other timestamp-matching row (S4). Deadline derivation:
+  `suppress_until = floor(epoch_seconds(history_update_time at UTC)) + history_timeout`, an
+  integer; for suppression kinds only, `history_timeout` must be a positive integer, otherwise
+  the capture is `skipped: invalid_duration`; a suppress is eligible to send only while the
+  worker's clock (integer UTC seconds) is strictly **before** the derived deadline; at or after it
+  the operation settles `skipped: deadline_passed`. Ack/unack/close captures carry no duration
+  validation (T4).
