@@ -1,7 +1,9 @@
 # Design amendment — 0.2.0 action synchronisation (Alerta → Zabbix)
 
-Status: DRAFT r2 for review (Codex, Astra, Voalack session). r2 answers Codex design
-findings D1-D6 on r1 (6f3fe47a); each section below names the finding it closes. Implementation starts after the
+Status: DRAFT r3 for review (Codex, Astra, Voalack session). r2 answered Codex design
+findings D1-D6 on r1 (6f3fe47a); r3 answers the residual findings R1-R6 on r2 (da9a001e).
+Each section names the findings it closes. Source facts cite the pinned Alerta 9.1.0 package
+and the exact-head Zabalack sources. Implementation starts after the
 0.1.0b1 tag (owner decision). Owner scope decisions of 11 October 2026 are in the owner-local
 record `OWNER-DECISIONS-ZABALACK-ACTION-EXPANSION-20261011.md`; this document turns them into
 a design. Nothing here changes the frozen 0.1.0b1 candidate.
@@ -36,16 +38,16 @@ event snapshot as evidence, no write); **write** (precondition holds → exactly
 
 | Alerta activity | Hook that sees it | Alerta transition (model) | Zabbix write | Target-state field for no-op / success evidence | Refusal reasons |
 |---|---|---|---|---|---|
-| Human `ack` | `take_action`, `status_change` | open → ack (ACK-1) | 2, or 6 with neutral message | `acknowledged == 1` | — (existing) |
+| Human `ack` | `take_action`, `status_change` | open → ack (model: `ack` on open stays open per ACK-1 rule name; the alarm model's resulting status is `ack`) | 2, or 6 with neutral message | `acknowledged == 1` | — (existing) |
 | Human `unack` | `take_action`, `status_change` | ack → previous status (UNACK-1) | 16 | `acknowledged == 0` | — |
-| Human `shelve` | `take_action`, `status_change` | open → shelved (SHL-1); ack → shelved (ACK-2) | 32, `suppress_until` = capture commit time + the **effective** timeout Alerta accepted for this action (the `timeout` kwarg of `post_action`, which is the request value or `SHELVE_TIMEOUT`); never a stale `alert.timeout` | `suppressed == 1` and `suppression_data[].suppress_until` ≥ expected | — |
+| Human `shelve` | `take_action`, `status_change` | open → shelved (SHL-1); ack → shelved (ACK-2) | 32, `suppress_until` **derived at delivery and by the verifier** from the committed history row: `history.update_time + history.timeout` (Alerta resolves the effective timeout inside `from_action`, `models/alert.py:649-657`, and stores it in the history row, `:684`; `post_action` does not receive it, R2). The signed intent carries only `duration_source = "history.timeout"`, never an absolute time. | a **manual** suppression row for the bound event (see §6, R5) | — |
 | Human `unshelve` | `take_action`, `status_change` | shelved → previous status (UNSHL-1) | 64 | `suppressed == 0` | — |
 | Human `close` | `take_action`, `status_change` | * → closed (OPEN-3/ACK-3/SHL-2/BLK-1) | 1, or 5 with neutral message (message sent once; a repeat close is a no-op and sends no second message) | `r_eventid != 0` | `manual_close_disabled` (from `trigger.get` `manual_close == 0` on the bound trigger, read before the write); `insufficient_rights` (exact JSON-RPC permission code only, never parsed text); `not_problem_event` (`value != 1` or `object != 0` on the bound event) |
 | Housekeeping `timeout`, previous status shelved | `take_action(action="timeout")`, `post_action` | shelved → open (OPEN-0) **or** → ack (ACK-0) when the status before shelving was ack | 64 only (never 16; a restored ack stays acknowledged in Zabbix) | `suppressed == 0` | — |
 | Housekeeping `timeout`, previous status ack | `take_action(action="timeout")`, `post_action` | ack → open (OPEN-0) | 16 | `acknowledged == 0` | — |
 | Housekeeping `expired` | `take_action(action="expired")` | * → expired (EXP-0) | none by default (§9 Q1) | — | recorded `skipped: expired_no_zabbix_counterpart` |
 | Severity-change reopen (ACK-4) | `status_change` only (dedupe/correlate; no `take_action`) | ack → open | 16 | `acknowledged == 0` | — |
-| Repeated `ack` on ack, repeated `shelve` on shelved | rejected by Alerta before any hook (`InvalidAction`) | none | none | — | nothing is captured; nothing to record |
+| Repeated `ack` on ack, repeated `shelve` on shelved | `take_action` runs first (`process_action` precedes `from_action`), then `from_action` raises `InvalidAction` and nothing is committed | none | none | — | no successful capture: the staged intent never meets a committed history row and expires; recorded `skipped: local_rejection` if the pre-stage left a trace |
 | `open`, `assign`, unknown action strings | `take_action` | per model | none | — | `skipped: no_zabbix_counterpart` |
 | Direct `/status`, bulk routes, delete, tag/attribute edits | `status_change` / none | varies | none | — | `skipped: entry_path_out_of_scope` (bulk tag/attributes/delete fire no hooks at all; nothing to record) |
 
@@ -62,12 +64,19 @@ ledger records `ok_noop`, not an extended `suppress_until`; `timeout` on an aler
 | `system` | `actor.type = "system"`, `actor.trigger = "timeout"`, `actor.invoked_by = g.login` of the principal that called `GET /management/housekeeping` (an API key or user), its scopes and customers | housekeeping transitions |
 | `model` | `actor.type = "model"`, `actor.cause = "severity_rise_reopen"`, `actor.invoked_by = g.login` of the **ingestion principal** (Alerta records that login on the dedupe/correlate history rows, `models/alert.py:314, 374`), its scopes and customers | severity-change reopen during `POST /alert` |
 
-Trusted cause provenance (D5): a `model` intent is admitted only when the ledger can bind it
-to the committed Alerta history rows of the same ingestion: a `severity` history row and a
-`status` history row for the alert with `update_time` equal to the ingesting alert's
-`create_time`, status `ack → open`, `user == actor.invoked_by`. The capture trigger (as in
-002 for `ack`) checks those rows in the same transaction; a route predicate alone never
-admits a model write. The signed/verifier-enforced tuple for every kind is: `actor.type`,
+Trusted cause provenance (D5, R1): the severity-change reopen (alarm model ACK-4) occurs
+only on the **correlate** ingestion path; dedupe keeps the severity and therefore never
+reopens an acknowledged alert through ACK-4. Correlate writes exactly **one** history row,
+`change_type = severity`, carrying the new status and `update_time == create_time` of the
+incoming alert, `user = g.login` of the ingestion principal (`models/alert.py:356-379`). A
+`model_unack` intent is admitted only when the capture trigger, in the same transaction, finds:
+(a) that single committed severity row for the alert with `status = open`,
+`update_time == NEW.create_time` (the incoming alert's create time, equal to the row's
+`update_time`), `user == actor.invoked_by`; (b) the immediately preceding history row for the
+alert has `status = ack`; (c) `NEW.previous_severity` ranks lower than `NEW.severity` in the
+configured severity map (a rise). Any missing element fails closed
+(`skipped: model_provenance_missing`). Dedupe status rows and older history rows are never
+accepted as cause. The signed/verifier-enforced tuple for every kind is: `actor.type`,
 `actor.invoked_by`, `customer`, `cohort_revision`, `policy_revision`, `kind`,
 `zabbix_action` (bitmask), typed `params` (`message: str | null`, `suppress_until: int | null`),
 `route`, `issued_at`, `capture_expires_at`, `execution_expires_at`. Mutating any field
@@ -95,7 +104,7 @@ the capture trigger inside Alerta's transaction, not by the request path alone.
 | `close` | `PUT /alert/<id>/action`, action `close` | `close`, status | `closed` | human |
 | `timeout_unshelve` | `GET /management/housekeeping`, action `timeout`, status before = `shelved` | `timeout`, status | `open` or `ack` | system |
 | `timeout_unack` | `GET /management/housekeeping`, action `timeout`, status before = `ack` | `timeout`, status | `open` | system |
-| `model_unack` | `POST /alert` (dedupe/correlate), status before = `ack` | `severity` + `status` rows with `update_time == create_time` | `open` | model |
+| `model_unack` | `POST /alert` correlate path only, status before = `ack` | one `severity` row, `status = open`, `update_time == create_time`, preceding row `status = ack`, severity rise | `open` | model |
 
 ### 4.1 Request path (`/action`)
 Unchanged mechanics: stage an unsigned intent in `take_action`; sign the binding in the final
@@ -109,8 +118,9 @@ as in 4.1; the capture predicate requires the `timeout` history row. The coexist
 (R26) applies unchanged.
 
 ### 4.3 Status-change-only path (`model_unack`)
-Severity-change reopen reaches plugins only through `status_change` during `POST /alert`.
-When the previous status is `ack`, the new status `open`, the alert Zabalack-owned and
+Severity-change reopen reaches plugins only through `status_change` during `POST /alert`
+(correlate path; the hook receives the existing alert with the proposed status). When the
+previous status is `ack`, the new status `open`, the alert Zabalack-owned and
 `mirror_model_transitions` true for the bound cohort revision, the hook stages **and signs** a
 `model_unack` intent in that call (there is no later hook). The capture trigger admits it only
 with the history provenance of §3. Fail-safe: the whole staging is wrapped; any exception is
@@ -129,10 +139,17 @@ a separate design (0.2.1); 0.2.0 does not deliver notes to Zabbix, and the worke
 intent of kind `note`.
 
 ### 4.5 Legacy intents and versioning (D4)
-Existing signed intents are `version 1`, kind `ack`, with the companion-message choice
-recorded in their `comment` flag; migration 013 derives `zabbix_action` (2 or 6) from that flag
-for each existing row instead of a blanket default, and sets `kind = 'ack'`,
-`actor_type = 'human'`. New intents are `version 2` with the §3 tuple; the verifier accepts
+Existing signed intents are `version 1`, kind `ack`, and carry **no** message flag (exact-head
+`crypto.py` `INTENT_KEYS`, lines 50-51). The companion-message choice is the bound cohort
+revision's `comment_enabled` (`worker.py:153-154`, validated in `policy.py:66-81`). Migration
+013 therefore derives each legacy row's `zabbix_action` from the **immutable bound cohort
+revision** (`cohort_revision` in the signed intent → `zabalack.cohorts` row): 6 if
+`comment_enabled`, else 2; where an attempt was already sent, the recorded attempt wire
+parameters take precedence and must agree, otherwise the row is marked `HOLD:
+legacy_binding_conflict`. A legacy row whose bound revision is missing is marked `HOLD:
+legacy_binding_missing` and is never defaulted, re-signed, rebound or replayed; its signed
+bytes, MAC, attempt shape and uncertainty are preserved. Legacy rows receive `event_seq` in
+`issued_at` order per event (ties by `action_id`), all below any new row. (R3) New intents are `version 2` with the §3 tuple; the verifier accepts
 version 1 only for kind `ack` and version 2 for every kind. SQL rejects NULL in the new columns.
 Mixed-version fencing: the worker reads a capability row written by 013; until it is present,
 version 2 intents are refused at admission (`skipped: schema_capability_missing`) and nothing
@@ -148,52 +165,87 @@ is staged for new kinds.
   superseded in 013 by kind-aware functions; shipped migration bytes and checksums stay
   immutable; 013 replaces the functions forward-only. Installer, worker and reader grants stay
   separate; the rollback script for 013 preserves pending evidence (rows are never deleted).
-- **Operation identity and order (D2).** Every captured operation keeps its own `action_id`.
-  There is no cross-kind coalescing. Within one bound (instance, event), the capture trigger
-  assigns `event_seq` from a per-event sequence at commit, which is the total order; ties are
-  impossible by construction. The worker admits operations for an event strictly in `event_seq`
-  order, one at a time (advisory lock on (instance, event)): the next operation is admitted
-  only when every earlier one is settled (`ok`, `ok_noop`, `refused`, `skipped`). An
-  **uncertain** earlier write blocks all later operations on that event and suspends the
-  instance (A6 unchanged); there is no automatic replay. ack A1 → unack U → ack A2 therefore
-  delivers three operations in order, each with its own no-op/write decision against the live
-  event. Identical consecutive operations (same kind and params, both undelivered) collapse to
-  the later one only, recorded as `superseded_by`.
-- **Desired state for drift (D2).** The reconciler compares the event's `acknowledged`,
-  `suppressed` and `r_eventid` with the expected state after the **latest settled** operation
-  for that event, never with an individual older operation.
+- **Operation identity and order (D2, R4).** Every captured operation keeps its own
+  `action_id`. There is no cross-kind coalescing. Ordering invariant: every capture for an
+  alert runs inside Alerta's UPDATE of that `public.alerts` row, which holds the row lock
+  until commit; with one-to-one cohorts one alert maps to one bound event, so captures for one
+  event are serialised by that lock. To make the order commit-visible rather than merely
+  unique, the capture trigger locks a canonical per-event anchor row
+  (`zabalack.event_anchor(instance, event_id)`, `SELECT ... FOR UPDATE`, created on first
+  capture) and assigns `event_seq = anchor.last_seq + 1`; a rolled-back capture releases the
+  lock without advancing the anchor. The worker admits operations for an event strictly in
+  `event_seq` order, one at a time, under the same anchor lock: the next operation is admitted
+  only when every earlier one is in a **terminal** state: `ok`, `ok_noop`, `refused`,
+  `skipped`, `expired`, or `superseded`. An **uncertain** earlier write blocks all later
+  operations on that event and suspends the instance (A6 unchanged); there is no automatic
+  replay. ack A1 → unack U → ack A2 therefore delivers three operations in order, each with
+  its own no-op/write decision against the live event. **Supersession is one atomic terminal
+  transition**: under the anchor lock, when two consecutive undelivered operations have the
+  same kind and params, the earlier moves `captured → superseded` (terminal, with
+  `superseded_by`) in the same statement that marks the later one eligible; the later one is
+  re-checked for binding and cohort eligibility before delivery. A later operation that ends
+  `expired`, `refused` or `skipped` never erases an earlier **effective** state.
+- **Desired state for drift (D2, R4).** The reconciler folds settled effects **per field**:
+  expected `acknowledged` = outcome of the latest operation of kind `ack`/`unack`/
+  `timeout_unack`/`model_unack` that ended `ok` or `ok_noop`; expected manual suppression =
+  latest `ok`/`ok_noop` among `shelve`/`unshelve`/`timeout_unshelve`; expected resolution =
+  latest `ok`/`ok_noop` `close`. Operations that ended `refused`, `skipped`, `expired` or
+  `superseded` contribute nothing. Drift is a mismatch against that per-field expectation.
 - Outcome states: `ok`, `ok_noop` (read-only branch), `refused` with reason enum
-  (`manual_close_disabled`, `insufficient_rights`, `event_resolved`, `not_problem_event`),
-  `skipped` with reason, `uncertain` (unchanged semantics), `superseded_by`.
+  (`manual_close_disabled`, `no_write_rights` (pre-write, authoritative; §6), `event_resolved`,
+  `not_problem_event`), `skipped` with reason, `expired`, `superseded` (with `superseded_by`),
+  `uncertain` (unchanged semantics). Terminal set for the barrier: all except `uncertain` and
+  the live states `captured`/`claimed`.
 
-## 6. RPC changes (r2: D6)
+## 6. RPC changes (r2: D6; r3: R5, R6)
 
-- Delivery of one operation is: (1) fresh read-only `event.get` of the bound event with the
-  fields `acknowledged`, `suppressed`, `suppression_data`, `r_eventid`, `value`, `object`,
-  `objectid`; verify binding (trigger, cohort hosts) as today; (2) **no-op branch**: if the
-  target-state field already matches (§2), settle `ok_noop` with the snapshot hash as evidence,
-  no write; (3) **refusal branch**: for `close`, read `trigger.get` for the bound trigger and
-  refuse `manual_close_disabled` when `manual_close == 0`; refuse `not_problem_event` when the
-  snapshot is not a problem event of a trigger; (4) **write**: exactly one `event.acknowledge`
-  with the kind's bitmask and typed params; (5) **success evidence**: a second fresh
-  `event.get` must show the target-state field changed; the event-id echo alone is not proof
-  of which bit applied. If (5) does not confirm, the outcome is `uncertain`, not `ok`.
+- Delivery of one operation is: (1) fresh read-only `event.get` of the bound event with
+  `acknowledged`, `suppressed`, `suppression_data` (`maintenanceid`, `userid`,
+  `suppress_until`), `r_eventid`, `value`, `object`, `objectid`, and `selectAcknowledges`
+  (`acknowledgeid`, `userid`, `clock`, `action`, `message`, `suppress_until`); verify binding
+  (trigger, cohort hosts) as today; (2) **no-op branch** per kind (below) → `ok_noop` with the
+  snapshot hash as evidence; (3) **pre-write refusal branch** on authoritative data only;
+  (4) exactly one `event.acknowledge` with the kind's bitmask and typed params; (5) **success
+  evidence**: a second fresh read must show the attributable evidence for **every requested
+  bit** (below); otherwise the outcome is `uncertain`, never `ok`, and no companion is resent.
+- **Per-bit attributable success (R6).** The Zabbix API user of the bound instance is a known
+  `userid`. Evidence for an operation is an `acknowledges[]` entry with `userid == ours`,
+  `clock ≥ attempt start`, and `action` including every requested bit; for bit 4 the entry's
+  `message` must equal the neutral text with this operation's public reference; for bit 2
+  `acknowledged == 1`; for bit 16 `acknowledged == 0`; for bit 1 `r_eventid != 0`; for bit 32 a
+  manual suppression row (`maintenanceid` absent/0, `userid == ours`) with `suppress_until`
+  equal to the derived value; for bit 64 no manual suppression row by our user. State fields
+  alone (e.g. `acknowledged == 1`) never prove this attempt applied, because another actor can
+  produce them. A compound 6 or 5 whose entry lacks bit 4 is `uncertain` (message not
+  resent); the companion message is not best-effort unless the owner decides so (§9).
+- **No-op branch (R5).** `shelve`: if a **manual** suppression row by any user exists, Zabbix
+  skips a new suppress and does not extend it; the operation settles `ok_noop:
+  existing_manual_suppression` recording the observed `suppress_until` (finite or 0 =
+  indefinite) without comparing it to ours. If only **maintenance** suppression rows exist,
+  Zabbix also skips (already suppressed): settle `ok_noop: maintenance_suppression`. `unshelve`:
+  if no manual row by our user exists → `ok_noop: no_manual_suppression` (maintenance rows are
+  not ours to remove and `suppressed` may remain 1). `ack`/`unack`/`close`: no-op when the
+  state field already matches (`acknowledged`, `r_eventid`). The lab checks shorter, longer and
+  indefinite existing suppressions, mixed manual/maintenance rows, and unsuppress while
+  maintenance remains active.
+- **Pre-write refusal (R6).** `close`: `trigger.get` on the bound trigger with `editable =
+  true`: an empty result means our user lacks write rights → `refused: no_write_rights`;
+  `manual_close == 0` → `refused: manual_close_disabled`; event not a problem event of a
+  trigger → `refused: not_problem_event`. These are the only refusal sources. After a write is
+  sent, **no** JSON-RPC error code becomes a refusal: `-32500` and `-32603` are ambiguous on
+  pinned Zabbix 7.0.10 (A6, SPEC_AMENDMENTS A6), and every application/internal/unclassified
+  error, HTTP 200 error envelope, non-200 response (F2) or timeout leaves the operation
+  `pending/uncertain`, suspends the instance, raises an incident and permits read-only
+  reconciliation only. Verified dispatch/validation rejection codes (`-32600/-32601/-32602`)
+  remain `failed` as today. Error text is never parsed.
 - `ZabbixClient.call` write scope: `action` ∈ {2, 6, 16, 1, 5, 32, 64}, exactly one `eventids`
   entry, `message` present iff the bitmask includes 4, `suppress_until` present iff it includes
-  32; `cause_eventid`/`severity` never present.
-- Companion message: neutral team text + public reference, sent once per operation; a repeat
-  close is a no-op and sends nothing.
-- Refusal evidence is authoritative data (trigger flag, event fields) or exact JSON-RPC error
-  codes mapped one-to-one; error message text is never parsed.
-- **A6 retained in full**: every ambiguous application/internal/unclassified JSON-RPC error,
-  including an HTTP 200 error envelope, every non-200 HTTP response (F2) and every timeout
-  after a sent write leaves the operation `pending/uncertain`, suspends the affected instance,
-  raises an incident and permits read-only reconciliation only. Settlement of an uncertain
-  operation is a reconciliation outcome, never an automatic circuit reset. Late-attributable
-  report protection (006/011) and no-replay invariants are unchanged.
-- Per-kind settlement evidence: ack/unack `acknowledged`; shelve `suppressed == 1` with
-  `suppress_until` ≥ expected (actual expiry is Zabbix's; the reconciler records when
-  `suppressed` returns to 0); unshelve `suppressed == 0`; close `r_eventid != 0`.
+  32 (derived from the capture's history row, never from the intent); `cause_eventid`/`severity`
+  never present.
+- Companion message: neutral team text + public reference, sent once per operation.
+- Per-kind settlement evidence is the per-bit evidence above; suppression expiry is Zabbix's
+  (the reconciler records when the manual row disappears). Late-attributable report protection
+  (006/011/012) and no-replay invariants are unchanged.
 
 ## 7. Projection
 
@@ -221,6 +273,8 @@ a Voalack-owned alert receiving each kind → Zabalack makes no write and raises
 ## 9. Open questions for the owner (asked after review)
 
 1. `expired`: no Zabbix write (default) or close the problem if manual close is enabled?
+0. Companion message policy: a missing message bit leaves the operation uncertain (default)
+   or is best-effort (ack/close counts as `ok` without its message)?
 2. Notes: accept deferral to 0.2.1 with a database-side committed capture (recommended), or
    drop note delivery from the roadmap?
 3. `mirror_system_transitions` / `mirror_model_transitions`: keep both default false and let
