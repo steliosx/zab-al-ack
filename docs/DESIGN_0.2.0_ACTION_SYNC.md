@@ -1,8 +1,9 @@
 # Design amendment — 0.2.0 action synchronisation (Alerta → Zabbix)
 
-Status: DRAFT r6 for review (Codex, Astra, Voalack session). r6 makes the U1-U2 consistency
-corrections on r5 (1c07a6bc) and adds the §11 DDL invariant agreed with the Voalack session.
-Earlier history: r2 answered Codex design
+Status: DRAFT r7. Codex gave AGREEMENT_DESIGN_ONLY on r6 (26d7197f, message f24b9ba2); Astra's
+bounded coexistence review of r5/r6 (note 3ebfe880) found §11.2 and §11.5 consistent at design
+level. r7 records the owner's five §9 decisions of 12 October 2026 and Astra's evidence caveats.
+Design agreement is not implementation, runtime or qualification approval. Earlier history: r2 answered Codex design
 findings D1-D6 on r1 (6f3fe47a); r3 answered R1-R6 on r2 (da9a001e); r4 answered S1-S4 on r3
 (38766e9d); r5 answers T1-T5 on r4 (2b160814). **r5 changes the proposed scope: suppression
 kinds (shelve/unshelve, timeout_unshelve) fail closed and are not delivered in 0.2.0 unless the
@@ -20,7 +21,7 @@ a design. Nothing here changes the frozen 0.1.0b1 candidate.
 | Decision | Value |
 |---|---|
 | Direction | Alerta → Zabbix only. No import of Zabbix operations. |
-| Alerta actions in scope | `ack` (existing), `unack`, `close`, Alerta's automatic `timeout` on an acknowledged alert (ack-timeout), and severity-change reopen (correlate path). **Suppression kinds** (`shelve`, `unshelve`, `timeout_unshelve`) are specified in full but **fail closed by default**: captured and recorded as `skipped: suppression_fence_unavailable` unless the owner accepts the collateral risk per cohort (§6, §9 Q4) (T2). **Notes are deferred to 0.2.1** (D1, §4.4). `expired` produces no Zabbix write unless the owner decides otherwise (§9). |
+| Alerta actions in scope | `ack` (existing), `unack`, `close`, Alerta's automatic `timeout` on an acknowledged alert (ack-timeout, `system` actor), and severity-change reopen (correlate path, `model` actor). **Suppression kinds** (`shelve`, `unshelve`, `timeout_unshelve`) are **recorded only, never written, in 0.2.0** (owner decision §9 Q1): they settle `skipped: suppression_fence_unavailable` because pinned Zabbix 7.0.10 offers no fence for other users' suppression (T2). **Notes are deferred to 0.2.1** (owner decision §9 Q4; D1, §4.4). `expired` produces no Zabbix write (owner decision §9 Q3). |
 | Zabbix operations | acknowledge (2, or 6 with message), unacknowledge (16), close (1, or 5 with message), suppress (32 with `suppress_until`), unsuppress (64). Message (4) is used only as the companion of ack/close, never alone in 0.2.0. Not in scope: severity (8), cause/symptom rank (128/256). |
 | Entry paths | `PUT /alert/<id>/action` and Alerta housekeeping (`GET /management/housekeeping`, which runs `process_action` with `timeout`/`expired`); the dedupe/correlate ingestion path for severity-change reopen. Out of scope, recorded as skipped: direct `PUT /alert/<id>/status`, every `/_bulk/*` route, tag/attribute edits, `DELETE /alert/<id>`. |
 | Failure semantics | Asynchronous with projection for every kind, exactly as release one: Alerta applies the action; the worker delivers; the outcome (`ok`, `refused` with reason, `uncertain`) is projected into alert attributes. No synchronous Zabbix pre-checks. |
@@ -65,7 +66,7 @@ barrier (T1).
 | Human `close` | `take_action`, `status_change` | * → closed (OPEN-3/ACK-3/SHL-2/BLK-1) | 1, or 5 with neutral message (message sent once; a repeat close is a no-op and sends no second message) | request accepted (new attributable history entry with bit 1, §6) and, as completion, `r_eventid != 0` on a later read | pre-write only: `manual_close_disabled` (`trigger.get` `manual_close == 0`); `no_write_rights` (`trigger.get` with `editable = true` returns nothing); `not_problem_event` (`value != 1` or `object != 0`). No JSON-RPC error code is ever a refusal (A6). |
 | Housekeeping `timeout`, previous status shelved | `take_action(action="timeout")`, `post_action` | shelved → open (OPEN-0) **or** → ack (ACK-0) when the status before shelving was ack | 64 only (never 16), under the same policy admission as `unshelve` (step 0; default `skipped: suppression_fence_unavailable`) | no manual suppression row remains | as `unshelve` |
 | Housekeeping `timeout`, previous status ack | `take_action(action="timeout")`, `post_action` | ack → open (OPEN-0) | 16 | `acknowledged == 0` | — |
-| Housekeeping `expired` | `take_action(action="expired")` | * → expired (EXP-0) | none by default (§9 Q1) | — | recorded `skipped: expired_no_zabbix_counterpart` |
+| Housekeeping `expired` | `take_action(action="expired")` | * → expired (EXP-0) | none (owner decision §9 Q3) | — | recorded `skipped: expired_no_zabbix_counterpart` |
 | Severity-change reopen (ACK-4) | `status_change` only (dedupe/correlate; no `take_action`) | ack → open | 16 | `acknowledged == 0` | — |
 | Repeated `ack` on ack, repeated `shelve` on shelved | `take_action` runs first (`process_action` precedes `from_action`), then `from_action` raises `InvalidAction` and nothing is committed | none | none | — | no successful capture: the staged intent never meets a committed history row and expires; recorded `skipped: local_rejection` if the pre-stage left a trace |
 | `open`, `assign`, unknown action strings | `take_action` | per model | none | — | `skipped: no_zabbix_counterpart` |
@@ -114,8 +115,12 @@ cohort_revision, policy_revision, issued_at, capture_expires_at, execution_expir
 no absolute `suppress_until` and no free text are ever signed. Mutating any field invalidates
 the binding. (S4)
 
-Cohort policy gains `mirror_system_transitions` and `mirror_model_transitions`, both default
-**false**, enforced twice: at admission (the capture trigger refuses the kind when the flag is
+Cohort policy gains `mirror_system_transitions` and `mirror_model_transitions`. Owner decision
+§9 Q5: both default **true**; a cohort may set either to false (opt-out). This widens the
+earlier recommended default deliberately and explicitly; it does not relax any evidence rule:
+a `model` intent is still admitted only with the committed correlate provenance of this
+section, and a `system` intent only with the housekeeping capture predicate of §4. The flags
+are enforced twice: at admission (the capture trigger refuses the kind when the flag is
 false for the cohort revision bound in the intent) and at delivery (the worker re-reads the
 flag for the bound cohort revision and records `skipped: mirror_disabled` instead of writing).
 `system` and `model` intents never carry operator text; their companion message, when a kind
@@ -310,9 +315,10 @@ suppress task from creating a manual row. History timestamps are integer seconds
   it never saw. Zabalack cannot build an exclusive-control guarantee on this platform. Design
   consequence: `shelve`, `unshelve` and `timeout_unshelve` are **captured and recorded** but
   **not written** by default; they settle `skipped: suppression_fence_unavailable` and the
-  alert's projection says so. The only path to writing them is an explicit owner risk-policy
-  decision per cohort (`accept_suppression_collateral_risk`, default false; §9 Q4) recording
-  the owner's acceptance that Zabalack's suppress/unsuppress may overwrite or delete other
+  alert's projection says so. **Owner decision §9 Q1: in 0.2.0 this is the only behaviour; no
+  cohort can enable suppression writes.** The best-effort policy below is retained only as the
+  specification a future release would need if the owner later records an explicit risk-policy
+  decision per cohort (`accept_suppression_collateral_risk`) recording the owner's acceptance that Zabalack's suppress/unsuppress may overwrite or delete other
   users' manual suppression rows. With that flag true, the integration policies are: shelve
   writes only when the fresh read shows **no** manual row of any owner (existing manual row →
   `ok_noop: existing_manual_suppression`, recording owner/until/maintenance evidence; this is
@@ -366,25 +372,23 @@ maintenance rows → default skipped, with the policy true policy no-write; miss
 policy binding → skipped (fail closed); ack/unack/ack sequence → three ordered operations; an uncertain earlier operation
 blocks later ones and suspends the instance; concurrent workers on one event → single
 admission; bulk status change → recorded skipped, no Zabbix call; model reopen with
-`mirror_model_transitions` false → `skipped: mirror_disabled`, with the flag true → unack with
-history provenance; mutated actor/kind/mask/params → verifier refusal.
+`mirror_model_transitions` at its default (true) → unack with history provenance; with the
+cohort opt-out (false) → `skipped: mirror_disabled`; the same pair for
+`mirror_system_transitions` on an ack-timeout; mutated actor/kind/mask/params → verifier refusal.
 Native-lab SQL cases for migration 013 and the kind-aware fences. Coexistence profile:
 a Voalack-owned alert receiving each kind → Zabalack makes no write and raises nothing.
 
-## 9. Open questions for the owner (asked after review)
+## 9. Owner decisions (12 October 2026, recorded in the Zabalack session)
 
-1. `expired`: no Zabbix write (default) or close the problem if manual close is enabled?
-0. Companion message policy: a missing message bit leaves the operation uncertain (default)
-   or is best-effort (ack/close counts as `ok` without its message)?
-2. Notes: accept deferral to 0.2.1 with a database-side committed capture (recommended), or
-   drop note delivery from the roadmap?
-3. `mirror_system_transitions` / `mirror_model_transitions`: keep both default false and let
-   each customer cohort opt in (recommended)?
-4. Suppression kinds: keep them fail-closed in 0.2.0 (recorded, not written; recommended), or
-   accept per cohort, in writing, the collateral risk that Zabalack's suppress/unsuppress may
-   overwrite or delete other users' manual suppression rows on pinned Zabbix 7.0.10
-   (`accept_suppression_collateral_risk`)? A platform-side fence does not exist; this is a
-   risk decision, not a technical option.
+| # | Question | Decision |
+|---|---|---|
+| Q1 | Suppression kinds (shelve, unshelve, timeout_unshelve) | **Record only, never write in 0.2.0.** No per-cohort risk acceptance is available in 0.2.0. |
+| Q2 | Companion message missing from the acceptance evidence of ack/close | **Uncertain; never resend.** Instance suspended, incident, read-only reconciliation (A6). |
+| Q3 | `expired` | **No Zabbix write**; recorded `skipped: expired_no_zabbix_counterpart`. |
+| Q4 | Notes | **Deferred to 0.2.1** with its own database-side committed-capture design and reviews. |
+| Q5 | Mirroring `system` (ack-timeout unack) and `model` (severity-rise reopen) transitions | **On by default; per-cohort opt-out.** Chosen by the owner over the recommended opt-in. Provenance and capture rules are unchanged. |
+
+These decisions are design inputs. They do not authorise implementation, release or deployment.
 
 ## 10. Prerequisites and ordering
 
@@ -421,8 +425,15 @@ them for us:
    `public.alerts` is `zabalack_capture`, calling a function in the `zabalack` schema; 0.2.0
    keeps that one trigger name, and its exact new definition is sent to the Voalack session
    before implementation. Zabalack DDL on a shared database is not scheduled while a Voalack
-   maintenance permit is open. Evidence: a static test over `sql/` for those names, and the
-   rendered `pg_get_triggerdef` captured on each lab run for the joint coexistence fixture.
+   maintenance permit is open. Evidence (Astra 3ebfe880): a static name scan over `sql/` is
+   supporting evidence only, because names cannot prove the absence of indirect references.
+   The qualifying evidence is the joint coexistence fixture, which resolves the actual trigger
+   function, its schema and its dependencies, and records the complete installed inventory on
+   `public.alerts` (trigger definitions via `pg_get_triggerdef`, enabled states, and the
+   relevant ACLs) for both projects. No native joint evidence exists yet.
+
+"Agreed with the Voalack session" in this section means the bounded design review only. It is
+not an implementation, runtime or project-wide approval by either project.
 
 No part of this amendment applies to 0.1.0b1; the tag proposal and frozen artifacts are
 unaffected.
