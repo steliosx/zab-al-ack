@@ -1,6 +1,8 @@
 # Design amendment — 0.2.0 action synchronisation (Alerta → Zabbix)
 
-Status: DRAFT r5 for review (Codex, Astra, Voalack session). r2 answered Codex design
+Status: DRAFT r6 for review (Codex, Astra, Voalack session). r6 makes the U1-U2 consistency
+corrections on r5 (1c07a6bc) and adds the §11 DDL invariant agreed with the Voalack session.
+Earlier history: r2 answered Codex design
 findings D1-D6 on r1 (6f3fe47a); r3 answered R1-R6 on r2 (da9a001e); r4 answered S1-S4 on r3
 (38766e9d); r5 answers T1-T5 on r4 (2b160814). **r5 changes the proposed scope: suppression
 kinds (shelve/unshelve, timeout_unshelve) fail closed and are not delivered in 0.2.0 unless the
@@ -31,11 +33,20 @@ housekeeping in `management/views.py:159-224`; Zabbix 7.0 `event.acknowledge`. A
 repeated `ack` on an acknowledged alert and a repeated `shelve` on a shelved alert locally
 (`InvalidAction`, alarm model lines 195-196 and 213-214), so those requests never reach capture.
 `timeout` restores `ack` when the previous status was `ack` (lines 173-177); only when the
-previous status was not `ack` does it open the alert. Zabbix skips a repeated operation on an
-event already in the target state (acknowledge on acknowledged, suppress on suppressed, close
-on resolved) and does **not** extend `suppress_until` on a second suppress.
+previous status was not `ack` does it open the alert. On pinned Zabbix 7.0.10 a repeated
+acknowledge on an acknowledged event and a close on a resolved event change nothing, which the
+no-op branch observes. Suppression has no such property: a suppress is queued whenever the
+event is not closed (`CEvent.php:1147-1151`) and the task updates an existing manual row's
+owner and expiry (`taskmanager_server.c:1121-1127`). No-write on an existing manual row is
+therefore Zabalack's integration **policy**, not a platform fact (U1).
 
-Every row has these outcomes, decided in this order by the worker (§6): **no-op** (a fresh
+Every row has these outcomes, decided in this order by the worker (§6). **Step 0, suppression
+policy admission (U2)**: for `shelve`, `unshelve` and `timeout_unshelve`, the worker first
+checks the cohort's versioned suppression risk policy bound in the intent. If the policy is
+absent, false, unbound or invalid, the operation settles `skipped:
+suppression_fence_unavailable` with no read-based no-op, no write, and no contribution to the
+suppression desired state; nothing below applies. Only an owner-admitted true policy reaches
+the steps below. Then: **no-op** (a fresh
 read-only `event.get` shows the bound event already in the target state → `ok_noop`, with the
 event snapshot as evidence, no write); **refused** (authoritative pre-write evidence that the
 write cannot apply) → `refused: <reason>`; **write** (exactly one `event.acknowledge`). For the
@@ -50,9 +61,9 @@ barrier (T1).
 | Human `ack` | `take_action`, `status_change` | open → ack (OPEN-1) | 2, or 6 with neutral message | `acknowledged == 1` | — (existing) |
 | Human `unack` | `take_action`, `status_change` | ack → previous status (UNACK-1) | 16 | `acknowledged == 0` | — |
 | Human `shelve` | `take_action`, `status_change` | open → shelved (SHL-1); ack → shelved (ACK-2) | 32, `suppress_until` **derived at delivery and by the verifier** from the committed history row: `history.update_time + history.timeout` (Alerta resolves the effective timeout inside `from_action`, `models/alert.py:649-657`, and stores it in the history row, `:684`; `post_action` does not receive it, R2). The signed intent carries only `duration_source = "history.timeout"`, never an absolute time. | a **manual** suppression row for the bound event (see §6, R5) | — |
-| Human `unshelve` | `take_action`, `status_change` | shelved → previous status (UNSHL-1) | 64, **only** when the exclusive-control fence holds (§6, S2) | no manual suppression row remains (maintenance suppression may keep `suppressed == 1`; that is not drift) | `skipped: foreign_manual_suppression` when a manual row by another user exists |
+| Human `unshelve` | `take_action`, `status_change` | shelved → previous status (UNSHL-1) | 64 only under an owner-admitted suppression risk policy (step 0), and then only when the best-effort snapshot conditions of §6 hold; by default `skipped: suppression_fence_unavailable`. Owner opt-in is risk acceptance, not a technical fence. | no manual suppression row remains (maintenance suppression may keep `suppressed == 1`; that is not drift) | `skipped: foreign_manual_suppression` when a manual row by another user exists |
 | Human `close` | `take_action`, `status_change` | * → closed (OPEN-3/ACK-3/SHL-2/BLK-1) | 1, or 5 with neutral message (message sent once; a repeat close is a no-op and sends no second message) | request accepted (new attributable history entry with bit 1, §6) and, as completion, `r_eventid != 0` on a later read | pre-write only: `manual_close_disabled` (`trigger.get` `manual_close == 0`); `no_write_rights` (`trigger.get` with `editable = true` returns nothing); `not_problem_event` (`value != 1` or `object != 0`). No JSON-RPC error code is ever a refusal (A6). |
-| Housekeeping `timeout`, previous status shelved | `take_action(action="timeout")`, `post_action` | shelved → open (OPEN-0) **or** → ack (ACK-0) when the status before shelving was ack | 64 only (never 16), under the same fence as `unshelve` | no manual suppression row remains | as `unshelve` |
+| Housekeeping `timeout`, previous status shelved | `take_action(action="timeout")`, `post_action` | shelved → open (OPEN-0) **or** → ack (ACK-0) when the status before shelving was ack | 64 only (never 16), under the same policy admission as `unshelve` (step 0; default `skipped: suppression_fence_unavailable`) | no manual suppression row remains | as `unshelve` |
 | Housekeeping `timeout`, previous status ack | `take_action(action="timeout")`, `post_action` | ack → open (OPEN-0) | 16 | `acknowledged == 0` | — |
 | Housekeeping `expired` | `take_action(action="expired")` | * → expired (EXP-0) | none by default (§9 Q1) | — | recorded `skipped: expired_no_zabbix_counterpart` |
 | Severity-change reopen (ACK-4) | `status_change` only (dedupe/correlate; no `take_action`) | ack → open | 16 | `acknowledged == 0` | — |
@@ -261,7 +272,9 @@ suppress task from creating a manual row. History timestamps are integer seconds
   (`acknowledgeid`, `userid`, `clock`, `action`, `message`, `suppress_until`); verify binding
   (trigger, cohort hosts) as today; (2) persist the **pre-send evidence watermark** for this
   attempt: the maximum `acknowledgeid` seen and the set of `acknowledgeid`s present (S1);
-  (3) no-op branch per kind (below) → `ok_noop` with the snapshot as evidence; (4) pre-write
+  (3) for suppression kinds, step-0 policy admission first (§2): absent/false/invalid policy →
+  `skipped: suppression_fence_unavailable`, stop; otherwise, and for every other kind, the
+  no-op branch per kind (below) → `ok_noop` with the snapshot as evidence; (4) pre-write
   refusal branch on authoritative data only; (5) exactly one `event.acknowledge` with the kind's
   bitmask and typed params; (6) **acceptance evidence**: a fresh read must show a **new**
   `acknowledges[]` entry with `acknowledgeid` greater than the watermark and not in the seen
@@ -337,7 +350,7 @@ aliases for `ack` so existing dashboards keep working.
 Deployment-lab cases per kind (r2): human unack; close with manual close enabled → resolved;
 close with manual close disabled → `refused: manual_close_disabled`; shelve → `suppressed == 1`
 with `suppress_until` from the effective timeout; unshelve → no manual row remains (maintenance suppression may persist); unshelve with a foreign
-manual row → `skipped: foreign_manual_suppression`; same-second ack/unack/ack with watermark
+manual row (risk policy true only) → `skipped: foreign_manual_suppression`; same-second ack/unack/ack with watermark
 claims; pre-existing matching history → uncertain, no resend; delayed close task completion
 observed by a later read (the operation stays `accepted` and blocks successors until then);
 shelve accepted then unshelve requested → unshelve waits; unsuppress accepted then shelve
@@ -345,8 +358,12 @@ requested → shelve waits; failed predecessor then valid successor → successo
 suppression kinds with the risk flag false → `skipped: suppression_fence_unavailable`;
 manual, maintenance-only and mixed-row suppression cases with the flag true; housekeeping
 timeout on an alert shelved from open → open + unsuppress; from ack → ack + unsuppress only;
-repeat shelve → Alerta rejection, nothing captured; suppress on an already suppressed event →
-`ok_noop`; ack/unack/ack sequence → three ordered operations; an uncertain earlier operation
+repeat shelve → Alerta rejection, nothing captured; shelve on an event with an existing manual
+row → with the risk policy false (default) `skipped: suppression_fence_unavailable`, with it
+true `ok_noop: existing_manual_suppression` (policy no-write); shelve on a maintenance-only
+suppressed event → default skipped, with the policy true a manual-row write; mixed manual and
+maintenance rows → default skipped, with the policy true policy no-write; missing or invalid
+policy binding → skipped (fail closed); ack/unack/ack sequence → three ordered operations; an uncertain earlier operation
 blocks later ones and suspends the instance; concurrent workers on one event → single
 admission; bulk status change → recorded skipped, no Zabbix call; model reopen with
 `mirror_model_transitions` false → `skipped: mirror_disabled`, with the flag true → unack with
@@ -399,6 +416,13 @@ them for us:
    repository outside the lab's own disposable database setup.
 4. The non-ACK paths (housekeeping/system actor, ingestion/model actor) carry their own
    source-path and transaction evidence; they inherit nothing from the ACK-path qualification.
+5. Zabalack never creates, alters or drops a trigger, function, grant or other object that
+   references a `voalack` or `voalack_guard` name or any `voalack_*` schema. Its only trigger on
+   `public.alerts` is `zabalack_capture`, calling a function in the `zabalack` schema; 0.2.0
+   keeps that one trigger name, and its exact new definition is sent to the Voalack session
+   before implementation. Zabalack DDL on a shared database is not scheduled while a Voalack
+   maintenance permit is open. Evidence: a static test over `sql/` for those names, and the
+   rendered `pg_get_triggerdef` captured on each lab run for the joint coexistence fixture.
 
 No part of this amendment applies to 0.1.0b1; the tag proposal and frozen artifacts are
 unaffected.
