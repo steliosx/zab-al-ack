@@ -3,9 +3,11 @@
 Status: r4.1. Codex gave AGREEMENT_DESIGN_ONLY on the exact r4 bytes (blob `59b07603`, message
 `20261012T190625Z-codex-omarchy-57446de1`); r4.1 applies only its nonblocking wording notes
 (§5, §6 item 4). Design agreement is not implementation, qualification or release approval,
-and does not accept any risk: the freshness residual (§6 item 4) and the no-binding window
-(§6 item 3) are OPEN owner/security decisions, and F1 is not closed. Voalack-side reviewer:
-Astra. Design only; no code.
+and did not accept any risk. r4.2 records the owner's decisions of 12 October 2026 on the two
+items Codex left open (owner-local record `OWNER-DECISIONS-ZABALACK-F1-20261012.md`): the
+freshness residual (§6 item 4) is **accepted for 0.2.0**, and the no-binding window (§6 item 3)
+is **accepted, with no backfill**. F1 is closed for 0.2.0 design purposes on those owner terms;
+the residual remains until ack-core 3b. Voalack-side reviewer: Astra. Design only; no code.
 r4 answers Codex CHANGES_REQUIRED_DESIGN_ONLY on r3 (`05d4ded7`, message
 `20261012T184943Z-codex-omarchy-11d057f9`): the freshness contract (F1-R1, still open) and the
 SQL history field name; the parent editorial notes are applied (parent r10 continues). Codex
@@ -112,7 +114,8 @@ the ingestion commits, and this design adds no trigger or grant on `public.alert
 contract (every committed ingestion recorded in commit order) needs the atomic
 ingestion-and-capture path of ack-core 3b, the same dependency as `model_unack` (3.5), or a
 broader trigger/grant boundary, which this design does not take. Until one exists, this
-residual is an open owner/security decision (§6 item 4). Design review does not admit it.
+residual was an open owner/security decision; the owner accepted it for 0.2.0 (§6 item 4,
+F1-D1). Design review did not admit it.
 
 Same-epoch conflict from two **authenticated** binds is handled by poison (3.2), never by
 overwrite.
@@ -290,8 +293,8 @@ Zabalack's input to it.
 ## 4. Behaviour changes and migration
 
 - Applies to the existing `ack` kind too. It closes the attribute-edit path of F1 for
-  release-one behaviour; the freshness residual of 3.1 stays an open owner/security decision
-  (§6 item 4), so this design does not claim F1 complete.
+  release-one behaviour. The freshness residual of 3.1 remains, accepted by the owner for
+  0.2.0 (§6 item 4, F1-D1); it is not removed until ack-core 3b.
 - Operator requirement: Zabbix must ingest through `POST /alert` with the mapped ingestion key,
   as both labs do. Ingestion through any webhook receiver yields no binding.
 - Alerts ingested before 013a, and alerts ingested only through webhooks, have no binding. An
@@ -299,8 +302,8 @@ Zabalack's input to it.
   the next authenticated `POST /alert` ingestion. A Zabbix problem that fired once and stays open
   may never be re-sent, so its alert stays un-acknowledgeable through Zabalack until it resolves
   and recurs. This design proposes **no backfill**, because a backfill would read the same
-  mutable attributes F1 distrusts. Accepting this window is an **open owner decision** (§6 item 3);
-  design review is not acceptance of it.
+  mutable attributes F1 distrusts. The owner accepted this window with no backfill
+  (§6 item 3, F1-D2).
 
 ## 5. Evidence plan (proposed, NOT_RUN)
 
@@ -350,16 +353,16 @@ Coexistence: a Voalack-class alert never receives a Zabalack binding and is pass
    discussion, which also owns the atomic ingestion path that `model_unack` needs (3.5).
 2. The plugin-side check (3.4.1) is kept alongside the database check, so the operator sees the
    reason without a capture row. The database check is the authority.
-3. **Owner decision (open, not yet asked):** accept the no-binding window for existing open
-   alerts and webhook-only alerts (§4), or ask for a bounded one-time backfill with its own trust
-   argument.
-4. **Owner/security decision (open, not yet asked): the freshness residual of 3.1.** A
+3. **Owner decision F1-D2 (12 October 2026): window accepted, no backfill.** Existing open
+   alerts and webhook-only alerts stay unbound until the next authenticated `POST /alert`
+   ingestion. The 0.2.0 release notes and upgrade guide must state this.
+4. **Owner decision F1-D1 (12 October 2026): weaker freshness accepted for 0.2.0.** The 0.2.0
+   release notes must state the residual below; ack-core 3b's atomic ingestion path removes it.
+   The residual as decided: a
    historical source can be selected again only after a later authenticated ingestion records no
    binding (failed or routed-away bind) or records one that a late bind of an earlier
    ingestion outranks (out-of-order concurrent binds), followed by an exact
    replay of the older epoch. That replay needs the application clock to produce a past
    microsecond value again; a clock that never repeats or goes back excludes it entirely. Every
-   kind is affected, including release-one `ack` once 013a is installed. Options: admit this
-   weaker freshness for 0.2.0 as a whole, or hold 0.2.0 implementation until ack-core 3b
-   provides the atomic ingestion path. F1 is not complete for release purposes until this is
-   decided.
+   kind is affected, including release-one `ack` once 013a is installed. The alternative not
+   chosen was to hold 0.2.0 implementation until ack-core 3b.
