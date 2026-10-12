@@ -1009,3 +1009,16 @@ pending), `copyright_and_third_party_review_approved`,
 `public_content_review_approved`, `pypi_namespace_confirmed`. The publication audit
 therefore still returns 2 ("inputs required"); no tag may be created until all are
 true. No tag, upload or deployment is authorized by this amendment.
+## R28 — CodeQL first completed run and triage (11 October 2026)
+
+After the repository became public, the CodeQL variable was set back to `true` and
+run 38157736793 on `main` 1a498f51 completed both analyses with ingestion accepted.
+Eight alerts, all in harness paths, are triaged in
+`docs/release/CODEQL_TRIAGE_20261011.md`: seven accepted-by-design or false positive
+(public evidence file modes required by R20; lab-only synthetic credential files;
+non-sensitive report printing) and one low-severity item fixed by PR #46 (explicit
+TLS 1.2 floor on the lab HTTPS server; the platform default was already TLS 1.2, so the
+alert concerned reliance on that default, not accepted TLS 1.0/1.1 traffic). Alerts are dismissed in GitHub only after the owner and the
+independent reviewer agree with the dispositions. This supersedes R24's "scheduled
+enablement" wording: CodeQL is enabled and has one completed run; the beta tag waits
+for the dispositions to be agreed. No tag, release or deployment is authorized here.
