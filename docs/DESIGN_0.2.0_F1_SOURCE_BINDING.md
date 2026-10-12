@@ -1,6 +1,11 @@
 # Design — F1 source binding at ingestion (0.2.0 prerequisite 1)
 
-Status: DRAFT r4 for review (Codex; Voalack-side reviewer Astra). Design only; no code.
+Status: r4.1. Codex gave AGREEMENT_DESIGN_ONLY on the exact r4 bytes (blob `59b07603`, message
+`20261012T190625Z-codex-omarchy-57446de1`); r4.1 applies only its nonblocking wording notes
+(§5, §6 item 4). Design agreement is not implementation, qualification or release approval,
+and does not accept any risk: the freshness residual (§6 item 4) and the no-binding window
+(§6 item 3) are OPEN owner/security decisions, and F1 is not closed. Voalack-side reviewer:
+Astra. Design only; no code.
 r4 answers Codex CHANGES_REQUIRED_DESIGN_ONLY on r3 (`05d4ded7`, message
 `20261012T184943Z-codex-omarchy-11d057f9`): the freshness contract (F1-R1, still open) and the
 SQL history field name; the parent editorial notes are applied (parent r10 continues). Codex
@@ -315,7 +320,9 @@ different authenticated sources → `not_latest`; the residual trace (Y commits 
 bind, or with `post_receive` routed away, then an exact replay of X's epoch) demonstrated and
 recorded as the open residual, not as a pass; both plugin and database checks; the chosen
 contract is shown, collision probability is not estimated; an ordinary replay with a distinct
-timestamp → `missing`; out-of-order binds never match the current epoch; exact round trip of `last_receive_time`
+timestamp → `missing`; a noncurrent late bind is unusable unless its exact epoch recurs (the residual of 3.1);
+concurrent late bind of an earlier ingestion X after a later Y, then an exact replay of X's
+epoch, recorded as the open residual alongside the failed and routed-away Y cases; exact round trip of `last_receive_time`
 (database → returned Python object → `bind_source` parameter → stored row → `read_binding`
 parameter and `NEW.last_receive_time` in the trigger) with microsecond equality and no time-zone
 conversion; `bind_source` reads and locks nothing
@@ -348,7 +355,8 @@ Coexistence: a Voalack-class alert never receives a Zabalack binding and is pass
    argument.
 4. **Owner/security decision (open, not yet asked): the freshness residual of 3.1.** A
    historical source can be selected again only after a later authenticated ingestion records no
-   binding (failed or routed-away bind, or out-of-order concurrent binds), followed by an exact
+   binding (failed or routed-away bind) or records one that a late bind of an earlier
+   ingestion outranks (out-of-order concurrent binds), followed by an exact
    replay of the older epoch. That replay needs the application clock to produce a past
    microsecond value again; a clock that never repeats or goes back excludes it entirely. Every
    kind is affected, including release-one `ack` once 013a is installed. Options: admit this
