@@ -1,6 +1,6 @@
 # Design — F1 source binding at ingestion (0.2.0 prerequisite 1)
 
-Status: r4.1. Codex gave AGREEMENT_DESIGN_ONLY on the exact r4 bytes (blob `59b07603`, message
+Status: r4.2. Codex gave AGREEMENT_DESIGN_ONLY on the exact r4 bytes (blob `59b07603`, message
 `20261012T190625Z-codex-omarchy-57446de1`); r4.1 applies only its nonblocking wording notes
 (§5, §6 item 4). Design agreement is not implementation, qualification or release approval,
 and did not accept any risk. r4.2 records the owner's decisions of 12 October 2026 on the two
