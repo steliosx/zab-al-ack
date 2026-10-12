@@ -3,7 +3,7 @@
 Status: ADOPTED at r9 (PR #48, merged 12 October 2026 as main bbdb462d). r10 is an amendment
 pending review: it aligns this design with the F1 source-binding design
 (`docs/DESIGN_0.2.0_F1_SOURCE_BINDING.md`), which keeps `model_unack` unadmitted in 0.2.0
-(§2, §3, §4, §4.3, §8, §9 Q5, §10), and makes two editorial fixes (this header, Appendix A
+(§1, §2, §3, §4, §4.3, §8, §9 Q5, §10), and makes two editorial fixes (this header, Appendix A
 pointer). §11 is unchanged by r10.
 
 r8 made the owner's record-only suppression decision (§9 Q1) unconditional
@@ -33,9 +33,11 @@ a design. Nothing here changes the frozen 0.1.0b1 candidate.
 | Decision | Value |
 |---|---|
 | Direction | Alerta → Zabbix only. No import of Zabbix operations. |
-| Alerta actions in scope | `ack` (existing), `unack`, `close`, Alerta's automatic `timeout` on an acknowledged alert (ack-timeout, `system` actor), and severity-change reopen (correlate path, `model` actor). **Suppression kinds** (`shelve`, `unshelve`, `timeout_unshelve`) are **recorded only, never written, in 0.2.0** (owner decision §9 Q1): they settle `skipped: suppression_fence_unavailable` because pinned Zabbix 7.0.10 offers no fence for other users' suppression (T2). **Notes are deferred to 0.2.1** (owner decision §9 Q4; D1, §4.4). `expired` produces no Zabbix write (owner decision §9 Q3). |
+| Alerta actions in scope | `ack` (existing), `unack`, `close`, Alerta's automatic `timeout` on an acknowledged alert (ack-timeout, `system` actor), and severity-change reopen (correlate path, `model` actor; **diagnostic only in 0.2.0**, never
+written, §4.3 and F1 design §3.5). **Suppression kinds** (`shelve`, `unshelve`, `timeout_unshelve`) are **recorded only, never written, in 0.2.0** (owner decision §9 Q1): they settle `skipped: suppression_fence_unavailable` because pinned Zabbix 7.0.10 offers no fence for other users' suppression (T2). **Notes are deferred to 0.2.1** (owner decision §9 Q4; D1, §4.4). `expired` produces no Zabbix write (owner decision §9 Q3). |
 | Zabbix operations | acknowledge (2, or 6 with message), unacknowledge (16), close (1, or 5 with message). Suppress (32) and unsuppress (64) are **not sent in 0.2.0** (step 0, §9 Q1; future specification in Appendix A). Message (4) is used only as the companion of ack/close, never alone in 0.2.0. Not in scope: severity (8), cause/symptom rank (128/256). |
-| Entry paths | `PUT /alert/<id>/action` and Alerta housekeeping (`GET /management/housekeeping`, which runs `process_action` with `timeout`/`expired`); the dedupe/correlate ingestion path for severity-change reopen. Out of scope, recorded as skipped: direct `PUT /alert/<id>/status`, every `/_bulk/*` route, tag/attribute edits, `DELETE /alert/<id>`. |
+| Entry paths | `PUT /alert/<id>/action` and Alerta housekeeping (`GET /management/housekeeping`, which runs `process_action` with `timeout`/`expired`); the dedupe/correlate ingestion path for severity-change reopen (diagnostic capture only in
+0.2.0, §4.3). Out of scope, recorded as skipped: direct `PUT /alert/<id>/status`, every `/_bulk/*` route, tag/attribute edits, `DELETE /alert/<id>`. |
 | Failure semantics | Asynchronous with projection for every kind, exactly as release one: Alerta applies the action; the worker delivers; the outcome (`ok`, `refused` with reason, `uncertain`) is projected into alert attributes. No synchronous Zabbix pre-checks. |
 | Sources | Zabbix-sourced alerts only (`source_system == "zabbix"`, one-to-one cohorts). |
 
@@ -130,9 +132,10 @@ Cohort policy gains `mirror_system_transitions` and `mirror_model_transitions`. 
 §9 Q5: both default **true**; a cohort may set either to false (opt-out). This widens the
 earlier recommended default deliberately and explicitly; it does not relax any evidence rule:
 a `model` intent is still admitted only with the committed correlate provenance of this
-section, and a `system` intent only with the housekeeping capture predicate of §4. The flags
-For `model`, the flag has no executable effect in 0.2.0: `model_unack` is not admitted
-(F1 design §3.5) whatever its value. The flags
+section, and a `system` intent only with the housekeeping capture predicate of §4.
+In 0.2.0, `mirror_model_transitions` has no executable effect: `model_unack` is not admitted
+(F1 design §3.5) whatever its value, and the enforcement below applies to `model` intents only
+on the future atomic ingestion path. `mirror_system_transitions` is enforced now. The flags
 are enforced twice: at admission (the capture trigger refuses the kind when the flag is
 false for the cohort revision bound in the intent) and at delivery (the worker re-reads the
 flag for the bound cohort revision and records `skipped: mirror_disabled` instead of writing).
@@ -366,7 +369,7 @@ client-level rejection of bitmasks 32 and 64; housekeeping timeout on an alert s
 open → open in Alerta, no Zabbix write; from ack → ack in Alerta, no Zabbix write; repeat shelve
 → Alerta rejection, nothing captured; ack/unack/ack sequence → three ordered operations; an
 uncertain earlier operation blocks later ones and suspends the instance; concurrent workers on
-one event → single admission; bulk status change → recorded skipped, no Zabbix call; model reopen with
+one event → single admission; bulk status change → recorded skipped, no Zabbix call;
 model reopen → diagnostic capture `skipped: source_binding_unavailable_at_ingestion` with no
 Zabbix call, for `mirror_model_transitions` true, false, absent and invalid (F1 design §3.5);
 `mirror_system_transitions` at its default (true) → unack on an ack-timeout, and with the cohort

@@ -1,11 +1,11 @@
 # Design — F1 source binding at ingestion (0.2.0 prerequisite 1)
 
-Status: DRAFT r3 for review (Codex; Voalack-side reviewer Astra). Design only; no code.
-r3 answers Codex CHANGES_REQUIRED_DESIGN_ONLY on r2 (`49425c07`, message
-`20261012T182349Z-codex-omarchy-7beacad5`): F1-R1-r2 (epoch freshness is not unconditional) and
-F1-R2-r2 (one diagnostic-only `model_unack` outcome), with the parent design amended in the same
-commit (parent r10). Codex closed F1-R3 at design level on r2 and accepted the `model_unack`
-limitation in principle. r2 answered r1 (`ba3ad9d8`, message
+Status: DRAFT r4 for review (Codex; Voalack-side reviewer Astra). Design only; no code.
+r4 answers Codex CHANGES_REQUIRED_DESIGN_ONLY on r3 (`05d4ded7`, message
+`20261012T184943Z-codex-omarchy-11d057f9`): the freshness contract (F1-R1, still open) and the
+SQL history field name; the parent editorial notes are applied (parent r10 continues). Codex
+closed F1-R3 (on r2) and F1-R2-r2 (on r3) at design level. r3 answered r2 (`49425c07`, message
+`20261012T182349Z-codex-omarchy-7beacad5`); r2 answered r1 (`ba3ad9d8`, message
 `20261012T172209Z-codex-omarchy-877affd9`).
 Parent design: `docs/DESIGN_0.2.0_ACTION_SYNC.md` §10, prerequisite 1. Owner direction of
 12 October 2026: 0.2.0 work may proceed before the 0.1.0b1 tag; the frozen 0.1.0b1 candidate
@@ -67,37 +67,47 @@ An ingestion epoch is the pair (`last_receive_id`, `last_receive_time`) of the s
 Only ingestion writes it; the caller cannot choose the time. A replayed receive id **normally**
 yields a new epoch, but this design does **not** assume that it always does (§2).
 
-**Selection rule (newest binding only).** A binding row is usable for an alert only when all of
-these hold:
+**Selection rule (latest recorded binding only).** Each binding row carries `bind_seq`, a value
+from a Zabalack-owned sequence assigned inside `bind_source` (3.2). A binding row is usable for
+an alert only when all of these hold:
 1. it matches the row's current epoch exactly (`alert_id`, `last_receive_id`,
    `last_receive_time`);
 2. its `state` is `bound`;
-3. its `last_receive_time` is strictly greater than that of every other `source_bindings` row
-   for the same alert, `bound` or `poisoned`. A tie on the greatest time fails closed.
+3. its `bind_seq` is greater than that of every other `source_bindings` row for the same alert,
+   `bound` or `poisoned` (it is the latest **recorded** binding).
 
-**Guarantee.** An action is delivered only to the source recorded by the **newest
-authenticated `POST /alert` ingestion** of that alert (by server receive time), and only while
-the alert row carries exactly that ingestion's epoch. This holds for every ingestion path,
-including undeclared and unauthenticated ingestions that never call `bind_source`:
-- An undeclared ingestion with a fresh epoch matches no row → `source_binding_missing`.
-- An undeclared ingestion that reproduces an **older** bound epoch (known id and a recurring
-  time) matches a row that is not the newest → `source_binding_not_newest`. This closes the r2
-  trace "replay after an intervening legitimate source change".
-- Clock steps or skew between servers can make a fresh authenticated epoch not the newest; the
-  result is `source_binding_not_newest` or `source_binding_tie`, which fail closed. Clock
-  behaviour affects availability only, never which source is selected.
+r3 ranked rows by `last_receive_time`. That follows the application clock, not commit order, so
+a backward clock step could leave an older source ranked first (Codex trace on r3: X at t20,
+then authenticated Y at t10, then a replay of X's epoch). `bind_seq` ranks by the order in which
+bindings were recorded instead, so in that trace Y outranks X and the replay fails
+`source_binding_not_latest`.
 
-**Residual, stated exactly.** An undeclared ingestion that reproduces the epoch of the newest
-authenticated ingestion (same receive id and the same microsecond time value) is not
-invalidated: no hand-off exists, so `bind_source` is not called and the same-epoch poison rule
-of 3.2 does not fire. The selected source is then the source of that newest authenticated
-ingestion, which is the source the alert was legitimately bound to immediately before. No path
-selects an older binding, another alert's binding or an attribute-supplied source. This design
-proposes that this residual needs no owner risk admission, because F1's property (source from
-authenticated ingestion, not from mutable attributes) still holds. If the reviewer requires
-admission, it becomes a queued owner question (§6 item 4), not a design change. Removing the
-residual entirely would need a database-generated per-ingestion value, which requires a new
-trigger or grant on `public.alerts`, outside this design's boundary.
+**Guarantee (weaker than "latest authenticated ingestion"; stated exactly).** An action is
+delivered only to a source that an authenticated `POST /alert` ingestion of that alert recorded,
+only when that binding is the latest **recorded** binding of the alert, and only while the
+alert row carries exactly that binding's epoch. Attribute edits alone can never select a source.
+Undeclared or unauthenticated ingestions with a fresh epoch match no row
+(`source_binding_missing`); a replay of an epoch whose binding is not the latest recorded one
+fails (`source_binding_not_latest`).
+
+**Residual (open freshness weakening; needs owner/security admission, not decided here).**
+The latest recorded binding is not always the latest authenticated ingestion in commit order.
+A historical source X can be selected again when all of the following happen:
+1. a later authenticated ingestion of the same alert (source Y) commits, and then either
+   (a) Y records **no** binding, because its bind failed or its `post_receive` was routed away,
+   or (b) Y records a binding, but a late bind of X's earlier ingestion (a concurrent
+   out-of-order pair) is recorded after it and outranks it; and
+2. an undeclared ingestion then reproduces X's epoch exactly: X's exposed receive id **and** the
+   same microsecond application time value. This needs the application clock to produce a past
+   microsecond value again; an application clock that never repeats or goes back excludes this
+   step, and therefore the residual, entirely; and
+3. the alert's attributes match X (kept by the attribute merge or restored by an edit).
+No ingestion record exists for step 1 inside this design's boundary: the binding is written after
+the ingestion commits, and this design adds no trigger or grant on `public.alerts`. A complete
+contract (every committed ingestion recorded in commit order) needs the atomic
+ingestion-and-capture path of ack-core 3b, the same dependency as `model_unack` (3.5), or a
+broader trigger/grant boundary, which this design does not take. Until one exists, this
+residual is an open owner/security decision (§6 item 4). Design review does not admit it.
 
 Same-epoch conflict from two **authenticated** binds is handled by poison (3.2), never by
 overwrite.
@@ -116,6 +126,7 @@ New tables in migration 013a (forward-only):
 | `customer text NOT NULL` | from the ingested alert |
 | `zabbix_instance`, `zabbix_event_id`, `zabbix_trigger_id` | validated source keys; `zabbix_event_id` normalised exactly as `capture_ack()` does (`left(..., 20)`) |
 | `state text NOT NULL` | `bound` or `poisoned` |
+| `bind_seq bigint NOT NULL UNIQUE` | next value of the Zabalack-owned sequence `zabalack.binding_seq`, taken inside `bind_source`; never supplied by a caller |
 | `bound_at timestamptz NOT NULL` | `clock_timestamp()` |
 
 A row's key and source values are never changed after insert. A repeat insert with the same key
@@ -128,15 +139,16 @@ keeps the original values and sets `state` to `poisoned`; a poisoned epoch fails
 `idempotent_repeat`, `conflict_poisoned`), and time. It holds no source text, no SQL and no
 attribute values.
 
-Retention never removes the newest `source_bindings` row of an alert (by `last_receive_time`),
-and never removes a `poisoned` row that is newer than the newest `bound` row.
+Retention never removes the latest `source_bindings` row of an alert (by `bind_seq`), and never
+removes a `poisoned` row whose `bind_seq` is greater than that of any `bound` row it outranks.
 
 Only `zabalack.bind_source(...)` and `zabalack.read_binding(alert_id, last_receive_id,
 last_receive_time)` reach these tables. Both are `SECURITY DEFINER`, `search_path = pg_catalog,
 zabalack`, with `PUBLIC` revoked, granted to the Alerta application role only (3.6). No role has
 direct table grants. `bind_source` does not read `public.alerts`: the epoch it receives is checked
-at use (3.4), not at bind time. A late or out-of-order bind creates a row with an older time,
-which is never the newest when a newer binding exists.
+at use (3.4), not at bind time. A bind whose epoch is no longer current creates a row that
+never matches the current epoch; if it outranks the current epoch's binding, the current
+epoch fails `source_binding_not_latest` until the next authenticated ingestion (fail closed).
 
 ### 3.3 Writing the binding (single-use hand-off on `POST /alert` only)
 
@@ -167,8 +179,8 @@ Consequences:
 - A failure between the hooks leaves a slot that the next call clears or the request discards.
 
 Unbound ingestion: an ingestion that moves the epoch without an authenticated hand-off, including
-a replay of a known receive id with no source declaration, finds either no row for its epoch or,
-in the residual case of 3.1, only the newest authenticated row. In every other case each check
+a replay of a known receive id with no source declaration, finds no usable row for its epoch,
+except in the residual case of 3.1. In every other case each check
 in 3.4 fails closed until the next authenticated `POST /alert` ingestion. This is a fail-closed
 denial path only for principals that can already post alerts for that customer.
 
@@ -187,17 +199,16 @@ Two checks, both fail closed:
 1. **Plugin, before staging** (`take_action`, every admitted kind): call `read_binding(alert.id,
    alert.last_receive_id, alert.last_receive_time)`, which applies the selection rule of 3.1 and
    returns one outcome. No row → `skipped: source_binding_missing`; `poisoned` →
-   `skipped: source_binding_conflict`; not the newest → `skipped: source_binding_not_newest`;
-   tie on the newest time → `skipped: source_binding_tie`; attribute snapshot differs from the
-   row → `skipped: source_binding_mismatch`. Stage nothing in those cases. The intent's `source` is
+   `skipped: source_binding_conflict`; not the latest recorded binding →
+   `skipped: source_binding_not_latest`; attribute snapshot differs from the row →
+   `skipped: source_binding_mismatch`. Stage nothing in those cases. The intent's `source` is
    taken **from the binding**, never from attributes.
 2. **Database, at capture** (body of `capture_ack()`, called by the existing `zabalack_capture`
    trigger): the intent's `source` must equal the row that the selection rule of 3.1 selects for
    (`NEW.id`, `NEW.last_receive_id`, `NEW.last_receive_time`). Otherwise the capture is recorded
    exactly as today's `binding_mismatch` path records it (`failed`, outbox reason
    `failed_intent_invalid:`), with `diagnostic_reason` `source_binding_missing`,
-   `source_binding_conflict`, `source_binding_not_newest`, `source_binding_tie` or
-   `source_binding_mismatch`, and records no generation. This check does not depend on the plugin.
+   `source_binding_conflict`, `source_binding_not_latest` or `source_binding_mismatch`, and records no generation. This check does not depend on the plugin.
 
 The `zabalack_capture` trigger **definition** (name, timing, `WHEN` clause) is unchanged by 013a;
 only the function body changes. The exact rendered definitions are still sent to the Voalack
@@ -221,9 +232,10 @@ ack-core 3b transaction-model work. Until then it has exactly one outcome, defin
   transition: no intent, no signature, no marker and no generation, whatever the value of
   `mirror_model_transitions` (true, false, absent or invalid).
 - Recognition: the shape of alarm-model ACK-4 on the stored row: `OLD.status = 'ack'`,
-  `NEW.status = 'open'`, and the newest history row has `change_type = 'severity'`
-  (`ChangeType.severity`, `models/enums.py:161`; written by correlate,
-  `models/alert.py:355-379`). Recognition does not read any binding, attribute-supplied intent,
+  `NEW.status = 'open'`, and `(NEW.history[1]).type = 'severity'`. In SQL the history composite
+  field is `type` (Alerta `sql/schema.sql:5-15`); `change_type` is only the Python `History`
+  argument that fills it (`ChangeType.severity`, `models/enums.py:161`; written by correlate,
+  `models/alert.py:365-375`). There is no SQL field `history.change_type`. Recognition does not read any binding, attribute-supplied intent,
   marker or provenance element.
 - Precedence, in the capture function: (1) the existing capture-bypass branch keeps first
   place, unchanged (`skipped_capture_bypass`); (2) then this branch; (3) only after it, every
@@ -263,15 +275,18 @@ table and §4.3, §8 lab expectations, §9 Q5 note, §10 item 1), so the two doc
 
 ### 3.7 Ownership
 
-With 3.4, ownership of an alert for Zabalack purposes is a current `bound` row for the alert's
-exact epoch, written from an authenticated `POST /alert` ingestion, not the editable
+With 3.4, ownership of an alert for Zabalack purposes is a `bound` row that matches the alert's
+exact current epoch and is the alert's latest recorded binding (3.1), written from an
+authenticated `POST /alert` ingestion, not the editable
 `source_system` attribute. This is the server-controlled per-alert class the coexistence review
 asked for. The single-owner rule across providers remains the ack-core 3b design; this binding is
 Zabalack's input to it.
 
 ## 4. Behaviour changes and migration
 
-- Applies to the existing `ack` kind too, closing F1 for release-one behaviour.
+- Applies to the existing `ack` kind too. It closes the attribute-edit path of F1 for
+  release-one behaviour; the freshness residual of 3.1 stays an open owner/security decision
+  (§6 item 4), so this design does not claim F1 complete.
 - Operator requirement: Zabbix must ingest through `POST /alert` with the mapped ingestion key,
   as both labs do. Ingestion through any webhook receiver yields no binding.
 - Alerts ingested before 013a, and alerts ingested only through webhooks, have no binding. An
@@ -291,12 +306,16 @@ between hooks; rerouting that omits either hook; a second post hook returning an
 source from the binding; `post_receive` returns `None`.
 
 SQL (native lab): insert; idempotent repeat; same-epoch conflict → `poisoned` and every check
-fails; selection rule: newest bound row usable, older bound row → `not_newest`, equal newest
-times → `tie`, newer poisoned row blocks an older bound row; retention keeps the newest row;
-forced equal timestamp with a reused receive id on undeclared dedupe and on undeclared
-correlate, with the same and with different attributes, after an intervening bound source, and
-with pre or post routing missing (the chosen contract is shown, collision probability is not
-estimated); an ordinary replay with a distinct timestamp → `missing`; out-of-order binds never match the current epoch; exact round trip of `last_receive_time`
+fails; selection rule: latest recorded bound row usable, earlier bound row → `not_latest`, a
+later poisoned row blocks an earlier bound row; `bind_seq` taken only inside `bind_source`;
+retention keeps the latest row; forced equal timestamp with a reused receive id on undeclared
+dedupe and on undeclared correlate, with the same and with different attributes; monotonic
+X → Y → replay of X's epoch → `not_latest`; backward or skewed clock t20 → t10 → t20 with
+different authenticated sources → `not_latest`; the residual trace (Y commits with a failed
+bind, or with `post_receive` routed away, then an exact replay of X's epoch) demonstrated and
+recorded as the open residual, not as a pass; both plugin and database checks; the chosen
+contract is shown, collision probability is not estimated; an ordinary replay with a distinct
+timestamp → `missing`; out-of-order binds never match the current epoch; exact round trip of `last_receive_time`
 (database → returned Python object → `bind_source` parameter → stored row → `read_binding`
 parameter and `NEW.last_receive_time` in the trigger) with microsecond equality and no time-zone
 conversion; `bind_source` reads and locks nothing
@@ -327,6 +346,12 @@ Coexistence: a Voalack-class alert never receives a Zabalack binding and is pass
 3. **Owner decision (open, not yet asked):** accept the no-binding window for existing open
    alerts and webhook-only alerts (§4), or ask for a bounded one-time backfill with its own trust
    argument.
-4. **Residual of 3.1 (for the reviewer):** an exact-epoch collision with the newest
-   authenticated ingestion keeps that ingestion's source selected. Proposed: no owner admission
-   needed. If the reviewer requires admission, this becomes an owner question.
+4. **Owner/security decision (open, not yet asked): the freshness residual of 3.1.** A
+   historical source can be selected again only after a later authenticated ingestion records no
+   binding (failed or routed-away bind, or out-of-order concurrent binds), followed by an exact
+   replay of the older epoch. That replay needs the application clock to produce a past
+   microsecond value again; a clock that never repeats or goes back excludes it entirely. Every
+   kind is affected, including release-one `ack` once 013a is installed. Options: admit this
+   weaker freshness for 0.2.0 as a whole, or hold 0.2.0 implementation until ack-core 3b
+   provides the atomic ingestion path. F1 is not complete for release purposes until this is
+   decided.
