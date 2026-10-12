@@ -1,6 +1,12 @@
 # Design amendment — 0.2.0 action synchronisation (Alerta → Zabbix)
 
-Status: DRAFT r8. r8 makes the owner's record-only suppression decision (§9 Q1) unconditional
+Status: ADOPTED at r9 (PR #48, merged 12 October 2026 as main bbdb462d). r10 is an amendment
+pending review: it aligns this design with the F1 source-binding design
+(`docs/DESIGN_0.2.0_F1_SOURCE_BINDING.md`), which keeps `model_unack` unadmitted in 0.2.0
+(§2, §3, §4, §4.3, §8, §9 Q5, §10), and makes two editorial fixes (this header, Appendix A
+pointer). §11 is unchanged by r10.
+
+r8 made the owner's record-only suppression decision (§9 Q1) unconditional
 throughout the 0.2.0 contract (Codex V1 on r7, 18318b84). Codex gave AGREEMENT_DESIGN_ONLY on r6
 (26d7197f); Astra's bounded coexistence review of r5/r6 (note 3ebfe880, peer-relayed) found
 §11.2 and §11.5 consistent at design level. The owner's five §9 decisions of 12 October 2026
@@ -12,11 +18,13 @@ reachable in 0.2.0.
 Revision history (historical): r2 answered Codex findings D1-D6 on r1 (6f3fe47a); r3 answered
 R1-R6 on r2 (da9a001e); r4 answered S1-S4 on r3 (38766e9d); r5 answered T1-T5 on r4 (2b160814)
 and first made suppression fail closed; r6 answered U1-U2 on r5 (1c07a6bc); r7 recorded the
-owner decisions on r6. Pinned Zabbix 7.0.10 source (`CEvent.php`, `taskmanager_server.c`)
+owner decisions on r6; r8 made suppression record-only throughout; r9 applied Codex's
+editorial notes on r8. Pinned Zabbix 7.0.10 source (`CEvent.php`, `taskmanager_server.c`)
 governs the suppression facts, not manual prose.
 Each section names the findings it closes. Source facts cite the pinned Alerta 9.1.0 package
-and the exact-head Zabalack sources. Implementation starts after the
-0.1.0b1 tag (owner decision). Owner scope decisions of 11 October 2026 are in the owner-local
+and the exact-head Zabalack sources. Owner direction of 12 October 2026 supersedes the earlier
+"implementation starts after the 0.1.0b1 tag": 0.2.0 work may proceed before the tag, on
+branches, after review. Owner scope decisions of 11 October 2026 are in the owner-local
 record `OWNER-DECISIONS-ZABALACK-ACTION-EXPANSION-20261011.md`; this document turns them into
 a design. Nothing here changes the frozen 0.1.0b1 candidate.
 
@@ -72,7 +80,7 @@ barrier (T1).
 | Housekeeping `timeout`, previous status shelved | `take_action(action="timeout")`, `post_action` | shelved → open (OPEN-0) **or** → ack (ACK-0) when the status before shelving was ack | **none in 0.2.0** (step 0); never 16, so a restored ack stays acknowledged in Zabbix | — | settles `skipped: suppression_fence_unavailable` |
 | Housekeeping `timeout`, previous status ack | `take_action(action="timeout")`, `post_action` | ack → open (OPEN-0) | 16 | `acknowledged == 0` | — |
 | Housekeeping `expired` | `take_action(action="expired")` | * → expired (EXP-0) | none (owner decision §9 Q3) | — | recorded `skipped: expired_no_zabbix_counterpart` |
-| Severity-change reopen (ACK-4) | `status_change` only (dedupe/correlate; no `take_action`) | ack → open | 16 | `acknowledged == 0` | — |
+| Severity-change reopen (ACK-4) | `status_change` only (dedupe/correlate; no `take_action`) | ack → open | **none in 0.2.0** (F1 design §3.5); 16 only after a separately reviewed atomic ingestion path (ack-core 3b) | — | diagnostic capture `skipped: source_binding_unavailable_at_ingestion` |
 | Repeated `ack` on ack, repeated `shelve` on shelved | `take_action` runs first (`process_action` precedes `from_action`), then `from_action` raises `InvalidAction` and nothing is committed | none | none | — | no successful capture: the staged intent never meets a committed history row and expires; recorded `skipped: local_rejection` if the pre-stage left a trace |
 | `open`, `assign`, unknown action strings | `take_action` | per model | none | — | `skipped: no_zabbix_counterpart` |
 | Direct `/status`, bulk routes, delete, tag/attribute edits | `status_change` / none | varies | none | — | `skipped: entry_path_out_of_scope` (bulk tag/attributes/delete fire no hooks at all; nothing to record) |
@@ -123,6 +131,8 @@ Cohort policy gains `mirror_system_transitions` and `mirror_model_transitions`. 
 earlier recommended default deliberately and explicitly; it does not relax any evidence rule:
 a `model` intent is still admitted only with the committed correlate provenance of this
 section, and a `system` intent only with the housekeeping capture predicate of §4. The flags
+For `model`, the flag has no executable effect in 0.2.0: `model_unack` is not admitted
+(F1 design §3.5) whatever its value. The flags
 are enforced twice: at admission (the capture trigger refuses the kind when the flag is
 false for the cohort revision bound in the intent) and at delivery (the worker re-reads the
 flag for the bound cohort revision and records `skipped: mirror_disabled` instead of writing).
@@ -146,7 +156,7 @@ future-only and live in Appendix A.
 | `close` | `PUT /alert/<id>/action`, action `close` | `close`, status | `closed` | human |
 | `timeout_unshelve` | `GET /management/housekeeping`, action `timeout`, status before = `shelved` | `timeout`, status | `open` or `ack` | system |
 | `timeout_unack` | `GET /management/housekeeping`, action `timeout`, status before = `ack` | `timeout`, status | `open` | system |
-| `model_unack` | `POST /alert` correlate path only, status before = `ack` | one `severity` row, `status = open`, `update_time == create_time`, preceding row `status = ack`, severity rise | `open` | model |
+| `model_unack` (**not admitted in 0.2.0**; diagnostic only, F1 design §3.5) | `POST /alert` correlate path only, status before = `ack` | one `severity` row, `status = open`, `update_time == create_time`, preceding row `status = ack`, severity rise | `open` | model |
 
 ### 4.1 Request path (`/action`)
 Unchanged mechanics: stage an unsigned intent in `take_action`; sign the binding in the final
@@ -160,6 +170,13 @@ as in 4.1; the capture predicate requires the `timeout` history row. The coexist
 (R26) applies unchanged.
 
 ### 4.3 Status-change-only path (`model_unack`)
+**0.2.0 (r10):** this path is not admitted. The binding that F1 requires is written after the
+ingestion statement commits, so a capture inside that statement cannot find it. The
+`status_change` hook stages nothing for this transition, and the 0.2.0 capture function records
+one diagnostic outcome, `skipped: source_binding_unavailable_at_ingestion`, with its precedence
+and record defined in the F1 design §3.5. The rest of this section and the `model_unack`
+provenance rules in §3 are the specification for the future atomic ingestion path.
+
 Severity-change reopen reaches plugins only through `status_change` during `POST /alert`
 (correlate path; the hook receives the existing alert with the proposed status). When the
 previous status is `ack`, the new status `open`, the alert Zabalack-owned and
@@ -350,9 +367,10 @@ open → open in Alerta, no Zabbix write; from ack → ack in Alerta, no Zabbix 
 → Alerta rejection, nothing captured; ack/unack/ack sequence → three ordered operations; an
 uncertain earlier operation blocks later ones and suspends the instance; concurrent workers on
 one event → single admission; bulk status change → recorded skipped, no Zabbix call; model reopen with
-`mirror_model_transitions` at its default (true) → unack with history provenance; with the
-cohort opt-out (false) → `skipped: mirror_disabled`; the same pair for
-`mirror_system_transitions` on an ack-timeout; mutated actor/kind/mask/params → verifier refusal.
+model reopen → diagnostic capture `skipped: source_binding_unavailable_at_ingestion` with no
+Zabbix call, for `mirror_model_transitions` true, false, absent and invalid (F1 design §3.5);
+`mirror_system_transitions` at its default (true) → unack on an ack-timeout, and with the cohort
+opt-out (false) → `skipped: mirror_disabled`; mutated actor/kind/mask/params → verifier refusal.
 Native-lab SQL cases for migration 013 and the kind-aware fences. Coexistence profile:
 a Voalack-owned alert receiving each kind → Zabalack makes no write and raises nothing.
 
@@ -364,14 +382,15 @@ a Voalack-owned alert receiving each kind → Zabalack makes no write and raises
 | Q2 | Companion message missing from the acceptance evidence of ack/close | **Uncertain; never resend.** Instance suspended, incident, read-only reconciliation (A6). |
 | Q3 | `expired` | **No Zabbix write**; recorded `skipped: expired_no_zabbix_counterpart`. |
 | Q4 | Notes | **Deferred to 0.2.1** with its own database-side committed-capture design and reviews. |
-| Q5 | Mirroring `system` (ack-timeout unack) and `model` (severity-rise reopen) transitions | **On by default; per-cohort opt-out.** Chosen by the owner over the recommended opt-in. Provenance and capture rules are unchanged. |
+| Q5 | Mirroring `system` (ack-timeout unack) and `model` (severity-rise reopen) transitions | **On by default; per-cohort opt-out.** Chosen by the owner over the recommended opt-in. Provenance and capture rules are unchanged. r10: the policy is recorded; it is not current execution admission for `model_unack`, which stays unadmitted in 0.2.0 (F1 design §3.5). |
 
 These decisions are design inputs. They do not authorise implementation, release or deployment.
 
 ## 10. Prerequisites and ordering
 
 1. Ownership binding at ingestion (coexistence F1 / Astra): required before adding kinds,
-   because every new kind widens the attack surface of attribute-based ownership.
+   because every new kind widens the attack surface of attribute-based ownership. Design:
+   `docs/DESIGN_0.2.0_F1_SOURCE_BINDING.md`.
 2. alerta-ack-core shared install (3b) for the hooks this design adds (housekeeping-path
    `take_action`, ingestion-path `status_change`).
 3. Then migration 013, RPC, plugin, projection, lab cases, release 0.2.0.
@@ -423,7 +442,8 @@ release would need if the owner later records, per cohort and in writing, accept
 collateral risk described in §6 (`accept_suppression_collateral_risk`). That acceptance would be
 risk acceptance, not a technical fence.
 
-- Writes: shelve → 32 with `suppress_until` derived from the captured history snapshot (§4);
+- Writes: shelve → 32 with `suppress_until` derived from the captured history snapshot (see the
+  duration-snapshot bullet at the end of this appendix);
   unshelve and timeout_unshelve → 64. Both are task-executed: `accepted`, then completion on a
   later read, holding the event barrier meanwhile (§5).
 - Policy: shelve writes only when the fresh read shows no manual row of any owner (existing
