@@ -10,28 +10,29 @@ zero. No upload, release or deployment is authorized by this proposal.
 | Item | Value |
 |---|---|
 | Tag name | `v0.1.0b1` |
-| Commit | `132a5440df88ce2ce2ce5d8ec40bbf845d5f34b6` (main, 11 October 2026) |
+| Commit | `f85212e238fb6322802b163219096db48e428291` (main, 11 October 2026) |
 | Version | `0.1.0b1` (pyproject, package, manifests, register) |
-| CI run | 38154875005 attempt 1 (ci.yml, GitHub-hosted ubuntu-24.04) |
-| Scan run | 38154875108 (security.yml) |
-| Candidate artifact | `zabalack-candidate-38154875005-1` (7,647,948 B) |
+| CI run | 38187030741 attempt 1 (ci.yml, GitHub-hosted ubuntu-24.04) |
+| Scan run | 38187030803 (security.yml) |
+| Candidate artifact | `zabalack-candidate-38187030741-1` (7,649,222 B) |
 
 ## Superseded candidate
 
 Earlier candidates are retained privately unchanged and not rebound: `fee1528a…`
 (run 38140956596, wheel `38161158…`, superseded by the F2 fix #40) and `3c3c0dfb…`
 (run 38147339640, wheel `c88dee99…`, superseded by the PostgreSQL 18.6 pin #41 and the
-coexistence contract #42).
+coexistence contract #42) and `132a5440…` (run 38154875005, wheel `bf5b0171…`, superseded by
+the register inputs #44 and the lab TLS floor #46).
 
 ## Artifact hashes (SHA-256, from the run's own SHA256SUMS; verified)
 
 | File | SHA-256 |
 |---|---|
 | `zabalack-0.1.0b1-py3-none-any.whl` | `bf5b017111742c7c6c90a8701286987b20649a05a8aa7fa12515803f1617719b` |
-| `zabalack-0.1.0b1.tar.gz` | `e08c33789784486f87f5617a194a12228ca9594353fde554689ec23be9385563` |
-| `zabalack-0.1.0b1-source.zip` | `4d1e593d96689d0a55e503c4e4c4406576acc19e1d6d930008d52c5023ad5858` |
-| `SHA256SUMS` | `7cbe6f880d1769425e4bc58fb337c778c1559854d2c180ffcf583ae4399815f1` |
-| `BUILD_PROVENANCE.json` | `e599c58eba81af468ad21725b27f6fc05b4e8c102538a74115c461dfc8646fd4` |
+| `zabalack-0.1.0b1.tar.gz` | `ce346c9d562dc80ae094a16df4491d3812c47d1383f57eeaedf13051dbb0b821` |
+| `zabalack-0.1.0b1-source.zip` | `9940da37c6b160eae3861e006f278864857fd68bb4898ab7b46011c84bea1cc7` |
+| `SHA256SUMS` | `460b990ed078d957ee9b0c6d52890318accbeb299af6fe2a557f67f0bd014fda` |
+| `BUILD_PROVENANCE.json` | `232501b7d14f2067e58d32cef53ecfa8a6d31d188f8a720f34ac7e2f6cdfd61b` |
 
 ## What passed at this commit
 
@@ -43,7 +44,7 @@ coexistence contract #42).
 | native (Docker lab, PostgreSQL 18.6, x86_64 hosted runner) | SUCCESS, 5 phases |
 | package (public audit, build, acceptance mapping) | SUCCESS |
 | scan (pip-audit 58 pins, Gitleaks dir + history) | SUCCESS, 0 advisories, 0 findings |
-| CodeQL | SKIPPED at this commit's push run (variable off). Earlier on 11 October, dispatched run 38144863693 on the superseded commit fee1528 FAILED at ingestion; no clean scan exists |
+| CodeQL | SUCCESS (python, javascript-typescript) on this commit's push run; 8 harness-path alerts triaged in `CODEQL_TRIAGE_20261011.md` (PR #45) |
 
 The native result is CI evidence for this run on a hosted x86_64 runner. It
 is not the deferred native x64 qualification milestone and not installed
@@ -73,7 +74,7 @@ acceptance (see `docs/BETA_READINESS.md`).
 
 ## Procedure after approval
 
-1. Re-read live `main`; confirm it is still `132a5440df88ce2ce2ce5d8ec40bbf845d5f34b6`.
+1. Re-read live `main`; confirm it is still `f85212e238fb6322802b163219096db48e428291`.
 2. Run `python tools/public_audit.py --publication`; require exit 0.
 3. Create an annotated tag `v0.1.0b1` on that commit; push the tag only.
 4. Review the tag's Actions run; compare its artifact hashes with the table above.

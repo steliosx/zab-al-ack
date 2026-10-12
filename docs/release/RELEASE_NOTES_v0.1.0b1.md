@@ -17,10 +17,10 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 | Item | Value |
 |---|---|
 | Version | 0.1.0b1 |
-| Commit | `132a5440df88ce2ce2ce5d8ec40bbf845d5f34b6` |
+| Commit | `f85212e238fb6322802b163219096db48e428291` |
 | Wheel SHA-256 | `bf5b017111742c7c6c90a8701286987b20649a05a8aa7fa12515803f1617719b` |
-| sdist SHA-256 | `e08c33789784486f87f5617a194a12228ca9594353fde554689ec23be9385563` |
-| CI run | 38154875005 (GitHub-hosted ubuntu-24.04) |
+| sdist SHA-256 | `ce346c9d562dc80ae094a16df4491d3812c47d1383f57eeaedf13051dbb0b821` |
+| CI run | 38187030741 (GitHub-hosted ubuntu-24.04) |
 
 ## Tested environment
 
@@ -36,7 +36,7 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 ## What was executed for this candidate
 
 - Reference suite: 1,503 passed, 47 skipped, 0 failed.
-- Native lab (PostgreSQL 18.6 + PgBouncer, five phases): all phases passed (run 38154875005).
+- Native lab (PostgreSQL 18.6 + PgBouncer, five phases): all phases passed (run 38187030741).
 - Mutation gate: 12 mutants killed, 0 survived.
 - Public export audit, reproducible build and acceptance mapping: passed.
 - Dependency advisories: 58 exact pins, 0 advisories. Secret scan of source and
@@ -52,6 +52,8 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 - PostgreSQL reference pin moves to 18.6, the latest 18.x minor (R25).
 - Coexistence contract: the signer no longer requires being the sole/last plugin; trailing
   plugins must declare `ACK_FOREIGN_SOURCE_PASSTHROUGH` and a disjoint `ACK_OWNED_SOURCE_SYSTEMS` (R26).
+- The lab's loopback HTTPS server sets an explicit TLS 1.2 floor (CodeQL alert 5, #46).
+- Publication register: backup maintainer, conduct contact and publication authorization recorded (R27).
 - Minimal publication inputs recorded (repository, package owner, primary maintainer).
 - No runtime feature change. No SQL body change. See `CHANGELOG.md`.
 
@@ -68,7 +70,7 @@ repository is public.
 
 | Item | Meaning | Status |
 |---|---|---|
-| CodeQL | Static analysis workflow | Run 38144863693 **FAILED at ingestion** (11 Oct); all other runs skipped; gate set back off until the repository is public, then re-enabled and triaged before the tag; **no clean scan yet** |
+| CodeQL | Static analysis workflow | Enabled on the public repository; completed runs on main; 8 harness-path alerts (none in runtime or SQL) triaged with dispositions in `CODEQL_TRIAGE_20261011.md`; one fixed (#46) |
 | Signed attestation | SLSA provenance of the wheel via GitHub attestations | Template supplied, **not run** |
 | Native x64 qualification | Bounded native run on an authorised x86_64 host | **Deferred**; hosted CI native pass is run evidence only |
 | A2 | Reference webhook transport does not authenticate TLS peers | **Open**; do not deploy the reference webhook as shipped |
