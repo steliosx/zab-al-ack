@@ -1,15 +1,19 @@
 # Design amendment — 0.2.0 action synchronisation (Alerta → Zabbix)
 
-Status: DRAFT r7. Codex gave AGREEMENT_DESIGN_ONLY on r6 (26d7197f, message f24b9ba2); Astra's
-bounded coexistence review of r5/r6 (note 3ebfe880) found §11.2 and §11.5 consistent at design
-level. r7 records the owner's five §9 decisions of 12 October 2026 and Astra's evidence caveats.
-Design agreement is not implementation, runtime or qualification approval. Earlier history: r2 answered Codex design
-findings D1-D6 on r1 (6f3fe47a); r3 answered R1-R6 on r2 (da9a001e); r4 answered S1-S4 on r3
-(38766e9d); r5 answers T1-T5 on r4 (2b160814). **r5 changes the proposed scope: suppression
-kinds (shelve/unshelve, timeout_unshelve) fail closed and are not delivered in 0.2.0 unless the
-owner explicitly accepts the documented collateral risk (§9 Q4), because pinned Zabbix 7.0.10
-offers no fence against other users' suppression rows during its task-queue delay (T2).** Pinned Zabbix 7.0.10 source
-(`CEvent.php`, `taskmanager_server.c`) now governs the suppression facts, not manual prose.
+Status: DRAFT r8. r8 makes the owner's record-only suppression decision (§9 Q1) unconditional
+throughout the 0.2.0 contract (Codex V1 on r7, 18318b84). Codex gave AGREEMENT_DESIGN_ONLY on r6
+(26d7197f); Astra's bounded coexistence review of r5/r6 (note 3ebfe880, peer-relayed) found
+§11.2 and §11.5 consistent at design level. The owner's five §9 decisions of 12 October 2026
+are recorded in §9. Design agreement is not implementation, runtime or qualification approval.
+**0.2.0 never writes Zabbix suppression.** The suppression write path that earlier revisions
+explored is kept only as a future specification in Appendix A; nothing in Appendix A is
+reachable in 0.2.0.
+
+Revision history (historical): r2 answered Codex findings D1-D6 on r1 (6f3fe47a); r3 answered
+R1-R6 on r2 (da9a001e); r4 answered S1-S4 on r3 (38766e9d); r5 answered T1-T5 on r4 (2b160814)
+and first made suppression fail closed; r6 answered U1-U2 on r5 (1c07a6bc); r7 recorded the
+owner decisions on r6. Pinned Zabbix 7.0.10 source (`CEvent.php`, `taskmanager_server.c`)
+governs the suppression facts, not manual prose.
 Each section names the findings it closes. Source facts cite the pinned Alerta 9.1.0 package
 and the exact-head Zabalack sources. Implementation starts after the
 0.1.0b1 tag (owner decision). Owner scope decisions of 11 October 2026 are in the owner-local
@@ -22,7 +26,8 @@ a design. Nothing here changes the frozen 0.1.0b1 candidate.
 |---|---|
 | Direction | Alerta → Zabbix only. No import of Zabbix operations. |
 | Alerta actions in scope | `ack` (existing), `unack`, `close`, Alerta's automatic `timeout` on an acknowledged alert (ack-timeout, `system` actor), and severity-change reopen (correlate path, `model` actor). **Suppression kinds** (`shelve`, `unshelve`, `timeout_unshelve`) are **recorded only, never written, in 0.2.0** (owner decision §9 Q1): they settle `skipped: suppression_fence_unavailable` because pinned Zabbix 7.0.10 offers no fence for other users' suppression (T2). **Notes are deferred to 0.2.1** (owner decision §9 Q4; D1, §4.4). `expired` produces no Zabbix write (owner decision §9 Q3). |
-| Zabbix operations | acknowledge (2, or 6 with message), unacknowledge (16), close (1, or 5 with message), suppress (32 with `suppress_until`), unsuppress (64). Message (4) is used only as the companion of ack/close, never alone in 0.2.0. Not in scope: severity (8), cause/symptom rank (128/256). |
+| Zabbix operations | acknowledge (2, or 6 with message), unacknowledge (16), close (1, or 5 with message). Suppress (32) and unsuppress (64) are **not sent in 0.2.0** (step 0,
+§9 Q1; future specification in Appendix A). Message (4) is used only as the companion of ack/close, never alone in 0.2.0. Not in scope: severity (8), cause/symptom rank (128/256). |
 | Entry paths | `PUT /alert/<id>/action` and Alerta housekeeping (`GET /management/housekeeping`, which runs `process_action` with `timeout`/`expired`); the dedupe/correlate ingestion path for severity-change reopen. Out of scope, recorded as skipped: direct `PUT /alert/<id>/status`, every `/_bulk/*` route, tag/attribute edits, `DELETE /alert/<id>`. |
 | Failure semantics | Asynchronous with projection for every kind, exactly as release one: Alerta applies the action; the worker delivers; the outcome (`ok`, `refused` with reason, `uncertain`) is projected into alert attributes. No synchronous Zabbix pre-checks. |
 | Sources | Zabbix-sourced alerts only (`source_system == "zabbix"`, one-to-one cohorts). |
@@ -41,18 +46,19 @@ event is not closed (`CEvent.php:1147-1151`) and the task updates an existing ma
 owner and expiry (`taskmanager_server.c:1121-1127`). No-write on an existing manual row is
 therefore Zabalack's integration **policy**, not a platform fact (U1).
 
-Every row has these outcomes, decided in this order by the worker (§6). **Step 0, suppression
-policy admission (U2)**: for `shelve`, `unshelve` and `timeout_unshelve`, the worker first
-checks the cohort's versioned suppression risk policy bound in the intent. If the policy is
-absent, false, unbound or invalid, the operation settles `skipped:
-suppression_fence_unavailable` with no read-based no-op, no write, and no contribution to the
-suppression desired state; nothing below applies. Only an owner-admitted true policy reaches
-the steps below. Then: **no-op** (a fresh
+Every row has these outcomes, decided in this order by the worker (§6). **Step 0, 0.2.0
+suppression release gate (U2, V1)**: for every admitted capture of `shelve`, `unshelve` or
+`timeout_unshelve`, the worker settles `skipped: suppression_fence_unavailable` before any
+read-based no-op, refusal or write, **whatever** the cohort's risk-policy value (absent,
+false, true, unbound or invalid). No suppression kind produces `ok`, `ok_noop`, `accepted`
+or a remote write in 0.2.0, and none contributes to the suppression desired state. This gate
+does not change capture: an action Alerta rejects locally is still never captured. All other
+kinds continue with: **no-op** (a freshthe steps below. Then: **no-op** (a fresh
 read-only `event.get` shows the bound event already in the target state → `ok_noop`, with the
 event snapshot as evidence, no write); **refused** (authoritative pre-write evidence that the
 write cannot apply) → `refused: <reason>`; **write** (exactly one `event.acknowledge`). For the
 synchronous bits (2, 4, 16) a fresh read then confirms attributable evidence → `ok`. For the
-task-executed bits (1, 32, 64) the write yields **`accepted`** (attributable history entry) and
+task-executed bit (in 0.2.0 only 1, close) the write yields **`accepted`** (attributable history entry) and
 the operation stays **outstanding** until a later read evidences completion (`ok`) or the
 bounded completion window lapses (§5); `accepted` is not terminal and does not release the
 barrier (T1).
@@ -61,10 +67,10 @@ barrier (T1).
 |---|---|---|---|---|---|
 | Human `ack` | `take_action`, `status_change` | open → ack (OPEN-1) | 2, or 6 with neutral message | `acknowledged == 1` | — (existing) |
 | Human `unack` | `take_action`, `status_change` | ack → previous status (UNACK-1) | 16 | `acknowledged == 0` | — |
-| Human `shelve` | `take_action`, `status_change` | open → shelved (SHL-1); ack → shelved (ACK-2) | 32, `suppress_until` **derived at delivery and by the verifier** from the committed history row: `history.update_time + history.timeout` (Alerta resolves the effective timeout inside `from_action`, `models/alert.py:649-657`, and stores it in the history row, `:684`; `post_action` does not receive it, R2). The signed intent carries only `duration_source = "history.timeout"`, never an absolute time. | a **manual** suppression row for the bound event (see §6, R5) | — |
-| Human `unshelve` | `take_action`, `status_change` | shelved → previous status (UNSHL-1) | 64 only under an owner-admitted suppression risk policy (step 0), and then only when the best-effort snapshot conditions of §6 hold; by default `skipped: suppression_fence_unavailable`. Owner opt-in is risk acceptance, not a technical fence. | no manual suppression row remains (maintenance suppression may keep `suppressed == 1`; that is not drift) | `skipped: foreign_manual_suppression` when a manual row by another user exists |
+| Human `shelve` | `take_action`, `status_change` | open → shelved (SHL-1); ack → shelved (ACK-2) | **none in 0.2.0** (step 0) | — | settles `skipped: suppression_fence_unavailable`; future write specification in Appendix A |
+| Human `unshelve` | `take_action`, `status_change` | shelved → previous status (UNSHL-1) | **none in 0.2.0** (step 0) | — | settles `skipped: suppression_fence_unavailable`; future write specification in Appendix A |
 | Human `close` | `take_action`, `status_change` | * → closed (OPEN-3/ACK-3/SHL-2/BLK-1) | 1, or 5 with neutral message (message sent once; a repeat close is a no-op and sends no second message) | request accepted (new attributable history entry with bit 1, §6) and, as completion, `r_eventid != 0` on a later read | pre-write only: `manual_close_disabled` (`trigger.get` `manual_close == 0`); `no_write_rights` (`trigger.get` with `editable = true` returns nothing); `not_problem_event` (`value != 1` or `object != 0`). No JSON-RPC error code is ever a refusal (A6). |
-| Housekeeping `timeout`, previous status shelved | `take_action(action="timeout")`, `post_action` | shelved → open (OPEN-0) **or** → ack (ACK-0) when the status before shelving was ack | 64 only (never 16), under the same policy admission as `unshelve` (step 0; default `skipped: suppression_fence_unavailable`) | no manual suppression row remains | as `unshelve` |
+| Housekeeping `timeout`, previous status shelved | `take_action(action="timeout")`, `post_action` | shelved → open (OPEN-0) **or** → ack (ACK-0) when the status before shelving was ack | **none in 0.2.0** (step 0); never 16, so a restored ack stays acknowledged in Zabbix | — | settles `skipped: suppression_fence_unavailable` |
 | Housekeeping `timeout`, previous status ack | `take_action(action="timeout")`, `post_action` | ack → open (OPEN-0) | 16 | `acknowledged == 0` | — |
 | Housekeeping `expired` | `take_action(action="expired")` | * → expired (EXP-0) | none (owner decision §9 Q3) | — | recorded `skipped: expired_no_zabbix_counterpart` |
 | Severity-change reopen (ACK-4) | `status_change` only (dedupe/correlate; no `take_action`) | ack → open | 16 | `acknowledged == 0` | — |
@@ -72,14 +78,12 @@ barrier (T1).
 | `open`, `assign`, unknown action strings | `take_action` | per model | none | — | `skipped: no_zabbix_counterpart` |
 | Direct `/status`, bulk routes, delete, tag/attribute edits | `status_change` / none | varies | none | — | `skipped: entry_path_out_of_scope` (bulk tag/attributes/delete fire no hooks at all; nothing to record) |
 
-Lab expectations: a second `shelve` is a local Alerta rejection (nothing captured); on pinned
-Zabbix 7.0.10 a `suppress` task on an already manually suppressed event **updates** the existing
-manual row's expiry and owner (`taskmanager_server.c:1121-1127`), so nothing in this design
-assumes a platform skip or no-renewal (S2, T4); existing-manual **no-write** is Zabalack's
-integration policy; manual, maintenance-only and mixed-row cases are separate lab cases;
-`timeout` on an alert shelved from `ack` returns the alert to `ack` and the Zabbix write, if
-suppression is enabled for the cohort, is unsuppress only; with suppression disabled (default)
-every suppression kind records `skipped: suppression_fence_unavailable`.
+Lab expectations (0.2.0): a second `shelve` is a local Alerta rejection (nothing captured);
+every captured `shelve`, `unshelve` and `timeout_unshelve` settles
+`skipped: suppression_fence_unavailable` with no Zabbix call, including when the cohort carries
+an otherwise valid policy with `accept_suppression_collateral_risk = true` (negative case);
+`timeout` on an alert shelved from `ack` returns the alert to `ack` in Alerta and makes no
+Zabbix write.
 
 ## 3. Actor model (r2: D5)
 
@@ -135,7 +139,8 @@ capture-record allowlist (DESIGN 5.3) gains two columns for 0.2.0: `history_time
 newly prepended history row's `timeout`, integer seconds) and `history_update_time`
 (already captured). Both are copied from `NEW.history[1]` at capture, immutable afterwards;
 verification and delivery derive the suppression deadline from this captured snapshot only,
-never from live history or any other timestamp-matching row (S4). Deadline derivation:
+never from live history or any other timestamp-matching row (S4). The duration snapshot and deadline derivation below are part of the future
+suppression specification (Appendix A) and are not used by any 0.2.0 write. Deadline derivation:
 `suppress_until = floor(epoch_seconds(history_update_time at UTC)) + history_timeout`, an
 integer; for suppression kinds only, `history_timeout` must be a positive integer, otherwise
 the capture is `skipped: invalid_duration`; a suppress is eligible to send only while the
@@ -209,6 +214,8 @@ is staged for new kinds.
   `actor_type text NOT NULL`, `event_seq bigint NOT NULL`; 013 backfills existing rows as in
   §4.5 (no blanket defaults) and adds `CHECK` constraints against a new `action_kinds` reference
   table (kind, zabbix_action, requires_message, requires_suppress_until, allowed_actor_types).
+  In 0.2.0 the `shelve`, `unshelve` and `timeout_unshelve` rows carry no deliverable
+  `zabbix_action`; their only reachable outcome is `skipped: suppression_fence_unavailable`.
 - Every predicate of the form `i->>'action'<>'ack'` in 003, 006, 008, 009, 010, 011, 012 is
   superseded in 013 by kind-aware functions; shipped migration bytes and checksums stay
   immutable; 013 replaces the functions forward-only. Installer, worker and reader grants stay
@@ -237,11 +244,10 @@ is staged for new kinds.
 - **Desired state for drift (D2, R4, S2, T1).** The reconciler folds **evidenced** effects per
   field, from the evidence recorded with each `ok`/`ok_noop` outcome only; `accepted` outcomes
   contribute nothing until completion is evidenced:
-  expected `acknowledged` from the latest evidenced ack/unack-family outcome; expected manual
-  suppression (present/absent, observed `suppress_until`, observed owner) from the latest
-  evidenced shelve/unshelve-family outcome, where a maintenance-only `ok_noop` records "no
-  manual row" and therefore folds to *absent*; expected resolution from the latest evidenced
-  close. Operations that ended `refused`, `failed`, `skipped`, `expired` or `superseded`
+  expected `acknowledged` from the latest evidenced ack/unack-family outcome; expected resolution
+  from the latest evidenced close. In 0.2.0 no suppression kind produces `ok` or `ok_noop`, so
+  Zabalack holds **no** expected suppression state and never reports suppression drift; the
+  suppression fold for a future release is in Appendix A. Operations that ended `refused`, `failed`, `skipped`, `expired` or `superseded`
   contribute nothing. Drift is a mismatch against that evidenced per-field expectation.
 - **One outcome enum (S3, T1, T3) — the single authority for every barrier predicate.**
   Live, blocking: `captured`, `claimed`, `accepted` (task-executed bit written and attributably
@@ -277,9 +283,9 @@ suppress task from creating a manual row. History timestamps are integer seconds
   (`acknowledgeid`, `userid`, `clock`, `action`, `message`, `suppress_until`); verify binding
   (trigger, cohort hosts) as today; (2) persist the **pre-send evidence watermark** for this
   attempt: the maximum `acknowledgeid` seen and the set of `acknowledgeid`s present (S1);
-  (3) for suppression kinds, step-0 policy admission first (§2): absent/false/invalid policy →
-  `skipped: suppression_fence_unavailable`, stop; otherwise, and for every other kind, the
-  no-op branch per kind (below) → `ok_noop` with the snapshot as evidence; (4) pre-write
+  (3) suppression kinds never reach this sequence in 0.2.0: step 0 (§2) has already settled
+  them `skipped: suppression_fence_unavailable`; for every other kind, the
+  no-op branch per kind (below) → `ok_noop` with the snapshot as evidence; (4) pre-writeno-op branch per kind (below) → `ok_noop` with the snapshot as evidence; (4) pre-write
   refusal branch on authoritative data only; (5) exactly one `event.acknowledge` with the kind's
   bitmask and typed params; (6) **acceptance evidence**: a fresh read must show a **new**
   `acknowledges[]` entry with `acknowledgeid` greater than the watermark and not in the seen
@@ -289,14 +295,13 @@ suppress task from creating a manual row. History timestamps are integer seconds
   unique per instance) so no later attempt can consume it. Clock values are recorded but never
   used to select or exclude evidence (S1). If no such new, unclaimed, attributable entry exists,
   the outcome is `uncertain`; nothing is resent. (7) For synchronous bits (2, 4, 16) acceptance
-  evidence settles `ok`. For **task-executed** bits (1, 32, 64) acceptance evidence moves the
+  evidence settles `ok`. For **task-executed** bits (in 0.2.0 only bit 1, close; 32/64 are never sent) acceptance evidence moves the
   operation to `accepted` (outstanding); **completion evidence** is observed on a **later**
-  read-only read: `r_eventid != 0` for close, the manual suppression row with our owner and the
-  derived deadline for suppress, absence of our row for unsuppress. Only then does the
+  read-only read: `r_eventid != 0` for close (suppression completion evidence is future-only,
+  Appendix A). Only then does the
   operation become `ok`. While `accepted`, the operation holds the event barrier (T1), so no
   later operation on the event decides against a state the pending task has not yet produced
-  (lab: shelve accepted then unshelve; unsuppress accepted then shelve; close accepted then
-  ack). The completion window is bounded per instance; lapse makes the operation `uncertain`
+  (lab: close accepted then ack; close accepted then unack). The completion window is bounded per instance; lapse makes the operation `uncertain`
   (§5). A second write is never used to resolve progress.
 - **Service-user exclusivity (admission assumption).** The bound instance's API user is
   dedicated to Zabalack; the deployment inputs (G1) record that no other actor uses it. The
@@ -305,27 +310,17 @@ suppress task from creating a manual row. History timestamps are integer seconds
   exceeding the watermark. Exclusivity and per-event no-outstanding-attempt fencing are
   therefore verified admission requirements for operations without a public reference; where
   they cannot be verified the operation fails closed (`skipped: attribution_unverifiable`).
-- **Suppression kinds fail closed (T2).** Pinned Zabbix 7.0.10 provides no fence that holds
-  through remote task completion: a suppress task overwrites the owner and expiry of any manual
-  row present when it executes (`taskmanager_server.c:1121-1127`); an unsuppress task deletes
-  every manual row regardless of owner (`:1110-1111`); a suppress task executing at or after its
-  own finite deadline deletes all manual rows (`:1107-1111`); and no API condition offers
-  compare-and-swap on a row identity. A pre-read snapshot therefore proves nothing about rows
-  created by other users between the read and task execution, and a post-read cannot show rows
-  it never saw. Zabalack cannot build an exclusive-control guarantee on this platform. Design
-  consequence: `shelve`, `unshelve` and `timeout_unshelve` are **captured and recorded** but
-  **not written** by default; they settle `skipped: suppression_fence_unavailable` and the
-  alert's projection says so. **Owner decision §9 Q1: in 0.2.0 this is the only behaviour; no
-  cohort can enable suppression writes.** The best-effort policy below is retained only as the
-  specification a future release would need if the owner later records an explicit risk-policy
-  decision per cohort (`accept_suppression_collateral_risk`) recording the owner's acceptance that Zabalack's suppress/unsuppress may overwrite or delete other
-  users' manual suppression rows. With that flag true, the integration policies are: shelve
-  writes only when the fresh read shows **no** manual row of any owner (existing manual row →
-  `ok_noop: existing_manual_suppression`, recording owner/until/maintenance evidence; this is
-  policy, not a platform skip); unsuppress writes only when the fresh read shows exactly one
-  manual row, ours, with a ledger deadline; every such write records the pre- and post-read
-  snapshots and raises an incident when the post-read is inconsistent with sole ownership.
-  These are best-effort under accepted risk, not a fence. No replay.
+- **Suppression kinds are never written in 0.2.0 (T2, owner decision §9 Q1).** Pinned Zabbix
+  7.0.10 provides no fence that holds through remote task completion: a suppress task
+  overwrites the owner and expiry of any manual row present when it executes
+  (`taskmanager_server.c:1121-1127`); an unsuppress task deletes every manual row regardless
+  of owner (`:1110-1111`); a suppress task executing at or after its own finite deadline
+  deletes all manual rows (`:1107-1111`); and no API condition offers compare-and-swap on a
+  row identity. Zabalack therefore cannot build an exclusive-control guarantee on this
+  platform. In 0.2.0, `shelve`, `unshelve` and `timeout_unshelve` are captured and recorded,
+  settle `skipped: suppression_fence_unavailable` at step 0, and the alert's projection says
+  so. No cohort setting, including `accept_suppression_collateral_risk = true`, changes this.
+  The best-effort write policy a later release would need is in Appendix A.
 - **Pre-write refusal (R6, S4).** Only: `trigger.get` with `editable = true` returning nothing
   → `refused: no_write_rights`; `manual_close == 0` → `refused: manual_close_disabled`; event
   not a problem event of a trigger → `refused: not_problem_event`. After a write is sent, no
@@ -334,12 +329,12 @@ suppress task from creating a manual row. History timestamps are integer seconds
   `uncertain`, suspends the instance, raises an incident and permits read-only reconciliation
   only (A6). Verified dispatch/validation rejections (`-32600/-32601/-32602`) are `failed`
   (terminal, no effect). Error text is never parsed.
-- `ZabbixClient.call` write scope: `action` ∈ {2, 6, 16, 1, 5, 32, 64}, exactly one `eventids`
-  entry, `message` present iff the bitmask includes 4, `suppress_until` present iff it includes
-  32 and equal to the deadline derived from the captured snapshot (§4); `cause_eventid`/
-  `severity` never present.
+- `ZabbixClient.call` write scope in 0.2.0: `action` ∈ {2, 6, 16, 1, 5}, exactly one
+  `eventids` entry, `message` present iff the bitmask includes 4; `suppress_until`,
+  `cause_eventid` and `severity` are never present, and bitmasks 32 and 64 are rejected by the
+  client before any request is sent.
 - Companion message: neutral team text + public reference, sent once per operation; the
-  default policy (owner question 0) is that a missing bit 4 in the acceptance evidence leaves
+  policy (owner decision §9 Q2) is that a missing bit 4 in the acceptance evidence leaves
   the operation `uncertain`.
 - Late-attributable report protection (006/011/012) and no-replay invariants are unchanged.
 
@@ -353,25 +348,19 @@ aliases for `ack` so existing dashboards keep working.
 
 ## 8. Lab and evidence
 
-Deployment-lab cases per kind (r2): human unack; close with manual close enabled → resolved;
-close with manual close disabled → `refused: manual_close_disabled`; shelve → `suppressed == 1`
-with `suppress_until` from the effective timeout; unshelve → no manual row remains (maintenance suppression may persist); unshelve with a foreign
-manual row (risk policy true only) → `skipped: foreign_manual_suppression`; same-second ack/unack/ack with watermark
-claims; pre-existing matching history → uncertain, no resend; delayed close task completion
-observed by a later read (the operation stays `accepted` and blocks successors until then);
-shelve accepted then unshelve requested → unshelve waits; unsuppress accepted then shelve
-requested → shelve waits; failed predecessor then valid successor → successor delivered;
-suppression kinds with the risk flag false → `skipped: suppression_fence_unavailable`;
-manual, maintenance-only and mixed-row suppression cases with the flag true; housekeeping
-timeout on an alert shelved from open → open + unsuppress; from ack → ack + unsuppress only;
-repeat shelve → Alerta rejection, nothing captured; shelve on an event with an existing manual
-row → with the risk policy false (default) `skipped: suppression_fence_unavailable`, with it
-true `ok_noop: existing_manual_suppression` (policy no-write); shelve on a maintenance-only
-suppressed event → default skipped, with the policy true a manual-row write; mixed manual and
-maintenance rows → default skipped, with the policy true policy no-write; missing or invalid
-policy binding → skipped (fail closed); ack/unack/ack sequence → three ordered operations; an uncertain earlier operation
-blocks later ones and suspends the instance; concurrent workers on one event → single
-admission; bulk status change → recorded skipped, no Zabbix call; model reopen with
+Deployment-lab cases for 0.2.0: human unack; close with manual close enabled → accepted, then
+resolved on a later read; close with manual close disabled → `refused: manual_close_disabled`;
+same-second ack/unack/ack with watermark claims; pre-existing matching history → uncertain, no
+resend; delayed close task completion observed by a later read (the operation stays `accepted`
+and blocks successors until then); close accepted then ack → ack waits; failed predecessor then
+valid successor → successor delivered; every captured shelve, unshelve and timeout_unshelve →
+`skipped: suppression_fence_unavailable` with no Zabbix call, for each risk-policy value
+(absent, false, true, unbound, invalid; the `true` case is the required negative case);
+client-level rejection of bitmasks 32 and 64; housekeeping timeout on an alert shelved from
+open → open in Alerta, no Zabbix write; from ack → ack in Alerta, no Zabbix write; repeat shelve
+→ Alerta rejection, nothing captured; ack/unack/ack sequence → three ordered operations; an
+uncertain earlier operation blocks later ones and suspends the instance; concurrent workers on
+one event → single admission; bulk status change → recorded skipped, no Zabbix call; model reopen with
 `mirror_model_transitions` at its default (true) → unack with history provenance; with the
 cohort opt-out (false) → `skipped: mirror_disabled`; the same pair for
 `mirror_system_transitions` on an ack-timeout; mutated actor/kind/mask/params → verifier refusal.
@@ -437,3 +426,28 @@ not an implementation, runtime or project-wide approval by either project.
 
 No part of this amendment applies to 0.1.0b1; the tag proposal and frozen artifacts are
 unaffected.
+
+## Appendix A. Future suppression write specification (not reachable in 0.2.0)
+
+Nothing in this appendix is implemented, enabled or tested in 0.2.0. It records what a later
+release would need if the owner later records, per cohort and in writing, acceptance of the
+collateral risk described in §6 (`accept_suppression_collateral_risk`). That acceptance would be
+risk acceptance, not a technical fence.
+
+- Writes: shelve → 32 with `suppress_until` derived from the captured history snapshot (§4);
+  unshelve and timeout_unshelve → 64. Both are task-executed: `accepted`, then completion on a
+  later read, holding the event barrier meanwhile (§5).
+- Policy: shelve writes only when the fresh read shows no manual row of any owner (existing
+  manual row → `ok_noop: existing_manual_suppression`, recording owner, until and maintenance
+  evidence; policy, not a platform skip); maintenance-only suppression → a manual-row write;
+  mixed rows → policy no-write; unsuppress writes only when the fresh read shows exactly one
+  manual row, ours, with a ledger deadline, else `skipped: foreign_manual_suppression`; every
+  write records pre- and post-read snapshots and raises an incident when the post-read is
+  inconsistent with sole ownership. No replay.
+- Evidence: completion for suppress = our manual row with the derived deadline; for unsuppress
+  = absence of our row. Maintenance suppression may keep `suppressed == 1` and is not drift.
+- Drift fold: expected manual suppression (present/absent, observed `suppress_until`, observed
+  owner) from the latest evidenced shelve/unshelve-family outcome, where a maintenance-only
+  `ok_noop` records "no manual row" and folds to absent.
+- Lab (future): manual, maintenance-only and mixed-row cases; shelve accepted then unshelve;
+  unsuppress accepted then shelve; foreign row replacement between read and write.
