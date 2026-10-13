@@ -1,6 +1,6 @@
 # Proposed joint witness / admission matrix for ack-core 3b (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED r8, NOT_RUN** (r8 answers Astra 23b86285; 07 governs) (r1 reviewed in 750d397d, r2 in
+Author: Opus (Zabalack session). Status: **PROPOSED r9, NOT_RUN** (r8 answers Astra 23b86285; r9 answers Codex U1; 07 governs) (r1 reviewed in 750d397d, r2 in
 d7391d2a, r3 in 20261013T174021Z-codex-omarchy-d7d59f1e; rows added and adjusted for each). Step letters R, C, K, S, T, F
 and X refer to the R2 §4 ingestion state machine. No lab creation or execution is requested.
 A coexistence fork needs separately frozen image, source, installed-package, tool, command and expected-ID
@@ -56,14 +56,19 @@ Each row runs with **both plugin orders** (Zabalack first; Voalack first) unless
 | W43 | Transaction | a waiter queued behind a committing holder on the same key | the waiter gets the updated row under the lock and returns the existing outcome; no second attempt |
 | W44 | Transaction | status(key, scope) for an absent key, an expired (tombstoned) key, a **logically expired but not yet tombstoned** key (both locked and unlocked), a wrong-scope key on a terminal row, and a wrong-scope key on a locked row; submit on a tombstoned key | status: identical `not_found` for all of these, no work started, no raw lock error; matching scope returns `outcome`, `in_progress` or `not_committed`; submit on a tombstone: refused, never re-executed |
 | W45a | Transaction | submit waiter queued before `expires_at`; the holder commits (separately: rolls back) after it | waiter: `not_found` from the post-lock sample, no attempt, no outcome disclosed, in both holder cases |
-| W45b | Transaction | status while the holder is locked, before expiry | immediate `in_progress` (probe conflict, then recheck before expiry); never waits; no attempt |
+| W45b | Transaction | status while the holder stays locked through every re-probe, before expiry | `in_progress` decided at the last conflicting sample; never waits; no attempt |
 | W45c | Transaction | fresh status after expiry, row locked and unlocked; holder commit and rollback controls before expiry | after expiry: `not_found` in all cases; controls before expiry: `in_progress`, `outcome` or `not_committed` as stated; status never starts an attempt, even for the rollback control |
-| W45d | Transaction | status paused across its decision boundary: probe conflict before expiry, recheck after expiry | `not_found`; the aborted probe transaction is never reused; no raw lock error |
+| W45d | Transaction | status whose last conflicting re-probe falls at or after expiry | `not_found`; each aborted probe transaction rolled back and never reused; no raw lock error |
+| W45e | Transaction | holder COMMITs between a conflicting probe and the next re-probe (before expiry) | the re-probe acquires the lock and returns `outcome` |
+| W45f | Transaction | holder ROLLs BACK between a conflicting probe and the next re-probe (before expiry) | the re-probe acquires the lock and returns `not_committed`; status starts no attempt |
+| W45g | Transaction | a renewed holder (a new submit takes the lock) between re-probes; plus wrong-customer and wrong-scope controls | conflict again → `in_progress` only if every attempt conflicts; wrong scope: `not_found`; no inference from non-locking reads |
 
 Evidence rule: each run records the base image manifest hash, installed wheel hashes for both providers
 and ack-core, the rendered trigger and routine definitions (`pg_get_triggerdef`, `pg_get_functiondef`),
 and the ACL inventory. Nothing is rebound across runs.
 
+| # | Area | Case | Expected |
+|---|---|---|---|
 | W46 | Lifetime | historical ONE ID: re-create, restore, foreign-provider INSERT and id-changing UPDATE into the reserve | all refused by Voalack's reserve; no core lifetime created; no reserve reopened |
 | W47 | model_unack | window boundaries: exactly at, one microsecond before and one after `capture_expires_at` and `execution_expires_at`; recheck after an injected verification or delivery wait crossing the bound | before: allowed; at or after: refused; the recheck after the wait refuses |
 | W48 | Ingestion | two concurrent first creates of one natural identity | serialized by the advisory lock: one create, the other dedupes or correlates onto it; one alert, epochs 1 and 2 |

@@ -1,12 +1,13 @@
 # R4 — Transaction owner and unknown-COMMIT state machine (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r8, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r9, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P4, P7); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q3
 answered); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S1); r4 CHANGES_REQUIRED
 (20261013T180356Z-codex-omarchy-604951f7: T1); r5 CHANGES_REQUIRED (20261013T182026Z-codex-omarchy-8ef308a4:
 T1 narrowed to exact customer and expiry); r6 CHANGES_REQUIRED (20261013T183236Z-codex-omarchy-7fa7731c:
 expiry decision clock); r7 AGREEMENT for pre-read corrections only (b6e75736). r8 answers Astra's review
-23b86285 (P1, P4 here; decisions consolidated in `07-r8-frozen-decisions.md`); r8 review pending. R4 was
+23b86285 (P1, P4 here; decisions consolidated in `07-r8-frozen-decisions.md`); r8 CHANGES_REQUIRED
+(20261013T193749Z-codex-omarchy-1ec50d44: U1, answered in r9 step 4b); r9 review pending. R4 was
 raised by Codex in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted design, DDL, grant or
 implementation. Source facts below are read from the pinned Alerta 9.1.0 package (upstream commit
 `f4312727783dad64198b62ed778bbca98a5144a3`, PyPI `alerta-server==9.1.0`) and zab-al-ack `main`
@@ -179,10 +180,19 @@ Two public operations, with deliberately consistent semantics:
       - Row acquired: in the same transaction, take a **new** `clock_timestamp()` sample. That sample is the
         decision point. Expired → `not_found`. Terminal → `outcome`. `reserved` → `not_committed`. Then the
         transaction ends.
-   b. **Conflict recheck (new short read-only transaction).** Without locking, select the same row with
-      `expires_at > clock_timestamp()`. The decision point is that sample. Logically expired or absent →
-      `not_found`. Otherwise → `in_progress`. So a status whose lock conflict happens before expiry but
-      whose recheck happens after expiry returns `not_found`, never a stale `in_progress`.
+   b. **Bounded fresh re-probe (r9, U1).** After a conflict, status repeats step a in a **new** transaction
+      each time, up to a small fixed number of attempts with a short pause. Each attempt is a full
+      scope- and expiry-filtered `FOR UPDATE NOWAIT` probe with its own `clock_timestamp()` sample:
+      - lock **acquired** on any attempt → decide from that row under that lock, with a new sample: expired
+        → `not_found`, terminal → `outcome`, `reserved` → `not_committed`. A holder that committed or
+        rolled back between attempts is therefore reported correctly;
+      - no matching unexpired row on any attempt → `not_found`;
+      - **conflict on every attempt** → `in_progress`, decided at the **last** conflicting attempt's
+        sample (an honest "observed locked at time t" answer). If that sample is at or after `expires_at`,
+        the answer is `not_found`.
+      Status **never** infers `not_committed` from a non-locking read: a visible `reserved` row may be the
+      committed version under another active attempt. Each conflict rolls back its transaction, which is
+      never reused. Status never blocks, never starts work and never returns a raw lock error.
    A row outside the exact scope, or logically expired, is never selected in a or b, so its lock can never
    surface as a signal. The exact SQL and caller authorization are left for rendered review.
 4a. **Isolation, read source and errors (r8, P4).**

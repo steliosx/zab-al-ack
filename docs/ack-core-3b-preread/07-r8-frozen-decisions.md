@@ -130,3 +130,12 @@ Boundaries:
 3. Housekeeping: whether a generic per-alert failure aborts the rest of the run (R4 open question 3).
 4. The D2 policy is proposed. The joint session may choose differently, for example universal refusal after
    any supersession.
+5. Implementation-design prerequisites named by Codex (1ec50d44), still open:
+   - a provider-scoped, fresh **current-predicate** read interface for workers, in addition to R5 §2c's
+     captured facts. It returns current lifetime, epoch, binding, class and customer uniformly, without
+     widening worker table privileges, and is re-read under compatible fencing;
+   - rendered digest semantics for adapter pinning (effective ordered hook and receiver bindings plus their
+     relevant bound state, not source hashes alone);
+   - synchronization and read sources for authorization revocation, registry retirement and the
+     pre-target rechecks;
+   - restore, reseal, key-reuse namespace and the housekeeping choice.

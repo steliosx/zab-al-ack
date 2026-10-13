@@ -95,7 +95,8 @@ question 1 of §4 marked answered; §6 added (Codex R2-R5 as open contracts).
 Codex reviews of this bundle: r1 750d397d, r2 d7391d2a, r3 d7d59f1e, r4 604951f7, r5 8ef308a4, r6 7fa7731c,
 and on r7 `20261013T185110Z-codex-omarchy-b6e75736` AGREEMENT_FOR_PREREAD_CORRECTIONS_ONLY (r7 was delivered
 as commit f7107eac). Astra's review of r7: signed 23b86285, relayed by Voalack (review file sha256
-3c9f3625...); r8 answers it (P1 in R4 §3; P2-P5 in 07). The disposition of r8 is **pending**. Codex's
+3c9f3625...); r8 answers it (P1 in R4 §3; P2-P5 in 07). Codex on r8: `20261013T193749Z-codex-omarchy-1ec50d44` (CHANGES_REQUIRED_PREREAD_ONLY: U1, answered in r9).
+The disposition of r9 is **pending**. Codex's
 signed review records are not exported; any reference to them is peer-relayed status.
 
 Each draft ends with its explicit unknowns.
