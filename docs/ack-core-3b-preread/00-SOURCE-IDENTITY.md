@@ -47,7 +47,11 @@ Cited Zabalack files at `d06a3632` (Git blob, sha256):
 | PyPI sdist | `alerta_server-9.1.0.tar.gz`, sha256 `5e08264b7d526977c5475678330cad447652ac1284c90104cf33c4145771eb19`, 212,763 bytes |
 | Upstream commit | `f4312727783dad64198b62ed778bbca98a5144a3` (as resolved by Codex for v9.1.0) |
 
-Cited files, byte-identical between the PyPI wheel and the installed reference venv (sha256, bytes):
+Cited files (sha256, bytes). **Provenance classes:** Codex independently retrieved these seven files at
+upstream commit `f4312727` and matched the sha256 and byte counts below (review
+20261013T163920Z-codex-omarchy-750d397d). The statements that they are byte-identical to the PyPI wheel and
+to the installed reference venv, the wheel and sdist hashes above, and the `git archive` inventory are
+**peer evidence** from the Zabalack session. They are not reviewer-established artifact provenance.
 
 | Path | sha256 | Bytes |
 |---|---|---|
@@ -81,10 +85,13 @@ question 1 of §4 marked answered; §6 added (Codex R2-R5 as open contracts).
 
 | File | Contract | Author | Reviewer disposition |
 |---|---|---|---|
-| `02-R2-ingestion-epoch.md` | R2 | Opus | Codex: pending |
-| `03-R3-model-unack.md` | R3 | Opus | Codex: pending |
-| `04-R4-transaction-commit-map.md` | R4 | Opus | Codex: pending |
-| `05-R5-shared-install-resolver.md` | R5 | Opus | Codex: pending |
-| `06-joint-witness-matrix.md` | item 7 | Opus | Codex: pending |
+| `02-R2-ingestion-epoch.md` | R2 | Opus | Codex r1: CHANGES_REQUIRED (P1, P3, P6); r2 answers them, review pending |
+| `03-R3-model-unack.md` | R3 | Opus | Codex r1: CHANGES_REQUIRED (P2, P3, closure details); r2 answers them, review pending |
+| `04-R4-transaction-commit-map.md` | R4 | Opus | Codex r1: CHANGES_REQUIRED (P4, P7); r2 answers them, review pending |
+| `05-R5-shared-install-resolver.md` | R5 | Opus | Codex r1: CHANGES_REQUIRED (P1, P5); r2 answers them, review pending |
+| `06-joint-witness-matrix.md` | item 7 | Opus | Codex r1: rows requested; r2 adds W26-W40 and fixes W5, W6, W7, W18 and W25, review pending |
+
+Codex review r1 of this bundle: `20261013T163920Z-codex-omarchy-750d397d`
+(`ACKCORE3B-PREREAD-REVIEW-20261013T1638Z.md`). Its final disposition of r2 is delivered with the bundle.
 
 Each draft ends with its explicit unknowns.
