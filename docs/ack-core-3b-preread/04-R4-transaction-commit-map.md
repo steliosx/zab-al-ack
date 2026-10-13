@@ -1,9 +1,10 @@
 # R4 — Transaction owner and unknown-COMMIT state machine (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r5, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r6, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P4, P7); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q3
 answered); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S1); r4 CHANGES_REQUIRED
-(20261013T180356Z-codex-omarchy-604951f7: T1 answered here); r5 pending. R4 was
+(20261013T180356Z-codex-omarchy-604951f7: T1); r5 CHANGES_REQUIRED (20261013T182026Z-codex-omarchy-8ef308a4:
+T1 narrowed to exact customer and expiry, answered here); r6 pending. R4 was
 raised by Codex in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted design, DDL, grant or
 implementation. Source facts below are read from the pinned Alerta 9.1.0 package (upstream commit
 `f4312727783dad64198b62ed778bbca98a5144a3`, PyPI `alerta-server==9.1.0`) and zab-al-ack `main`
@@ -123,8 +124,14 @@ Two public operations, with deliberately consistent semantics:
   fields are never exposed in responses or public diagnostics.
 
 1. **Key namespace and scope.** Keys are unique per authenticated principal: (principal, request_id). The
-   **scope** of a request is (principal, customer, kind, alert_id, lifetime, request_digest). The customer
-   must be one the principal is currently authorized for, by Alerta's own customer authorization. The client sends an idempotency key
+   **scope** of a request is (principal, customer, kind, alert_id, lifetime, request_digest). The scope
+   match requires **both**: the stored customer **equals** the requested customer exactly, **and** the
+   principal is currently authorized for that customer by Alerta's own customer authorization. Being
+   authorized for several customers never lets one customer's request match another's. The
+   request_digest is not relied on to carry the customer.
+   **Expiry.** Each reservation stores `expires_at` (= reserved time + retention window), fixed at
+   reservation. A row is **logically expired** once `expires_at <= now()` on the primary, even if the
+   tombstone cleanup has not run yet. A logically expired row is treated exactly like an absent one. The client sends an idempotency key
    with each action request. It is optional on POST /alert: an ingestion without a key is always new.
    Housekeeping generates its own key per alert.
 2. **Reserve (submit only; a short transaction, committed before the enlisted one).**
@@ -136,8 +143,9 @@ Two public operations, with deliberately consistent semantics:
    recovery).** The enlisted transaction's first statement is `SELECT ... FOR UPDATE` on the row selected by
    (principal, request_id). When the waiting lock is acquired, PostgreSQL returns the **updated** row. The
    core then decides, **under the lock and before any alert or provider work, in this order**:
-   1. **Scope first.** If customer authorization, kind, alert_id, lifetime, request_digest or expiry do not
-      match, return the bounded refusal identical to `not_found`. This happens whatever the row's state
+   1. **Scope and expiry first.** If the stored customer differs from the requested customer, or the
+      principal is not currently authorized for it, or kind, alert_id, lifetime or request_digest differ, or
+      the row is logically expired, return the bounded refusal identical to `not_found`. This happens whatever the row's state
       (reserved, attempting, terminal, expired). No outcome, operation ID or attempt state is revealed, and
       nothing is mutated.
    2. A terminal outcome is recorded → return it, with no mutation.
@@ -153,9 +161,12 @@ Two public operations, with deliberately consistent semantics:
    never across principals.
 4. **Status lookup, scope-filtered before any lock.** The lookup selects only a row matching the caller's
    **full** authorized scope:
-   `WHERE principal = $caller AND request_id = $key AND customer = ANY($authorized_customers) AND kind = $kind
-   AND alert_id = $alert AND lifetime = $lifetime AND request_digest = $digest`, then `FOR UPDATE NOWAIT`.
-   A row outside the scope is never selected, so its lock can never surface as a signal:
+   `WHERE principal = $caller AND request_id = $key AND customer = $requested_customer AND kind = $kind
+   AND alert_id = $alert AND lifetime = $lifetime AND request_digest = $digest AND expires_at > now()`, with
+   the precondition `$requested_customer = ANY($currently_authorized_customers)` checked first (if it
+   fails: `not_found`). Then `FOR UPDATE NOWAIT`, and after the lock is acquired, scope and expiry are
+   re-validated under the lock. A row outside the exact scope, or logically expired, is never selected, so
+   its lock can never surface as a signal:
    - no matching row → `not_found`;
    - lock not available → `in_progress`;
    - terminal → `outcome`;
@@ -163,8 +174,9 @@ Two public operations, with deliberately consistent semantics:
      again.
 
    The exact SQL and caller authorization are left for rendered review.
-5. **Retention.** Rows stay for a retention window. After it, the row is reduced to a tombstone (key hash,
-   principal, `expired`), kept for a longer second window. A submit on a tombstoned key is refused, never
+5. **Retention.** Rows stay until `expires_at`. They are logically expired from that moment (step 1). Cleanup
+   later reduces them to a tombstone (key hash, principal, `expired`), kept for a longer second window. The
+   answers before and after cleanup are identical. A submit on a tombstoned key is refused, never
    re-executed. Beyond both windows, absence of a key is **not** proof that it was never reserved. The
    namespace contract must make reuse after that point the client's error, and that remains an open point.
 6. **Lock order** (common, also in R2 §3): reservation row → `public.alerts` row → `alert_epoch` row →
