@@ -95,6 +95,10 @@ done:
 | Independent external security review (Grok 4.7) | Deferred; not performed |
 | PyPI publication | Not done; not authorized |
 
+GitHub attaches its own automatically generated "Source code" archives of the tag commit to every release.
+They are not part of the reviewed release set below, were not inspected, and are not listed in the
+artifact table. The reviewed files are the wheel, sdist, source zip, `SHA256SUMS` and `BUILD_PROVENANCE.json`.
+
 ## Upgrade and compatibility
 
 Forward migrations 001–012 apply in order; migration 010 requires explicit

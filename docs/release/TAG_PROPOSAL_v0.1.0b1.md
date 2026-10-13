@@ -50,8 +50,11 @@ Operative sequence:
      allowed;
    - anything else stops the release;
    - tag-run bytes are never approved through this comparison.
-5. Create the GitHub prerelease with the release notes and **only** the five files of the release set.
-   Record the completion time.
+5. Create the GitHub prerelease with the release notes and **only** the five files of the release set as
+   uploaded assets. GitHub also attaches its own automatically generated "Source code (zip)" and "Source
+   code (tar.gz)" archives of the tag commit. Those are not part of the reviewed release set, were not
+   inspected, and are not listed in the artifact table. After upload, download the five assets into a fresh
+   directory and verify them with `sha256sum -c` against `SHA256SUMS`. Record the completion time.
 
 | Party | Decision | Exact commit confirmed | Date (Nassau) | Reference |
 |---|---|---|---|---|
