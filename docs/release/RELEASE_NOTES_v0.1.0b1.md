@@ -1,7 +1,8 @@
-# Zabalack 0.1.0b1 — beta candidate (draft release notes)
+# Zabalack 0.1.0b1 — beta prerelease (release notes)
 
-Draft prepared 11 October 2026 for owner review. Status: **unpublished candidate**. This is
-a beta for development and isolated evaluation. It is **not qualified for
+Prepared 11 October 2026; updated 13 October 2026. Status: **GitHub prerelease** by owner decision of
+13 October 2026, with the items under "Deferred by owner decision" left open. **Not published to PyPI.**
+This is a beta for development and isolated evaluation. It is **not qualified for
 production deployment**; see "Open items" below.
 
 ## What Zabalack does
@@ -71,14 +72,26 @@ repository is public.
 
 | Item | Meaning | Status |
 |---|---|---|
-| CodeQL | Static analysis workflow | Enabled on the public repository; completed runs on the producer commit; 8 harness-path alerts (none in runtime or SQL) have proposed dispositions in `docs/release/CODEQL_TRIAGE_20261011.md` at `main` `ac0a5511a1d4…` (not part of the tagged tree); one alert fixed (#46); dismissal awaits owner + reviewer agreement |
+| CodeQL | Static analysis workflow | Enabled on the public repository; completed runs on the producer commit; 8 harness-path alerts (none in runtime or SQL): one fixed (#46), seven dismissed with reasons on 12 October 2026 after owner and independent-reviewer agreement (dispositions in `docs/release/CODEQL_TRIAGE_20261011.md` on `main`, not part of the tagged tree) |
 | Signed attestation | SLSA provenance of the wheel via GitHub attestations | Template supplied, **not run** |
 | Native x64 qualification | Bounded native run on an authorised x86_64 host | **Deferred**; hosted CI native pass is run evidence only |
 | A2 | Reference webhook transport does not authenticate TLS peers | **Open**; do not deploy the reference webhook as shipped |
 | A4/G5 | Permission tests on the real installed Zabbix account | **Not executed** |
 | G1–G8 | Deployment gates (inventory, ingestion contract, cohort, ownership, records) | **Planned, not verified** |
-| Independent security review | External review of this exact revision | **Pending** |
-| Internal review finding F1 | An Alerta principal with write access for the customer may edit an alert's Zabbix source attributes before acknowledging, retargeting the acknowledgement to another event of an enabled cohort (depends on Alerta's attribute-update path, unverified) | **Disclosed**; fix planned: bind alert to event at ingestion |
+| Independent security review | External review (xAI Grok 4.7) of this exact revision | **Deferred by owner decision**; not performed |
+| Internal review finding F1 | An Alerta principal with write access for the customer may edit an alert's Zabbix source attributes before acknowledging, retargeting the acknowledgement to another event of an enabled cohort (depends on Alerta's attribute-update path, unverified) | **Disclosed**; fix designed for 0.2.0 (source binding at ingestion, `docs/DESIGN_0.2.0_F1_SOURCE_BINDING.md` on `main`) |
+
+## Deferred by owner decision (13 October 2026)
+
+The owner released this beta as a GitHub prerelease with these items deferred. They are **not** done:
+
+| Item | Status |
+|---|---|
+| Private vulnerability-report test (a test report sent and receipt confirmed) | Deferred; `private_security_reporting_verified` is `false` in the register |
+| Register approvals: copyright and third-party review, public-content review, PyPI namespace | Deferred; all three are `false` in the register |
+| Independent reviewer's inspection of the release artifact bytes | Deferred; the code at the tagged commit was reviewed, the built files were not separately inspected |
+| Independent external security review (Grok 4.7) | Deferred; not performed |
+| PyPI publication | Not done; not authorized |
 
 ## Upgrade and compatibility
 

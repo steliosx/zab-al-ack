@@ -129,6 +129,22 @@ acceptance (see `docs/BETA_READINESS.md`).
 | Register completeness (step 2b) | PENDING: empty list |
 | Documentation review head | PENDING |
 
+## Owner decision of 13 October 2026: prerelease on candidate #4 with deferred items
+
+The owner decided to release v0.1.0b1 now as a **GitHub prerelease** on candidate #4's producer commit
+`f85212e238fb6322802b163219096db48e428291`, with the artifacts of run 38187030741 as listed in "Artifact
+hashes". There is no PyPI upload. The open items are deferred and listed in `RELEASE_NOTES_v0.1.0b1.md`
+("Deferred by owner decision"). Because the register stays unchanged, no final producer is built
+(step 0 does not apply), and candidate #4 is the tag target for this prerelease. Step 2a holds: the run's
+package job passed, and its `evidence/public-audit.json` reads `PASS` with zero findings. Step 2b
+(register completeness) is waived by the owner for this prerelease only. Steps 1, 3, 4 and 5 apply with
+`f85212e2` as the producer. Owner-local record: `OWNER-DECISION-ZABALACK-PRERELEASE-20261013.md`.
+
+| Party | Decision | Exact commit confirmed | Date (Nassau) | Reference |
+|---|---|---|---|---|
+| Owner | Approve GitHub prerelease v0.1.0b1, deferred items, no PyPI | `f85212e238fb6322802b163219096db48e428291` | 13 October 2026 | owner terminal turn and AskUserQuestion, Zabalack session |
+| Codex (independent reviewer) | pending | | | signed message id |
+
 ## Approval record (fill in after the final producer record is complete)
 
 Approvals bind the full final producer SHA. They are given after the final inputs and artifacts are
