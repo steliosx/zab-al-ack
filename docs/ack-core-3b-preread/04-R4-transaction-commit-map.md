@@ -1,8 +1,9 @@
 # R4 — Transaction owner and unknown-COMMIT state machine (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r5, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P4, P7); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q3
-answered); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S1 answered here); r4 pending. R4 was
+answered); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S1); r4 CHANGES_REQUIRED
+(20261013T180356Z-codex-omarchy-604951f7: T1 answered here); r5 pending. R4 was
 raised by Codex in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted design, DDL, grant or
 implementation. Source facts below are read from the pinned Alerta 9.1.0 package (upstream commit
 `f4312727783dad64198b62ed778bbca98a5144a3`, PyPI `alerta-server==9.1.0`) and zab-al-ack `main`
@@ -116,11 +117,14 @@ suspension; DESIGN §5/§6). Here the uncertainty is whether the **local** Alert
 
 Two public operations, with deliberately consistent semantics:
 - **submit(key, request)** performs the request or returns its existing outcome;
-- **status(key)** is recovery-only. It never starts work. It answers `outcome`, `in_progress` or
-  `not_found`. `not_found` is returned identically for an absent key, an expired key and a scope mismatch,
-  so `status` is not a membership oracle.
+- **status(key, scope)** is recovery-only. It never starts work. It answers exactly one of four bounded
+  labels: `outcome`, `in_progress`, `not_committed` or `not_found`. `not_found` is returned identically
+  for an absent key, an expired key and any scope or digest mismatch. Raw lock errors and stored scope
+  fields are never exposed in responses or public diagnostics.
 
-1. **Key namespace.** Keys are namespaced per authenticated principal. The client sends an idempotency key
+1. **Key namespace and scope.** Keys are unique per authenticated principal: (principal, request_id). The
+   **scope** of a request is (principal, customer, kind, alert_id, lifetime, request_digest). The customer
+   must be one the principal is currently authorized for, by Alerta's own customer authorization. The client sends an idempotency key
    with each action request. It is optional on POST /alert: an ingestion without a key is always new.
    Housekeeping generates its own key per alert.
 2. **Reserve (submit only; a short transaction, committed before the enlisted one).**
@@ -128,24 +132,37 @@ Two public operations, with deliberately consistent semantics:
    alert_id, lifetime, request_digest, state `reserved`, attempt 0). This is **independently durable, inert
    coordination state**, an explicit exception to the "one final commit" rule (§2). It never authorizes
    delivery and is not provider dispatch preparation.
-3. **Admit under the lock (every entry: the original caller, a duplicate, a waiter or a recovery).** The
-   enlisted transaction's first statement is `SELECT ... FOR UPDATE` on the reservation row. When the
-   waiting lock is acquired, PostgreSQL returns the **updated** row, and the core re-checks it **under the
-   lock, before any alert or provider work**:
-   - a terminal outcome is recorded → return it, with no mutation;
-   - scope or digest mismatch (principal, customer, kind, alert_id, lifetime, request_digest) → refuse,
-     with the same answer as `not_found`;
-   - state `reserved` and the scope matches → conditionally set `state = attempting` and `attempt + 1`
-     while still holding the lock, then do the work.
+3. **Admit under the lock, scope first (every entry: the original caller, a duplicate, a waiter or a
+   recovery).** The enlisted transaction's first statement is `SELECT ... FOR UPDATE` on the row selected by
+   (principal, request_id). When the waiting lock is acquired, PostgreSQL returns the **updated** row. The
+   core then decides, **under the lock and before any alert or provider work, in this order**:
+   1. **Scope first.** If customer authorization, kind, alert_id, lifetime, request_digest or expiry do not
+      match, return the bounded refusal identical to `not_found`. This happens whatever the row's state
+      (reserved, attempting, terminal, expired). No outcome, operation ID or attempt state is revealed, and
+      nothing is mutated.
+   2. A terminal outcome is recorded → return it, with no mutation.
+   3. State `reserved` → conditionally set `attempting` and `attempt + 1` while holding the lock, then do the
+      work.
 
    The outcome (`committed_capture`, `committed_no_capture`, `committed_refused`, `local_only`, with the
    operation IDs) is written in the same transaction as the work. No decision taken before the lock is ever
-   relied on. Example: if a duplicate finishes first, the original caller resumes, acquires the lock, sees
-   the terminal outcome and returns it, so there is one operation and one epoch.
-4. **Status lookup** uses `FOR UPDATE NOWAIT` on the primary with a fresh snapshot: locked → `in_progress`;
-   terminal → `outcome` (scope permitting); `reserved` or `attempting` and unlocked → the attempt did not
-   commit → `not_committed`, returned only to the matching scope, which may then **submit** again; absent,
-   expired or wrong scope → `not_found`.
+   relied on. Example: if a duplicate finishes first, the original caller resumes, acquires the lock, passes
+   the scope check, sees the terminal outcome and returns it, so there is one operation and one epoch.
+   Residual: a submit that collides with the same principal's own key in a different scope waits on that row's
+   lock before the bounded refusal. The timing is visible only to the principal that owns the key namespace,
+   never across principals.
+4. **Status lookup, scope-filtered before any lock.** The lookup selects only a row matching the caller's
+   **full** authorized scope:
+   `WHERE principal = $caller AND request_id = $key AND customer = ANY($authorized_customers) AND kind = $kind
+   AND alert_id = $alert AND lifetime = $lifetime AND request_digest = $digest`, then `FOR UPDATE NOWAIT`.
+   A row outside the scope is never selected, so its lock can never surface as a signal:
+   - no matching row → `not_found`;
+   - lock not available → `in_progress`;
+   - terminal → `outcome`;
+   - `reserved` and unlocked → `not_committed`. The attempt did not commit, and the same scope may submit
+     again.
+
+   The exact SQL and caller authorization are left for rendered review.
 5. **Retention.** Rows stay for a retention window. After it, the row is reduced to a tombstone (key hash,
    principal, `expired`), kept for a longer second window. A submit on a tombstoned key is refused, never
    re-executed. Beyond both windows, absence of a key is **not** proof that it was never reserved. The

@@ -2,8 +2,8 @@
 
 Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P2, P3, closure); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a:
-Q1, Q2, Q4); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S3, S4 answered here); r4
-pending. R3 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Until a replacement is reviewed and separately
+Q1, Q2, Q4); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S3, S4 answered in r4); r4 review
+(20261013T180356Z-codex-omarchy-604951f7): those items closed as draft corrections; no open item in this file. R3 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Until a replacement is reviewed and separately
 qualified, F1 r4.2 §3.5 stays: `model_unack` is diagnostic-only (`skipped:
 source_binding_unavailable_at_ingestion`), with no intent, signature, marker or generation.
 

@@ -3,7 +3,8 @@
 Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P1, P3, P6); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a:
 Q1, Q2; §4 is now the single ingestion state machine that R3, R4 and R5 reference); r3 CHANGES_REQUIRED
-(20261013T174021Z-codex-omarchy-d7d59f1e: S3, S4 answered here); r4 pending.
+(20261013T174021Z-codex-omarchy-d7d59f1e: S3, S4 answered in r4); r4 review
+(20261013T180356Z-codex-omarchy-604951f7): those items closed as draft corrections; no open item in this file.
 R2 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted DDL, grant or implementation. Pinned
 sources as in R4. Astra's constraints carried: epoch allocation is not commit order; keep Voalack's r8
 final-row AFTER / lifetime / reservation / delete / restore protections; the obsolete BEFORE-column draft

@@ -2,7 +2,8 @@
 
 Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P1, P5); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q2,
-Q4); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S2 answered here); r4 pending. R5 was
+Q4); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S2 answered in r4); r4 review
+(20261013T180356Z-codex-omarchy-604951f7): those items closed as draft corrections; no open item in this file. R5 was
 raised in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted DDL, roles, grants or implementation.
 Zabalack's current installs are listed in `01-handoff-v3.md` §1, with exact `plugins.py`, `normalizer.py`
 and `query_guard.py` locations at `main` `d06a3632`.

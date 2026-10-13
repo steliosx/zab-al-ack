@@ -1,6 +1,6 @@
 # Proposed joint witness / admission matrix for ack-core 3b (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED r4, NOT_RUN** (r1 reviewed in 750d397d, r2 in
+Author: Opus (Zabalack session). Status: **PROPOSED r5, NOT_RUN** (r1 reviewed in 750d397d, r2 in
 d7391d2a, r3 in 20261013T174021Z-codex-omarchy-d7d59f1e; rows added and adjusted for each). Step letters R, C, K, S, T, F
 and X refer to the R2 §4 ingestion state machine. No lab creation or execution is requested.
 A coexistence fork needs separately frozen image, source, installed-package, tool, command and expected-ID
@@ -44,7 +44,7 @@ Each row runs with **both plugin orders** (Zabalack first; Voalack first) unless
 | W31 | model_unack | E captured, then E+1 before worker admission | behaviour per the chosen R3 §2b policy; both variants witnessed (conditional on the joint decision) |
 | W32 | Transaction | unknown COMMIT while the original transaction is still running | the reservation row is locked → `in_progress`; no second attempt; no replay |
 | W33 | Transaction | unknown COMMIT on committed `no_capture`, `refused` and `local_only` branches | the recorded outcome is returned; absence of a capture is never read as rollback |
-| W34 | Transaction | same key with a changed payload; same key and payload under another customer, principal, lifetime or kind; simultaneous callers with the same key | changed or wrong scope: refusal identical to "no such request"; simultaneous: one runs, others get `in_progress` |
+| W34 | Transaction | same key with a changed payload; same key and payload under another customer, kind, alert, lifetime or digest, against **terminal** rows and **actively locked** rows; simultaneous callers with the same key | wrong scope or digest: bounded refusal identical to `not_found` in every row state, with no outcome, operation ID, membership or lock-state disclosure; matching-scope controls: outcome or `in_progress`; simultaneous same scope: one runs, others wait and return the outcome |
 | W35 | Transaction | recovery attempted on a replica; with a stale snapshot; reservation past retention; operator `pg_xact_status` too old or in progress | refused or `unknown`; never a fresh dispatch |
 | W36 | Identity | other roles call core routines; app calls without the core context or with a mismatched owner or generation; a **fresh** provider-worker connection with only the declared effective grants (schema USAGE + EXECUTE on read_committed_evidence) reads its own evidence (positive), another provider's and absent evidence (uniform `not_yours_or_absent`), and attempts table access and mutating routines (denied) | as stated; forged in-process app context recorded as a stated limit |
 | W37 | Privacy | pre-commit log lines, error bodies, JSONP responses and query-oracle probes for membership | no reserved key and no membership signal leaks |
@@ -54,7 +54,7 @@ Each row runs with **both plugin orders** (Zabalack first; Voalack first) unless
 | W41 | Ingestion | transport retry of POST /alert with the same key after total response loss | original outcome returned; no second ingestion or epoch |
 | W42 | Transaction | original submitter paused after its reservation commit and before taking the lock; a duplicate submit runs and commits; the original resumes | the original acquires the lock, sees the terminal outcome and returns it: exactly one operation and one epoch |
 | W43 | Transaction | a waiter queued behind a committing holder on the same key | the waiter gets the updated row under the lock and returns the existing outcome; no second attempt |
-| W44 | Transaction | status(key) for an absent key, a wrong-scope key and an expired (tombstoned) key; submit on a tombstoned key | status: identical `not_found`, no work started; submit on a tombstone: refused, never re-executed |
+| W44 | Transaction | status(key, scope) for an absent key, an expired (tombstoned) key, a wrong-scope key on a terminal row, and a wrong-scope key on a locked row; submit on a tombstoned key | status: identical `not_found` for all four, no work started, no raw lock error; matching scope returns `outcome`, `in_progress` or `not_committed`; submit on a tombstone: refused, never re-executed |
 
 Evidence rule: each run records the base image manifest hash, installed wheel hashes for both providers
 and ack-core, the rendered trigger and routine definitions (`pg_get_triggerdef`, `pg_get_functiondef`),
