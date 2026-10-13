@@ -1,8 +1,8 @@
 # R3 — `model_unack` signing context and delayed admission (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r2, discussion input only.** Codex review: r1
-CHANGES_REQUIRED (20261013T163920Z-codex-omarchy-750d397d; P2, P3 and the R3 closure details answered
-here); r2 pending. R3 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Until a replacement is reviewed and separately
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r3, discussion input only.** Codex review: r1
+CHANGES_REQUIRED (750d397d: P2, P3, closure); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a:
+Q1, Q2, Q4 answered here); r3 pending. R3 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Until a replacement is reviewed and separately
 qualified, F1 r4.2 §3.5 stays: `model_unack` is diagnostic-only (`skipped:
 source_binding_unavailable_at_ingestion`), with no intent, signature, marker or generation.
 
@@ -21,36 +21,32 @@ Timing fact: the signing hook (`status_change`) runs at `models/alert.py:359`, *
 at `:379`. Codex R3: "a token first allocated inside that later SQL statement is not available to the
 earlier signing hook."
 
-## 2. Proposed protocol: core-reserved ingestion context
+## 2. Proposed protocol (follows R2 §4 steps R, C, K, S, T, F, X exactly)
 
-Requires R4's core-owned ingestion transaction and R2's epoch store. The ordering is chosen so that the
-binding exists **before** the correlate statement and its AFTER triggers run.
+The ingestion sequence and its writers are defined once, in R2 §4. For `model_unack` this means:
 
-1. **Resolve and reserve (before any hook).** At the start of the enlisted POST /alert, ack-core resolves
-   the target row with Alerta's own dedupe/correlate identity, takes `FOR UPDATE` on that `public.alerts`
-   row and its `ack_core.alert_epoch` row, and **reserves** `E = current + 1` in a single-use,
-   transaction-local context (`ack_core.ingestion_context`: alert_id, lifetime, E, nonce, owner decision,
-   registration generation). If no row is found, the ingestion is a create, and `E = 1` of a new lifetime.
-2. **Authenticate and pre-bind (in `pre_receive`).** The authenticated provider writes a **pending binding**
-   for exactly (alert_id, lifetime, E) through the core bind routine. It is pending because it is not yet
-   committed; it is visible inside this transaction only. If `pre_receive` changes the alert's natural
-   identity so that the target row would differ, the transaction aborts (fail closed).
-3. **Sign (in `status_change`, `models/alert.py:359`).** The owner signs the `model_unack` intent over the
-   canonical bytes (§3), which include E, the lifetime, the nonce and the owner decision digest.
-4. **Statement and triggers (`models/alert.py:379`).** The correlate `UPDATE` runs. The core stamp trigger
-   requires exactly one affected row, that row = the reserved alert, and stamp = E. Any mismatch aborts.
-   The provider's capture trigger then finds the pending binding for E in the same transaction and records
-   a **candidate capture**. A candidate is non-executable: it carries no admission and holds no outbox
-   visibility outside the transaction.
-5. **Commit.** One final commit makes the stamp, binding, class change (if any) and candidate capture
-   visible together. A failed bind or any mismatch rolls back the whole ingestion, so there is never a
-   committed epoch with a silently failed bind.
-6. **Worker admission (after commit).** Only the provider's worker admits, and only committed evidence:
-   (a) the committed binding for exactly E in the historical store (R2 `epoch_bindings`); (b) class = this
-   provider; (c) history provenance (§1); (d) the mirror flag for the bound cohort revision; (e) **HMAC
-   verification by the worker, before any target access** (DESIGN §5.2/§6.2). Provider keys stay in the
-   provider; the database and the core never hold them; (f) the execution window, as an independent
-   mandatory gate.
+1. **R, C, K.** The core reserves E. Providers that authenticate the ingestion claim it during
+   `pre_receive`. The claims close before the statement. Only a **single** claimant becomes provisional
+   owner with a pending bind for E. With zero or two claims nobody may sign, and any `model_unack` attempt is
+   recorded as refused (`owner_unresolved` or `ownership_conflict`). If `pre_receive` changes the natural
+   identity so that the target would differ, finalize aborts.
+2. **S.** In `status_change` (`models/alert.py:359`), the provisional owner signs the intent over the
+   canonical bytes (§3), which include E, the lifetime, the nonce and the owner-decision digest.
+3. **T.** The correlate statement (`models/alert.py:379`) fires the stamp trigger and the provider's capture
+   trigger in **either order**. The capture writes a non-executable **candidate** that references the
+   context nonce and the signed intent. It does not read the stamp, so trigger order cannot change the
+   outcome.
+4. **F, X.** Finalize checks counter = 1, target, E and lifetime, writes the binding for E from the pending
+   bind, records the class transition, and persists the context mapping (nonce → alert, lifetime, E,
+   owner decision) as committed evidence. Then one commit. Any mismatch rolls back everything, candidate
+   included.
+5. **Worker admission (after commit).** Only the provider's worker admits, and only committed evidence, read
+   through the **worker evidence interface** (R5 §2c) under the provider worker's own role:
+   (a) nonce → E mapping and the owner decision = this provider; (b) the committed binding for exactly E,
+   whose source digest equals the captured intent's source; (c) history provenance (§1); (d) the mirror flag
+   for the bound cohort revision; (e) **HMAC verification by the worker before any endpoint or credential
+   resolution** (DESIGN §5.2/§6.2), with keys only in the provider; (f) the execution window, as an
+   independent mandatory gate. The separate verification and delivery leases of the existing worker stay.
 
 The context is consumed once, on success, exception, suppression, rerouting, re-entrant call or teardown.
 No request-local slot can authorize a later ingestion, and an old signature is never relabelled with a newly
@@ -62,7 +58,8 @@ allocated epoch.
   stamped epoch. That is W18's "stale" case.
 - **Superseded after capture → still admissible.** If E+1 arrives after a committed capture for E, the
   `ack` → `open` transition has already happened in Alerta. The operation is frozen-source: it executes
-  against its own committed binding for E (kept in the historical store), within its own execution window,
+  against its own committed binding for E (historical store, read through R5 §2c), within its own execution
+  window,
   and in per-event order behind earlier operations, under the existing no-replay and uncertainty fences.
   The worker does **not** require E to be current. It does require the window, the committed E binding and
   per-event ordering.

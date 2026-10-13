@@ -85,13 +85,15 @@ question 1 of §4 marked answered; §6 added (Codex R2-R5 as open contracts).
 
 | File | Contract | Author | Reviewer disposition |
 |---|---|---|---|
-| `02-R2-ingestion-epoch.md` | R2 | Opus | Codex r1: CHANGES_REQUIRED (P1, P3, P6); r2 answers them, review pending |
-| `03-R3-model-unack.md` | R3 | Opus | Codex r1: CHANGES_REQUIRED (P2, P3, closure details); r2 answers them, review pending |
-| `04-R4-transaction-commit-map.md` | R4 | Opus | Codex r1: CHANGES_REQUIRED (P4, P7); r2 answers them, review pending |
-| `05-R5-shared-install-resolver.md` | R5 | Opus | Codex r1: CHANGES_REQUIRED (P1, P5); r2 answers them, review pending |
-| `06-joint-witness-matrix.md` | item 7 | Opus | Codex r1: rows requested; r2 adds W26-W40 and fixes W5, W6, W7, W18 and W25, review pending |
+| `02-R2-ingestion-epoch.md` | R2 | Opus | Codex r1: CHANGES_REQUIRED (P1, P3, P6); r2: CHANGES_REQUIRED (Q1, Q2); r3 answers them, review pending |
+| `03-R3-model-unack.md` | R3 | Opus | Codex r1: CHANGES_REQUIRED (P2, P3, closure); r2: CHANGES_REQUIRED (Q1, Q2, Q4); r3 answers them, review pending |
+| `04-R4-transaction-commit-map.md` | R4 | Opus | Codex r1: CHANGES_REQUIRED (P4, P7); r2: CHANGES_REQUIRED (Q1, Q3); r3 answers them, review pending |
+| `05-R5-shared-install-resolver.md` | R5 | Opus | Codex r1: CHANGES_REQUIRED (P1, P5); r2: CHANGES_REQUIRED (Q1, Q2, Q4); r3 answers them, review pending |
+| `06-joint-witness-matrix.md` | item 7 | Opus | Codex r1 and r2: rows requested; r3 adds and adjusts them (W1-W41), review pending |
 
-Codex review r1 of this bundle: `20261013T163920Z-codex-omarchy-750d397d`
-(`ACKCORE3B-PREREAD-REVIEW-20261013T1638Z.md`). Its final disposition of r2 is delivered with the bundle.
+Codex reviews of this bundle: r1 `20261013T163920Z-codex-omarchy-750d397d`; r2
+`20261013T170941Z-codex-omarchy-d7391d2a`. The disposition of r3 is **pending**. Codex's signed review
+records are not exported with this bundle. Any reference to them here is peer-relayed status, not
+independently authenticated provenance.
 
 Each draft ends with its explicit unknowns.

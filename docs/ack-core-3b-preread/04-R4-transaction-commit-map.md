@@ -1,7 +1,8 @@
 # R4 — Transaction owner and unknown-COMMIT state machine (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r2, discussion input only.** Codex review: r1
-CHANGES_REQUIRED (20261013T163920Z-codex-omarchy-750d397d, P4 and P7 answered here); r2 pending. R4 was
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r3, discussion input only.** Codex review: r1
+CHANGES_REQUIRED (750d397d: P4, P7); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q3
+answered here); r3 pending. R4 was
 raised by Codex in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted design, DDL, grant or
 implementation. Source facts below are read from the pinned Alerta 9.1.0 package (upstream commit
 `f4312727783dad64198b62ed778bbca98a5144a3`, PyPI `alerta-server==9.1.0`) and zab-al-ack `main`
@@ -71,8 +72,11 @@ committed capture. The existing retirement sweep removes it, and the worker neve
 
 ## 2. Proposed default (accepted in principle on both sides; details open)
 
-One **core-owned request transaction** per enlisted request, with exactly one provider enlisted (the
-resolved owner, R5), no intermediate commit by Alerta or by any provider, and one final commit.
+One **core-owned request transaction** per enlisted request, with no intermediate commit by Alerta or by
+any provider, and one final commit. For **action** and **housekeeping** requests, exactly one provider is
+enlisted: the owner resolved from the committed class (R5). **Ingestion** (POST /alert) is the one
+exception. It is an unowned enlisted transaction, and its owner is decided inside it by R2 §4 steps R, C, K
+and F.
 
 1. ack-core opens the request scope (WSGI wrapper or `before_request`) and marks `g` as enlisted.
 2. While enlisted, **every** Alerta backend write helper (`_insert`, `_upsert`, `_updateone`, `_updateall`,
@@ -108,30 +112,49 @@ commit together. That makes the ingestion path atomic, which is what removes the
 This is distinct from uncertain **remote** writes (Zabalack worker `uncertain`, never resent; instance
 suspension; DESIGN §5/§6). Here the uncertainty is whether the **local** Alerta transaction committed.
 
-**Durable outcome witness.** Each enlisted transaction writes one core request record in the same
-transaction: `ack_core.requests` (request_id, customer, alert_id, lifetime, kind, request_digest over the
-immutable request payload, xid = `pg_current_xact_id()`, outcome = `committed_capture` /
-`committed_no_capture` / `committed_refused` / `local_only`). It is retained for the reconciliation and
-retry window. Absence of a capture or outbox row is **not** evidence of rollback, because committed
-no-capture and refusal branches have neither.
+**Request identity, reserved before any mutation (r3, Q3).**
+
+1. **Key.** The client sends an idempotency key (request_id) with each action request. It is optional on
+   POST /alert: an ingestion without a key is always a new ingestion. Housekeeping generates its own key per
+   alert.
+2. **Reserve (own short transaction, committed before the enlisted transaction starts).** Insert
+   `ack_core.request_keys` (request_id, principal, customer, kind, alert_id, lifetime, request_digest,
+   state = `reserved`, attempt = 0). The unique key serializes concurrent callers. A second caller with the
+   same key finds the existing row and takes the scope check below.
+3. **Enlisted transaction.** Its first statement is `SELECT ... FOR UPDATE` on that reservation row, then
+   `UPDATE` to `attempt + 1`. Its last statement, in the same transaction, sets the outcome:
+   `committed_capture`, `committed_no_capture`, `committed_refused` or `local_only`, with the operation IDs.
+   While it is in flight, the row lock blocks every other caller with that key: no second transaction can
+   run while the first outcome is unresolved.
+4. **Recovery after total response loss** (the client knows only its request_id), on the authoritative
+   primary with a fresh snapshot:
+   - outcome set → return the recorded outcome. Already-dispatched committed work is neither cancelled nor
+     replayed;
+   - state still `reserved` and the row is **not** locked (checked with `FOR UPDATE NOWAIT`) → the attempt's
+     transaction did not commit, because
+     the outcome is written in the same transaction as the work. The same key, same digest and same scope
+     may run a new attempt;
+   - row locked → `in_progress` (409 with retry-after). Never a fresh dispatch;
+   - no row → the request was never reserved: it is a new request. A row past retention → refuse as
+     `unknown`, never a fresh dispatch.
+5. **Scope.** A recorded outcome or a new attempt is available only when principal, customer, kind,
+   alert_id, lifetime and request_digest all match. Any mismatch returns a refusal that is identical to "no
+   such request", so nothing about the original outcome leaks.
+6. **Transaction IDs are optional diagnostics.** The client never needs an xid. Operators may still read
+   `pg_xact_status` for a known, retained xid, but in-progress or too-old results never authorize replay. An
+   inconsistent result (status committed but outcome missing) is refused, and an incident is raised.
 
 | State | Entered when | Exit |
 |---|---|---|
-| `open` | enlisted scope begins; request_id fixed | `committing` or `rolled_back` |
-| `committing` | core calls `COMMIT` | `committed` (commit returned); `rolled_back` (a definite error before commit, for example a serialization failure); `commit_unknown` (connection lost or an ambiguous error during commit) |
-| `committed` | — | 2xx (or the handled response code) |
-| `rolled_back` | — | 4xx/5xx; nothing persisted; no external effect is possible, because no outbox row ever became visible |
-| `commit_unknown` | ambiguous commit | 503 with request_id and xid. Reconciliation runs **on the authoritative primary only** (never a replica): `pg_xact_status(xid)` gives `committed`, `aborted` or `in progress`. While `in progress`, the state stays `commit_unknown`. `committed` is confirmed by reading the request record by request_id. `aborted` means rolled back. NULL (xid too old) keeps `commit_unknown`, and replay is refused. |
+| `reserved` | step 2 committed | `open` (an attempt starts) |
+| `open` | enlisted transaction holds the reservation row lock | `committing` or `rolled_back` |
+| `committing` | core calls `COMMIT` | `committed`, `rolled_back` or `commit_unknown` |
+| `committed` | outcome row committed | response with the outcome |
+| `rolled_back` | definite error before commit | 4xx/5xx; the reservation stays `reserved`; a retry with the same key and scope is a new attempt |
+| `commit_unknown` | ambiguous commit | 503 with request_id; recovery by step 4 |
 
-**Retry identity.**
-- Clients supply the request_id as an idempotency key (header), so a lost response leaves the client
-  holding the ID.
-- A retry with the same request_id and the **same** request_digest returns the recorded outcome.
-- A retry with the same ID and a **different** digest is refused (409). It is never silently accepted.
-- Ingestion: each POST /alert is its own request. A retry is a new ingestion (new epoch, R2) and is
-  authenticated afresh.
-- Housekeeping: the request_id is server-generated per alert and recorded. A housekeeping run is
-  idempotent by design: a timeout already applied is not reapplied.
+Ingestion retry: a **transport** retry of POST /alert with the **same** key recovers the original outcome
+and never creates a second ingestion. A deliberately new ingestion uses a new key, or none.
 
 Determining a local commit does not cancel or replay anything. Committed work may already have been
 dispatched by a worker. External effect happens only after committed admission, because the worker reads

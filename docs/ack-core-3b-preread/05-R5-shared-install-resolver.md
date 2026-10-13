@@ -1,7 +1,8 @@
 # R5 — Shared install, resolver trust and ownership decision (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r2, discussion input only.** Codex review: r1
-CHANGES_REQUIRED (20261013T163920Z-codex-omarchy-750d397d; P1 and P5 answered here); r2 pending. R5 was
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r3, discussion input only.** Codex review: r1
+CHANGES_REQUIRED (750d397d: P1, P5); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q2,
+Q4 answered here); r3 pending. R5 was
 raised in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted DDL, roles, grants or implementation.
 Zabalack's current installs are listed in `01-handoff-v3.md` §1, with exact `plugins.py`, `normalizer.py`
 and `query_guard.py` locations at `main` `d06a3632`.
@@ -59,19 +60,22 @@ follows:
 - **Inside the application process (trusted administrative boundary).** Provider identity is enforced in
   Python by ack-core: each enrolled provider receives a registration capability object (exact
   module/class/hook identity, registration generation) when the core starts. The mutating core routines
-  are reachable only through core entry points that take that capability. Before any provider hook runs, the
-  core sets a transaction-local context (`set_config(..., true)`) naming the enlisted provider and
-  registration generation. The routines refuse unless that context is present and matches the declared
-  call. Arbitrary SQL issued by code inside the same process could forge that context. Isolation against
+  are reachable only through core entry points that take that capability. For action and housekeeping
+  requests, the core sets a transaction-local context (`set_config(..., true)`) before any provider hook,
+  naming the enlisted owner and registration generation. For ingestion (R2 §4), no owner is enlisted:
+  the context names the ingestion (request_id, nonce), and each claim names its claimant through the core
+  claim entry point that takes the claimant's capability. The routines refuse unless the context is present
+  and matches the declared call. Arbitrary SQL issued by code inside the same process could forge that context. Isolation against
   that threat rests on code review of every installed plugin, not on the database. This limit is stated, not
   hidden.
 - **Outside the application (enforced by the database).** Reader, worker, installer and the other
   provider's separate roles get no EXECUTE on the mutating routines and no table access. The membership
   read function is EXECUTE-granted only to the application role.
 - **Trigger-only versus callable.** The epoch stamp runs only as a trigger function. It is not callable and
-  has no EXECUTE grant. The callable interfaces are `bind_epoch` (core entry point, requires the reserved
-  ingestion context, R3 §2), `resolve_owner` (core only), `read_own_class` and `read_own_epoch` (answer
-  only for the context's provider).
+  has no EXECUTE grant. The callable application interfaces are the R2 §4 step routines (`reserve_ingestion`,
+  `claim_ingestion`, `close_claims`, `finalize_ingestion`), `reserve_request` (R4 §3), `resolve_owner` (core
+  only) and `read_own_class`, which answers only for the context's provider. Workers use only
+  `read_committed_evidence` (§2c).
 - Provider schemas, keys, workers and Zabalack's readiness, grant, routine body-digest and seal checks stay
   separate and unchanged in kind.
 
@@ -79,15 +83,48 @@ Witnesses: other roles are denied on every routine. A call without the core cont
 provider or generation, is refused. A forged context inside the process is demonstrated as **not**
 detectable by the database, which records the limit.
 
+## 2c. Worker evidence interface (Q4)
+
+Provider workers run as their **own database roles**, separate per provider (for Zabalack, the existing
+worker role). This is unlike the shared application role, so the database **can** tell provider workers
+apart.
+
+- `ack_core.provider_roles` (role name → provider id, registration generation) is written by the installer
+  only.
+- `ack_core.read_committed_evidence(alert_id, lifetime, nonce_or_epoch)` is `SECURITY DEFINER` and read-only.
+  It derives the provider from `session_user` through `provider_roles`; **no provider argument exists**.
+  It returns only the calling provider's own committed facts:
+  - the nonce → E mapping;
+  - the owner decision for that context;
+  - the binding for exactly that (alert, lifetime, E) with its source digest;
+  - the class **at E** (historical, from provenance).
+
+  For any alert, epoch or context that is not the caller's, it returns the same `not_yours_or_absent`
+  answer, so there is no membership oracle.
+- EXECUTE is granted to each registered provider **worker** role only. It is not granted to the application
+  role, readers, the installer at runtime, or `PUBLIC`. Workers get no table access and cannot mutate core
+  tables.
+- Binding to the captured operation: the provider's capture stores (alert_id, lifetime, nonce or E,
+  source digest, owner-decision digest). The worker compares those with the interface's answer before HMAC
+  verification and before any endpoint or credential resolution.
+- Captured versus current: the worker checks the captured E binding and the class at E. Whether it also
+  requires the **current** class and epoch depends on the joint delayed-admission choice (R3 §2b).
+
 ## 3. Proposed database inventory (for review; no DDL accepted)
 
 | Object | Owner | Grants |
 |---|---|---|
 | schema `ack_core` | `ack_core_owner` | USAGE to the Alerta application role only |
-| tables `alert_epoch`, `epoch_events`, `epoch_bindings`, `alert_class`, `alert_tombstones`, `alert_ownership`, `ownership_transitions`, `requests` (R4 §3), `ingestion_context` | `ack_core_owner` | none direct; access only through routines |
+| tables `alert_epoch`, `epoch_events`, `epoch_bindings`, `alert_class`, `alert_tombstones`, `alert_ownership`, `ownership_transitions`, `request_keys` (R4 §3), `ingestion_context`, `ingestion_claims`, `provider_roles` | `ack_core_owner` | none direct; access only through routines |
 | trigger `ack_core_epoch` `AFTER INSERT OR UPDATE OF last_receive_id, last_receive_time ON public.alerts` | `ack_core_owner` function | — |
 | trigger-only routine: stamp (no EXECUTE grant) | `ack_core_owner` | none |
-| callable routines: bind_epoch, resolve_owner, read_own_class, read_own_epoch | `ack_core_owner`, `SECURITY DEFINER`, `search_path = pg_catalog, ack_core`; each requires the core transaction-local context (§2b) | EXECUTE to the Alerta application role only; `PUBLIC` revoked |
+| callable routines (application): reserve_ingestion, claim_ingestion, close_claims, finalize_ingestion, resolve_owner, reserve_request, read_own_class | `ack_core_owner`, `SECURITY DEFINER`, `search_path = pg_catalog, ack_core`; each requires the core transaction-local context (§2b) | EXECUTE to the Alerta application role only; `PUBLIC` revoked |
+| callable routine (workers): read_committed_evidence | `ack_core_owner`, `SECURITY DEFINER`, read-only; provider from `session_user` (§2c) | EXECUTE to registered provider worker roles only |
+| trigger attachment | installer role, at install time only | installer authority is not a runtime grant |
+
+The stamp trigger and the provider capture triggers have **no required firing order**. Captures reference
+the context nonce, not the stamp (R2 §4 step T). Readiness freezes the exact trigger names, functions and
+body digests. An unexpected trigger set on `public.alerts` refuses readiness.
 
 Lifecycle:
 - Install and upgrade are forward-only, with a version and capability row. Rollback to a pre-core provider
@@ -101,8 +138,8 @@ Lifecycle:
 
 1. Who publishes and versions `alerta-ack-core` (Voalack hosts `packages/ack-core` today), and its review
    chain.
-2. Trigger firing order between `ack_core_epoch` and the providers' AFTER triggers on `public.alerts`
-   (PostgreSQL fires same-event triggers in name order).
+2. (Resolved in r3: no firing order is required, because captures reference the context nonce. Readiness
+   freezes the trigger set; see §3.)
 3. How Zabalack's existing `zabalack_capture` trigger and grants map into the core inventory and Zabalack's
    reseal checks (`sql/install/12_application_grant.sql`, `13_reseal.sql`).
 4. Whether the resolver decision is cached per epoch, or recomputed per request under the lock.

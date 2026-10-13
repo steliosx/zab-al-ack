@@ -1,7 +1,9 @@
 # R2 — Ingestion epoch, lock identity and current pointer (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r2, discussion input only.** Codex review: r1
-CHANGES_REQUIRED (20261013T163920Z-codex-omarchy-750d397d; P1, P3 and P6 answered here); r2 pending.
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r3, discussion input only.** Codex review: r1
+CHANGES_REQUIRED (750d397d: P1, P3, P6); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a:
+Q1, Q2 answered here; §4 is now the single ingestion state machine that R3, R4 and R5 reference); r3
+pending.
 R2 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted DDL, grant or implementation. Pinned
 sources as in R4. Astra's constraints carried: epoch allocation is not commit order; keep Voalack's r8
 final-row AFTER / lifetime / reservation / delete / restore protections; the obsolete BEFORE-column draft
@@ -30,11 +32,19 @@ fires a column-list `UPDATE OF` trigger whenever a listed column appears in the 
 source reading, not a native witness). A `FOR EACH ROW` trigger fires once per affected row: zero matched
 rows produce no event, and several matched rows produce several events.
 
-**One-target invariant (proposed).** The pinned dedupe and correlate `UPDATE`s select by natural identity
-and customer, not by the resolved alert ID, so they could in principle match more than one row. For an
-enlisted ingestion, the core requires **exactly one affected row**. A statement-level AFTER trigger with a
-transition table counts the rows, and zero or more than one aborts the enlisted transaction. It also
-requires that row's ID to equal the alert the core resolved for the ingestion (R3 §2).
+**One-target invariant and count mechanism (proposed, r3).** The pinned dedupe and correlate `UPDATE`s
+select by natural identity and customer, not by the resolved alert ID, so they could in principle match
+more than one row. PostgreSQL does not allow transition relations on a trigger with an `UPDATE OF` column
+list or with several events, so r2's statement-level transition-table count is withdrawn. Instead:
+- the row-level stamp trigger increments a counter in the open ingestion context (§4) for each affected row
+  and records the affected row's ID;
+- the core **finalize** step (§4, step F), which runs after the statement and all its triggers and before
+  commit, requires the counter to be exactly 1 and the recorded row to be the reserved target. Zero (no row
+  trigger fired) or two or more aborts the enlisted transaction;
+- tag, attribute, status, note and delete statements never fire the column-list trigger, so they can never
+  touch the counter. Only an ingestion statement is counted;
+- outside an enlisted ingestion (for example webhook batches), the trigger stamps an unbound epoch per
+  affected row and touches no context.
 
 Detecting a `SET` clause is **not** authentication. Every event, including an undeclared or
 unauthenticated ingestion, stamps a new epoch that is **unbound** unless an authenticated provider bind
@@ -67,7 +77,9 @@ Plus:
   binding (§4a);
 - a tombstone (alert_id, last lifetime, deleted_at, xid) retained across delete and restore, so that a
   reused `alert_id` always gets a higher lifetime.
-Rows are written only by the core trigger function (`SECURITY DEFINER`, owner a non-provider core role).
+Writers (r3): `alert_epoch`, `epoch_events` and tombstones are written only by the stamp trigger function.
+`ingestion_context`, `ingestion_claims`, `epoch_bindings` and `alert_class` are written only by core
+routines in the §4 sequence. All are `SECURITY DEFINER` and owned by a non-provider core role.
 
 ## 3. Lock identity and ordering
 
@@ -81,47 +93,52 @@ Rows are written only by the core trigger function (`SECURITY DEFINER`, owner a 
   commit together, so "a later epoch commits later" would not hold. The enlisted scope therefore admits at
   most one ingestion event per alert: a second stamp for the same alert in the same transaction aborts it.
   Webhook batches and other multi-alert paths are not enlisted. The epoch reservation (R3) is single-use: it
-  is consumed by the stamp, and cleared on success, exception, suppression, rerouting, re-entrant calls and
-  teardown. Epoch values are assigned under that lock, so a later epoch
-  always commits later. Rolled-back events release the row and their increment rolls back too: no gap is
-  visible, and gaps would be harmless anyway (an epoch is never inferred from a number).
+  is consumed by finalize, and cleared on success, exception, suppression, rerouting, re-entrant calls and
+  teardown.
+- Epoch values are assigned under that lock, so across transactions a later epoch always commits later.
+  Rolled-back events release the row, and their increment rolls back too: no gap is visible. Gaps would be
+  harmless anyway, because an epoch is never inferred from a number.
 - Proposed global lock order for any transaction that needs several of them: `public.alerts` row →
   `ack_core.alert_epoch` row → `ack_core.alert_ownership` row → provider-private fence or binding rows.
 
-## 4. Bind and enrolment atomicity
+## 4. Ingestion state machine (single source of truth, r3)
 
-Under R4's core-owned ingestion transaction, the stamp, the provider's bind and the ingestion SQL commit
-together:
-1. The owner's `pre_receive` validates the authenticated source (Zabalack's existing ingestion checks).
-2. The ingestion SQL runs and the core trigger stamps epoch E.
-3. Within the same transaction, the provider binds **epoch E** through a core function, which reads E under
-   the epoch-row lock. A bind for any epoch other than the current one is refused.
-4. One final commit makes the stamp and bind visible together. An ingestion with no authenticated hand-off
-   leaves E unbound. A failed bind rolls back the whole ingestion, so the alert never shows a committed
-   epoch whose bind failed silently.
+POST /alert (single alert) runs as an **unowned enlisted ingestion transaction**. This is the one
+exception to R4's rule that an enlisted request has one pre-resolved owner: at ingestion, the owner is an
+output, not an input. Step names are used by R3, R4 and R5.
 
-Under the current (non-atomic) Alerta path, step 3 cannot name E reliably, because `post_receive` runs
-after the ingestion commit. That is why F1 r4.2 ranks by recording order and why the residual exists.
+| Step | Operation | Writer | Allowed epoch | Context state after |
+|---|---|---|---|---|
+| R | **Reserve.** Before any hook, the core resolves the target by Alerta's dedupe/correlate identity, locks the `public.alerts` row (if it exists) and its `alert_epoch` row, and writes `ingestion_context` (request_id, alert_id or `new`, lifetime, reserved `E = current + 1` or 1, nonce, counter 0) | core | reserves E | `reserved` |
+| C | **Claim.** During the `pre_receive` loop, each registered provider that authenticates the ingestion calls the core claim entry point with its registration capability. It writes `ingestion_claims` (provider, E, source digest). | core claim routine, on behalf of the capability holder | E only | `reserved` |
+| K | **Close claims.** After the `pre_receive` loop and before the statement: one claim → provisional owner and a **pending bind** for E; two or more → `conflict`, no pending bind; zero → no owner, no pending bind | core | E only | `claims_closed` |
+| S | **Sign (correlate only).** In `status_change` (`models/alert.py:359`), only the provisional owner may sign, over the R3 canonical bytes (E, lifetime, nonce, owner-decision digest) | provider | E | `claims_closed` |
+| T | **Statement and triggers.** The ingestion SQL runs. The stamp trigger increments the counter, records the row and stamps E. Provider capture triggers record **candidate** captures that reference the context **nonce**, not the stamp, so they do not depend on trigger order (Q2) | trigger functions | E | `stamped` |
+| F | **Finalize** (after the statement and `post_receive`, before commit): counter = 1; recorded row = target; stamp = E; lifetime matches. Then write `epoch_bindings` from the pending bind (if any); class transition (establish, confirm, carry, or `conflict`, recorded **without** a binding); persist the context as committed evidence (nonce → alert, lifetime, E, owner decision) | core | E | `finalized` |
+| X | **Commit**; any mismatch at F, or any exception, rolls back R-T entirely | core | — | consumed |
+
+Consequences:
+- A failed or mismatched finalize aborts atomically. A committed epoch never has a silently failed bind.
+- Zero claims: E is unbound, and the class carries (§4a).
+- Two claims: the class becomes `conflict` at F, without a binding. The Alerta ingestion itself commits,
+  because the alert belongs to Alerta.
+- Candidate captures become admissible only through the committed context mapping nonce → E plus the
+  committed binding (R3 §2, R5 §2c).
+- Mutable `source_system` is never authority at any step.
 
 ## 4a. Classification versus binding (P1)
 
 Classification answers "whose alert is this?". Binding answers "which source does this exact ingestion
-carry?". The two are kept apart:
-- **Established** by the first authenticated, bound ingestion of a lifetime: that provider's bind sets
-  `alert_class.class_provider` in the same transaction.
-- **Carried** across later ingestions, including undeclared, suppressed or routed-away ones. Those stamp an
-  unbound epoch, but the class does not change. So the alert is **owned-unbound**, never foreign.
-- **Conflicted** when a different provider presents authenticated class evidence for the same lifetime
-  (Zabalack's bind or Voalack's r8 class record): `class_provider` becomes `conflict`, with provenance.
+carry?". They are kept apart, and both change only at §4 step F:
+- **Established** by the first finalized ingestion of a lifetime with exactly one claim: that provider's
+  binding for E, plus `alert_class.class_provider` (bootstrap).
+- **Carried** across later ingestions with zero claims (undeclared, suppressed or routed-away). E is
+  unbound and the class is unchanged, so the alert is **owned-unbound**, never foreign.
+- **Conflicted** when a finalize sees two claims, or one claim from a provider other than the current class
+  holder, or Voalack's r8 class record disagrees. `class_provider` becomes `conflict`, with provenance and
+  without a binding.
 - **Retired** only by a lifetime change (delete, then re-create with the same ID).
 - Mutable `source_system` is never a fallback.
-
-**Bootstrap.** POST /alert is not enlisted "to an owner" in advance. The core runs the ingestion
-transaction, and each registered provider's `pre_receive` may return an authenticated claim:
-- exactly one claim: that provider binds the stamped epoch, and the class is established or confirmed;
-- two claims: the class becomes `conflict`, nobody binds, and the ingestion itself still commits (it is
-  Alerta's alert);
-- zero claims: the epoch is unbound and the class is unchanged.
 
 ## 5. Use at action time
 
