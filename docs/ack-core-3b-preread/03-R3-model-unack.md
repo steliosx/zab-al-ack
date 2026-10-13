@@ -1,8 +1,9 @@
 # R3 — `model_unack` signing context and delayed admission (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r3, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P2, P3, closure); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a:
-Q1, Q2, Q4 answered here); r3 pending. R3 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Until a replacement is reviewed and separately
+Q1, Q2, Q4); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S3, S4 answered here); r4
+pending. R3 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Until a replacement is reviewed and separately
 qualified, F1 r4.2 §3.5 stays: `model_unack` is diagnostic-only (`skipped:
 source_binding_unavailable_at_ingestion`), with no intent, signature, marker or generation.
 
@@ -26,9 +27,10 @@ earlier signing hook."
 The ingestion sequence and its writers are defined once, in R2 §4. For `model_unack` this means:
 
 1. **R, C, K.** The core reserves E. Providers that authenticate the ingestion claim it during
-   `pre_receive`. The claims close before the statement. Only a **single** claimant becomes provisional
-   owner with a pending bind for E. With zero or two claims nobody may sign, and any `model_unack` attempt is
-   recorded as refused (`owner_unresolved` or `ownership_conflict`). If `pre_receive` changes the natural
+   `pre_receive`. At K the core decides, including the existing class and every conflict predicate (R2 §4).
+   Only a provisional owner (single, non-conflicting claim) may sign. With zero claims or a conflict
+   decision nobody may sign, and any `model_unack` attempt becomes a committed, non-executable refusal
+   record (`owner_unresolved` or `ownership_conflict`). If `pre_receive` changes the natural
    identity so that the target would differ, finalize aborts.
 2. **S.** In `status_change` (`models/alert.py:359`), the provisional owner signs the intent over the
    canonical bytes (§3), which include E, the lifetime, the nonce and the owner-decision digest.
@@ -54,8 +56,18 @@ allocated epoch.
 
 ### 2b. Admission policy across later epochs (P3; proposed, for joint decision)
 
-- **Stale at signing or capture → refused.** The capture records a refusal if E is not the reserved and
-  stamped epoch. That is W18's "stale" case.
+- **Validation split (S3).** At capture (step T), in either trigger order, the candidate validates only what
+  already exists: the reserved context, its nonce, the reserved E and lifetime, and the signed identity.
+  It never requires the stamp to have fired. At F, the core validates the stamp, row count, target, lifetime
+  and E. Outcomes:
+  - **Abort the transaction:** any F mismatch (count, target, stamp ≠ E, lifetime), a consumed or
+    foreign context, or a nonce that does not match the open context. No candidate survives.
+  - **Committed, non-executable refusal record:** zero claims (`owner_unresolved`), a conflict decision
+    (`ownership_conflict`), mirror disabled, missing provenance, malformed staged data (bounded reason
+    only). The worker never admits these.
+  - **Stale** means that the intent names an E different from the open context's reserved E. That is an
+    abort, and it is W18's "stale" case.
+  Worker admission consumes only the finalized committed mapping (nonce → E, owner decision).
 - **Superseded after capture → still admissible.** If E+1 arrives after a committed capture for E, the
   `ack` → `open` transition has already happened in Alerta. The operation is frozen-source: it executes
   against its own committed binding for E (historical store, read through R5 §2c), within its own execution

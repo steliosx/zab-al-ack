@@ -1,8 +1,8 @@
 # R4 — Transaction owner and unknown-COMMIT state machine (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r3, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P4, P7); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q3
-answered here); r3 pending. R4 was
+answered); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S1 answered here); r4 pending. R4 was
 raised by Codex in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted design, DDL, grant or
 implementation. Source facts below are read from the pinned Alerta 9.1.0 package (upstream commit
 `f4312727783dad64198b62ed778bbca98a5144a3`, PyPI `alerta-server==9.1.0`) and zab-al-ack `main`
@@ -112,37 +112,47 @@ commit together. That makes the ingestion path atomic, which is what removes the
 This is distinct from uncertain **remote** writes (Zabalack worker `uncertain`, never resent; instance
 suspension; DESIGN §5/§6). Here the uncertainty is whether the **local** Alerta transaction committed.
 
-**Request identity, reserved before any mutation (r3, Q3).**
+**Request identity, reserved before any mutation (r4; Q3 and S1).**
 
-1. **Key.** The client sends an idempotency key (request_id) with each action request. It is optional on
-   POST /alert: an ingestion without a key is always a new ingestion. Housekeeping generates its own key per
-   alert.
-2. **Reserve (own short transaction, committed before the enlisted transaction starts).** Insert
-   `ack_core.request_keys` (request_id, principal, customer, kind, alert_id, lifetime, request_digest,
-   state = `reserved`, attempt = 0). The unique key serializes concurrent callers. A second caller with the
-   same key finds the existing row and takes the scope check below.
-3. **Enlisted transaction.** Its first statement is `SELECT ... FOR UPDATE` on that reservation row, then
-   `UPDATE` to `attempt + 1`. Its last statement, in the same transaction, sets the outcome:
-   `committed_capture`, `committed_no_capture`, `committed_refused` or `local_only`, with the operation IDs.
-   While it is in flight, the row lock blocks every other caller with that key: no second transaction can
-   run while the first outcome is unresolved.
-4. **Recovery after total response loss** (the client knows only its request_id), on the authoritative
-   primary with a fresh snapshot:
-   - outcome set → return the recorded outcome. Already-dispatched committed work is neither cancelled nor
-     replayed;
-   - state still `reserved` and the row is **not** locked (checked with `FOR UPDATE NOWAIT`) → the attempt's
-     transaction did not commit, because
-     the outcome is written in the same transaction as the work. The same key, same digest and same scope
-     may run a new attempt;
-   - row locked → `in_progress` (409 with retry-after). Never a fresh dispatch;
-   - no row → the request was never reserved: it is a new request. A row past retention → refuse as
-     `unknown`, never a fresh dispatch.
-5. **Scope.** A recorded outcome or a new attempt is available only when principal, customer, kind,
-   alert_id, lifetime and request_digest all match. Any mismatch returns a refusal that is identical to "no
-   such request", so nothing about the original outcome leaks.
-6. **Transaction IDs are optional diagnostics.** The client never needs an xid. Operators may still read
-   `pg_xact_status` for a known, retained xid, but in-progress or too-old results never authorize replay. An
-   inconsistent result (status committed but outcome missing) is refused, and an incident is raised.
+Two public operations, with deliberately consistent semantics:
+- **submit(key, request)** performs the request or returns its existing outcome;
+- **status(key)** is recovery-only. It never starts work. It answers `outcome`, `in_progress` or
+  `not_found`. `not_found` is returned identically for an absent key, an expired key and a scope mismatch,
+  so `status` is not a membership oracle.
+
+1. **Key namespace.** Keys are namespaced per authenticated principal. The client sends an idempotency key
+   with each action request. It is optional on POST /alert: an ingestion without a key is always new.
+   Housekeeping generates its own key per alert.
+2. **Reserve (submit only; a short transaction, committed before the enlisted one).**
+   `INSERT ... ON CONFLICT DO NOTHING` into `ack_core.request_keys` (request_id, principal, customer, kind,
+   alert_id, lifetime, request_digest, state `reserved`, attempt 0). This is **independently durable, inert
+   coordination state**, an explicit exception to the "one final commit" rule (§2). It never authorizes
+   delivery and is not provider dispatch preparation.
+3. **Admit under the lock (every entry: the original caller, a duplicate, a waiter or a recovery).** The
+   enlisted transaction's first statement is `SELECT ... FOR UPDATE` on the reservation row. When the
+   waiting lock is acquired, PostgreSQL returns the **updated** row, and the core re-checks it **under the
+   lock, before any alert or provider work**:
+   - a terminal outcome is recorded → return it, with no mutation;
+   - scope or digest mismatch (principal, customer, kind, alert_id, lifetime, request_digest) → refuse,
+     with the same answer as `not_found`;
+   - state `reserved` and the scope matches → conditionally set `state = attempting` and `attempt + 1`
+     while still holding the lock, then do the work.
+
+   The outcome (`committed_capture`, `committed_no_capture`, `committed_refused`, `local_only`, with the
+   operation IDs) is written in the same transaction as the work. No decision taken before the lock is ever
+   relied on. Example: if a duplicate finishes first, the original caller resumes, acquires the lock, sees
+   the terminal outcome and returns it, so there is one operation and one epoch.
+4. **Status lookup** uses `FOR UPDATE NOWAIT` on the primary with a fresh snapshot: locked → `in_progress`;
+   terminal → `outcome` (scope permitting); `reserved` or `attempting` and unlocked → the attempt did not
+   commit → `not_committed`, returned only to the matching scope, which may then **submit** again; absent,
+   expired or wrong scope → `not_found`.
+5. **Retention.** Rows stay for a retention window. After it, the row is reduced to a tombstone (key hash,
+   principal, `expired`), kept for a longer second window. A submit on a tombstoned key is refused, never
+   re-executed. Beyond both windows, absence of a key is **not** proof that it was never reserved. The
+   namespace contract must make reuse after that point the client's error, and that remains an open point.
+6. **Lock order** (common, also in R2 §3): reservation row → `public.alerts` row → `alert_epoch` row →
+   class or ownership row → provider-private rows.
+7. **Transaction IDs are optional diagnostics only**, as in r3.
 
 | State | Entered when | Exit |
 |---|---|---|

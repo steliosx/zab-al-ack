@@ -1,9 +1,9 @@
 # R2 — Ingestion epoch, lock identity and current pointer (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r3, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P1, P3, P6); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a:
-Q1, Q2 answered here; §4 is now the single ingestion state machine that R3, R4 and R5 reference); r3
-pending.
+Q1, Q2; §4 is now the single ingestion state machine that R3, R4 and R5 reference); r3 CHANGES_REQUIRED
+(20261013T174021Z-codex-omarchy-d7d59f1e: S3, S4 answered here); r4 pending.
 R2 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted DDL, grant or implementation. Pinned
 sources as in R4. Astra's constraints carried: epoch allocation is not commit order; keep Voalack's r8
 final-row AFTER / lifetime / reservation / delete / restore protections; the obsolete BEFORE-column draft
@@ -98,8 +98,9 @@ routines in the §4 sequence. All are `SECURITY DEFINER` and owned by a non-prov
 - Epoch values are assigned under that lock, so across transactions a later epoch always commits later.
   Rolled-back events release the row, and their increment rolls back too: no gap is visible. Gaps would be
   harmless anyway, because an epoch is never inferred from a number.
-- Proposed global lock order for any transaction that needs several of them: `public.alerts` row →
-  `ack_core.alert_epoch` row → `ack_core.alert_ownership` row → provider-private fence or binding rows.
+- Proposed global lock order for any transaction that needs several of them: request reservation row
+  (R4 §3) → `public.alerts` row → `ack_core.alert_epoch` row → class or ownership row → provider-private
+  fence or binding rows.
 
 ## 4. Ingestion state machine (single source of truth, r3)
 
@@ -111,10 +112,10 @@ output, not an input. Step names are used by R3, R4 and R5.
 |---|---|---|---|---|
 | R | **Reserve.** Before any hook, the core resolves the target by Alerta's dedupe/correlate identity, locks the `public.alerts` row (if it exists) and its `alert_epoch` row, and writes `ingestion_context` (request_id, alert_id or `new`, lifetime, reserved `E = current + 1` or 1, nonce, counter 0) | core | reserves E | `reserved` |
 | C | **Claim.** During the `pre_receive` loop, each registered provider that authenticates the ingestion calls the core claim entry point with its registration capability. It writes `ingestion_claims` (provider, E, source digest). | core claim routine, on behalf of the capability holder | E only | `reserved` |
-| K | **Close claims.** After the `pre_receive` loop and before the statement: one claim → provisional owner and a **pending bind** for E; two or more → `conflict`, no pending bind; zero → no owner, no pending bind | core | E only | `claims_closed` |
+| K | **Decide (close claims).** After the `pre_receive` loop and before the statement, under the epoch-row lock, the core evaluates the claims **together with the existing protected class and provenance** and every conflict predicate: two or more claims; a sole claim from a provider other than the current class holder; an existing `conflict` class; or a disagreeing Voalack r8 class record → decision `conflict`: no provisional owner, no pending bind, no signing allowed. A sole claim from the current class holder, or from the first claimant when no class exists → provisional owner and a **pending bind** for E. Zero claims → no owner, no pending bind | core | E only | `claims_closed` |
 | S | **Sign (correlate only).** In `status_change` (`models/alert.py:359`), only the provisional owner may sign, over the R3 canonical bytes (E, lifetime, nonce, owner-decision digest) | provider | E | `claims_closed` |
 | T | **Statement and triggers.** The ingestion SQL runs. The stamp trigger increments the counter, records the row and stamps E. Provider capture triggers record **candidate** captures that reference the context **nonce**, not the stamp, so they do not depend on trigger order (Q2) | trigger functions | E | `stamped` |
-| F | **Finalize** (after the statement and `post_receive`, before commit): counter = 1; recorded row = target; stamp = E; lifetime matches. Then write `epoch_bindings` from the pending bind (if any); class transition (establish, confirm, carry, or `conflict`, recorded **without** a binding); persist the context as committed evidence (nonce → alert, lifetime, E, owner decision) | core | E | `finalized` |
+| F | **Finalize** (after the statement and `post_receive`, before commit), in this order: (1) counter = 1, recorded row = target, stamp = E, lifetime matches, or else **abort**; (2) re-evaluate the K decision under the lock; if it is now `conflict`, drop the pending bind; (3) only for a non-conflict decision with a pending bind, write `epoch_bindings`; (4) record the class transition (establish, confirm, carry, or `conflict` **without** any binding); (5) persist the context as committed evidence (nonce → alert, lifetime, E, final owner decision). A conflict decision leaves no admissible binding, no owner-decision digest naming a provider, and any provisional signature or candidate stays inert and is refused at admission | core | E | `finalized` |
 | X | **Commit**; any mismatch at F, or any exception, rolls back R-T entirely | core | — | consumed |
 
 Consequences:
@@ -134,9 +135,10 @@ carry?". They are kept apart, and both change only at §4 step F:
   binding for E, plus `alert_class.class_provider` (bootstrap).
 - **Carried** across later ingestions with zero claims (undeclared, suppressed or routed-away). E is
   unbound and the class is unchanged, so the alert is **owned-unbound**, never foreign.
-- **Conflicted** when a finalize sees two claims, or one claim from a provider other than the current class
-  holder, or Voalack's r8 class record disagrees. `class_provider` becomes `conflict`, with provenance and
-  without a binding.
+- **Conflicted** when the K/F decision sees two claims, a sole claim from a provider other than the current
+  class holder, an existing conflict, or a disagreeing Voalack r8 class record. `class_provider` becomes
+  `conflict`, with provenance and without a binding. Conflict is **sticky**: a later single claim does not
+  repair it. Only a lifetime change clears it. There is no silent transfer between providers.
 - **Retired** only by a lifetime change (delete, then re-create with the same ID).
 - Mutable `source_system` is never a fallback.
 

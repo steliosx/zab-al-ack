@@ -1,8 +1,8 @@
 # R5 — Shared install, resolver trust and ownership decision (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r3, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P1, P5); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q2,
-Q4 answered here); r3 pending. R5 was
+Q4); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S2 answered here); r4 pending. R5 was
 raised in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted DDL, roles, grants or implementation.
 Zabalack's current installs are listed in `01-handoff-v3.md` §1, with exact `plugins.py`, `normalizer.py`
 and `query_guard.py` locations at `main` `d06a3632`.
@@ -114,12 +114,12 @@ apart.
 
 | Object | Owner | Grants |
 |---|---|---|
-| schema `ack_core` | `ack_core_owner` | USAGE to the Alerta application role only |
+| schema `ack_core` | `ack_core_owner` | USAGE to the Alerta application role **and** to each registered provider worker role (schema lookup only; S2) |
 | tables `alert_epoch`, `epoch_events`, `epoch_bindings`, `alert_class`, `alert_tombstones`, `alert_ownership`, `ownership_transitions`, `request_keys` (R4 §3), `ingestion_context`, `ingestion_claims`, `provider_roles` | `ack_core_owner` | none direct; access only through routines |
 | trigger `ack_core_epoch` `AFTER INSERT OR UPDATE OF last_receive_id, last_receive_time ON public.alerts` | `ack_core_owner` function | — |
 | trigger-only routine: stamp (no EXECUTE grant) | `ack_core_owner` | none |
 | callable routines (application): reserve_ingestion, claim_ingestion, close_claims, finalize_ingestion, resolve_owner, reserve_request, read_own_class | `ack_core_owner`, `SECURITY DEFINER`, `search_path = pg_catalog, ack_core`; each requires the core transaction-local context (§2b) | EXECUTE to the Alerta application role only; `PUBLIC` revoked |
-| callable routine (workers): read_committed_evidence | `ack_core_owner`, `SECURITY DEFINER`, read-only; provider from `session_user` (§2c) | EXECUTE to registered provider worker roles only |
+| callable routine (workers): read_committed_evidence | `ack_core_owner`, `SECURITY DEFINER`, read-only; provider from `session_user` (§2c) | EXECUTE to registered provider worker roles only. Worker roles have no table privileges, no EXECUTE on any mutating routine, and no `PUBLIC` path. Readiness pins the exact `session_user` login-role → provider mapping and generation; a `SET ROLE` alias is not accepted |
 | trigger attachment | installer role, at install time only | installer authority is not a runtime grant |
 
 The stamp trigger and the provider capture triggers have **no required firing order**. Captures reference
