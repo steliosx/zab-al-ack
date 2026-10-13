@@ -1,6 +1,6 @@
 # Proposed joint witness / admission matrix for ack-core 3b (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED r6, NOT_RUN** (r1 reviewed in 750d397d, r2 in
+Author: Opus (Zabalack session). Status: **PROPOSED r7, NOT_RUN** (r1 reviewed in 750d397d, r2 in
 d7391d2a, r3 in 20261013T174021Z-codex-omarchy-d7d59f1e; rows added and adjusted for each). Step letters R, C, K, S, T, F
 and X refer to the R2 §4 ingestion state machine. No lab creation or execution is requested.
 A coexistence fork needs separately frozen image, source, installed-package, tool, command and expected-ID
@@ -55,6 +55,7 @@ Each row runs with **both plugin orders** (Zabalack first; Voalack first) unless
 | W42 | Transaction | original submitter paused after its reservation commit and before taking the lock; a duplicate submit runs and commits; the original resumes | the original acquires the lock, sees the terminal outcome and returns it: exactly one operation and one epoch |
 | W43 | Transaction | a waiter queued behind a committing holder on the same key | the waiter gets the updated row under the lock and returns the existing outcome; no second attempt |
 | W44 | Transaction | status(key, scope) for an absent key, an expired (tombstoned) key, a **logically expired but not yet tombstoned** key (both locked and unlocked), a wrong-scope key on a terminal row, and a wrong-scope key on a locked row; submit on a tombstoned key | status: identical `not_found` for all of these, no work started, no raw lock error; matching scope returns `outcome`, `in_progress` or `not_committed`; submit on a tombstone: refused, never re-executed |
+| W45 | Transaction | crossing expiry: a submit waiter and a status caller start before `expires_at`, the holder commits (and, separately, rolls back) after `expires_at`; matching controls well before expiry | waiter and status: `not_found` and no attempt (fresh post-lock clock sample); controls: the outcome, or a new attempt after a rollback, as specified |
 
 Evidence rule: each run records the base image manifest hash, installed wheel hashes for both providers
 and ack-core, the rendered trigger and routine definitions (`pg_get_triggerdef`, `pg_get_functiondef`),

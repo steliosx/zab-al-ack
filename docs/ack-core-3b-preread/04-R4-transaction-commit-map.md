@@ -1,10 +1,11 @@
 # R4 — Transaction owner and unknown-COMMIT state machine (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r6, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r7, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P4, P7); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q3
 answered); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S1); r4 CHANGES_REQUIRED
 (20261013T180356Z-codex-omarchy-604951f7: T1); r5 CHANGES_REQUIRED (20261013T182026Z-codex-omarchy-8ef308a4:
-T1 narrowed to exact customer and expiry, answered here); r6 pending. R4 was
+T1 narrowed to exact customer and expiry); r6 CHANGES_REQUIRED (20261013T183236Z-codex-omarchy-7fa7731c:
+expiry decision clock, answered here); r7 pending. R4 was
 raised by Codex in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted design, DDL, grant or
 implementation. Source facts below are read from the pinned Alerta 9.1.0 package (upstream commit
 `f4312727783dad64198b62ed778bbca98a5144a3`, PyPI `alerta-server==9.1.0`) and zab-al-ack `main`
@@ -130,8 +131,12 @@ Two public operations, with deliberately consistent semantics:
    authorized for several customers never lets one customer's request match another's. The
    request_digest is not relied on to carry the customer.
    **Expiry.** Each reservation stores `expires_at` (= reserved time + retention window), fixed at
-   reservation. A row is **logically expired** once `expires_at <= now()` on the primary, even if the
-   tombstone cleanup has not run yet. A logically expired row is treated exactly like an absent one. The client sends an idempotency key
+   reservation. A row is **logically expired** once `expires_at <= clock_timestamp()` on the primary, even if
+   the tombstone cleanup has not run yet. A logically expired row is treated exactly like an absent one.
+   **Decision clock.** Every expiry decision uses a **fresh** `clock_timestamp()` sample taken at the decision
+   point, never `now()`, because `now()` is the transaction start time and goes stale while a caller waits on
+   a lock. Submit samples the clock **after** acquiring the reservation lock. Status samples it before
+   `NOWAIT`, and **again** after the lock is acquired. The client sends an idempotency key
    with each action request. It is optional on POST /alert: an ingestion without a key is always new.
    Housekeeping generates its own key per alert.
 2. **Reserve (submit only; a short transaction, committed before the enlisted one).**
@@ -145,7 +150,9 @@ Two public operations, with deliberately consistent semantics:
    core then decides, **under the lock and before any alert or provider work, in this order**:
    1. **Scope and expiry first.** If the stored customer differs from the requested customer, or the
       principal is not currently authorized for it, or kind, alert_id, lifetime or request_digest differ, or
-      the row is logically expired, return the bounded refusal identical to `not_found`. This happens whatever the row's state
+      the row is logically expired at a `clock_timestamp()` sample taken after the lock was acquired,
+      return the bounded refusal identical to `not_found`. A submit that began before `expires_at` but
+      acquired the lock after it is therefore refused; it never starts an attempt or discloses an outcome. This happens whatever the row's state
       (reserved, attempting, terminal, expired). No outcome, operation ID or attempt state is revealed, and
       nothing is mutated.
    2. A terminal outcome is recorded → return it, with no mutation.
@@ -162,10 +169,10 @@ Two public operations, with deliberately consistent semantics:
 4. **Status lookup, scope-filtered before any lock.** The lookup selects only a row matching the caller's
    **full** authorized scope:
    `WHERE principal = $caller AND request_id = $key AND customer = $requested_customer AND kind = $kind
-   AND alert_id = $alert AND lifetime = $lifetime AND request_digest = $digest AND expires_at > now()`, with
+   AND alert_id = $alert AND lifetime = $lifetime AND request_digest = $digest AND expires_at > clock_timestamp()`, with
    the precondition `$requested_customer = ANY($currently_authorized_customers)` checked first (if it
-   fails: `not_found`). Then `FOR UPDATE NOWAIT`, and after the lock is acquired, scope and expiry are
-   re-validated under the lock. A row outside the exact scope, or logically expired, is never selected, so
+   fails: `not_found`). Then `FOR UPDATE NOWAIT`. After the lock is acquired, scope is re-validated and
+   expiry is re-checked with a **new** `clock_timestamp()` sample. Expired at that point → `not_found`. A row outside the exact scope, or logically expired, is never selected, so
    its lock can never surface as a signal:
    - no matching row → `not_found`;
    - lock not available → `in_progress`;
