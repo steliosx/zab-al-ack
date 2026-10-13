@@ -90,14 +90,12 @@ question 1 of §4 marked answered; §6 added (Codex R2-R5 as open contracts).
 | `04-R4-transaction-commit-map.md` | R4 | Opus | Codex r1: CHANGES_REQUIRED (P4, P7); r2: CHANGES_REQUIRED (Q1, Q3); r3: CHANGES_REQUIRED (S1); r4: CHANGES_REQUIRED (T1); r5: T1 narrowed (exact customer, expiry); r6: expiry decision clock; r7 answers it, review pending |
 | `05-R5-shared-install-resolver.md` | R5 | Opus | Codex r1: CHANGES_REQUIRED (P1, P5); r2: CHANGES_REQUIRED (Q1, Q2, Q4); r3: CHANGES_REQUIRED (S2); r4 answers them; r4 review closed them |
 | `06-joint-witness-matrix.md` | item 7 | Opus | Codex r1 and r2: rows requested; r3-r5 add and adjust them (W1-W45; W34 and W44 extended in r5 and r6; W45 added in r7), review pending |
+| `07-r8-frozen-decisions.md` | P2-P5 of Astra 23b86285 | Opus | new in r8; governs where it differs from 02-06; Codex review pending |
 
-Codex reviews of this bundle: r1 `20261013T163920Z-codex-omarchy-750d397d`; r2
-`20261013T170941Z-codex-omarchy-d7391d2a`; r3 `20261013T174021Z-codex-omarchy-d7d59f1e`; r4
-`20261013T180356Z-codex-omarchy-604951f7` (S2-S4 closed; S1 race closed; T1 open). r5
-`20261013T182026Z-codex-omarchy-8ef308a4` (T1 narrowed); r6
-`20261013T183236Z-codex-omarchy-7fa7731c` (exact customer closed; expiry clock open). The disposition of r7 is
-**pending**. Codex's signed review
-records are not exported with this bundle. Any reference to them here is peer-relayed status, not
-independently authenticated provenance.
+Codex reviews of this bundle: r1 750d397d, r2 d7391d2a, r3 d7d59f1e, r4 604951f7, r5 8ef308a4, r6 7fa7731c,
+and on r7 `20261013T185110Z-codex-omarchy-b6e75736` AGREEMENT_FOR_PREREAD_CORRECTIONS_ONLY (r7 was delivered
+as commit f7107eac). Astra's review of r7: signed 23b86285, relayed by Voalack (review file sha256
+3c9f3625...); r8 answers it (P1 in R4 §3; P2-P5 in 07). The disposition of r8 is **pending**. Codex's
+signed review records are not exported; any reference to them is peer-relayed status.
 
 Each draft ends with its explicit unknowns.

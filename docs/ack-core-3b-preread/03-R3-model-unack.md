@@ -1,6 +1,6 @@
 # R3 — `model_unack` signing context and delayed admission (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r8, discussion input only.** r8: answers Astra 23b86285; `07-r8-frozen-decisions.md` governs where it differs; r8 review pending. Codex review: r1
 CHANGES_REQUIRED (750d397d: P2, P3, closure); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a:
 Q1, Q2, Q4); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S3, S4 answered in r4); r4 review
 (20261013T180356Z-codex-omarchy-604951f7): those items closed as draft corrections; no open item in this file. R3 was raised in 20261013T005221Z-codex-omarchy-1e79ef92. Until a replacement is reviewed and separately
@@ -54,30 +54,18 @@ The context is consumed once, on success, exception, suppression, rerouting, re-
 No request-local slot can authorize a later ingestion, and an old signature is never relabelled with a newly
 allocated epoch.
 
-### 2b. Admission policy across later epochs (P3; proposed, for joint decision)
+### 2b. Admission policy across later epochs (r8: see 07 D2, which governs)
 
-- **Validation split (S3).** At capture (step T), in either trigger order, the candidate validates only what
-  already exists: the reserved context, its nonce, the reserved E and lifetime, and the signed identity.
-  It never requires the stamp to have fired. At F, the core validates the stamp, row count, target, lifetime
-  and E. Outcomes:
-  - **Abort the transaction:** any F mismatch (count, target, stamp ≠ E, lifetime), a consumed or
-    foreign context, or a nonce that does not match the open context. No candidate survives.
-  - **Committed, non-executable refusal record:** zero claims (`owner_unresolved`), a conflict decision
-    (`ownership_conflict`), mirror disabled, missing provenance, malformed staged data (bounded reason
-    only). The worker never admits these.
-  - **Stale** means that the intent names an E different from the open context's reserved E. That is an
-    abort, and it is W18's "stale" case.
-  Worker admission consumes only the finalized committed mapping (nonce → E, owner decision).
-- **Superseded after capture → still admissible.** If E+1 arrives after a committed capture for E, the
-  `ack` → `open` transition has already happened in Alerta. The operation is frozen-source: it executes
-  against its own committed binding for E (historical store, read through R5 §2c), within its own execution
-  window,
-  and in per-event order behind earlier operations, under the existing no-replay and uncertainty fences.
-  The worker does **not** require E to be current. It does require the window, the committed E binding and
-  per-event ordering.
-- This choice belongs to the joint design review. If the reviewers choose "current at worker admission"
-  instead, the worker must take the epoch-row lock and re-check currency before target access.
-- Witness: E, then E+1 before worker admission, for both policies.
+- **Validation split (S3)** stays: capture validates the reserved context, nonce, E, lifetime and signed
+  identity in either trigger order; F validates stamp, count, target, lifetime and E. Any F mismatch aborts.
+  Zero claims, conflict, mirror disabled, missing provenance and malformed data become committed,
+  non-executable refusal records.
+- **After capture**, the worker uses the 07 D2 table: historical evidence (binding and class at E, intent,
+  windows) plus current mandatory predicates, read at admission and again before target access. Ordinary
+  supersession with the same source by the same authenticated provider is admitted. A changed source, an
+  unbound E+1, a conflict or other provider, a retired lifetime, a customer change, a retired registration
+  or role, a revoked policy or mirror flag, and an expired capture or execution window are each refused,
+  with their own reason codes.
 
 ## 3. Canonical signing bytes (proposed)
 

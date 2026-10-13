@@ -1,6 +1,6 @@
 # R2 — Ingestion epoch, lock identity and current pointer (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r8, discussion input only.** r8: answers Astra 23b86285; `07-r8-frozen-decisions.md` governs where it differs; r8 review pending. Codex review: r1
 CHANGES_REQUIRED (750d397d: P1, P3, P6); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a:
 Q1, Q2; §4 is now the single ingestion state machine that R3, R4 and R5 reference); r3 CHANGES_REQUIRED
 (20261013T174021Z-codex-omarchy-d7d59f1e: S3, S4 answered in r4); r4 review
@@ -77,7 +77,8 @@ Plus:
   retired_at). This is durable, authenticated classification, kept separate from the per-epoch action-source
   binding (§4a);
 - a tombstone (alert_id, last lifetime, deleted_at, xid) retained across delete and restore, so that a
-  reused `alert_id` always gets a higher lifetime.
+  reused `alert_id` gets a higher lifetime **only where reuse is allowed**. Provider permanent reserves
+  (Voalack r8 §3: every former ONE final ID) always win and are never reopened (07 D1).
 Writers (r3): `alert_epoch`, `epoch_events` and tombstones are written only by the stamp trigger function.
 `ingestion_context`, `ingestion_claims`, `epoch_bindings` and `alert_class` are written only by core
 routines in the §4 sequence. All are `SECURITY DEFINER` and owned by a non-provider core role.
@@ -100,8 +101,8 @@ routines in the §4 sequence. All are `SECURITY DEFINER` and owned by a non-prov
   Rolled-back events release the row, and their increment rolls back too: no gap is visible. Gaps would be
   harmless anyway, because an epoch is never inferred from a number.
 - Proposed global lock order for any transaction that needs several of them: request reservation row
-  (R4 §3) → `public.alerts` row → `ack_core.alert_epoch` row → class or ownership row → provider-private
-  fence or binding rows.
+  (R4 §3) → natural-identity advisory lock (07 D3) → `public.alerts` row → `ack_core.alert_epoch` row →
+  class or ownership row → provider-private fence or binding rows.
 
 ## 4. Ingestion state machine (single source of truth, r3)
 
@@ -111,7 +112,7 @@ output, not an input. Step names are used by R3, R4 and R5.
 
 | Step | Operation | Writer | Allowed epoch | Context state after |
 |---|---|---|---|---|
-| R | **Reserve.** Before any hook, the core resolves the target by Alerta's dedupe/correlate identity, locks the `public.alerts` row (if it exists) and its `alert_epoch` row, and writes `ingestion_context` (request_id, alert_id or `new`, lifetime, reserved `E = current + 1` or 1, nonce, counter 0) | core | reserves E | `reserved` |
+| R | **Reserve.** Before any hook, the core takes the natural-identity advisory lock (07 D3), resolves the target by Alerta's dedupe/correlate identity, locks the `public.alerts` row (if it exists) and its `alert_epoch` row, and writes `ingestion_context` (request_id, alert_id or `new`, lifetime, reserved `E = current + 1` or 1, nonce, counter 0) | core | reserves E | `reserved` |
 | C | **Claim.** During the `pre_receive` loop, each registered provider that authenticates the ingestion calls the core claim entry point with its registration capability. It writes `ingestion_claims` (provider, E, source digest). | core claim routine, on behalf of the capability holder | E only | `reserved` |
 | K | **Decide (close claims).** After the `pre_receive` loop and before the statement, under the epoch-row lock, the core evaluates the claims **together with the existing protected class and provenance** and every conflict predicate: two or more claims; a sole claim from a provider other than the current class holder; an existing `conflict` class; or a disagreeing Voalack r8 class record → decision `conflict`: no provisional owner, no pending bind, no signing allowed. A sole claim from the current class holder, or from the first claimant when no class exists → provisional owner and a **pending bind** for E. Zero claims → no owner, no pending bind | core | E only | `claims_closed` |
 | S | **Sign (correlate only).** In `status_change` (`models/alert.py:359`), only the provisional owner may sign, over the R3 canonical bytes (E, lifetime, nonce, owner-decision digest) | provider | E | `claims_closed` |

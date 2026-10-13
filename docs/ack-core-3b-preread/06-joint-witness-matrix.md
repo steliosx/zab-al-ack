@@ -1,6 +1,6 @@
 # Proposed joint witness / admission matrix for ack-core 3b (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED r7, NOT_RUN** (r1 reviewed in 750d397d, r2 in
+Author: Opus (Zabalack session). Status: **PROPOSED r8, NOT_RUN** (r8 answers Astra 23b86285; 07 governs) (r1 reviewed in 750d397d, r2 in
 d7391d2a, r3 in 20261013T174021Z-codex-omarchy-d7d59f1e; rows added and adjusted for each). Step letters R, C, K, S, T, F
 and X refer to the R2 §4 ingestion state machine. No lab creation or execution is requested.
 A coexistence fork needs separately frozen image, source, installed-package, tool, command and expected-ID
@@ -20,7 +20,7 @@ Each row runs with **both plugin orders** (Zabalack first; Voalack first) unless
 | W7 | Ingestion | (a) **undeclared** replay of an exact receive ID with a forced equal timestamp; (b) **authenticated** new ingestion reusing a receive ID | (a) new unbound epoch, actions refused; (b) new epoch bound by the authenticated provider |
 | W8 | Ingestion | two concurrent ingestions of one alert | epochs ordered by commit; the second waits on the row lock |
 | W9 | Ingestion | ingestion rollback after the stamp | no epoch visible; no gap visible |
-| W10 | Ingestion | delete, then re-create with the same `alert_id` | new lifetime; old bindings unusable |
+| W10 | Ingestion | delete, then re-create a **Zabbix-class** ID (no provider reserve) | new lifetime (tombstone + 1); old bindings unusable |
 | W11 | Ingestion | failure at each step R, C, K, T and F (including a failed finalize write) | whole ingestion rolled back; no epoch, claim, bind, class change or candidate survives |
 | W12 | Transaction | action happy path | one commit: staging, tags, attributes, status, history, capture and outbox all visible together |
 | W13 | Transaction | failure injected at each boundary (after staging, after tags, after attributes, inside `set_alert`, in post_action) | full rollback each time; nothing staged survives |
@@ -40,8 +40,8 @@ Each row runs with **both plugin orders** (Zabalack first; Voalack first) unless
 | W27 | Ingestion | two ingestions of the same alert in one enlisted transaction; re-entrant hook re-using the context | counter 2 or a consumed context → aborted |
 | W28 | Ingestion | `pre_receive` mutates the natural identity so the target row changes | finalize detects a target mismatch → aborted; nothing stamped, bound or captured survives |
 | W29 | Ownership | bootstrap: first finalized ingestion of a new lifetime with exactly one claim; with zero claims; with two claims | one: class established with bind in the same commit; zero: unbound, no class; two: class `conflict` committed without a binding |
-| W30 | Ownership | delete, restore and re-create with the same ID | tombstone retained; new lifetime; old class and binds unusable |
-| W31 | model_unack | E captured, then E+1 before worker admission | behaviour per the chosen R3 §2b policy; both variants witnessed (conditional on the joint decision) |
+| W30 | Ownership | delete, restore and re-create of a Zabbix-class ID | tombstone retained; new lifetime; old class and binds unusable; restore order per 07 D1.4 |
+| W31a-W31i | model_unack | after capture of E, each 07 D2 transition: same-source supersession / changed source / unbound E+1 / conflict or other provider / lifetime retired / customer change / registration or role retired / policy or mirror revoked / window expired | admit only the first; each other row refused with its reason code; checks at admission and again before target access |
 | W32 | Transaction | unknown COMMIT while the original transaction is still running | the reservation row is locked → `in_progress`; no second attempt; no replay |
 | W33 | Transaction | unknown COMMIT on committed `no_capture`, `refused` and `local_only` branches | the recorded outcome is returned; absence of a capture is never read as rollback |
 | W34 | Transaction | same key with a changed payload; same key and payload under another customer (including a principal authorized for **both** customers A and B, querying B against a row stored for A), kind, alert, lifetime or digest, against **terminal** rows and **actively locked** rows; simultaneous callers with the same key | wrong scope or digest: bounded refusal identical to `not_found` in every row state, with no outcome, operation ID, membership or lock-state disclosure; matching-scope controls: outcome or `in_progress`; simultaneous same scope: one runs, others wait and return the outcome |
@@ -55,8 +55,19 @@ Each row runs with **both plugin orders** (Zabalack first; Voalack first) unless
 | W42 | Transaction | original submitter paused after its reservation commit and before taking the lock; a duplicate submit runs and commits; the original resumes | the original acquires the lock, sees the terminal outcome and returns it: exactly one operation and one epoch |
 | W43 | Transaction | a waiter queued behind a committing holder on the same key | the waiter gets the updated row under the lock and returns the existing outcome; no second attempt |
 | W44 | Transaction | status(key, scope) for an absent key, an expired (tombstoned) key, a **logically expired but not yet tombstoned** key (both locked and unlocked), a wrong-scope key on a terminal row, and a wrong-scope key on a locked row; submit on a tombstoned key | status: identical `not_found` for all of these, no work started, no raw lock error; matching scope returns `outcome`, `in_progress` or `not_committed`; submit on a tombstone: refused, never re-executed |
-| W45 | Transaction | crossing expiry: a submit waiter and a status caller start before `expires_at`, the holder commits (and, separately, rolls back) after `expires_at`; matching controls well before expiry | waiter and status: `not_found` and no attempt (fresh post-lock clock sample); controls: the outcome, or a new attempt after a rollback, as specified |
+| W45a | Transaction | submit waiter queued before `expires_at`; the holder commits (separately: rolls back) after it | waiter: `not_found` from the post-lock sample, no attempt, no outcome disclosed, in both holder cases |
+| W45b | Transaction | status while the holder is locked, before expiry | immediate `in_progress` (probe conflict, then recheck before expiry); never waits; no attempt |
+| W45c | Transaction | fresh status after expiry, row locked and unlocked; holder commit and rollback controls before expiry | after expiry: `not_found` in all cases; controls before expiry: `in_progress`, `outcome` or `not_committed` as stated; status never starts an attempt, even for the rollback control |
+| W45d | Transaction | status paused across its decision boundary: probe conflict before expiry, recheck after expiry | `not_found`; the aborted probe transaction is never reused; no raw lock error |
 
 Evidence rule: each run records the base image manifest hash, installed wheel hashes for both providers
 and ack-core, the rendered trigger and routine definitions (`pg_get_triggerdef`, `pg_get_functiondef`),
 and the ACL inventory. Nothing is rebound across runs.
+
+| W46 | Lifetime | historical ONE ID: re-create, restore, foreign-provider INSERT and id-changing UPDATE into the reserve | all refused by Voalack's reserve; no core lifetime created; no reserve reopened |
+| W47 | model_unack | window boundaries: exactly at, one microsecond before and one after `capture_expires_at` and `execution_expires_at`; recheck after an injected verification or delivery wait crossing the bound | before: allowed; at or after: refused; the recheck after the wait refuses |
+| W48 | Ingestion | two concurrent first creates of one natural identity | serialized by the advisory lock: one create, the other dedupes or correlates onto it; one alert, epochs 1 and 2 |
+| W49 | Ingestion | first create rolls back while a second waits | the second creates; no orphan stamp, context or lifetime |
+| W50 | Shared install | adapter digest after configuration and after each rebind, two apps, both provider orders; injected drift | identical digests where expected; drift refuses readiness |
+| W51 | Identity | worker role retired, then the role name reassigned to another provider or generation | old-generation evidence invisible to the new mapping; uniform `not_yours_or_absent` |
+| W52 | Transaction | ambiguous reservation commit with total response loss, plus a concurrent duplicate submit with the same principal, key and scope; and a lock timeout, deadlock and serialization failure during submit | converge on one reservation and one locked attempt; errors abort and retry fresh, or return `busy`; never read as `not_committed`; no dispatch from a reservation |

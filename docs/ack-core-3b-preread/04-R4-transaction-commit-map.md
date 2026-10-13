@@ -1,11 +1,12 @@
 # R4 — Transaction owner and unknown-COMMIT state machine (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r7, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r8, discussion input only.** Codex review: r1
 CHANGES_REQUIRED (750d397d: P4, P7); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q3
 answered); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S1); r4 CHANGES_REQUIRED
 (20261013T180356Z-codex-omarchy-604951f7: T1); r5 CHANGES_REQUIRED (20261013T182026Z-codex-omarchy-8ef308a4:
 T1 narrowed to exact customer and expiry); r6 CHANGES_REQUIRED (20261013T183236Z-codex-omarchy-7fa7731c:
-expiry decision clock, answered here); r7 pending. R4 was
+expiry decision clock); r7 AGREEMENT for pre-read corrections only (b6e75736). r8 answers Astra's review
+23b86285 (P1, P4 here; decisions consolidated in `07-r8-frozen-decisions.md`); r8 review pending. R4 was
 raised by Codex in 20261013T005221Z-codex-omarchy-1e79ef92. Not accepted design, DDL, grant or
 implementation. Source facts below are read from the pinned Alerta 9.1.0 package (upstream commit
 `f4312727783dad64198b62ed778bbca98a5144a3`, PyPI `alerta-server==9.1.0`) and zab-al-ack `main`
@@ -166,21 +167,39 @@ Two public operations, with deliberately consistent semantics:
    Residual: a submit that collides with the same principal's own key in a different scope waits on that row's
    lock before the bounded refusal. The timing is visible only to the principal that owns the key namespace,
    never across principals.
-4. **Status lookup, scope-filtered before any lock.** The lookup selects only a row matching the caller's
-   **full** authorized scope:
-   `WHERE principal = $caller AND request_id = $key AND customer = $requested_customer AND kind = $kind
-   AND alert_id = $alert AND lifetime = $lifetime AND request_digest = $digest AND expires_at > clock_timestamp()`, with
-   the precondition `$requested_customer = ANY($currently_authorized_customers)` checked first (if it
-   fails: `not_found`). Then `FOR UPDATE NOWAIT`. After the lock is acquired, scope is re-validated and
-   expiry is re-checked with a **new** `clock_timestamp()` sample. Expired at that point → `not_found`. A row outside the exact scope, or logically expired, is never selected, so
-   its lock can never surface as a signal:
-   - no matching row → `not_found`;
-   - lock not available → `in_progress`;
-   - terminal → `outcome`;
-   - `reserved` and unlocked → `not_committed`. The attempt did not commit, and the same scope may submit
-     again.
-
-   The exact SQL and caller authorization are left for rendered review.
+4. **Status lookup (r8, P1): never blocks, one linearization point.** Status never waits behind a
+   holder and never starts an attempt. Precondition: `$requested_customer = ANY($currently_authorized_customers)`,
+   else `not_found`. Then, on the primary:
+   a. **Probe transaction (fresh).** `SELECT ... WHERE principal = $caller AND request_id = $key AND
+      customer = $requested_customer AND kind = $kind AND alert_id = $alert AND lifetime = $lifetime AND
+      request_digest = $digest AND expires_at > clock_timestamp() FOR UPDATE NOWAIT`.
+      - No row → `not_found`. The decision point is that statement's `clock_timestamp()`.
+      - Row locked: PostgreSQL raises `lock_not_available` (SQLSTATE 55P03). The probe transaction is
+        **rolled back and never reused**, and the raw error is never returned. Go to b.
+      - Row acquired: in the same transaction, take a **new** `clock_timestamp()` sample. That sample is the
+        decision point. Expired → `not_found`. Terminal → `outcome`. `reserved` → `not_committed`. Then the
+        transaction ends.
+   b. **Conflict recheck (new short read-only transaction).** Without locking, select the same row with
+      `expires_at > clock_timestamp()`. The decision point is that sample. Logically expired or absent →
+      `not_found`. Otherwise → `in_progress`. So a status whose lock conflict happens before expiry but
+      whose recheck happens after expiry returns `not_found`, never a stale `in_progress`.
+   A row outside the exact scope, or logically expired, is never selected in a or b, so its lock can never
+   surface as a signal. The exact SQL and caller authorization are left for rendered review.
+4a. **Isolation, read source and errors (r8, P4).**
+   - All request-key and enlisted work runs at `READ COMMITTED` on the **primary**; replicas are never
+     read for decisions.
+   - A `FOR UPDATE` waiter receives the latest committed row version after the holder ends (PostgreSQL row
+     locking, re-check of the updated row). The step 3 scope-first checks run on that version.
+   - Submit sets a bounded `lock_timeout`. `lock_not_available` and `lock timeout`, a deadlock
+     (40P01) or a serialization failure (40001) **abort the transaction**. The core may retry the whole
+     scope-first sequence in a **fresh** transaction a bounded number of times. When that budget is
+     exhausted, the response is `busy` (503). **No error is ever read as `not_committed`**, and no error
+     authorizes an unchecked retry or an attempt.
+4b. **Reservation commit ambiguity (r8, P4).** If the step 2 reservation commit itself is ambiguous
+   (connection lost, crash), the client resubmits with the same key and full scope. `INSERT ... ON CONFLICT
+   DO NOTHING` converges on **one** reservation row: either the earlier insert committed, or this one
+   creates it. Step 3 then locks that one row, so concurrent duplicate submits with the same principal, key
+   and scope converge on one locked attempt. A reservation alone never grants dispatch.
 5. **Retention.** Rows stay until `expires_at`. They are logically expired from that moment (step 1). Cleanup
    later reduces them to a tombstone (key hash, principal, `expired`), kept for a longer second window. The
    answers before and after cleanup are identical. A submit on a tombstoned key is refused, never

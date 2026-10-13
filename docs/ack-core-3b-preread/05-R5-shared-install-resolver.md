@@ -1,6 +1,6 @@
 # R5 — Shared install, resolver trust and ownership decision (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r4, discussion input only.** Codex review: r1
+Author: Opus (Zabalack session). Status: **PROPOSED DRAFT r8, discussion input only.** r8: answers Astra 23b86285; `07-r8-frozen-decisions.md` governs where it differs; r8 review pending. Codex review: r1
 CHANGES_REQUIRED (750d397d: P1, P5); r2 CHANGES_REQUIRED (20261013T170941Z-codex-omarchy-d7391d2a: Q1, Q2,
 Q4); r3 CHANGES_REQUIRED (20261013T174021Z-codex-omarchy-d7d59f1e: S2 answered in r4); r4 review
 (20261013T180356Z-codex-omarchy-604951f7): those items closed as draft corrections; no open item in this file. R5 was
@@ -94,6 +94,9 @@ apart.
   only.
 - `ack_core.read_committed_evidence(alert_id, lifetime, nonce_or_epoch)` is `SECURITY DEFINER` and read-only.
   It derives the provider from `session_user` through `provider_roles`; **no provider argument exists**.
+  r8 (07 D4): mapping rows carry the registration generation and validity, and evidence is returned only for
+  captures of the generation active for that role now. A reused role name never sees another generation's
+  evidence.
   It returns only the calling provider's own committed facts:
   - the nonce → E mapping;
   - the owner decision for that context;
@@ -143,4 +146,5 @@ Lifecycle:
    freezes the trigger set; see §3.)
 3. How Zabalack's existing `zabalack_capture` trigger and grants map into the core inventory and Zabalack's
    reseal checks (`sql/install/12_application_grant.sql`, `13_reseal.sql`).
-4. Whether the resolver decision is cached per epoch, or recomputed per request under the lock.
+4. (Resolved in r8, 07 D4: recomputed once per request under the row and class locks, an immutable
+   per-request snapshot, re-read at finalize; no cross-request cache.)
