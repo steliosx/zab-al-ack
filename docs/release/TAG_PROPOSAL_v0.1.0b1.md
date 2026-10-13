@@ -5,6 +5,17 @@ is created only after the owner and the independent reviewer (Codex) each
 approve this exact commit in writing, and after the publication audit returns
 zero. No upload, release or deployment is authorized by this proposal.
 
+**Amendment, 13 October 2026: the tag is on a final producer, not on candidate #4.** A dry run
+of the publication audit showed that the procedure below could not succeed on `f85212e2`. The
+publication register is `config/publication.pending.json` (read by `tools/public_audit.py`,
+`publication_inputs`). `config` is in the harness digest scope (`tools/evidence_utils.py`,
+`HARNESS_SCOPE`), and `MANIFEST.in` ships `config/*.json` in the sdist. Completing the register
+therefore changes the harness tree and the sdist. That needs one new producer run (candidate #5,
+the *final producer*), as the docs-only rule in step 1 already implies. Candidate #4 stays the
+reviewed basis. The tag target, artifact hashes and run identity below are replaced by the final
+producer's, recorded when it exists. This has precedent: candidate #3 became #4 through register
+inputs (#44). No code changes.
+
 ## Exact identity
 
 | Item | Value |
@@ -94,14 +105,24 @@ acceptance (see `docs/BETA_READINESS.md`).
 
 ## Procedure after approval
 
-1. Re-read live `main`. Confirm that `f85212e238fb6322802b163219096db48e428291` is an
-   ancestor of it and that `git diff --name-only f85212e2 main` lists only paths under
-   `docs/`. Record the list. Any other path means a new producer run is required and this
-   proposal is void.
-2. Run `python tools/public_audit.py --publication`; require exit 0.
-3. Create an annotated tag `v0.1.0b1` on the producer commit `f85212e2…` (not on `main`'s
-   head); push the tag only. The tag message names the `main` commit that holds the
-   release notes and dispositions.
+0. **Final producer (amendment of 13 October 2026).** After the owner completes the register,
+   including `publication_authorized`, commit the register change to `main` through a reviewed PR.
+   The register-only diff from `f85212e2` must touch only `config/publication.pending.json`, plus
+   `pyproject.toml` if the repository URL needs to match it. CI on that `main` commit produces
+   candidate #5. Record its producer commit, run ID, artifact name and the hashes from the run's own
+   `SHA256SUMS`. Codex reviews the candidate #4 -> #5 diff and the new artifact bytes (owner item 3
+   applies to this candidate). Steps 1-5 then use the final producer in place of `f85212e2`.
+1. Re-read live `main`. Confirm that the final producer commit is an ancestor of it and that
+   `git diff --name-only <final producer> main` lists only paths under `docs/`. Record the list.
+   Any other path means a new producer run is required and this proposal is void.
+2. Run the publication audit against the final producer's own evidence, not a clean checkout. In
+   a checkout of the final producer, download that run's `zabalack-evidence-<run>-<attempt>-*`
+   artifacts, run `python tools/collect_ci_evidence.py collect --input <download dir>`, then run
+   `python tools/public_audit.py --publication` and require exit 0. A clean checkout fails by design,
+   because its committed evidence records are bound to an earlier tree (`evidence-not-bound-to-tree`).
+3. Create an annotated tag `v0.1.0b1` on the final producer commit (not on `main`'s head); push the
+   tag only. The tag message names the `main` commit that holds the release notes and
+   dispositions.
 4. Review the tag's Actions run; compare its artifact hashes with the table above.
    A different hash is a different artifact; stop and record.
 5. Create the GitHub prerelease with the release notes. No PyPI upload.
