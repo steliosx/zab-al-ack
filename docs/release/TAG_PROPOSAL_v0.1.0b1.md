@@ -2,8 +2,8 @@
 
 Prepared 11 October 2026. This document proposes a tag. It does not create one. The tag
 is created only after the owner and the independent reviewer (Codex) each
-approve this exact commit in writing, and after the publication audit returns
-zero. No upload, release or deployment is authorized by this proposal.
+approve the exact final producer commit in writing, and after the two-part publication readiness
+check of step 2 passes. No upload, release or deployment is authorized by this proposal.
 
 **Amendment, 13 October 2026 (r2, after Codex review TP1-TP5): the tag is on a final producer,
 not on candidate #4.** A dry run of the publication audit showed that the procedure could not succeed
@@ -20,10 +20,15 @@ approvals of the final producer. The final producer gets its own record ("Final 
 below) and fresh exact-commit approvals.
 
 **Publication scope.** The register fields are recorded inputs, not fresh authority and not proof that a
-control works. `publication_authorized` is already `true` in the register. It covers the public
-repository, the tag and a GitHub prerelease only. `pypi_namespace_confirmed` is a retained gate in the
-validator, not permission to upload to PyPI. PyPI publication and production deployment stay separate
-owner decisions. No agent edits an approval field to make the audit pass. Each value comes from the owner.
+control works. `publication_authorized` is already `true` in the register. That recorded boolean does
+not authorize an operation: it carries no destination, artifact, actor or operation, and it is only a
+predicate in `publication_inputs`. Repository visibility, tag creation and GitHub prerelease publication
+require their applicable direct owner decisions, including fresh exact-final-commit tag approval in the
+approval record below. The applicable existing grant for the GitHub operations is the owner's GitHub
+grant of 8 October 2026, recorded in the Zabalack session: tags and GitHub releases on Codex's signed
+exact-commit agreement with no advisor objection. It does not replace the owner's exact-final-commit tag
+approval required here. `pypi_namespace_confirmed` is a retained gate in the validator, not permission
+to upload to PyPI. PyPI upload and production deployment require separate owner decisions. No agent edits an approval field to make the audit pass. Each value comes from the owner.
 
 ## Exact identity (HISTORICAL CANDIDATE #4, NOT A TAG TARGET)
 
@@ -31,8 +36,8 @@ owner decisions. No agent edits an approval field to make the audit pass. Each v
 |---|---|
 | Tag name | `v0.1.0b1` |
 | Candidate #4 frozen producer commit (historical; not the tag target) | `f85212e238fb6322802b163219096db48e428291` (11 October 2026) |
-| Current `main` at this proposal's head | `ac0a5511a1d49af2b0d169b82bc58f17fc711f2b` (documentation-only descendants of the producer; see "Identity reconciliation") |
-| Documentation review head | this PR's head (the docs below are reviewed here, not in the tag tree) |
+| Historical `main` at the candidate #4-era proposal (not current `main`) | `ac0a5511a1d49af2b0d169b82bc58f17fc711f2b` (documentation-only descendants of the producer; see "Identity reconciliation") |
+| Documentation review head (candidate #4 era) | the PR head that carried these documents; they were not files in #4's tree |
 | Version | `0.1.0b1` (pyproject, package, manifests, register) |
 | CI run | 38187030741 attempt 1 (ci.yml, GitHub-hosted ubuntu-24.04) |
 | Scan run | 38187030803 (security.yml) |
@@ -51,8 +56,10 @@ Four identities are distinct and must not be conflated:
    `docs/` and `docs/release/`; no `src/`, `sql/`, `lab/`, `tools/`, `tests/`, `.github/`,
    `pyproject.toml` or lock file changes. The procedure below verifies that claim at tag time.
 3. **Documentation review head**: the exact head of the PR that carries these documents.
-   The release notes, this proposal and the review request are therefore NOT files in the
-   tag's tree; they are referenced by the `main` commit that contains them.
+   For candidate #4, the release notes, this proposal and the review request were NOT files in the
+   producer's tree; they were referenced by the `main` commit that contained them. This is #4 history.
+   A final producer built from a later `main` may already contain these documents; its record states
+   which ones.
 4. **Frozen artifacts**: run 38187030741 / artifact `zabalack-candidate-38187030741-1`. They are
    never rebound to a later commit. If the tag target ever changes, a new producer run and
    new exact-commit approvals are required.
@@ -111,7 +118,7 @@ acceptance (see `docs/BETA_READINESS.md`).
 
 | Item | Value |
 |---|---|
-| Register PR | number, base commit, head commit; its delta lists only `config/publication.pending.json` (and `pyproject.toml` only if the repository URL must match, which it already does) |
+| Register PR | number, base commit, head commit; its delta lists only `config/publication.pending.json` (the repository URL in `pyproject.toml` already matches the register, so no other file changes) |
 | Final producer commit (full SHA) | PENDING |
 | Whole delta candidate #4 -> final producer | PENDING: path list, split into `docs/` paths (each named and reviewed) and non-`docs/` paths (only the register), with the source and harness digests of both trees recorded separately |
 | CI run / attempt / tested SHA | PENDING |
@@ -153,8 +160,10 @@ reviewed and before the tag is created. Approvals or results recorded for candid
    b. **Register completeness (offline, proposed path, needs review before use).** In a clean
       checkout of the final producer, evaluate only the register function and require an empty list:
       `python -c "import sys; sys.path.insert(0, 'tools'); from pathlib import Path; import public_audit as a; m = a.publication_inputs(Path('.')); print(m); raise SystemExit(1 if m else 0)"`.
-      It reads only `config/publication.pending.json` and `pyproject.toml`. It does not evaluate
-      evidence binding, which part a covers. Do not run `public_audit.py --publication` on a clean
+      The function reads `config/publication.pending.json` and, when no input is missing,
+      `pyproject.toml`. The command also imports `tools/public_audit.py` and its transitive tool
+      modules. It does not evaluate evidence binding, which part a covers. It is not yet verified as
+      equivalent to the audit; it is used only after its own review. Do not run `public_audit.py --publication` on a clean
       checkout: it fails by design (`evidence-not-bound-to-tree`), because committed evidence records
       are bound to earlier trees.
 3. Create an annotated tag `v0.1.0b1` on the final producer commit (not on `main`'s head); push the
@@ -164,9 +173,17 @@ reviewed and before the tag is created. Approvals or results recorded for candid
    artifact: the wheel, sdist, source zip, `SHA256SUMS` and `BUILD_PROVENANCE.json` recorded in the
    "Final producer record". The tag push starts a separate CI run. Its bytes are not assumed equal,
    because the sdist and source zip include collected evidence with run context and a collection time.
-   Download the tag-run artifact and compare it file by file with the release set. Record every
-   difference. A difference outside the evidence run-context fields (run ID, attempt, event, ref,
-   tested SHA, collection time) stops the release. The prerelease attaches the reviewed release set,
-   never tag-run files that were not reviewed.
+   a. **Identity first.** The producer run's tested (checked-out) SHA, the tag run's tested SHA and the
+      resolved target of the annotated tag must all equal the approved full final producer SHA. Any
+      mismatch stops the release. The tested SHA is never an allowed difference.
+   b. **Then content.** Download the tag-run artifact. Without changing either original archive,
+      compare the decoded archive entries and the bound evidence with the release set, and record every
+      difference. Allowed differences are only evidence run-context values: run ID, attempt, event, ref
+      and collection time. Container hashes, `SHA256SUMS` and `BUILD_PROVENANCE.json` checksums that
+      derive from those changed evidence entries may also differ. Each one is recorded, and its
+      derivation from the changed entries is verified; none is whitelisted by file name. Any unexplained
+      difference stops the release.
+   c. The prerelease attaches only the reviewed release set. Tag-run bytes do not become approved
+      through this comparison.
 5. Create the GitHub prerelease with the release notes and the reviewed release artifact set. No
    PyPI upload; PyPI and production deployment remain separate owner decisions.
