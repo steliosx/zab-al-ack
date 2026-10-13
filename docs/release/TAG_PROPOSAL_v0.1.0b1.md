@@ -51,7 +51,7 @@ Four identities are distinct and must not be conflated:
    source zip above in run 38187030741. The tag is no longer proposed on this commit (amendment of
    13 October 2026). The same rule applies to the final producer: the tag goes on the commit whose
    exact tree built the release artifacts.
-2. **Current `main`** `ac0a5511a1d4…`: descends from the producer by documentation-only
+2. **Historical `main` (candidate #4 era)** `ac0a5511a1d4…`: descends from the producer by documentation-only
    merges (PR #45 CodeQL triage, and this PR once merged). These commits touch only
    `docs/` and `docs/release/`; no `src/`, `sql/`, `lab/`, `tools/`, `tests/`, `.github/`,
    `pyproject.toml` or lock file changes. The procedure below verifies that claim at tag time.
