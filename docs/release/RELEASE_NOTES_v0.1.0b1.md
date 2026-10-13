@@ -1,7 +1,8 @@
 # Zabalack 0.1.0b1 — beta prerelease (release notes)
 
-Prepared 11 October 2026; updated 13 October 2026. Status: **GitHub prerelease** by owner decision of
-13 October 2026, with the items under "Deferred by owner decision" left open. **Not published to PyPI.**
+Prepared 11 October 2026; updated 13 October 2026. Status: **proposed GitHub prerelease, approved by the
+owner on 13 October 2026, pending publication**, with the items under "Deferred by owner decision" left
+open. **Not published to PyPI.**
 This is a beta for development and isolated evaluation. It is **not qualified for
 production deployment**; see "Open items" below.
 
@@ -19,7 +20,7 @@ upstream plugin with a ledger that can answer "did it acknowledge, or not".
 |---|---|
 | Version | 0.1.0b1 |
 | Tagged commit (frozen producer) | `f85212e238fb6322802b163219096db48e428291` |
-| Release documents | on `main` `ac0a5511a1d4…` and later; not in the tagged tree |
+| Release documents | not in the tagged tree. These notes and the operative release record are carried by the documentation PR head and the notes-bearing `main` merge commit, both named in the tag message (`main` `ac0a5511a1d4…` is historical) |
 | Wheel SHA-256 | `bf5b017111742c7c6c90a8701286987b20649a05a8aa7fa12515803f1617719b` |
 | sdist SHA-256 | `ce346c9d562dc80ae094a16df4491d3812c47d1383f57eeaedf13051dbb0b821` |
 | CI run | 38187030741 (GitHub-hosted ubuntu-24.04) |
@@ -83,7 +84,8 @@ repository is public.
 
 ## Deferred by owner decision (13 October 2026)
 
-The owner released this beta as a GitHub prerelease with these items deferred. They are **not** done:
+The owner decided to release this beta as a GitHub prerelease with these items deferred. They are **not**
+done:
 
 | Item | Status |
 |---|---|

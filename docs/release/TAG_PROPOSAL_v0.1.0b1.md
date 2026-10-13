@@ -1,5 +1,69 @@
 # Tag proposal: v0.1.0b1 (beta candidate)
 
+## CURRENT OPERATIVE RECORD (13 October 2026): v0.1.0b1 GitHub prerelease on candidate #4
+
+**This section is the only operative procedure.** Everything after the line "SUPERSEDED HISTORY" below
+is retained unchanged as the record of the earlier final-producer path. It is **not** operative for this
+prerelease.
+
+Status: **proposed and approved by the owner; pending publication.** Nothing below is done until each step
+records its real completion time.
+
+Authority: owner decision of 13 October 2026, given in the Zabalack Claude session (owner-local record
+`OWNER-DECISION-ZABALACK-PRERELEASE-20261013.md`). The independent reviewer records it as a
+**peer-reported owner decision** until the owner confirms the scope directly to the reviewer.
+
+Binding:
+
+| Item | Value |
+|---|---|
+| Release kind | GitHub prerelease only; **no PyPI upload; no deployment** |
+| Tag | `v0.1.0b1`, annotated |
+| Producer = tag target = required tag-run tested SHA | `f85212e238fb6322802b163219096db48e428291` (candidate #4) |
+| Producer run | ci.yml run 38187030741, attempt 1 |
+| Release set (exactly five files, from that run's artifact `zabalack-candidate-38187030741-1`) | `zabalack-0.1.0b1-py3-none-any.whl` `bf5b0171…`, `zabalack-0.1.0b1.tar.gz` `ce346c9d…`, `zabalack-0.1.0b1-source.zip` `9940da37…`, `SHA256SUMS` `460b990e…`, `BUILD_PROVENANCE.json` `232501b7…` (full values in "Artifact hashes" below) |
+| Documentation review head | the exact head of the PR carrying this record, frozen at merge |
+| Notes-bearing `main` commit | the merge commit of that PR, named in the tag message |
+
+Exceptions, each with its authority (owner decision of 13 October 2026), and none of them reported as
+passed:
+- **No final producer, register unchanged.** The register stays as it is, so the final-producer step 0 does
+  not apply. Register completeness (step 2b) is **waived**, not passed.
+- **Deferred:** the private security-report test, the three register approvals, the independent
+  reviewer's inspection of the release artifact bytes (the files stay **NOT_INSPECTED** by the reviewer),
+  and the independent external (Grok 4.7) review.
+- The package-job audit record of run 38187030741 (`evidence/public-audit.json`: `PASS`, 0 findings) and
+  the checksum verification of the five files are evidence from the Zabalack session only, not reviewer
+  inspection.
+
+Operative sequence:
+1. Re-read live `main`. Confirm that `f85212e2` is an ancestor of it and that
+   `git diff --name-only f85212e2 main` lists only paths under `docs/`. Record the list.
+2. Owner approval (recorded below) and the independent reviewer's signed agreement on: this record, the
+   tag target, and the five-file release set. No advisor objection.
+3. Create the annotated tag `v0.1.0b1` on `f85212e2`. Its message names the notes-bearing `main` commit.
+   Push the tag only.
+4. Tag-run check:
+   - the tag run's tested SHA and the resolved tag target must equal `f85212e2`;
+   - then compare its artifact file by file with the release set, without changing either original.
+     Only explained evidence run-context differences, and checksums verified to derive from them, are
+     allowed;
+   - anything else stops the release;
+   - tag-run bytes are never approved through this comparison.
+5. Create the GitHub prerelease with the release notes and **only** the five files of the release set.
+   Record the completion time.
+
+| Party | Decision | Exact commit confirmed | Date (Nassau) | Reference |
+|---|---|---|---|---|
+| Owner | Approve GitHub prerelease v0.1.0b1 on candidate #4 with the exceptions above; no PyPI | `f85212e238fb6322802b163219096db48e428291` | 13 October 2026 | owner terminal turn and AskUserQuestion, Zabalack session |
+| Codex (independent reviewer) | pending | | | signed message id |
+
+---
+
+**SUPERSEDED HISTORY** (final-producer path of 11-13 October 2026; retained unchanged; not operative for
+this prerelease)
+
+
 Prepared 11 October 2026. This document proposes a tag. It does not create one. The tag
 is created only after the owner and the independent reviewer (Codex) each
 approve the exact final producer commit in writing, and after the two-part publication readiness
@@ -128,22 +192,6 @@ acceptance (see `docs/BETA_READINESS.md`).
 | Package job audit record (`evidence/public-audit.json` inside the artifact) | PENDING: status `PASS` |
 | Register completeness (step 2b) | PENDING: empty list |
 | Documentation review head | PENDING |
-
-## Owner decision of 13 October 2026: prerelease on candidate #4 with deferred items
-
-The owner decided to release v0.1.0b1 now as a **GitHub prerelease** on candidate #4's producer commit
-`f85212e238fb6322802b163219096db48e428291`, with the artifacts of run 38187030741 as listed in "Artifact
-hashes". There is no PyPI upload. The open items are deferred and listed in `RELEASE_NOTES_v0.1.0b1.md`
-("Deferred by owner decision"). Because the register stays unchanged, no final producer is built
-(step 0 does not apply), and candidate #4 is the tag target for this prerelease. Step 2a holds: the run's
-package job passed, and its `evidence/public-audit.json` reads `PASS` with zero findings. Step 2b
-(register completeness) is waived by the owner for this prerelease only. Steps 1, 3, 4 and 5 apply with
-`f85212e2` as the producer. Owner-local record: `OWNER-DECISION-ZABALACK-PRERELEASE-20261013.md`.
-
-| Party | Decision | Exact commit confirmed | Date (Nassau) | Reference |
-|---|---|---|---|---|
-| Owner | Approve GitHub prerelease v0.1.0b1, deferred items, no PyPI | `f85212e238fb6322802b163219096db48e428291` | 13 October 2026 | owner terminal turn and AskUserQuestion, Zabalack session |
-| Codex (independent reviewer) | pending | | | signed message id |
 
 ## Approval record (fill in after the final producer record is complete)
 
