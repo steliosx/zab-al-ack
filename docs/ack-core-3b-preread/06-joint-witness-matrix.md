@@ -1,6 +1,6 @@
 # Proposed joint witness / admission matrix for ack-core 3b (pre-read draft)
 
-Author: Opus (Zabalack session). Status: **PROPOSED r9, NOT_RUN** (r8 answers Astra 23b86285; r9 answers Codex U1; 07 governs) (r1 reviewed in 750d397d, r2 in
+Author: Opus (Zabalack session). Status: **PROPOSED r10, NOT_RUN** (r8 answers Astra 23b86285; r9 answers Codex U1; r10 answers Astra 14ae9733; 07 and 08 govern) (r1 reviewed in 750d397d, r2 in
 d7391d2a, r3 in 20261013T174021Z-codex-omarchy-d7d59f1e; rows added and adjusted for each). Step letters R, C, K, S, T, F
 and X refer to the R2 §4 ingestion state machine. No lab creation or execution is requested.
 A coexistence fork needs separately frozen image, source, installed-package, tool, command and expected-ID
@@ -58,10 +58,11 @@ Each row runs with **both plugin orders** (Zabalack first; Voalack first) unless
 | W45a | Transaction | submit waiter queued before `expires_at`; the holder commits (separately: rolls back) after it | waiter: `not_found` from the post-lock sample, no attempt, no outcome disclosed, in both holder cases |
 | W45b | Transaction | status while the holder stays locked through every re-probe, before expiry | `in_progress` decided at the last conflicting sample; never waits; no attempt |
 | W45c | Transaction | fresh status after expiry, row locked and unlocked; holder commit and rollback controls before expiry | after expiry: `not_found` in all cases; controls before expiry: `in_progress`, `outcome` or `not_committed` as stated; status never starts an attempt, even for the rollback control |
-| W45d | Transaction | status whose last conflicting re-probe falls at or after expiry | `not_found`; each aborted probe transaction rolled back and never reused; no raw lock error |
+| W45d | Transaction | earlier probes conflicted, then a re-probe whose filter sample is at or after `expires_at` | no matching row → `not_found`; each aborted probe transaction rolled back and never reused; no raw lock error; a lock error never counts as expiry (08 C1) |
 | W45e | Transaction | holder COMMITs between a conflicting probe and the next re-probe (before expiry) | the re-probe acquires the lock and returns `outcome` |
 | W45f | Transaction | holder ROLLs BACK between a conflicting probe and the next re-probe (before expiry) | the re-probe acquires the lock and returns `not_committed`; status starts no attempt |
 | W45g | Transaction | a renewed holder (a new submit takes the lock) between re-probes; plus wrong-customer and wrong-scope controls | conflict again → `in_progress` only if every attempt conflicts; wrong scope: `not_found`; no inference from non-locking reads |
+| W45h | Transaction | a probe whose filter sample is before expiry, paused before its lock attempt, which then conflicts (last attempt) | `in_progress` at that declared filter sample; the branch and sample are recorded (08 C1) |
 
 Evidence rule: each run records the base image manifest hash, installed wheel hashes for both providers
 and ack-core, the rendered trigger and routine definitions (`pg_get_triggerdef`, `pg_get_functiondef`),
@@ -69,10 +70,12 @@ and the ACL inventory. Nothing is rebound across runs.
 
 | # | Area | Case | Expected |
 |---|---|---|---|
-| W46 | Lifetime | historical ONE ID: re-create, restore, foreign-provider INSERT and id-changing UPDATE into the reserve | all refused by Voalack's reserve; no core lifetime created; no reserve reopened |
+| W46 | Lifetime | historical ONE ID: reserve-bypassing resurrection or reuse (re-create, foreign-provider INSERT, id-changing UPDATE into the reserve, a restore that would bypass the reserve); control: legitimate restore of a consistent same-lifetime backup under Voalack's recovery protections | bypass attempts refused, no core lifetime created, no reserve reopened; the control restore succeeds (08 C2) |
 | W47 | model_unack | window boundaries: exactly at, one microsecond before and one after `capture_expires_at` and `execution_expires_at`; recheck after an injected verification or delivery wait crossing the bound | before: allowed; at or after: refused; the recheck after the wait refuses |
-| W48 | Ingestion | two concurrent first creates of one natural identity | serialized by the advisory lock: one create, the other dedupes or correlates onto it; one alert, epochs 1 and 2 |
+| W48 | Ingestion | two concurrent first creates of one natural identity with **compatible** inputs; control: incompatible events for the same resource | compatible: serialized, one alert with epochs 1 and 2; incompatible: serialized, separate alerts (08 C4) |
 | W49 | Ingestion | first create rolls back while a second waits | the second creates; no orphan stamp, context or lifetime |
 | W50 | Shared install | adapter digest after configuration and after each rebind, two apps, both provider orders; injected drift | identical digests where expected; drift refuses readiness |
 | W51 | Identity | worker role retired, then the role name reassigned to another provider or generation | old-generation evidence invisible to the new mapping; uniform `not_yours_or_absent` |
-| W52 | Transaction | ambiguous reservation commit with total response loss, plus a concurrent duplicate submit with the same principal, key and scope; and a lock timeout, deadlock and serialization failure during submit | converge on one reservation and one locked attempt; errors abort and retry fresh, or return `busy`; never read as `not_committed`; no dispatch from a reservation |
+| W52a-c | Transaction | (a) reservation commits, the response is lost, plus a concurrent duplicate; (b) reservation rolls back, the response is lost, plus a concurrent duplicate; (c) lock timeout, deadlock or serialization failure during submit | (a) one reservation, one locked attempt; (b) exactly one new reservation, no attempt from the rolled-back one; (c) abort and fresh retry, or `busy`; never `not_committed`; no dispatch from a reservation or an error (08 C5) |
+| W53 | Identity | overlapping or ambiguous active `provider_roles` mappings for one login role (injected) | uniform `not_yours_or_absent`, incident raised, no evidence returned, never a first-row choice (08 C6) |
+| W54 | model_unack | adverse transition observed at a check, then reversed before the next check | the operation stays refused (sticky terminal refusal); never re-admitted (08 C3) |

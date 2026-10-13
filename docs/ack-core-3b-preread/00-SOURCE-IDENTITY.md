@@ -91,12 +91,14 @@ question 1 of §4 marked answered; §6 added (Codex R2-R5 as open contracts).
 | `05-R5-shared-install-resolver.md` | R5 | Opus | Codex r1: CHANGES_REQUIRED (P1, P5); r2: CHANGES_REQUIRED (Q1, Q2, Q4); r3: CHANGES_REQUIRED (S2); r4 answers them; r4 review closed them |
 | `06-joint-witness-matrix.md` | item 7 | Opus | Codex r1 and r2: rows requested; r3-r5 add and adjust them (W1-W45; W34 and W44 extended in r5 and r6; W45 added in r7), review pending |
 | `07-r8-frozen-decisions.md` | P2-P5 of Astra 23b86285 | Opus | new in r8; governs where it differs from 02-06; Codex review pending |
+| `08-r10-session-clarifications.md` | Astra 14ae9733 clarifications | Opus | new in r10; governs where more precise; Codex review pending |
 
 Codex reviews of this bundle: r1 750d397d, r2 d7391d2a, r3 d7d59f1e, r4 604951f7, r5 8ef308a4, r6 7fa7731c,
 and on r7 `20261013T185110Z-codex-omarchy-b6e75736` AGREEMENT_FOR_PREREAD_CORRECTIONS_ONLY (r7 was delivered
 as commit f7107eac). Astra's review of r7: signed 23b86285, relayed by Voalack (review file sha256
 3c9f3625...); r8 answers it (P1 in R4 §3; P2-P5 in 07). Codex on r8: `20261013T193749Z-codex-omarchy-1ec50d44` (CHANGES_REQUIRED_PREREAD_ONLY: U1, answered in r9).
-The disposition of r9 is **pending**. Codex's
+Codex on r9: `20261013T195142Z-codex-omarchy-49bfcb3a` (AGREEMENT_FOR_PREREAD_CORRECTIONS_ONLY). Astra on r9: 14ae9733
+(suitable for the session, clarifications requested; answered in 08). The disposition of r10 is **pending**. Codex's
 signed review records are not exported; any reference to them is peer-relayed status.
 
 Each draft ends with its explicit unknowns.
