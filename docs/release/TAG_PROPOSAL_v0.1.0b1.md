@@ -6,8 +6,7 @@
 is retained unchanged as the record of the earlier final-producer path. It is **not** operative for this
 prerelease.
 
-Status: **proposed and approved by the owner; pending publication.** Nothing below is done until each step
-records its real completion time.
+Status: **completed on 13 October 2026** (completion record below). Each step records its real time.
 
 Authority: owner decision of 13 October 2026, given in the Zabalack Claude session (owner-local record
 `OWNER-DECISION-ZABALACK-PRERELEASE-20261013.md`). The independent reviewer records it as a
@@ -59,7 +58,26 @@ Operative sequence:
 | Party | Decision | Exact commit confirmed | Date (Nassau) | Reference |
 |---|---|---|---|---|
 | Owner | Approve GitHub prerelease v0.1.0b1 on candidate #4 with the exceptions above; no PyPI | `f85212e238fb6322802b163219096db48e428291` | 13 October 2026 | owner terminal turn and AskUserQuestion, Zabalack session |
-| Codex (independent reviewer) | pending | | | signed message id |
+| Codex (independent reviewer) | Agree (docs and scope); agree step 5 on the owner's directly confirmed residual exception | `f85212e238fb6322802b163219096db48e428291` | 13 October 2026 | `20261013T194601Z-codex-omarchy-af95b042`, `20261013T194820Z-codex-omarchy-88e78819`, `20261014T013700Z-codex-omarchy-596d108e` |
+
+### Completion record (13 October 2026; all times read from the clock)
+
+| Step | Result | Time |
+|---|---|---|
+| Docs | PR #51 merged at head `203e036583c5b02fddb5c3f9ae53c51a976e82e2`; notes-bearing `main` = `f9f2dd959f1cc149386523b5f8679dffb8d2253e` | 19:58:09Z |
+| 1 | `f85212e2` is an ancestor of `main`; the delta is 7 paths, all under `docs/` | 19:58Z |
+| 3 | annotated tag `v0.1.0b1` (object `ce62adfa02cdbff8331668680f2c513cacd69e75`) on `f85212e2`; tag ref pushed alone | 19:58:36Z |
+| 4 | tag run 38459115159 attempt 1: tested SHA `f85212e2`, all jobs and security/CodeQL success; wheel byte-identical. A fail-closed comparison found 0 unexplained differences and 14 non-derivable residuals (10 native-run hashes of unretained raw files, 4 SBOM `.pyc` hashes), **accepted by the owner as an explicit exception** and confirmed directly to the reviewer | 20:05Z-01:37Z |
+| 5 | GitHub prerelease created (release ID 412256676), prerelease true, draft false; uploaded assets = the five original files of run 38187030741 only | 01:38:57Z (9:38:57 PM Nassau) |
+| 5 | post-upload: fresh download; `sha256sum -c SHA256SUMS` 4/4 OK; all five downloaded assets, `SHA256SUMS` included, equal the declared hashes | 01:39Z |
+
+Uploaded assets (asset ID, bytes, sha256): `zabalack-0.1.0b1-py3-none-any.whl` 638845343, 60209, `bf5b0171…`;
+`zabalack-0.1.0b1.tar.gz` 638845342, 3642530, `ce346c9d…`; `zabalack-0.1.0b1-source.zip` 638845339, 3853568,
+`9940da37…`; `SHA256SUMS` 638845344, 382, `460b990e…`; `BUILD_PROVENANCE.json` 638845341, 4010, `232501b7…`.
+GitHub's automatically generated source archives are also present; they are outside the reviewed set and
+were not inspected. The release's `target_commitish` field reads `main`, but the release uses the existing tag,
+which resolves to `f85212e2`. The release notes published with it are the reviewed text at `f9f2dd95`
+(sha256 `27488e76…`). This record updates the wording only after publication, by a reviewed edit.
 
 ---
 
