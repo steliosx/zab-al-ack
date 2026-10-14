@@ -1,8 +1,8 @@
 # Zabalack 0.1.0b1 — beta prerelease (release notes)
 
-Prepared 11 October 2026; updated 13 October 2026. Status: **proposed GitHub prerelease, approved by the
-owner on 13 October 2026, pending publication**, with the items under "Deferred by owner decision" left
-open. **Not published to PyPI.**
+Prepared 11 October 2026; updated 13 October 2026. Status: **published as a GitHub prerelease on
+13 October 2026 at 9:38 PM Nassau (2026-10-14T01:38:57Z)**, approved by the owner, with the items under
+"Deferred by owner decision" still open. **Not published to PyPI.**
 This is a beta for development and isolated evaluation. It is **not qualified for
 production deployment**; see "Open items" below.
 
@@ -84,8 +84,7 @@ repository is public.
 
 ## Deferred by owner decision (13 October 2026)
 
-The owner decided to release this beta as a GitHub prerelease with these items deferred. They are **not**
-done:
+The owner released this beta as a GitHub prerelease with these items deferred. They are **not** done:
 
 | Item | Status |
 |---|---|
