@@ -1,5 +1,10 @@
 # Dedicated Linux Actions runner
 
+> Status 10 October 2026: this runner is held under an open incident. By owner
+> decision the active workflows select the GitHub-hosted `ubuntu-24.04` runner
+> until it returns; see `docs/ci-evidence.md`. The host boundary below is retained
+> for that return.
+
 The workflow policy selects one repository-specific Linux ARM64 runner
 for `steliosx/zab-al-ack`. It has no automatic GitHub-hosted fallback. Windows
 remains the Codex controller. Configuration and unit tests are preparation;
@@ -17,7 +22,7 @@ architecture, artifact results and Opus technical review retained together.
 | Job temporary directory | `/opt/zabalack-actions/_work/_temp` |
 | Durable private attempts | `/var/lib/zabalack-evidence`, service-owned, mode 0700 |
 | Trusted hooks | `/etc/zabalack-actions`, root-owned and not service-writable |
-| Shared service-lab lock | `/home/codex/zabalack-task-runs/shared-linux-lab.lock` |
+| Shared service-lab lock | `/home/codex/zabalack-task-runs/shared-linux-lab.lock` (dedicated host; the hosted workflows use `$HOME/zabalack-shared-linux-lab.lock` while this runner is held) |
 
 Install only the workflow dependencies and verified runner distribution.
 The service account's authorized Docker group membership permits synthetic
@@ -231,6 +236,10 @@ manufacture CI evidence. Validate clean dependency installation and source
 bindings separately, using `tools/run_review.py` for local work. Then inspect
 real Actions allocation, the unchanged producer requirements and package's
 same-run artifact download/collection on the reviewed commit.
+
+A separate local alpha lane, which runs only the `quality` job in a SmolVM
+microVM, is described in [preloop-local-ci.md](preloop-local-ci.md). It does not
+change this runner's policy.
 
 Actions artifacts retain their existing allowlists. All active artifact uploads
 now request three days: Alpha (including candidate packages) and deployment-lab

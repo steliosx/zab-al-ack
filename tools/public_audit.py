@@ -23,6 +23,10 @@ EXCLUDED = {'.git', '.venv', 'build', 'dist', 'node_modules', '__pycache__', '.p
 # and commit IDs (and introduce self-referential checksum dependencies).
 HANDOFF_FILES = {'RELEASE_MANIFEST.json', 'RELEASE_SHA256SUMS', 'START_HERE.md'}
 FORBIDDEN_NAMES = {'IMPLEMENTATION_PACKET.md', 'BASELINE_REV_1_2.md', 'DELIVERY_REPORT.md'}
+# The README hero illustrations (owner-added 2026-10-01) are the only binary files the public export
+# may carry: exact paths, a PNG signature and a size ceiling in bytes. Any other binary is a finding.
+PUBLIC_BINARY_FILES = {'docs/assets/readme-hero.png': 2 * 1024 * 1024,
+                       'docs/assets/readme-hero-dark.png': 2 * 1024 * 1024}
 REQUIRED = {'LICENSE', 'NOTICE', 'THIRD_PARTY.md', 'README.md', 'SECURITY.md', 'CONTRIBUTING.md',
             'GOVERNANCE.md', 'CODE_OF_CONDUCT.md', 'CHANGELOG.md', 'docs/DESIGN.md',
             'config/production.example.json', '.github/workflows/ci.yml'}
@@ -141,6 +145,9 @@ def inspect_file(name: str, data: bytes) -> list[str]:
     try:
         content = data.decode('utf-8')
     except UnicodeDecodeError:
+        limit = PUBLIC_BINARY_FILES.get(name)
+        if limit is not None and data.startswith(b'\x89PNG\r\n\x1a\n') and len(data) <= limit:
+            return findings
         return findings + ['unexpected-binary-file']
     patterns = {
         'private-key-material': r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----',
@@ -180,7 +187,7 @@ def audit(root: Path) -> dict:
     if production.get('cohorts') or production.get('endpoints'):
         findings.append({'path': 'config/production.example.json', 'rule': 'active-production-targets'})
     project = tomllib.loads((root / 'pyproject.toml').read_text())['project']
-    if project['license'] != 'Apache-2.0' or project['version'] != '0.1.0a17':
+    if project['license'] != 'Apache-2.0' or project['version'] != '0.1.0b1':
         findings.append({'path': 'pyproject.toml', 'rule': 'alpha-metadata-mismatch'})
     # Validate vendored Alerta schema against the inspected immutable manifest.
     manifest = json.loads((root / 'docs/reference_manifest.json').read_text())

@@ -917,3 +917,108 @@ The a16 narrative and qualified artifacts are retained. Native x64 remains defer
 installed-account permissions, current security review, owner publication inputs
 and all applicable beta, amendment and deployment requirements remain open.
 No tag, upload, merge, release or deployment is authorized by this amendment.
+
+## R23 — 0.1.0b1: beta candidate identity on the hosted lane
+
+The integrated main after PRs #33, #34, #35, #36 and #37 receives version
+0.1.0b1 before artifact qualification (11 October 2026). Active workflows run on the
+GitHub-hosted `ubuntu-24.04` runner while the ARM64 runner is held; main passed
+every active job and scan on that lane at `347bca378711ad788e49484072a15287ea9a7c10`
+(ci.yml run 38137813413; run-specific CI evidence only). This version/export metadata update adds no runtime feature and
+changes no SQL body. It deliberately changes source/harness identities; a17 and
+earlier evidence stays historical and cannot satisfy the new builder by relabelling.
+
+Minimal publication inputs are recorded (repository, package owner, primary
+maintainer, package URLs). Backup maintainer, private conduct contact, the three
+review approvals, PyPI namespace confirmation, publication authorization and the
+independent external security review remain unset. Native x64 qualification,
+installed-account permissions (A4/G5), transport amendment A2 and deployment
+gates G1–G8 remain open and are disclosed as such. No tag, upload, release or
+deployment is authorized by this amendment.
+
+## R24 — 0.1.0b1 release-policy decisions
+
+Owner decisions recorded 11 October 2026 (see `docs/release/POLICY_DECISIONS_v0.1.0b1.md`):
+
+- CodeQL: **enablement attempted on 11 October 2026; gate set back off until the
+  repository is public (owner decision, scheduled enablement, not a waiver).** The repository variable
+  `ZABALACK_CODEQL_ENABLED` was set to `true` on 11 October 2026 and one run was
+  dispatched on `main` (run 38144863693). Both jobs (python, javascript-typescript)
+  FAILED at the step "Analyze and wait for Code Scanning ingestion" with
+  `Resource not accessible by integration`; the code-scanning API reports that
+  code scanning is not enabled for this repository. The cause is not established.
+  Earlier runs remain SKIPPED in history. A failed or skipped CodeQL job is not a
+  clean or triaged scan. Owner decision (14:11Z, 11 October 2026): the variable is
+  set back to `false`; the job skips until the repository is public, is then
+  re-enabled, and one completed run is triaged before the tag. Scheduled
+  enablement, not a waiver.
+- Signed attestation and second-platform reproduction: **deferred to the first
+  stable release**. The beta wheel carries local provenance only
+  (`dist/BUILD_PROVENANCE.json`, two-build hash comparison). The inactive
+  attestation template and verifier are unchanged.
+- Supported environments: the beta states today's tested environment exactly
+  (Python 3.12; Alerta 9.1.0; PostgreSQL 18.3, pin 18.0; PgBouncer 1.24.1;
+  Zabbix 7.0.10 lab target; Linux x86_64 reference in a Docker lab on a hosted
+  runner; other platforms unvalidated). Native x64 qualification on an authorised
+  host remains deferred and is disclosed in the release notes.
+
+No requirement is waived silently; the deferral is explicit. No tag, upload,
+release or deployment is authorized by this amendment.
+
+## R25 — PostgreSQL reference pin moves to the latest 18.x minor (18.6)
+
+Owner decision 11 October 2026: Zabalack and Voalack use the latest PostgreSQL 18.x minor
+release. The reference pin moves from 18.0 (18.3 in practice) to 18.6: source
+archive SHA-256 `555610c24d53e4316da5b7d3fc25c279d96856d5e0e23ee308c328c5fa881d9f`,
+Docker image `postgres:18.6-bookworm` for the native and deployment labs,
+`docs/compatibility_manifest.json` reference. 18.0 and 18.3 archives remain
+accepted by `lab/build_postgres.sh` so historical evidence stays reproducible.
+Minor releases keep the on-disk format and wire protocol; PgBouncer 1.24.1 and
+Patroni bind to the major. This is a lab/pin change, not a runtime change, but it
+changes the harness identity: the native and deployment results recorded on 18.3
+stay bound to their revisions and are not rebound. New native and deployment runs
+on 18.6 are required before the beta tag; the manifest's "observed" fields are
+updated only from those runs. No tag, release or deployment is authorized here.
+## R26 — Coexistence contract replaces the sole/last-plugin requirement
+
+Owner decision 11 October 2026: Zabalack and Voalack must work alone and coexist inside one
+Alerta. The signer previously refused to act unless it was the sole and final plugin
+in the effective routed chain. It now requires that it appears exactly once and that
+every plugin after it declares, as class attributes, `ACK_FOREIGN_SOURCE_PASSTHROUGH
+= True` and `ACK_OWNED_SOURCE_SYSTEMS` (a non-empty frozenset of owned `source_system`
+values) that does not contain this alert's source: the plugin then provably treats the
+alert as foreign, returns it unchanged and raises nothing. The flag alone is not enough,
+because a same-source owner could legitimately alter the signed text later in Alerta's
+loop (independent review finding F1P1). A trailing plugin without both declarations,
+or one owning the same source, still blocks signing
+(`skipped_routing_order` / `zabalack_final_routing_invalid`); an instance-level
+attribute is not trusted. Zabalack declares the same contract for itself (it already
+returns early for alerts whose `source_system` is not `zabbix`). The attribute name is
+intended to be standardised in alerta-ack-core; the shared install of the global
+Alerta patches, the shared-core pin and the coexistence lab profile follow the beta
+tag. Runtime change: a new candidate revision and run are required.
+
+## R27 — Publication register: owner inputs recorded 11 October 2026
+
+The owner recorded, in session: backup maintainer `steliosx`; private conduct
+contact `stelios@steliosx.com`; `publication_authorized = true` (publication of the
+beta tag and GitHub prerelease; distinct from deployment). The owner also made the
+repository public and enabled GitHub private vulnerability reporting the same day.
+Still unset or false: `private_security_reporting_verified` (owner test report
+pending), `copyright_and_third_party_review_approved`,
+`public_content_review_approved`, `pypi_namespace_confirmed`. The publication audit
+therefore still returns 2 ("inputs required"); no tag may be created until all are
+true. No tag, upload or deployment is authorized by this amendment.
+## R28 — CodeQL first completed run and triage (11 October 2026)
+
+After the repository became public, the CodeQL variable was set back to `true` and
+run 38157736793 on `main` 1a498f51 completed both analyses with ingestion accepted.
+Eight alerts, all in harness paths, are triaged in
+`docs/release/CODEQL_TRIAGE_20261011.md`: seven accepted-by-design or false positive
+(public evidence file modes required by R20; lab-only synthetic credential files;
+non-sensitive report printing) and one low-severity item fixed by PR #46 (explicit
+TLS 1.2 floor on the lab HTTPS server; the platform default was already TLS 1.2, so the
+alert concerned reliance on that default, not accepted TLS 1.0/1.1 traffic). Alerts are dismissed in GitHub only after the owner and the
+independent reviewer agree with the dispositions. This supersedes R24's "scheduled
+enablement" wording: CodeQL is enabled and has one completed run; the beta tag waits
+for the dispositions to be agreed. No tag, release or deployment is authorized here.

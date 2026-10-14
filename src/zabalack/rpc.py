@@ -133,8 +133,13 @@ class ZabbixClient:
                         json={"jsonrpc": "2.0", "method": method, "params": params, "id": request_id}) as response:
                         if response.status_code != 200:
                             transient = response.status_code in {408, 429, 500, 502, 503, 504}
+                            # A non-200 status after a sent write proves nothing about its
+                            # effect: an intermediary (520-524, 501, 505, ...) may answer
+                            # after the origin applied the acknowledgement. Every non-200
+                            # write response is therefore uncertain; only pre-dispatch
+                            # refusals (raised before the request) are definite.
                             raise RPCError("http_transient" if transient else "http_rejected",
-                                           transient=transient, uncertain=write and transient)
+                                           transient=transient, uncertain=write)
                         body = bytearray()
                         async for part in response.aiter_bytes():
                             body.extend(part)

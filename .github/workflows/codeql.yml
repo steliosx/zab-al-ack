@@ -23,7 +23,7 @@ jobs:
     # An absent variable keeps this job visibly skipped; it is not a clean scan.
     if: ${{ vars.ZABALACK_CODEQL_ENABLED == 'true' }}
     name: CodeQL (${{ matrix.language }})
-    runs-on: [self-hosted, Linux, ARM64, zabalack]
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -47,7 +47,7 @@ jobs:
           # runner account's root-equivalent Docker access, its retained private
           # attempts or its installed hooks.
           test "$EVENT" != pull_request || test "$HEAD_REPO" = "$THIS_REPO"
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
       - name: Initialize the pinned analysis engine

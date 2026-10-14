@@ -321,8 +321,35 @@ def stage_generation(alert_id: str, intent: dict[str, Any]) -> int:
     return int(row[0])
 
 
+# Coexistence contract (R26). Another Alerta acknowledgement plugin declares, as CLASS
+# attributes: ACK_FOREIGN_SOURCE_PASSTHROUGH = True (it returns alerts of sources it does
+# not own unchanged and raises nothing for them) and ACK_OWNED_SOURCE_SYSTEMS, a frozenset
+# of the source_system values it owns. The signer requires both, and requires that the
+# trailing plugin does not own this alert's source: a same-source owner could legitimately
+# alter the signed text later in Alerta's loop, so disjointness, not the flag alone, is
+# what makes the alert foreign to it. The same names are intended for alerta-ack-core.
+ACK_PASSTHROUGH_ATTRIBUTE = "ACK_FOREIGN_SOURCE_PASSTHROUGH"
+ACK_OWNED_SOURCES_ATTRIBUTE = "ACK_OWNED_SOURCE_SYSTEMS"
+ZABALACK_SOURCE_SYSTEM = "zabbix"
+
+
+def _trailing_plugin_is_foreign_passthrough(plugin: Any, source_system: str) -> bool:
+    """True only if the plugin's class declares the contract and does not own this source."""
+    cls = type(plugin)
+    if getattr(cls, ACK_PASSTHROUGH_ATTRIBUTE, False) is not True:
+        return False
+    owned = getattr(cls, ACK_OWNED_SOURCES_ATTRIBUTE, None)
+    if not isinstance(owned, frozenset) or not owned or not all(isinstance(item, str) for item in owned):
+        return False
+    return source_system not in owned
+
+
 class AckSigningPlugin(PluginBase):
     """Stage unsigned intent; append binding only in the final effective hook."""
+
+    # Coexistence contract (R26): alerts whose source_system is not "zabbix" are returned unchanged.
+    ACK_FOREIGN_SOURCE_PASSTHROUGH = True
+    ACK_OWNED_SOURCE_SYSTEMS = frozenset({ZABALACK_SOURCE_SYSTEM})
 
     def __init__(self, name: str | None = None, *, settings: Settings | None = None,
                  probe: Any = None, keys: dict[str, bytes] | None = None,
@@ -343,11 +370,24 @@ class AckSigningPlugin(PluginBase):
         return None
 
     def _last(self, alert: Any) -> bool:
+        """The signer appears exactly once, and nothing after it may alter the alert.
+
+        Coexistence contract (owner decision, 11 October 2026): another acknowledgement
+        plugin may follow the signer in the effective routed chain only if its class
+        declares ``ACK_FOREIGN_SOURCE_PASSTHROUGH = True`` and an ``ACK_OWNED_SOURCE_SYSTEMS``
+        frozenset that does not contain this alert's ``source_system``: the alert is then
+        foreign to it and it returns it unchanged. A trailing plugin without both
+        declarations, or one that owns the same source, keeps the original refusal.
+        """
         routed = g.get("zabalack_effective_route") if has_request_context() else None
         if not routed or routed[0] != str(alert.id):
             return False
         chain = routed[1]
-        return bool(chain and chain[-1] is self and sum(item is self for item in chain) == 1)
+        if not chain or sum(item is self for item in chain) != 1:
+            return False
+        trailing = chain[chain.index(self) + 1:]
+        source_system = str(alert.attributes.get("source_system", ""))
+        return all(_trailing_plugin_is_foreign_passthrough(item, source_system) for item in trailing)
 
     def _check_health(self, settings: Settings) -> None:
         try:

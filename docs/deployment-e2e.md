@@ -38,7 +38,7 @@ path and independently obtained SHA-256:
 
 ```bash
 python tools/run_deployment_e2e.py --isolated-lab \
-  --wheel /private/artifacts/zabalack-0.1.0a17-py3-none-any.whl \
+  --wheel /private/artifacts/zabalack-0.1.0b1-py3-none-any.whl \
   --wheel-sha256 "$EXPECTED_WHEEL_SHA256"
 ```
 
@@ -56,7 +56,7 @@ results to its new revision. Legacy source-build/local records remain scoped
 to their original execution and do not imply this exact-artifact mode.
 
 The runner builds a Python 3.12.10 image from `requirements.lock` and a wheel from
-the current source by default. Services use PostgreSQL 18.3, PostgreSQL 16.4 for the source
+the current source by default. Services use PostgreSQL 18.6, PostgreSQL 16.4 for the source
 server, and Zabbix 7.0.10 server/web images. Version tags are explicit; a successful
 run records the actual Docker image IDs. Image pulls/build dependency downloads
 need ordinary registry access. The runtime network is a new internal Compose

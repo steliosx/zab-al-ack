@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="#status"><img src="docs/assets/badge-alpha.svg" alt="Stage: alpha candidate" width="156" height="28"></a>
+  <a href="#status"><img src="docs/assets/badge-alpha.svg" alt="Stage: beta prerelease" width="156" height="28"></a>
   <a href="#getting-started"><img src="docs/assets/badge-python.svg" alt="Python reference: 3.12" width="119" height="28"></a>
   <a href="#how-it-works"><img src="docs/assets/badge-postgresql.svg" alt="Database: PostgreSQL" width="184" height="28"></a>
   <a href="LICENSE"><img src="docs/assets/badge-license.svg" alt="License: Apache-2.0" width="179" height="28"></a>
@@ -30,10 +30,14 @@
 </p>
 
 > [!IMPORTANT]
-> **0.1.0a17 · alpha candidate under qualification · development and isolated evaluation.**
-> The candidate is unpublished and no production environment has been validated.
-> Production examples keep external writes disabled, with no active cohorts or endpoints.
-> See the [alpha report](ALPHA_REPORT.md) and [remaining qualification gates](docs/BETA_READINESS.md).
+> **0.1.0b1 · published GitHub beta prerelease · development and isolated evaluation.**
+> [Download the prerelease](https://github.com/steliosx/zab-al-ack/releases/tag/v0.1.0b1).
+> It was published on 13 October 2026 (Nassau), from frozen producer `f85212e2`.
+> It is not on PyPI and is not qualified for production. External writes remain
+> disabled by default, with no active cohorts or endpoints.
+> See the [release notes](docs/release/RELEASE_NOTES_v0.1.0b1.md),
+> [recorded exceptions](docs/release/TAG_PROPOSAL_v0.1.0b1.md) and
+> [remaining qualification gates](docs/BETA_READINESS.md).
 
 ---
 
@@ -75,7 +79,7 @@ the source and checks the problem and approved scope before delivery.
   <img src="docs/assets/delivery-outcomes.svg" alt="Already acknowledged: record the observation without an extra acknowledgement or comment. Eligible delivery: check the original problem and scope before bounded delivery. Unknown outcome: preserve uncertainty and investigate by reads, with no blind resend." width="1280">
 </p>
 
-These are explanatory views of the alpha design. They do not establish a passed
+These are explanatory views of the implementation design. They do not establish a passed
 qualification gate. Read the [implementation design](docs/DESIGN.md) or the
 [illustrated architecture guide](https://zabalack.stel.chatgpt.site/architecture.html)
 for the detailed capture, delivery and reconciliation boundaries.
@@ -126,38 +130,39 @@ for native PostgreSQL, PgBouncer and optional real-Zabbix procedures.
 
 ## Status
 
-The development baseline is **0.1.0a17**. Current-candidate qualification and
+The published development prerelease is **0.1.0b1**. Current-candidate qualification and
 historical test results are recorded separately; a result belongs to the exact
 revision and artifact that produced it.
 
 | Area | Current position | Where to read more |
 | --- | --- | --- |
-| Development | Integrated alpha candidate, under qualification | [Alpha report](ALPHA_REPORT.md) |
-| Beta and publication | Remaining technical qualification and owner inputs are open | [Beta readiness](docs/BETA_READINESS.md) |
+| Development | GitHub beta prerelease published; further qualification remains | [Release notes](docs/release/RELEASE_NOTES_v0.1.0b1.md) |
+| Publication and acceptance | GitHub prerelease only; PyPI is not authorised; installed and deployment gates remain open | [Beta readiness](docs/BETA_READINESS.md) · [Release record](docs/release/TAG_PROPOSAL_v0.1.0b1.md) |
 | Evidence | Unit/mock, PostgreSQL WASM, native-service and installed-path records have distinct scopes | [Evidence guide](evidence/README.md) · [Compatibility and evidence](#compatibility-and-evidence) |
 | Production use | No production environment validated; external writes disabled by default | [Deployment](docs/deployment.md) · [Runbook](docs/runbook.md) |
 
-### Unmerged beta work — 2 October 2026
+### Evidence checkpoint — 14 October 2026
 
-Main remains the a17 baseline above. The separate B1 work branch,
-[`opus/b1-beta-reconciliation-20260929` at `cd36053`](https://github.com/steliosx/zab-al-ack/tree/cd36053b6cc6ec1db8ae21a7fd386640fc720c7c),
-is **unmerged and not beta-accepted**. Its version label does not establish readiness.
-
-- Adopted [local reference evidence](https://github.com/steliosx/zab-al-ack/blob/cd36053b6cc6ec1db8ae21a7fd386640fc720c7c/evidence/reference-run.json)
-  reports **2,428 passed / 57 skipped** for tested source `3392d39`.
-- The [installed deployment-path record](https://github.com/steliosx/zab-al-ack/blob/cd36053b6cc6ec1db8ae21a7fd386640fc720c7c/evidence/deployment-e2e-run.json)
-  records **4 cases and 13/13 observations** on native x64 with the preliminary
-  B1 wheel `eaf3c422…`. Carry-over to a canonical artifact requires byte equality.
-  This scoped lab result does not replace the separate native/PgBouncer or
-  real-Zabbix qualification profiles, which remain `NOT_RUN` in the adopted records.
-- [Actions run 37075775473](https://github.com/steliosx/zab-al-ack/actions/runs/37075775473)
-  **failed at `cd36053`**. Runner hooks refused retained state in several jobs;
-  reference also returned a failing unit/mocked phase. Packaging was skipped.
-  Earlier local passes do not make this Actions run successful.
-
-See the branch's [beta-readiness record](https://github.com/steliosx/zab-al-ack/blob/cd36053b6cc6ec1db8ae21a7fd386640fc720c7c/docs/BETA_READINESS.md)
-for the remaining artifact, installed-account, security and deployment gates.
-These source and published-record checks do not independently verify private retention.
+- **Frozen artifact:** tag `v0.1.0b1` resolves to
+  [`f85212e2`](https://github.com/steliosx/zab-al-ack/commit/f85212e238fb6322802b163219096db48e428291).
+  The release attaches the five original files from
+  [producer run 38187030741](https://github.com/steliosx/zab-al-ack/actions/runs/38187030741).
+  GitHub-reported asset digests match the release record; this README review did
+  not independently download or inspect those built files.
+- **Current main:** [`c66e7f30`](https://github.com/steliosx/zab-al-ack/commit/c66e7f3049b5a06123e90f362f9a11c4eb1c1e92)
+  contains the reviewed completion record from [PR #52](https://github.com/steliosx/zab-al-ack/pull/52),
+  whose exact head was `c2f194c0`. The delta from the frozen producer is documentation only.
+- **Keep both CI outcomes:** [push run 38505508373](https://github.com/steliosx/zab-al-ack/actions/runs/38505508373)
+  passed all five jobs. Later [nightly run 38538128393](https://github.com/steliosx/zab-al-ack/actions/runs/38538128393)
+  failed the WASM PostgreSQL phase and native PostgreSQL generated-ledger tests
+  (native: 205 passed, two failed); packaging was skipped. The scheduled profile is
+  broader than the PR/push profile. Its sanitized diagnostics do not include the
+  minimized failing examples, so the underlying cause remains undetermined.
+- **Publication is not acceptance:** register completeness was waived by the owner,
+  not passed. External security review and the independent reviewer's built-file
+  inspection were deferred, not completed. The release record also retains the
+  owner's explicit artifact-comparison exception. A2, A4/G5 and G1–G8 remain open.
+  A published beta is not approval to enable writes in a real environment.
 
 Use [the changelog](CHANGELOG.md) for the release narrative and
 [open pull requests](https://github.com/steliosx/zab-al-ack/pulls) for proposed work.
@@ -173,7 +178,7 @@ Use [the changelog](CHANGELOG.md) for the release narrative and
   operator controls and conservative handling of unknown remote outcomes.
 
 Bulk actions, chatops, arbitrary status/attribute updates and fan-in alerts are
-outside this alpha's write-back scope. A later source unacknowledgement does not
+outside this release's write-back scope. A later source unacknowledgement does not
 automatically cause re-acknowledgement. See [design](docs/DESIGN.md),
 [source-backed amendment A1](docs/SPEC_AMENDMENTS.md) and
 [final-review interpretations](docs/final_review_notes.md).
@@ -205,7 +210,7 @@ been satisfied. See [installation and operations](#installation-and-operations).
 <details>
 <summary><strong>Which acknowledgements are supported?</strong></summary>
 
-The alpha supports an authorised human acknowledging one eligible Alerta alert
+The beta supports an authorised human acknowledging one eligible Alerta alert
 through the single-alert action route, mapped to one original Zabbix problem in
 an approved scope. Bulk actions, chatops and fan-in alerts are outside that scope.
 A later source unacknowledgement does not automatically trigger re-acknowledgement.
@@ -254,9 +259,11 @@ currently records no validated production environment.
 See [mutation testing](docs/mutation-testing.md),
 [deployment E2E](docs/deployment-e2e.md),
 [security automation](docs/security-automation.md) and
-[release provenance](docs/release-provenance.md). Hosted CodeQL and signed
-attestation issuance have not run here. The attestation template is inactive
-and package publication stays disabled.
+[release provenance](docs/release-provenance.md). Hosted CodeQL has executed:
+[current-main run 38505508338](https://github.com/steliosx/zab-al-ack/actions/runs/38505508338)
+completed successfully. Workflow completion is not external security approval
+or independent verification of alert dispositions. Signed attestation issuance
+remains NOT_RUN; its template is inactive. PyPI publication remains unauthorised.
 
 </details>
 

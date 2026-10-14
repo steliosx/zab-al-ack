@@ -154,6 +154,85 @@ def test_T18_effective_routing_reorders_or_omits_signer(context, monkeypatch, ru
     assert context.probe.calls == 0
 
 
+class PassthroughAckPlugin(Observer):
+    """A second acknowledgement plugin that declares the coexistence contract."""
+    name = "synthetic_passthrough_ack"
+    ACK_FOREIGN_SOURCE_PASSTHROUGH = True
+    ACK_OWNED_SOURCE_SYSTEMS = frozenset({"veeam_one"})
+
+
+class SameSourceOwnerPlugin(Observer):
+    """Declares pass-through for foreign sources but owns zabbix too (Codex F1P1)."""
+    name = "synthetic_same_source_owner"
+    ACK_FOREIGN_SOURCE_PASSTHROUGH = True
+    ACK_OWNED_SOURCE_SYSTEMS = frozenset({"zabbix", "veeam_one"})
+
+
+class FlagOnlyPlugin(Observer):
+    name = "synthetic_flag_only"
+    ACK_FOREIGN_SOURCE_PASSTHROUGH = True
+
+
+class UndeclaredTrailingPlugin(Observer):
+    name = "synthetic_undeclared_trailing"
+
+
+def test_coexistence_declared_passthrough_plugin_may_follow_the_signer(context, monkeypatch):
+    trailing = PassthroughAckPlugin()
+    monkeypatch.setattr(plugins, "rules", lambda a, p, **kw: [p["signer"], trailing])
+    alert, action, note, timeout = stage(context)
+    assert "zabbix_ack_sync_intent" in alert.attributes
+    _, status, text = process_status(alert, "ack", note)
+    assert text.count("[zabalack:") == 1
+
+
+def test_coexistence_undeclared_trailing_plugin_still_blocks_signing(context, monkeypatch):
+    trailing = UndeclaredTrailingPlugin()
+    monkeypatch.setattr(plugins, "rules", lambda a, p, **kw: [p["signer"], trailing])
+    alert, action, note, timeout = stage(context)
+    assert "zabbix_ack_sync_intent" not in alert.attributes
+    assert alert.attributes["zabbix_ack_sync_reason"] == "skipped_routing_order"
+    assert context.probe.calls == 0
+
+
+def test_coexistence_instance_level_declaration_is_not_trusted(context, monkeypatch):
+    trailing = UndeclaredTrailingPlugin()
+    trailing.ACK_FOREIGN_SOURCE_PASSTHROUGH = True  # instance attribute, not the class contract
+    monkeypatch.setattr(plugins, "rules", lambda a, p, **kw: [p["signer"], trailing])
+    alert, action, note, timeout = stage(context)
+    assert "zabbix_ack_sync_intent" not in alert.attributes
+
+
+@pytest.mark.parametrize("trailing_cls", [SameSourceOwnerPlugin, FlagOnlyPlugin], ids=["same-source-owner", "flag-without-owned-set"])
+def test_coexistence_trailing_plugin_must_be_foreign_to_this_source(context, monkeypatch, trailing_cls):
+    trailing = trailing_cls()
+    monkeypatch.setattr(plugins, "rules", lambda a, p, **kw: [p["signer"], trailing])
+    alert, action, note, timeout = stage(context)
+    assert "zabbix_ack_sync_intent" not in alert.attributes
+    assert alert.attributes["zabbix_ack_sync_reason"] == "skipped_routing_order"
+    assert context.probe.calls == 0
+
+
+def test_coexistence_owned_set_must_be_a_nonempty_frozenset_of_strings():
+    from zabalack.plugins import _trailing_plugin_is_foreign_passthrough
+    class Bad(Observer):
+        ACK_FOREIGN_SOURCE_PASSTHROUGH = True
+    for owned in ({"veeam_one"}, ["veeam_one"], frozenset(), frozenset({1}), "veeam_one"):
+        Bad.ACK_OWNED_SOURCE_SYSTEMS = owned
+        assert _trailing_plugin_is_foreign_passthrough(Bad(), "zabbix") is False
+    Bad.ACK_OWNED_SOURCE_SYSTEMS = frozenset({"veeam_one"})
+    assert _trailing_plugin_is_foreign_passthrough(Bad(), "zabbix") is True
+    assert _trailing_plugin_is_foreign_passthrough(Bad(), "veeam_one") is False
+
+
+def test_coexistence_signer_declares_the_contract_itself():
+    from zabalack.plugins import ACK_PASSTHROUGH_ATTRIBUTE, AckSigningPlugin
+    assert ACK_PASSTHROUGH_ATTRIBUTE == "ACK_FOREIGN_SOURCE_PASSTHROUGH"
+    assert getattr(AckSigningPlugin, ACK_PASSTHROUGH_ATTRIBUTE) is True
+    assert AckSigningPlugin.ACK_OWNED_SOURCE_SYSTEMS == frozenset({"zabbix"})
+    assert AckSigningPlugin.__doc__.startswith("Stage unsigned intent")
+
+
 def test_T18_routing_snapshot_is_actual_not_second_rules_evaluation(context, monkeypatch):
     calls = []
 

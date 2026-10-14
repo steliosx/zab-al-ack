@@ -1,7 +1,7 @@
 # Isolated reference lab
 
 Production access is not part of this lab. All accounts and records are synthetic.
-The native reference stack is Alerta 9.1.0, PostgreSQL 18.0 and optional PgBouncer
+The native reference stack is Alerta 9.1.0, PostgreSQL 18.6 and optional PgBouncer
 1.24.1 transaction pooling. Exact source commits and hashes are in
 `docs/reference_manifest.json`. G1–G8 remain open even after lab success.
 
@@ -32,7 +32,7 @@ it is never a substitute for the Alerta/PostgreSQL 18 integration tests.
 Alternatively build the pinned source archive into a workspace-local prefix:
 
 ```bash
-bash lab/build_postgres.sh --isolated-lab /path/to/postgresql-18.0.tar.bz2
+bash lab/build_postgres.sh --isolated-lab /path/to/postgresql-18.6.tar.bz2
 python lab/local_runtime.py start --isolated-lab
 export ACK_TEST_ADMIN_DSN='postgresql://lab_admin@127.0.0.1:55432/postgres'
 ```
@@ -52,7 +52,7 @@ loopback TCP on port 55432. This avoids Unix socket path limits in deep
 checkouts or long temporary-directory paths, and requires no shared temporary
 directory ownership changes. A startup override also handles a stopped,
 previously initialised disposable cluster without removing its data.
-When the pinned 18.0 archive is unavailable, a
+When the pinned 18.6 archive is unavailable, a
 later 18.x upstream tarball verified against its published SHA-256 is acceptable
 for the lab (record the version in the evidence); the supplemental WASM engine
 below permits SQL and actual Alerta persistence checks in a clearly separate

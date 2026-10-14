@@ -27,7 +27,7 @@ def test_codeql_upload_permission_is_only_in_the_analysis_job():
     assert set(value['jobs']) == {'analyze'}
     job = value['jobs']['analyze']
     assert job['permissions'] == {'contents': 'read', 'security-events': 'write'}
-    assert job['runs-on'] == ['self-hosted', 'Linux', 'ARM64', 'zabalack']
+    assert job['runs-on'] == 'ubuntu-24.04'
     assert 1 <= int(job['timeout-minutes']) <= 30
 
 
@@ -68,7 +68,7 @@ def test_codeql_actions_match_inspected_manifest_and_only_allowlisted_tools_exec
     assert manifest['cli_version'] == '2.27.0'
     assert manifest['bundle_tag'] == 'codeql-bundle-v2.27.0'
     allowed = {
-        'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683',
+        'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09',
         'github/codeql-action/init@' + manifest['commit'],
         'github/codeql-action/analyze@' + manifest['commit'],
     }
