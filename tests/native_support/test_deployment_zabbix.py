@@ -83,7 +83,7 @@ def test_bootstrap_refuses_active_actions_before_any_mutation(lab, monkeypatch):
 
     def rpc(method, params, **kwargs):
         methods.append(method)
-        return {"apiinfo.version": "7.0.10", "user.login": "a" * 32,
+        return {"apiinfo.version": "7.0.25", "user.login": "a" * 32,
                 "action.get": [{"actionid": "1"}]}[method]
 
     monkeypatch.setattr(lab, "_rpc", rpc)
@@ -105,7 +105,7 @@ def test_worker_role_has_only_source_reads_ack_and_comment(lab, monkeypatch):
         nonlocal next_id, token_id, stored_role
         requests.append((method, params))
         if method == "apiinfo.version":
-            return "7.0.10"
+            return "7.0.25"
         if method == "user.login":
             return "a" * 32
         if method in ("action.get", "host.get"):
@@ -259,8 +259,10 @@ def test_update_delivery_requires_a_real_update_identifier(lab, monkeypatch, ack
         lab.wait_delivery("12", 1, update=True, timeout=0)
 
 
-def test_readiness_rejects_different_reference_version(lab, monkeypatch):
-    monkeypatch.setattr(lab, "_rpc", lambda *args, **kwargs: "7.0.0")
+@pytest.mark.parametrize("version", ["7.0.0", "7.0.10"])
+def test_readiness_rejects_different_reference_version(lab, monkeypatch, version):
+    # 7.0.10 was the reference before 7.0.25; an old instance must not pass as the new one.
+    monkeypatch.setattr(lab, "_rpc", lambda *args, **kwargs: version)
     with pytest.raises(zbx.LabZabbixError, match="unexpected_zabbix_reference_version"):
         lab.wait_ready(timeout=0)
 

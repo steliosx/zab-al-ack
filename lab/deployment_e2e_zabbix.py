@@ -1,4 +1,4 @@
-"""Synthetic Compose-only provisioning through the pinned Zabbix 7.0.10 API.
+"""Synthetic Compose-only provisioning through the pinned Zabbix 7.0.25 API.
 
 This helper never accepts an endpoint or credentials from a fixture. Its only
 destination is the private Compose service; the outer runner must establish a
@@ -24,8 +24,11 @@ from lab.zabbix_roles import role_rules, verify_role
 API_URL = "http://zabbix-web:8080/api_jsonrpc.php"
 INGEST_URL = "https://runner:58081/alert"
 ISOLATION_VALUE = "GENERATED_ISOLATED_PROJECT"
-REFERENCE_VERSION = "7.0.10"
-REFERENCE_COMMIT = "237358b56b2584b94b1f8358f479ade669693ba2"
+REFERENCE_VERSION = "7.0.25"
+# Historical identity only: the Zabbix 7.0.10 source commit whose API classes were
+# inspected for this lab (docs/deployment-e2e.md). It is not the 7.0.25 reference
+# and nothing here derives the reference from it.
+INSPECTED_SOURCE_COMMIT_7_0_10 = "237358b56b2584b94b1f8358f479ade669693ba2"
 # Synthetic provisioning/observation only: a cold trigger.create took 13 seconds
 # under QEMU TCG. This client never carries the production worker's write path.
 LAB_RPC_TIMEOUT_SECONDS = 30

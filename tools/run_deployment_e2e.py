@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 IMAGES = {
     "postgres": "postgres:18.6-bookworm",
     "zabbix-db": "postgres:16.4-alpine",
-    "zabbix-server": "zabbix/zabbix-server-pgsql:alpine-7.0.10",
-    "zabbix-web": "zabbix/zabbix-web-nginx-pgsql:alpine-7.0.10",
+    "zabbix-server": "zabbix/zabbix-server-pgsql:alpine-7.0.25",
+    "zabbix-web": "zabbix/zabbix-web-nginx-pgsql:alpine-7.0.25",
 }
 EXPECTED_CASES = {
     "test_installed_authenticated_path_and_exactly_one_source_effect",

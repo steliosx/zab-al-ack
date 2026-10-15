@@ -6,7 +6,7 @@ the same lab can be assembled by hand: build `zabbix_server` from the upstream
 `database/postgresql/{schema,images,data}.sql` into a dedicated PostgreSQL
 cluster, serve `ui/` with PHP 8.x on `127.0.0.1:58080`, and run the server as an
 unprivileged user with loopback-only listeners. The suite accepts any 7.0.x
-patch release and records the observed version; the reference pin is 7.0.0.
+patch release and records the observed version; the reference pin is 7.0.25.
 No mocked result is permission, macro or notification evidence.
 
 Start the explicit real-zabbix profile on an authorised development host. The

@@ -9,7 +9,7 @@ are supplied by the operator on one host:
   * PostgreSQL 18 reachable as host `postgres`, port 5432, superuser
     `lab_admin` whose password is in <private>/pg-password, with an empty
     database `alerta` (host logins must be password-authenticated);
-  * a fresh Zabbix 7.0.10 frontend reachable as http://zabbix-web:8080 with the
+  * a fresh Zabbix 7.0.25 frontend reachable as http://zabbix-web:8080 with the
     default Admin credentials, backed by a running zabbix_server;
   * the hostnames `postgres`, `zabbix-web` and `runner` resolving to loopback;
   * /opt/zabalack-lab resolving to this checkout and <private> being
