@@ -298,6 +298,12 @@ def test_zabbix_pins_agree_with_reference_version():
     assert re.findall(r'"(7\.0\.[0-9]+)"', runtime) == [reference] * 3
     compose = (ROOT / "lab/compose.zabbix.yml").read_text()
     assert re.findall(r"zabbix/zabbix-[a-z-]+:alpine-(7\.0\.[0-9]+)", compose) == [reference] * 2
+    # The historical 7.0.10 inspection commit stays attributed to 7.0.10 and is
+    # not offered as the current reference identity.
+    assert not hasattr(zbx, "REFERENCE_COMMIT")
+    assert zbx.INSPECTED_SOURCE_COMMIT_7_0_10 == "237358b56b2584b94b1f8358f479ade669693ba2"
+    docs = (ROOT / "docs/deployment-e2e.md").read_text()
+    assert "Zabbix 7.0.10 commit `" + zbx.INSPECTED_SOURCE_COMMIT_7_0_10 + "`" in docs
 
 
 def test_service_module_refuses_marker_before_fixture_reads(monkeypatch):

@@ -150,8 +150,13 @@ Zabbix 7.0.10 commit `237358b56b2584b94b1f8358f479ade669693ba2`
 server/web Dockerfiles and entrypoints. No interface was inferred from a mock's
 successful return alone.
 
-Those inspections were made at 7.0.10. For the 7.0.25 reference, only a static
-source comparison has been made so far: the official 7.0.25 tarball's `CEvent`,
+Those inspections were made at 7.0.10, and the lab keeps that commit only as a
+historical inspection identity (`INSPECTED_SOURCE_COMMIT_7_0_10`). The 7.0.25
+reference has no inspected-commit pin yet; the official source tarball is
+identified by its SHA-256 (`3a42e85da9cbd8aadd11bfcbe021f0f9c6caa510f564e37f3ac1046984acb729`),
+and upstream's Git tag `7.0.25` pointed at commit
+`d607227714fc00ec6117e663d0934cb90c0f842b` when read on 15 October 2026. For the
+7.0.25 reference, only a static source comparison has been made so far: the official 7.0.25 tarball's `CEvent`,
 `CTask`, `CRole`, `CToken`, JSON-RPC and schema files against 7.0.10 and 7.0.29.
 The other interfaces above and the 7.0.25 Docker images are covered only by a
 7.0.25 lab run.
