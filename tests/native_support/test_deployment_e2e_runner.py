@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
@@ -24,7 +25,7 @@ def sample_result(path, *, failed=False, skipped=False, extra=False):
         "ingest_key_local_only", "worker_denied_table_update", "probe_denied_table_read", "separate_native_logins",
         "media_macro_ingestion", "neutral_update_filtered", "human_update_recorded", "recovery_macro_ingestion",
     }
-    report = {"checks": dict.fromkeys(names, True), "versions": {"alerta": "9.1.0", "zabbix": "7.0.10", "postgres_major": "18"},
+    report = {"checks": dict.fromkeys(names, True), "versions": {"alerta": "9.1.0", "zabbix": "7.0.25", "postgres_major": "18"},
               "private_password": "do-not-export-example"}
     (path / "observations.json").write_text(json.dumps(report))
     suite = ET.Element("testsuite")
@@ -282,6 +283,21 @@ def test_false_check_and_wrong_version_fail_closed(tmp_path):
     report_path.write_text(json.dumps(data))
     with pytest.raises(ValueError, match="version"):
         runner.validate_result(tmp_path, 0)
+
+
+def test_zabbix_pins_agree_with_reference_version():
+    # The image tags, the lab readiness check and the generated configuration
+    # must name the one reference version that the evidence validator expects.
+    from lab import deployment_e2e_zabbix as zbx
+    reference = runner.REFERENCE_VERSIONS["zabbix"]
+    assert reference == "7.0.25"
+    assert runner.IMAGES["zabbix-server"] == "zabbix/zabbix-server-pgsql:alpine-" + reference
+    assert runner.IMAGES["zabbix-web"] == "zabbix/zabbix-web-nginx-pgsql:alpine-" + reference
+    assert zbx.REFERENCE_VERSION == reference
+    runtime = (ROOT / "lab/deployment_e2e_runtime.py").read_text()
+    assert re.findall(r'"(7\.0\.[0-9]+)"', runtime) == [reference] * 3
+    compose = (ROOT / "lab/compose.zabbix.yml").read_text()
+    assert re.findall(r"zabbix/zabbix-[a-z-]+:alpine-(7\.0\.[0-9]+)", compose) == [reference] * 2
 
 
 def test_service_module_refuses_marker_before_fixture_reads(monkeypatch):

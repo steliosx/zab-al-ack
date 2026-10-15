@@ -59,7 +59,7 @@ def passing(root, local=False):
         'deployment_gates': 'MANUAL_GATE_PENDING', 'code_digests': code_digests(root),
         'tree_unchanged': True, 'counts': {'passed': 4, 'failed': 0, 'skipped': 0},
         'checks': {key: True for key in CHECKS},
-        'versions': {'alerta': '9.1.0', 'zabbix': '7.0.10', 'postgres_major': '18'},
+        'versions': {'alerta': '9.1.0', 'zabbix': '7.0.25', 'postgres_major': '18'},
         'started_at': '2026-09-11T12:00:00Z', 'finished_at': '2026-09-11T12:00:45Z',
         'runner_shutdown_exit_code': 0, 'shutdown_exit_code': 0,
         'image_ids': {key: 'sha256:' + 'a' * 64 for key in COMPONENTS},
@@ -75,7 +75,7 @@ FLAWS = [
     'all_false', 'missing_check', 'integer_check', 'extra_check', 'zero_tests',
     'failed_test', 'boolean_count', 'missing_count', 'missing_cleanup',
     'failed_cleanup', 'boolean_cleanup', 'failed_runner_cleanup', 'tree_changed',
-    'wrong_versions', 'wrong_layer', 'gates_closed', 'reversed_clock',
+    'wrong_versions', 'previous_reference_version', 'wrong_layer', 'gates_closed', 'reversed_clock',
     'naive_clock', 'missing_images', 'wrong_image_hash', 'mixed_runtime',
     'string_runtime_flag', 'local_components_missing', 'local_runner_missing',
     'status_and_digests_only', 'not_run_with_passes', 'supplied_wheel_version',
@@ -103,6 +103,7 @@ def broken(root, flaw):
     elif flaw == 'failed_runner_cleanup': report['runner_shutdown_exit_code'] = 1
     elif flaw == 'tree_changed': report['tree_unchanged'] = False
     elif flaw == 'wrong_versions': report['versions']['zabbix'] = '7.0.999'
+    elif flaw == 'previous_reference_version': report['versions']['zabbix'] = '7.0.10'
     elif flaw == 'wrong_layer': report['layer'] = 'mocked'
     elif flaw == 'gates_closed': report['deployment_gates'] = 'PASS'
     elif flaw == 'reversed_clock': report['finished_at'] = '2026-09-10T12:00:00Z'

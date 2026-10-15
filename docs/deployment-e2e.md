@@ -57,7 +57,7 @@ to their original execution and do not imply this exact-artifact mode.
 
 The runner builds a Python 3.12.10 image from `requirements.lock` and a wheel from
 the current source by default. Services use PostgreSQL 18.6, PostgreSQL 16.4 for the source
-server, and Zabbix 7.0.10 server/web images. Version tags are explicit; a successful
+server, and Zabbix 7.0.25 server/web images. Version tags are explicit; a successful
 run records the actual Docker image IDs. Image pulls/build dependency downloads
 need ordinary registry access. The runtime network is a new internal Compose
 network with **no published ports**, host networking, Docker-socket mount or
@@ -149,6 +149,12 @@ Zabbix 7.0.10 commit `237358b56b2584b94b1f8358f479ade669693ba2`
 7.0.10 commit `8593930481428e518ac239a785629fb574b88a46`
 server/web Dockerfiles and entrypoints. No interface was inferred from a mock's
 successful return alone.
+
+Those inspections were made at 7.0.10. For the 7.0.25 reference, only a static
+source comparison has been made so far: the official 7.0.25 tarball's `CEvent`,
+`CTask`, `CRole`, `CToken`, JSON-RPC and schema files against 7.0.10 and 7.0.29.
+The other interfaces above and the 7.0.25 Docker images are covered only by a
+7.0.25 lab run.
 
 For a hosted isolated run, the supplied `deployment-e2e.yml` workflow is manual
 and requires `ZABALACK_DEPLOYMENT_E2E_ENABLED=true` after repository policy review.
