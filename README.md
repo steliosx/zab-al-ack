@@ -164,6 +164,33 @@ revision and artifact that produced it.
   owner's explicit artifact-comparison exception. A2, A4/G5 and G1–G8 remain open.
   A published beta is not approval to enable writes in a real environment.
 
+### Forgehold quality lane — 16 October 2026
+
+[PR #54](https://github.com/steliosx/zab-al-ack/pull/54), reviewed at
+`4c25f1c3`, adopted the dispatch-only quality workflow onto
+[main `b9db4ab0`](https://github.com/steliosx/zab-al-ack/commit/b9db4ab0ed980e7758722e830b2278e1fd10334a).
+The existing hosted pipeline remains the candidate-evidence lane.
+
+At that exact main commit, the Preloop App's
+[quality check 116876268249](https://github.com/steliosx/zab-al-ack/runs/116876268249)
+reports success on 16 October, including dependency installation, `pip check`
+and `tools/run_quality.py`. This is an App-reported job result; the raw
+execution records, independent custody readback and VM cleanup were not
+inspected in this presentation review. It is not full Forgehold qualification.
+
+The [ordinary push run](https://github.com/steliosx/zab-al-ack/actions/runs/38828449095)
+passed all five jobs. The later
+[nightly run 38872931967](https://github.com/steliosx/zab-al-ack/actions/runs/38872931967)
+again failed the PostgreSQL WASM phase and native generated-ledger checks
+(205 passed, two failed); packaging was skipped. The quality-only lane result
+does not clear those failures. Their minimized counterexamples and root cause
+remain unavailable in the retained public summary.
+
+The [open runner-policy documentation finding](https://github.com/steliosx/zab-al-ack/pull/54#discussion_r4289531492)
+also remains: the general hosted-only statements need to distinguish this
+explicit self-hosted exception. No production, installed-account or release
+gate is closed by adopting or running the quality lane.
+
 Use [the changelog](CHANGELOG.md) for the release narrative and
 [open pull requests](https://github.com/steliosx/zab-al-ack/pulls) for proposed work.
 
