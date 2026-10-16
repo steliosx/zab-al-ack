@@ -640,12 +640,21 @@ def test_service_workflow_requires_explicit_enablement_and_exports_only_fixed_re
 def test_every_active_job_runs_on_the_hosted_ubuntu_2404_runner_by_owner_decision():
     # Owner decision 2026-10-10: GitHub-hosted ubuntu-24.04 for every job while the dedicated
     # ARM64 runner is held; see docs/ci-evidence.md "Hosted execution for the beta".
+    # Owner decisions 2026-10-09 and 2026-10-15: the Forgehold lane's quality job may run on
+    # the local Forgehold runner; see docs/ci-evidence.md "Forgehold lane".
     paths = list((ROOT / '.github/workflows').glob('*.yml'))
-    assert {path.name for path in paths} == {'ci.yml', 'security.yml', 'codeql.yml', 'deployment-e2e.yml'}
+    assert {path.name for path in paths} == {'ci.yml', 'security.yml', 'codeql.yml', 'deployment-e2e.yml',
+                                             'forgehold-lane.yml'}
     for path in paths:
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+        if path.name == 'forgehold-lane.yml':
+            assert set(workflow['on']) == {'workflow_dispatch'}
+            assert set(workflow['jobs']) == {'quality'}
         for job in workflow['jobs'].values():
-            assert job['runs-on'] == 'ubuntu-24.04'
+            if path.name == 'forgehold-lane.yml':
+                assert job['runs-on'] == ['self-hosted', 'Linux', 'X64', 'forgehold']
+            else:
+                assert job['runs-on'] == 'ubuntu-24.04'
             assert 'continue-on-error' not in job
             for step in job['steps']:
                 # Context comes from Actions; local preflight must never forge it.

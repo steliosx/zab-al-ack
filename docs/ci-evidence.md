@@ -259,3 +259,20 @@ read from upstream `gitleaks_8.24.3_checksums.txt`
 trust gate that refuses outside revisions is kept as defence in depth. Workflow
 configuration alone is not a run result: the PR introducing this change is the
 first execution of the hosted lane for the full job set.
+
+## Forgehold lane (owner decisions, 9 and 15 October 2026)
+
+`.github/workflows/forgehold-lane.yml` is the Forgehold session's dispatch-only
+workflow, adopted onto `main` byte for byte from branch `forgehold/lane`
+(commit `113235f0`, file SHA-256
+`fdaa73abbc4ccde89d7aae088b41f57ada78a6f1d73c85de8bc01eb6024d0917`). It holds one
+job, `quality` (ruff, mypy, `pip check` through `tools/run_quality.py`, the same
+install and run as `ci.yml`'s quality job), on `runs-on: [self-hosted, Linux,
+X64, forgehold]`. It triggers only on `workflow_dispatch`; pushing the file starts
+nothing. The Forgehold lane dispatches it through its local Preloop engine in one
+ephemeral SmolVM, not through GitHub's dispatch API, and reports one App check
+run named `quality`. The owner permitted local self-hosted execution for the
+Zabalack, Alrust, Voalack and Forgehold jobs on 9 October 2026 and approved this
+adoption on 15 October 2026. It adds no evidence pack and no artifact upload; the
+hosted `ci.yml` jobs remain the candidate evidence. The runner, its registration
+and its host boundaries belong to the Forgehold session.

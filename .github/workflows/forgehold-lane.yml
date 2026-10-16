@@ -1,0 +1,39 @@
+# Forgehold lane (beta): zabalack's quality gates (ruff, mypy, pip check) in one ephemeral Preloop runner in one SmolVM.
+# Dispatch only (the Forgehold lane supervisor sends exactly one dispatch); pushing this file starts nothing.
+# Same install and run_quality.py as ci.yml's quality job; no evidence pack or artifact upload from the lane.
+name: forgehold-lane
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TZ: UTC
+
+concurrency:
+  group: forgehold-lane
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    runs-on: [self-hosted, Linux, X64, forgehold]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12'
+      - name: Create a fresh job environment
+        run: |
+          test ! -e "$RUNNER_TEMP/venv"
+          python -m venv "$RUNNER_TEMP/venv"
+          printf '%s\n' "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - run: python -m pip install -r requirements.lock
+      - run: python -m pip install --require-hashes -r requirements-quality.lock
+      - run: python -m pip install --no-deps --no-build-isolation -e .
+      - run: python -m pip check
+      - run: python tools/run_quality.py
