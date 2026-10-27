@@ -162,7 +162,7 @@ automatically cause re-acknowledgement. See [design](docs/DESIGN.md),
 | --- | --- |
 | Understand the architecture | [Design](docs/DESIGN.md) · [Architecture diagrams](https://zabalack.stel.chatgpt.site/architecture.html) · [Source-backed amendments](docs/SPEC_AMENDMENTS.md) |
 | Explore the integration visually | [Illustrated lab walkthrough](docs/visual-guide.md) · [Website](https://zabalack.stel.chatgpt.site) |
-| Evaluate on isolated services | [Lab guide](lab/README.md) · [Local services](docs/local-services.md) · [Quality and service checks](#quality-and-service-checks) |
+| Evaluate on isolated services | [Lab guide](lab/README.md) · [Local services](docs/local-services.md) · [PostgreSQL tuning benchmark](docs/pg-tuning-benchmark.md) · [Quality and service checks](#quality-and-service-checks) |
 | Prepare an installation | [Deployment](docs/deployment.md) · [Required inputs](docs/INPUTS_REQUIRED.md) · [Installation and operations](#installation-and-operations) |
 | Operate or recover it | [Runbook](docs/runbook.md) · [Rollback](docs/rollback.md) · [Deployment E2E](docs/deployment-e2e.md) |
 | Check progress and evidence | [Alpha report](ALPHA_REPORT.md) · [Beta readiness](docs/BETA_READINESS.md) · [Acceptance matrix](docs/acceptance_matrix.csv) |
