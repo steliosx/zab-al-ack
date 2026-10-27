@@ -40,7 +40,7 @@ def test_failed_readback_prevents_user_and_token_creation(monkeypatch):
     def rpc(method, params, **kwargs):
         methods.append(method)
         if method == "apiinfo.version":
-            return "7.0.10"
+            return "7.0.25"
         if method == "user.login":
             return "a" * 32
         if method in ("action.get", "host.get"):

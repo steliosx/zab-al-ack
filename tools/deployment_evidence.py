@@ -21,7 +21,7 @@ CHECK_NAMES = {
     'recovery_macro_ingestion', 'repeat_409', 'separate_native_logins',
     'worker_denied_table_update',
 }
-REFERENCE_VERSIONS = {'alerta': '9.1.0', 'zabbix': '7.0.10', 'postgres_major': '18'}
+REFERENCE_VERSIONS = {'alerta': '9.1.0', 'zabbix': '7.0.25', 'postgres_major': '18'}
 IMAGE_COMPONENTS = {'postgres', 'zabbix-db', 'zabbix-server', 'zabbix-web'}
 EXPECTED_COUNTS = {'passed': 4, 'failed': 0, 'skipped': 0}
 EMPTY_COUNTS = {'passed': 0, 'failed': 0, 'skipped': 0}

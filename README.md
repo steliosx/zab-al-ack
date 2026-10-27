@@ -141,7 +141,33 @@ revision and artifact that produced it.
 | Evidence | Unit/mock, PostgreSQL WASM, native-service and installed-path records have distinct scopes | [Evidence guide](evidence/README.md) · [Compatibility and evidence](#compatibility-and-evidence) |
 | Production use | No production environment validated; external writes disabled by default | [Deployment](docs/deployment.md) · [Runbook](docs/runbook.md) |
 
-### Evidence checkpoint — 14 October 2026
+### Current development checkpoint — 27 October 2026
+
+Main [`d074665e`](https://github.com/steliosx/zab-al-ack/commit/d074665e482f1b3a85f114f1ed930142320990e2)
+includes [PR #60](https://github.com/steliosx/zab-al-ack/pull/60): brotli 1.2.1
+and certifi 2026.10.19 in the applicable locks. The
+[exact-main security run](https://github.com/steliosx/zab-al-ack/actions/runs/40569303744)
+now reports one advisory entry, down from four. The setuptools 83.0.0 finding
+remains open; no suppression was added. Changing the release build backend needs
+a separate toolchain decision and qualification. These changes do not alter the
+frozen published prerelease or qualify an installed environment.
+
+The [PR's ordinary Alpha run](https://github.com/steliosx/zab-al-ack/actions/runs/40568056599)
+passed all five jobs. Its
+[post-merge run](https://github.com/steliosx/zab-al-ack/actions/runs/40569303765)
+passed quality, mutation and reference, but native services were **NOT_RUN**:
+`docker compose version` timed out before any native phase; packaging was skipped.
+The earlier [27 October nightly](https://github.com/steliosx/zab-al-ack/actions/runs/40478762602)
+at `78305a30` still recorded 205 native passes and two generated-ledger failures,
+plus a PostgreSQL WASM failure. A passing ordinary profile does not close the
+nightly failure; no minimized replay or root cause is established here.
+
+[PR #59](https://github.com/steliosx/zab-al-ack/pull/59) publishes the
+[PostgreSQL tuning benchmark](docs/pg-tuning-benchmark.md). Its derived figures
+are exploratory; no material improving flag repeated on the same metric across
+two attempts. It recommends no tuning setting and grants no deployment credit.
+
+### Historical evidence checkpoint — 14 October 2026
 
 - **Frozen artifact:** tag `v0.1.0b1` resolves to
   [`f85212e2`](https://github.com/steliosx/zab-al-ack/commit/f85212e238fb6322802b163219096db48e428291).
@@ -149,7 +175,7 @@ revision and artifact that produced it.
   [producer run 38187030741](https://github.com/steliosx/zab-al-ack/actions/runs/38187030741).
   GitHub-reported asset digests match the release record; this README review did
   not independently download or inspect those built files.
-- **Current main:** [`c66e7f30`](https://github.com/steliosx/zab-al-ack/commit/c66e7f3049b5a06123e90f362f9a11c4eb1c1e92)
+- **Main at that checkpoint:** [`c66e7f30`](https://github.com/steliosx/zab-al-ack/commit/c66e7f3049b5a06123e90f362f9a11c4eb1c1e92)
   contains the reviewed completion record from [PR #52](https://github.com/steliosx/zab-al-ack/pull/52),
   whose exact head was `c2f194c0`. The delta from the frozen producer is documentation only.
 - **Keep both CI outcomes:** [push run 38505508373](https://github.com/steliosx/zab-al-ack/actions/runs/38505508373)
@@ -218,7 +244,7 @@ automatically cause re-acknowledgement. See [design](docs/DESIGN.md),
 | --- | --- |
 | Understand the architecture | [Design](docs/DESIGN.md) · [Architecture diagrams](https://zabalack.stel.chatgpt.site/architecture.html) · [Source-backed amendments](docs/SPEC_AMENDMENTS.md) |
 | Explore the integration visually | [Illustrated lab walkthrough](docs/visual-guide.md) · [Website](https://zabalack.stel.chatgpt.site) |
-| Evaluate on isolated services | [Lab guide](lab/README.md) · [Local services](docs/local-services.md) · [Quality and service checks](#quality-and-service-checks) |
+| Evaluate on isolated services | [Lab guide](lab/README.md) · [Local services](docs/local-services.md) · [PostgreSQL tuning benchmark](docs/pg-tuning-benchmark.md) · [Quality and service checks](#quality-and-service-checks) |
 | Prepare an installation | [Deployment](docs/deployment.md) · [Required inputs](docs/INPUTS_REQUIRED.md) · [Installation and operations](#installation-and-operations) |
 | Operate or recover it | [Runbook](docs/runbook.md) · [Rollback](docs/rollback.md) · [Deployment E2E](docs/deployment-e2e.md) |
 | Check progress and evidence | [Alpha report](ALPHA_REPORT.md) · [Beta readiness](docs/BETA_READINESS.md) · [Acceptance matrix](docs/acceptance_matrix.csv) |
