@@ -32,9 +32,11 @@ def write_zip(path, rows):
             archive.writestr(name, data)
 
 
-def build_fixture(root, candidate):
+VERSION = '0.0.0a7'
+
+
+def build_fixture(root, candidate, version=VERSION):
     """Construct consistent inert archives, not an executable release build."""
-    version = '0.0.0a7'
     dist = candidate / 'dist'
     (dist / 'pypi').mkdir(parents=True, exist_ok=True)
     source = {p.relative_to(root).as_posix(): p.read_bytes() for p in public_files(root)}
@@ -44,7 +46,7 @@ def build_fixture(root, candidate):
     prefix = f'zabalack-{version}.dist-info/'
     wheel.update({prefix + name: data for name, data in {
         'licenses/LICENSE': source['LICENSE'], 'licenses/NOTICE': source['NOTICE'],
-        'METADATA': ('Metadata-Version: 2.4\nName: zabalack\nVersion: 0.0.0a7\nLicense-Expression: Apache-2.0\n'
+        'METADATA': (f'Metadata-Version: 2.4\nName: zabalack\nVersion: {version}\nLicense-Expression: Apache-2.0\n'
                      'Requires-Python: <3.13,>=3.12\nRequires-Dist: httpx==0.28.1\n'
                      'Provides-Extra: test\nRequires-Dist: pytest==9.0.3; extra == "test"\n\nSynthetic\n').encode(),
         'WHEEL': b'Wheel-Version: 1.0\nGenerator: setuptools (84.1.0)\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
@@ -100,13 +102,21 @@ def edit_json(path, change):
 
 @pytest.fixture
 def candidate(tmp_path, request):
-    context = getattr(request, 'param', CONTEXT)
+    return make_candidate(tmp_path, getattr(request, 'param', CONTEXT), VERSION)
+
+
+@pytest.fixture
+def beta_candidate(tmp_path):
+    return make_candidate(tmp_path, CONTEXT, '0.0.0b7')
+
+
+def make_candidate(tmp_path, context, version):
     root = tmp_path / 'checkout'
     (root / 'src/zabalack').mkdir(parents=True)
     (root / 'src/zabalack/__init__.py').write_text('# Synthetic policy fixture\n')
     (root / 'tests').mkdir()
     (root / 'tests/synthetic.py').write_text('# Synthetic harness\n')
-    (root / 'pyproject.toml').write_text('[project]\nname = "zabalack"\nversion = "0.0.0a7"\n'
+    (root / 'pyproject.toml').write_text(f'[project]\nname = "zabalack"\nversion = "{version}"\n'
         'license = "Apache-2.0"\nrequires-python = ">=3.12,<3.13"\ndependencies = ["httpx==0.28.1"]\n'
         '[project.scripts]\nzabalack = "zabalack.cli:main"\n[project.optional-dependencies]\ntest = ["pytest==9.0.3"]\n')
     (root / 'LICENSE').write_text('Synthetic licence fixture\n')
@@ -123,8 +133,26 @@ def candidate(tmp_path, request):
     ci.collect(root, inputs, context)
     output = tmp_path / 'candidate'
     shutil.copytree(root / 'evidence', output / 'evidence')
-    build_fixture(root, output)
+    build_fixture(root, output, version)
     return root, output
+
+
+def test_beta_candidate_verifies_like_an_alpha(beta_candidate):
+    root, output = beta_candidate
+    result = release.verify(root, output / 'dist', candidate=output, context=CONTEXT)
+    assert result['status'] == 'PASS' and result['version'] == '0.0.0b7'
+    assert {Path(item['path']).name for item in result['subjects']} >= {
+        'zabalack-0.0.0b7-py3-none-any.whl', 'zabalack-0.0.0b7.tar.gz', 'zabalack-0.0.0b7-source.zip'}
+
+
+@pytest.mark.parametrize('version', ['0.0.0', '0.0.0rc1', '0.0.0.dev1', '0.0.0b', 'v0.0.0b7', '0.0.0b7.post1'])
+def test_non_alpha_beta_versions_are_rejected_before_any_archive_is_read(candidate, version):
+    root, output = candidate
+    (root / 'pyproject.toml').write_text(f'[project]\nname = "zabalack"\nversion = "{version}"\n')
+    dist = output / 'dist'
+    shutil.rmtree(dist)
+    with pytest.raises(ci.EvidenceError, match='alpha or beta'):
+        release.verify(root, dist, candidate=output, context=CONTEXT)
 
 
 def test_current_ci_subjects_are_consistent_but_remain_unsigned(candidate):
@@ -409,11 +437,22 @@ def test_verifier_failure_never_becomes_success(verifier, monkeypatch):
         signed.verify(path, 'synthetic/zabalack', 'refs/tags/v0.0.0a7', 'a' * 40)
 
 
-def test_invalid_policy_is_rejected_before_verifier_access(verifier):
+@pytest.mark.parametrize('source_ref', ['refs/heads/main', 'refs/tags/v0.0.0', 'refs/tags/v0.0.0rc1',
+                                        'refs/tags/0.0.0b7', 'refs/tags/v0.0.0b7-dirty'])
+def test_invalid_policy_is_rejected_before_verifier_access(verifier, source_ref):
     path, calls, response = verifier
     with pytest.raises(ci.EvidenceError):
-        signed.verify(path, 'synthetic/zabalack', 'refs/heads/main', 'a' * 40)
+        signed.verify(path, 'synthetic/zabalack', source_ref, 'a' * 40)
     assert calls == []
+
+
+def test_reviewed_beta_tag_satisfies_the_tag_policy(verifier):
+    path, calls, response = verifier
+    result = signed.verify(path, 'synthetic/zabalack', 'refs/tags/v0.0.0b7', 'a' * 40)
+    command, _ = calls[1]
+    assert command[command.index('--source-ref') + 1] == 'refs/tags/v0.0.0b7'
+    assert command[command.index('--cert-identity') + 1].endswith('@refs/tags/v0.0.0b7')
+    assert result['deployment_gates'] == 'MANUAL_GATE_PENDING'
 
 
 def test_subject_change_during_verification_is_rejected(verifier, monkeypatch):

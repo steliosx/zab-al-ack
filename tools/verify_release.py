@@ -156,8 +156,8 @@ def verify(root: Path, dist: Path, *, candidate: Path | None = None,
            context: dict | None = None) -> dict:
     project = tomllib.loads(safe_bytes(root / 'pyproject.toml').decode())['project']
     version = project['version']
-    require(isinstance(version, str) and bool(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+a[0-9]+', version)),
-            'Expected an explicit alpha version')
+    require(isinstance(version, str) and bool(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:a|b)[0-9]+', version)),
+            'Expected an explicit alpha or beta version')
     names = {
         'wheel': f'pypi/zabalack-{version}-py3-none-any.whl',
         'normalised_sdist': f'pypi/zabalack-{version}.tar.gz',
