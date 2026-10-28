@@ -1,6 +1,25 @@
 # Zab-al-ack changelog
 
-## 0.1.0b2 — 2026-10-28 (beta candidate, unpublished)
+## 0.1.0b3 — 2026-10-28 (beta candidate, unpublished)
+
+- Migration `013_live_lease_expiry_guard.sql`: the execution-lifetime expiry
+  statement of `worker_call('reconcile_due')` and the expiry that
+  `operator_call('resume')` applies to held rows now read the delivery facts
+  before recording `expired`, with the two guards `expire_due_effects` already
+  had: no live delivery lease and no unsettled write attempt. Before, a send
+  recorded against a lease that was still live when the deadline passed was
+  written terminally expired with `uncertain=false`; `worker_stopped` could no
+  longer fence it and `settle_unknown` refused it. Found by the scheduled
+  nightly Hypothesis profile (which had never passed; 28 October 2026),
+  reproduced deterministically on pglite, direct SQL regression T43
+  (`tests/postgres/assertions_live_lease_expiry.sql`) failing on 012 and
+  passing on 013. Schema stays 4; no row is relabelled. This changes SQL
+  bodies, so the candidate takes a new identity (owner decision, 28 October
+  2026); 0.1.0b2 was never tagged.
+- Release verifier and attestation verifier accept explicit beta versions and
+  reviewed beta tags (`X.Y.Z(a|b)N`), PR #63.
+
+## 0.1.0b2 — 2026-10-28 (beta candidate, unpublished; never tagged)
 
 - Assign the next beta candidate identity to the integrated main after PRs #45
   to #60 (owner decision, 28 October 2026). 0.1.0b1 was published as GitHub

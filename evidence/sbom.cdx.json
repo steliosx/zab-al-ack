@@ -6,7 +6,7 @@
     "component": {
       "type": "application",
       "name": "Zab-al-ack reference evaluation environment",
-      "version": "0.1.0b2"
+      "version": "0.1.0b3"
     }
   },
   "components": [
@@ -710,7 +710,7 @@
       "properties": [
         {
           "name": "zabalack:license-files",
-          "value": "[{\"package_path\": \"packaging-26.3.dist-info/licenses/LICENSE\", \"sha256\": \"cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48\"}, {\"package_path\": \"packaging-26.3.dist-info/licenses/LICENSE.APACHE\", \"sha256\": \"0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594\"}, {\"package_path\": \"packaging-26.3.dist-info/licenses/LICENSE.BSD\", \"sha256\": \"b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5\"}, {\"package_path\": \"packaging/licenses/__init__.py\", \"sha256\": \"590d12eee73ddbec53b4e9ee5bfc64d9cb3aacb4940e8ebcba260757ce56740b\"}, {\"package_path\": \"packaging/licenses/__pycache__/__init__.cpython-312.pyc\", \"sha256\": \"dbea242db911c31dc98ba9678fdf9de6812ba5246a0713593581f17e47c1d9be\"}, {\"package_path\": \"packaging/licenses/__pycache__/_spdx.cpython-312.pyc\", \"sha256\": \"680f091b6b4eb902f5a58811bd40f3edd3f7439bf929231cd699e43c5d0b21e1\"}, {\"package_path\": \"packaging/licenses/_spdx.py\", \"sha256\": \"596ec35e2ca0ebcba9fd8343ff0a51625af548786257815f24b41f7e08613314\"}]"
+          "value": "[{\"package_path\": \"packaging-26.3.dist-info/licenses/LICENSE\", \"sha256\": \"cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48\"}, {\"package_path\": \"packaging-26.3.dist-info/licenses/LICENSE.APACHE\", \"sha256\": \"0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594\"}, {\"package_path\": \"packaging-26.3.dist-info/licenses/LICENSE.BSD\", \"sha256\": \"b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5\"}, {\"package_path\": \"packaging/licenses/__init__.py\", \"sha256\": \"590d12eee73ddbec53b4e9ee5bfc64d9cb3aacb4940e8ebcba260757ce56740b\"}, {\"package_path\": \"packaging/licenses/__pycache__/__init__.cpython-312.pyc\", \"sha256\": \"f826733f5aa8f045a61d5e0c0e14501873dcb4a9d4a15e257c62ffb5beecfc23\"}, {\"package_path\": \"packaging/licenses/__pycache__/_spdx.cpython-312.pyc\", \"sha256\": \"f646bc072e7f65f97c7748cfc4ca0b5e1bc1ffb92e57e678c5031388e6d5dbe7\"}, {\"package_path\": \"packaging/licenses/_spdx.py\", \"sha256\": \"596ec35e2ca0ebcba9fd8343ff0a51625af548786257815f24b41f7e08613314\"}]"
         },
         {
           "name": "zabalack:inventory-scope",
@@ -1172,7 +1172,7 @@
       "properties": [
         {
           "name": "zabalack:license-files",
-          "value": "[{\"package_path\": \"setuptools-84.1.0.dist-info/licenses/LICENSE\", \"sha256\": \"86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741\"}, {\"package_path\": \"setuptools/_vendor/autocommand-2.2.2.dist-info/LICENSE\", \"sha256\": \"ade78d04982d69972d444a8e14a94f87a2334dd3855cc80348ea8e240aa0df2d\"}, {\"package_path\": \"setuptools/_vendor/backports.tarfile-1.2.0.dist-info/LICENSE\", \"sha256\": \"86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741\"}, {\"package_path\": \"setuptools/_vendor/importlib_metadata-8.7.1.dist-info/licenses/LICENSE\", \"sha256\": \"458502e12d97bbf64438606a20044aa85eb05fb0a8a807bb35dbec253fd1fc04\"}, {\"package_path\": \"setuptools/_vendor/jaraco.text-4.0.0.dist-info/LICENSE\", \"sha256\": \"86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741\"}, {\"package_path\": \"setuptools/_vendor/jaraco_context-6.1.0.dist-info/licenses/LICENSE\", \"sha256\": \"9755a18519666e5f0f4cae3daad3d7012bcae48a600b31237d75e9fe134e6683\"}, {\"package_path\": \"setuptools/_vendor/jaraco_functools-4.4.0.dist-info/licenses/LICENSE\", \"sha256\": \"5a57cb4db85e2a2dd88c290628908add57e3451449e0a9a71fdfb38776fd759d\"}, {\"package_path\": \"setuptools/_vendor/more_itertools-10.8.0.dist-info/licenses/LICENSE\", \"sha256\": \"09f1c8c9e941af3e584d59641ea9b87d83c0cb0fd007eb5ef391a7e2643c1a46\"}, {\"package_path\": \"setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE\", \"sha256\": \"cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48\"}, {\"package_path\": \"setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE.APACHE\", \"sha256\": \"0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594\"}, {\"package_path\": \"setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE.BSD\", \"sha256\": \"b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/__init__.py\", \"sha256\": \"4f05cb1d9097c1281d17044b3f15bad364fa99289eba74851cce9fa7ca605bbf\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/__pycache__/__init__.cpython-312.pyc\", \"sha256\": \"c67048b1eb0373aef9bb7aaf266c680affa9b4d39a7db0e5c73c16ca6984a1ec\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/__pycache__/_spdx.cpython-312.pyc\", \"sha256\": \"5923d66eb384b618f2a1ddde6589c1552e0ad5dcae1c4f75d8b90d6fce15b136\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/_spdx.py\", \"sha256\": \"596ec35e2ca0ebcba9fd8343ff0a51625af548786257815f24b41f7e08613314\"}, {\"package_path\": \"setuptools/_vendor/platformdirs-4.4.0.dist-info/licenses/LICENSE\", \"sha256\": \"29e0fd62e929850e86eb28c3fdccf0cefdf4fa94879011cffb3d0d4bed6d4db6\"}, {\"package_path\": \"setuptools/_vendor/tomli-2.4.0.dist-info/licenses/LICENSE\", \"sha256\": \"b80816b0d530b8accb4c2211783790984a6e3b61922c2b5ee92f3372ab2742fe\"}, {\"package_path\": \"setuptools/_vendor/wheel-0.46.3.dist-info/licenses/LICENSE.txt\", \"sha256\": \"30c23618679108f3e8ea1d2a658c7ca417bdfc891c98ef1a89fa4ff0c9828654\"}, {\"package_path\": \"setuptools/_vendor/zipp-3.23.0.dist-info/licenses/LICENSE\", \"sha256\": \"5a57cb4db85e2a2dd88c290628908add57e3451449e0a9a71fdfb38776fd759d\"}, {\"package_path\": \"setuptools/config/NOTICE\", \"sha256\": \"2dddf08818297a3b89d43d95ff659d8da85741108c9136dfa3a4d856c0623bd8\"}, {\"package_path\": \"setuptools/config/_validate_pyproject/NOTICE\", \"sha256\": \"09c9bcea95ca086f8bc5bed174e40bc835b297d40fb5f86bbbb570fe0a5581a7\"}]"
+          "value": "[{\"package_path\": \"setuptools-84.1.0.dist-info/licenses/LICENSE\", \"sha256\": \"86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741\"}, {\"package_path\": \"setuptools/_vendor/autocommand-2.2.2.dist-info/LICENSE\", \"sha256\": \"ade78d04982d69972d444a8e14a94f87a2334dd3855cc80348ea8e240aa0df2d\"}, {\"package_path\": \"setuptools/_vendor/backports.tarfile-1.2.0.dist-info/LICENSE\", \"sha256\": \"86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741\"}, {\"package_path\": \"setuptools/_vendor/importlib_metadata-8.7.1.dist-info/licenses/LICENSE\", \"sha256\": \"458502e12d97bbf64438606a20044aa85eb05fb0a8a807bb35dbec253fd1fc04\"}, {\"package_path\": \"setuptools/_vendor/jaraco.text-4.0.0.dist-info/LICENSE\", \"sha256\": \"86da0f01aeae46348a3c3d465195dc1ceccde79f79e87769a64b8da04b2a4741\"}, {\"package_path\": \"setuptools/_vendor/jaraco_context-6.1.0.dist-info/licenses/LICENSE\", \"sha256\": \"9755a18519666e5f0f4cae3daad3d7012bcae48a600b31237d75e9fe134e6683\"}, {\"package_path\": \"setuptools/_vendor/jaraco_functools-4.4.0.dist-info/licenses/LICENSE\", \"sha256\": \"5a57cb4db85e2a2dd88c290628908add57e3451449e0a9a71fdfb38776fd759d\"}, {\"package_path\": \"setuptools/_vendor/more_itertools-10.8.0.dist-info/licenses/LICENSE\", \"sha256\": \"09f1c8c9e941af3e584d59641ea9b87d83c0cb0fd007eb5ef391a7e2643c1a46\"}, {\"package_path\": \"setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE\", \"sha256\": \"cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48\"}, {\"package_path\": \"setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE.APACHE\", \"sha256\": \"0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594\"}, {\"package_path\": \"setuptools/_vendor/packaging-26.0.dist-info/licenses/LICENSE.BSD\", \"sha256\": \"b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/__init__.py\", \"sha256\": \"4f05cb1d9097c1281d17044b3f15bad364fa99289eba74851cce9fa7ca605bbf\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/__pycache__/__init__.cpython-312.pyc\", \"sha256\": \"73b60af4e3d68537b383f6a0f3cd268fac3d6a753daa82bd0f7d056c99d4f108\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/__pycache__/_spdx.cpython-312.pyc\", \"sha256\": \"e4858ef69579d3ec1dc7f1467233a9661aa4dee7d1c4db7e5f115d89c027f122\"}, {\"package_path\": \"setuptools/_vendor/packaging/licenses/_spdx.py\", \"sha256\": \"596ec35e2ca0ebcba9fd8343ff0a51625af548786257815f24b41f7e08613314\"}, {\"package_path\": \"setuptools/_vendor/platformdirs-4.4.0.dist-info/licenses/LICENSE\", \"sha256\": \"29e0fd62e929850e86eb28c3fdccf0cefdf4fa94879011cffb3d0d4bed6d4db6\"}, {\"package_path\": \"setuptools/_vendor/tomli-2.4.0.dist-info/licenses/LICENSE\", \"sha256\": \"b80816b0d530b8accb4c2211783790984a6e3b61922c2b5ee92f3372ab2742fe\"}, {\"package_path\": \"setuptools/_vendor/wheel-0.46.3.dist-info/licenses/LICENSE.txt\", \"sha256\": \"30c23618679108f3e8ea1d2a658c7ca417bdfc891c98ef1a89fa4ff0c9828654\"}, {\"package_path\": \"setuptools/_vendor/zipp-3.23.0.dist-info/licenses/LICENSE\", \"sha256\": \"5a57cb4db85e2a2dd88c290628908add57e3451449e0a9a71fdfb38776fd759d\"}, {\"package_path\": \"setuptools/config/NOTICE\", \"sha256\": \"2dddf08818297a3b89d43d95ff659d8da85741108c9136dfa3a4d856c0623bd8\"}, {\"package_path\": \"setuptools/config/_validate_pyproject/NOTICE\", \"sha256\": \"09c9bcea95ca086f8bc5bed174e40bc835b297d40fb5f86bbbb570fe0a5581a7\"}]"
         },
         {
           "name": "zabalack:inventory-scope",
@@ -1343,9 +1343,9 @@
     {
       "type": "library",
       "name": "zabalack",
-      "version": "0.1.0b2",
-      "purl": "pkg:pypi/zabalack@0.1.0b2",
-      "bom-ref": "pkg:pypi/zabalack@0.1.0b2",
+      "version": "0.1.0b3",
+      "purl": "pkg:pypi/zabalack@0.1.0b3",
+      "bom-ref": "pkg:pypi/zabalack@0.1.0b3",
       "licenses": [
         {
           "expression": "Apache-2.0"
@@ -1354,7 +1354,7 @@
       "properties": [
         {
           "name": "zabalack:license-files",
-          "value": "[{\"package_path\": \"zabalack-0.1.0b2.dist-info/licenses/LICENSE\", \"sha256\": \"b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1\"}, {\"package_path\": \"zabalack-0.1.0b2.dist-info/licenses/NOTICE\", \"sha256\": \"44120455e7682946fd74a29f4a2c865abcb39c0fcce47f78b700dbf6eb3be62f\"}]"
+          "value": "[{\"package_path\": \"zabalack-0.1.0b3.dist-info/licenses/LICENSE\", \"sha256\": \"b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1\"}, {\"package_path\": \"zabalack-0.1.0b3.dist-info/licenses/NOTICE\", \"sha256\": \"44120455e7682946fd74a29f4a2c865abcb39c0fcce47f78b700dbf6eb3be62f\"}]"
         },
         {
           "name": "zabalack:inventory-scope",
@@ -1734,7 +1734,7 @@
       ]
     },
     {
-      "ref": "pkg:pypi/zabalack@0.1.0b2",
+      "ref": "pkg:pypi/zabalack@0.1.0b3",
       "dependsOn": [
         "pkg:pypi/httpx@0.28.1",
         "pkg:pypi/psycopg@3.2.10"
