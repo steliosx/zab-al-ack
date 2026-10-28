@@ -104,7 +104,7 @@ def main() -> int:
     comparisons.append({'artifact': archive.name, 'sha256': digest(archive),
                         'two_builds_byte_identical': True, 'kind': 'source_zip'})
     provenance = {'version': version, 'code_digests': code_digests(ROOT), 'agent_guidance': inspect_guidance(ROOT), 'source_date_epoch': EPOCH, 'python': sys.version.split()[0],
-        'build_backend': 'setuptools==83.0.0', 'archive_normalisation': 'Stable order, timestamps, ownership and gzip header for sdist',
+        'build_backend': 'setuptools==84.1.0', 'archive_normalisation': 'Stable order, timestamps, ownership and gzip header for sdist',
         'comparisons': comparisons, 'signed_attestation': False, 'published': False,
         'scope': 'Reproducibility within the declared build environment; cross-platform reproduction untested'}
     (output / 'BUILD_PROVENANCE.json').write_text(json.dumps(provenance, indent=2) + '\n')

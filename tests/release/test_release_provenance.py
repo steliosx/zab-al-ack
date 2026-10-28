@@ -47,7 +47,7 @@ def build_fixture(root, candidate):
         'METADATA': ('Metadata-Version: 2.4\nName: zabalack\nVersion: 0.0.0a7\nLicense-Expression: Apache-2.0\n'
                      'Requires-Python: <3.13,>=3.12\nRequires-Dist: httpx==0.28.1\n'
                      'Provides-Extra: test\nRequires-Dist: pytest==9.0.3; extra == "test"\n\nSynthetic\n').encode(),
-        'WHEEL': b'Wheel-Version: 1.0\nGenerator: setuptools (83.0.0)\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
+        'WHEEL': b'Wheel-Version: 1.0\nGenerator: setuptools (84.1.0)\nRoot-Is-Purelib: true\nTag: py3-none-any\n',
         'entry_points.txt': b'[console_scripts]\nzabalack = zabalack.cli:main\n', 'top_level.txt': b'zabalack\n',
     }.items()})
     record = io.StringIO()
