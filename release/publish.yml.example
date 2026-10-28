@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm_version:
-        description: Exact reviewed alpha version
+        description: Exact reviewed alpha or beta version
         required: true
         type: string
 permissions:
