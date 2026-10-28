@@ -135,7 +135,7 @@ def verify_wheel_metadata(wheel: dict[str, bytes], source: dict[str, bytes], pro
     wheel_metadata = BytesParser(policy=email_policy).parsebytes(wheel[prefix + 'WHEEL'])
     require(set(wheel_metadata.keys()) == {'Wheel-Version', 'Generator', 'Root-Is-Purelib', 'Tag'}
             and all(wheel_metadata.get_all(key, []) == [value] for key, value in {
-                'Wheel-Version': '1.0', 'Generator': 'setuptools (83.0.0)',
+                'Wheel-Version': '1.0', 'Generator': 'setuptools (84.1.0)',
                 'Root-Is-Purelib': 'true', 'Tag': 'py3-none-any'}.items()), 'Unexpected wheel install layout')
     require(wheel[prefix + 'top_level.txt'] == b'zabalack\n', 'Unexpected wheel import root')
     seen = set()

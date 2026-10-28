@@ -79,7 +79,7 @@ def generate(root: Path = ROOT) -> tuple[dict, dict]:
         components.append(component)
     bom = {'bomFormat': 'CycloneDX', 'specVersion': '1.6', 'version': 1,
         'metadata': {'component': {'type': 'application', 'name': 'Zab-al-ack reference evaluation environment',
-                                  'version': '0.1.0b1'}},
+                                  'version': '0.1.0b2'}},
         'components': components, 'dependencies': relationships}
     notes = {'inventory_scope': 'Exact installed reference build/test packages and pinned Node lab dependencies',
         'component_count': len(components), 'metadata_review_required': review,

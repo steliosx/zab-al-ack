@@ -1022,3 +1022,38 @@ alert concerned reliance on that default, not accepted TLS 1.0/1.1 traffic). Ale
 independent reviewer agree with the dispositions. This supersedes R24's "scheduled
 enablement" wording: CodeQL is enabled and has one completed run; the beta tag waits
 for the dispositions to be agreed. No tag, release or deployment is authorized here.
+
+## R29 — 0.1.0b2: candidate identity and setuptools 84.1.0 build backend (28 October 2026)
+
+The integrated main after PRs #45 to #60 (`d074665e482f1b3a85f114f1ed930142320990e2`)
+receives version 0.1.0b2 on the owner's decision of 28 October 2026. The reason is
+a toolchain change: the declared build backend moves from setuptools 83.0.0 to
+84.1.0 to clear the last pip-audit advisory on the exact lock. Because
+`tools/build_release.py` builds with `--no-isolation` and `tools/verify_release.py`
+requires the exact `Generator` line, a backend change alters the wheel bytes, and
+this repository treats such a change as a new artifact identity rather than a
+rebuild under the published one.
+
+| Package | Previous pin | Candidate pin | Reason |
+|---|---|---|---|
+| setuptools | 83.0.0 | 84.1.0 | Windows path escape via `namespace_packages.txt` during legacy wheel installation, GHSA-xmj3-9gf7-h52w (low; this project targets Linux) |
+| brotli | 1.2.0 | 1.2.1 | Out-of-bounds write in the Brotli decoder on attacker-supplied input, GHSA-9v8h-qqgm-4m35 / CVE-2026-111497 (critical); landed in PR #60 |
+| certifi | 2026.7.22 | 2026.10.19 | Bundle carried emSign root CAs with compromised intermediate keys, GHSA-6q48-6c7w-9gw2 (critical); landed in PR #60 |
+
+The setuptools 84.1.0 wheel was downloaded from PyPI and verified against the
+release digest (`5231689c6ac8156cd155cfb98c3fd6fb252c3e7e9bd3d78b64d3c55f132624c9`);
+its metadata and URL replace the 83.0.0 entry in `tooling_reference_manifest.json`,
+and it still contains no `pkg_resources`. Two throwaway builds of main
+`d074665e` with a fixed `SOURCE_DATE_EPOCH`, one per backend, differ only in the
+`WHEEL` `Generator` line and its `RECORD` hash (wheel SHA-256
+`8433506fae7513da377e0091f21c3a248e903fda1e251193da252adbcd4af8ae` with 83.0.0,
+`241ef9480e3127bc4fbe87de35d72ea93335b7447c73dcde09ded328c5a24051` with 84.1.0).
+
+This version and toolchain update adds no runtime feature and changes no SQL
+body. It deliberately changes source/harness identities; 0.1.0b1 and earlier
+evidence stays historical and cannot satisfy the new builder by relabelling. The
+GitHub prerelease `v0.1.0b1` on candidate #4 (`f85212e2`) stands unchanged. The
+R24 policy decisions and the R28 CodeQL dispositions carry forward. Native x64
+qualification, the 7.0.25 lab qualifications, installed-account permissions
+(A4/G5), transport amendment A2 and deployment gates G1–G8 remain open. No tag,
+upload, release or deployment is authorized by this amendment.

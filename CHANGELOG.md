@@ -1,5 +1,33 @@
 # Zab-al-ack changelog
 
+## 0.1.0b2 — 2026-10-28 (beta candidate, unpublished)
+
+- Assign the next beta candidate identity to the integrated main after PRs #45
+  to #60 (owner decision, 28 October 2026). 0.1.0b1 was published as GitHub
+  prerelease `v0.1.0b1` on candidate #4 (`f85212e2`) on 13 October 2026 and
+  remains untouched; its evidence and earlier evidence stay bound to their own
+  revisions. This version change adds no runtime feature and changes no SQL body.
+- Move the declared build backend from setuptools 83.0.0 to 84.1.0
+  (GHSA-xmj3-9gf7-h52w, low, Windows path escape during legacy wheel
+  installation). Two builds of the same source differ only in the wheel
+  `Generator` line and its `RECORD` entry; `tools/verify_release.py`, the
+  provenance fixture and the tooling manifests follow the new pin.
+- Bump brotli to 1.2.1 and certifi to 2026.10.19 (PR #60) to clear two critical
+  advisories (GHSA-9v8h-qqgm-4m35 Brotli decoder out-of-bounds write;
+  GHSA-6q48-6c7w-9gw2 compromised emSign intermediate CA keys) across the
+  application, runtime and hashed scanner locks.
+- Move the Zabbix lab reference from 7.0.10 to 7.0.25 (PR #53): deployment-path
+  lab, real-Zabbix profile, evidence validator and generated lab configuration
+  name 7.0.25; checks refuse the previous reference. Both 7.0.25 qualifications
+  stay NOT_RUN; security item A2 (webhook TLS) stays open.
+- Adopt the dispatch-only Forgehold lane workflow (PR #54): a self-hosted
+  `quality` job started only by `workflow_dispatch`; every other workflow still
+  runs on the hosted `ubuntu-24.04` runner.
+- Publish the PostgreSQL tuning benchmark report (PR #59,
+  `docs/pg-tuning-benchmark.md`); record the 0.2.0 action-sync and F1 source
+  binding designs (PRs #48, #49) and the v0.1.0b1 tag procedure and prerelease
+  records (PRs #50 to #52). Documentation only.
+
 ## 0.1.0b1 — 2026-10-11 (beta candidate, unpublished)
 
 - Assign the beta candidate identity to the integrated main after PRs #33, #34,
