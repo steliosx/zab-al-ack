@@ -1,6 +1,6 @@
 # Beta readiness
 
-The candidate under qualification is 0.1.0b1 (assigned 11 October 2026; see amendment R23). Earlier results remain bound to a17 and before. A beta requires the intended automation to
+The candidate under qualification is 0.1.0b2 (assigned 28 October 2026; see amendment R29). Earlier results remain bound to 0.1.0b1 and before. A beta requires the intended automation to
 execute successfully on its exact commit in supported environments, plus the
 publication-owner inputs. See `ALPHA_REPORT.md` for current executed results.
 The original a16 release narrative below is historical. Its reference, mutation,
