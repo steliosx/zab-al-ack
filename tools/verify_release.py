@@ -135,7 +135,7 @@ def verify_wheel_metadata(wheel: dict[str, bytes], source: dict[str, bytes], pro
     wheel_metadata = BytesParser(policy=email_policy).parsebytes(wheel[prefix + 'WHEEL'])
     require(set(wheel_metadata.keys()) == {'Wheel-Version', 'Generator', 'Root-Is-Purelib', 'Tag'}
             and all(wheel_metadata.get_all(key, []) == [value] for key, value in {
-                'Wheel-Version': '1.0', 'Generator': 'setuptools (83.0.0)',
+                'Wheel-Version': '1.0', 'Generator': 'setuptools (84.1.0)',
                 'Root-Is-Purelib': 'true', 'Tag': 'py3-none-any'}.items()), 'Unexpected wheel install layout')
     require(wheel[prefix + 'top_level.txt'] == b'zabalack\n', 'Unexpected wheel import root')
     seen = set()
@@ -156,8 +156,8 @@ def verify(root: Path, dist: Path, *, candidate: Path | None = None,
            context: dict | None = None) -> dict:
     project = tomllib.loads(safe_bytes(root / 'pyproject.toml').decode())['project']
     version = project['version']
-    require(isinstance(version, str) and bool(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+a[0-9]+', version)),
-            'Expected an explicit alpha version')
+    require(isinstance(version, str) and bool(re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:a|b)[0-9]+', version)),
+            'Expected an explicit alpha or beta version')
     names = {
         'wheel': f'pypi/zabalack-{version}-py3-none-any.whl',
         'normalised_sdist': f'pypi/zabalack-{version}.tar.gz',

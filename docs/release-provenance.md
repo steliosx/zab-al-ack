@@ -63,7 +63,7 @@ repository or previous run. The action hashes the staged files itself.
 Only the signing job requests `id-token: write` and `attestations: write`; all
 other jobs keep `contents: read`. The template requires a manual dispatch,
 `ZABALACK_ATTESTATIONS_ENABLED=true`, a reviewed commit equal to the selected tag
-commit, and a tag matching the alpha version in `pyproject.toml`. Configure the
+commit, and a tag matching the alpha or beta version in `pyproject.toml`. Configure the
 `release-attestation` environment with reviewers and reviewed-tag restrictions
 before enabling it; the mere environment name does not install those protections.
 
@@ -89,9 +89,9 @@ itself. It never accepts a caller-supplied JSON report as evidence.
 ```bash
 export ZABALACK_RELEASE_REPOSITORY='<approved-owner>/<approved-repository>'
 export ZABALACK_RELEASE_COMMIT='<reviewed-40-hex-commit>'
-python tools/verify_attestation.py dist/pypi/zabalack-0.1.0b1-py3-none-any.whl \
+python tools/verify_attestation.py dist/pypi/zabalack-0.1.0b2-py3-none-any.whl \
   --repo "$ZABALACK_RELEASE_REPOSITORY" \
-  --source-ref refs/tags/v0.1.0b1 \
+  --source-ref refs/tags/v0.1.0b2 \
   --source-digest "$ZABALACK_RELEASE_COMMIT"
 ```
 

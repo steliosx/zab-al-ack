@@ -130,18 +130,44 @@ for native PostgreSQL, PgBouncer and optional real-Zabbix procedures.
 
 ## Status
 
-The published development prerelease is **0.1.0b1**. Current-candidate qualification and
+The published GitHub prerelease remains **0.1.0b1**. The current development
+candidate is **0.1.0b2**, with setuptools 84.1.0; it has not been tagged or released. Current-candidate qualification and
 historical test results are recorded separately; a result belongs to the exact
 revision and artifact that produced it.
 
 | Area | Current position | Where to read more |
 | --- | --- | --- |
-| Development | GitHub beta prerelease published; further qualification remains | [Release notes](docs/release/RELEASE_NOTES_v0.1.0b1.md) |
+| Development | 0.1.0b2 candidate on main; published prerelease remains 0.1.0b1; further qualification remains | [Release notes](docs/release/RELEASE_NOTES_v0.1.0b1.md) |
 | Publication and acceptance | GitHub prerelease only; PyPI is not authorised; installed and deployment gates remain open | [Beta readiness](docs/BETA_READINESS.md) · [Release record](docs/release/TAG_PROPOSAL_v0.1.0b1.md) |
 | Evidence | Unit/mock, PostgreSQL WASM, native-service and installed-path records have distinct scopes | [Evidence guide](evidence/README.md) · [Compatibility and evidence](#compatibility-and-evidence) |
 | Production use | No production environment validated; external writes disabled by default | [Deployment](docs/deployment.md) · [Runbook](docs/runbook.md) |
 
-### Current development checkpoint — 27 October 2026
+### Current development checkpoint — 28 October 2026
+
+Main [`7d170231`](https://github.com/steliosx/zab-al-ack/commit/7d170231a4cbc19648333c645b18042cb49de64e)
+includes [PR #62](https://github.com/steliosx/zab-al-ack/pull/62), exact head
+`c950d208`: the 0.1.0b2 candidate identity and setuptools 84.1.0. The published
+b1 producer, files and evidence remain unchanged; no tag or release follows from
+this merge. [PR #63](https://github.com/steliosx/zab-al-ack/pull/63), head
+`0ae9c83d`, corrects the release and attestation verifiers to accept explicit
+alpha or beta versions, while retaining rejection of rc/dev/post/local versions.
+Its source approval is not a real-artifact verifier PASS.
+
+[Exact-main Alpha run 40770409415](https://github.com/steliosx/zab-al-ack/actions/runs/40770409415)
+passed all five jobs, including 311 native tests with no failures or skips.
+The package log records setuptools 84.1.0 and byte-identical repeated builds.
+The [exact-main public scan](https://github.com/steliosx/zab-al-ack/actions/runs/40770409404)
+reports zero known advisory entries and zero Gitleaks findings in both scopes.
+CodeQL also completed successfully. These scoped results are not independent
+security clearance, installed-artifact acceptance or live qualification.
+
+The broader [28 October nightly](https://github.com/steliosx/zab-al-ack/actions/runs/40667514019)
+ran earlier on `d074665e` and still recorded 205 native passes and two
+generated-ledger failures, plus a WASM failure. The later ordinary-profile pass
+does not close that failure or establish a nightly pass for b2. Its minimized
+replay and root cause remain unresolved in the inspected evidence.
+
+### Historical development checkpoint — 27 October 2026
 
 Main [`d074665e`](https://github.com/steliosx/zab-al-ack/commit/d074665e482f1b3a85f114f1ed930142320990e2)
 includes [PR #60](https://github.com/steliosx/zab-al-ack/pull/60): brotli 1.2.1
