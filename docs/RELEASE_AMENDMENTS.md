@@ -1057,3 +1057,60 @@ R24 policy decisions and the R28 CodeQL dispositions carry forward. Native x64
 qualification, the 7.0.25 lab qualifications, installed-account permissions
 (A4/G5), transport amendment A2 and deployment gates G1–G8 remain open. No tag,
 upload, release or deployment is authorized by this amendment.
+
+## R30 — 0.1.0b3: live-lease lifetime expiry guard (migration 013) and the nightly run (28 October 2026)
+
+The scheduled run of `ci.yml` (`ACK_HYPOTHESIS_PROFILE=nightly`: unseeded, 75
+sequences of 60 steps for the stateful property) had never passed: 27 failures
+and 18 cancellations in the 60 recorded runs, a failure every night since 12
+October 2026, always in
+`tests/postgres/test_stateful_ledger.py::test_generated_delivery_ledger` (the
+native PostgreSQL job on every sampled night, two of four focus parameters, the
+counterexample retained only on the runner; the reference pglite phase failing
+without a test name in its log). The "property-nightly 46/0/0" cited by the
+readiness record is `tools/run_property_nightly.py`, which runs the nightly
+profile with a fixed seed, and so did not cover this. Push runs use the seeded
+`pr` profile (8 sequences of 20 steps) and pass.
+
+Reproduced locally on 28 October 2026 on main `c49eecf9` (pglite, node 22.23.2,
+Python 3.12.14, CI's six-file phase order, nightly unseeded): one deterministic
+counterexample for the `completed_generation` focus, replaying from the saved
+example database in about one second. Minimized: `explicit_retry` on the
+claimed generation-2 action (`delivery_claimed` → `pending`, lease still live)
+→ `begin_send` (`start_attempt` records the write; state stays `pending`,
+attempts 1) → `execution_deadline_passes` → `reconcile_due` records
+`expired`/`execution_lifetime_expired`, `uncertain=false` → `worker_stops`
+changes nothing (the row is no longer in a state `worker_stopped` touches) →
+`operator_settlement` expects `uncertain=true` and finds `false`;
+`settle_unknown` would raise "action has no unknown outcome".
+
+Cause: the lifetime-expiry statement of `reconcile_due` selected
+`state IN ('authorised','pending','held') AND NOT uncertain` with no guard for a
+live delivery lease or an unsettled write attempt. 009's own comment foresaw
+that statement and relied on the abandoned-attempt fence running first, but the
+fence reads attempts on an expired lease only. `operator_call('resume')`
+carried the same predicate for held rows (T43 case 4). `expire_due_effects`
+(007) already had both guards. Migration
+`013_live_lease_expiry_guard.sql` is 012's `worker_call` body and 004's
+`operator_call` body with those two guards added to the two statements, the
+routine digest re-recorded, schema still 4, no row relabelled (an action already
+recorded `expired` with an unsettled attempt on an earlier tree stays as it is;
+see `docs/rollback.md`). Direct SQL regression T43
+(`tests/postgres/assertions_live_lease_expiry.sql`, four cases: the sequence,
+two ordinary-expiry controls, the pause/resume variant) fails on 012 at case 1
+and passes on 013; `test_T43_forward_live_lease_expiry_migration_and_guards`
+exercises 013's preconditions, resealing and grants from a 012 tree.
+
+What is and is not claimed: the reproduced counterexample is fixed and the
+saved example replays green on 013; local unseeded nightly runs of the pglite
+phase on 013 are recorded in the PR; native PostgreSQL runs only in CI, and the
+native job's two failing focuses were never identified, so the scheduled run
+after this lands is the test of whether the nightly failure had one cause.
+
+Identity: because 013 changes SQL bodies, the candidate takes version 0.1.0b3
+(owner decision, 28 October 2026, after the choice to fix first rather than tag
+0.1.0b2 with the defect documented). 0.1.0b2 was never tagged, uploaded or
+released; its evidence stays bound to `c49eecf9`/`7d170231`. PR #63 (release
+verifier accepting beta versions) is included in this identity. The GitHub
+prerelease `v0.1.0b1` stands unchanged. R24, R28 and R29 carry forward. No tag,
+upload, release or deployment is authorized by this amendment.

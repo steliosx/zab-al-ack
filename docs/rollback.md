@@ -109,3 +109,27 @@ worker pinned to 4 runs against a tree with or without it.
    never observed; they are settled through the ordinary fenced-and-settled
    operator route.
 
+
+## 013 live-lease lifetime expiry guard (schema stays 4)
+
+Migration 013 replaces `worker_call()` with 012's body and `operator_call()`
+with 004's body, each carrying one changed predicate: the lifetime-expiry
+statement of `reconcile_due`, and the expiry `resume` applies to held rows, skip
+an action that still has a live delivery lease or an unsettled write attempt,
+as `expire_due_effects` always did. It ships no new structure, and the recorded
+schema version deliberately stays 4.
+
+1. **Rolling it back returns the gap, not a safe older behaviour.** Without it,
+   a send recorded against a lease that is still live when the execution
+   deadline passes is written terminally `expired` with `uncertain=false` —
+   an outcome nobody observed — and `worker_stopped`, the abandoned-attempt
+   fence and `settle_unknown` can no longer reach it. Prefer a forward
+   migration to reverting this one.
+2. **It re-records `installation.routine_bodies_md5`**, for the reason 009
+   gives, and refuses to run unless the digest it finds matches what 012 left.
+3. **It relabels no row.** An action an earlier tree already recorded
+   `expired` while a write attempt against it was unsettled stays as it is; on
+   such a row `attempts` is above zero and no outcome row settles the attempt.
+   Review those rows by hand (`zabalack.attempt_unsettled(attempt_id)` on the
+   action's write attempts) before trusting the expiry; 013 leaves that record
+   untouched rather than rewriting history in a migration.

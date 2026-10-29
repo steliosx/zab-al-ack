@@ -1,6 +1,6 @@
 # Beta readiness
 
-The candidate under qualification is 0.1.0b2 (assigned 28 October 2026; see amendment R29). Earlier results remain bound to 0.1.0b1 and before. A beta requires the intended automation to
+The candidate under qualification is 0.1.0b3 (assigned 28 October 2026; see amendment R30, which also records why 0.1.0b2 was never tagged). Earlier results remain bound to 0.1.0b2 and before. A beta requires the intended automation to
 execute successfully on its exact commit in supported environments, plus the
 publication-owner inputs. See `ALPHA_REPORT.md` for current executed results.
 The original a16 release narrative below is historical. Its reference, mutation,
@@ -110,7 +110,7 @@ New documentation is not retroactively included in the qualified artifact.
   identity still apply.
 - Completed separately: supplied-wheel Compose qualification (four cases,
   13 observations at `1401f42db80730f554829b2fd01d87ac437fede0`; identical wheel), six real-Zabbix cases at the
-  frozen head, required property-nightly 46/0/0 and quickstart. The local package
+  frozen head, required property-nightly 46/0/0 (the fixed-seed local tool, `tools/run_property_nightly.py`; the scheduled unseeded nightly run of `ci.yml` had never passed, see R30) and quickstart. The local package
   mapping, inventory, export audit, reproducible build and strict context
   verification passed. Raw evidence is privately retained in two stores.
 - Completed security dispositions: Actions 35264945934/1, tested merge as above,

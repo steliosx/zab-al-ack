@@ -89,9 +89,9 @@ itself. It never accepts a caller-supplied JSON report as evidence.
 ```bash
 export ZABALACK_RELEASE_REPOSITORY='<approved-owner>/<approved-repository>'
 export ZABALACK_RELEASE_COMMIT='<reviewed-40-hex-commit>'
-python tools/verify_attestation.py dist/pypi/zabalack-0.1.0b2-py3-none-any.whl \
+python tools/verify_attestation.py dist/pypi/zabalack-0.1.0b3-py3-none-any.whl \
   --repo "$ZABALACK_RELEASE_REPOSITORY" \
-  --source-ref refs/tags/v0.1.0b2 \
+  --source-ref refs/tags/v0.1.0b3 \
   --source-digest "$ZABALACK_RELEASE_COMMIT"
 ```
 
