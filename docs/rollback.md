@@ -133,3 +133,18 @@ schema version deliberately stays 4.
    Review those rows by hand (`zabalack.attempt_unsettled(attempt_id)` on the
    action's write attempts) before trusting the expiry; 013 leaves that record
    untouched rather than rewriting history in a migration.
+
+## 014 claim-path expiry fence (schema stays 4)
+
+Migration 014 replaces `worker_call()` with 013's body in which
+`claim_delivery` runs its abandoned-attempt fence before its lifetime-expiry
+branch and, past the deadline, returns without a lease. It ships no new structure, and the recorded schema version stays 4.
+
+1. **Rolling it back returns the gap.** Without it, a claim that arrives after
+   the execution deadline, for an action whose send was recorded against a
+   since-expired lease, records the send `expired` with `uncertain=false`, and
+   `settle_unknown` refuses it. Prefer a forward migration.
+2. **It re-records `installation.routine_bodies_md5`**, as 009 and 013 do,
+   and refuses to run unless the digest it finds matches what 013 left.
+3. **It relabels no row.** An action an earlier tree already expired this way
+   stays as it is; review it as the 013 section describes.
