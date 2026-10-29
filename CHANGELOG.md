@@ -1,6 +1,43 @@
 # Zab-al-ack changelog
 
-## 0.1.0b2 — 2026-10-28 (beta candidate, unpublished)
+## 0.1.0b4 — 2026-10-29 (beta candidate, unpublished)
+
+- Migration `014_claim_expiry_fence.sql`: `worker_call('claim_delivery')` now
+  runs its abandoned-attempt fence before its lifetime-expiry branch. Before,
+  a claim that arrived after the execution deadline, for an action whose send
+  was recorded against a lease that had since expired, recorded the send as
+  `expired` with `uncertain=false` and returned before the fence; the operator
+  could not settle it. Same class as 013, third statement. The first scheduled
+  nightly on 0.1.0b3 still failed one native focus (not exposed); separately, a
+  local nightly pass found this sequence and a direct SQL probe reproduced it
+  deterministically. Whether it is the native failure is not established. Direct
+  SQL regression T44 (`tests/postgres/assertions_claim_expiry_fence.sql`)
+  fails on 013 and passes on 014. A claim past the deadline still hands out
+  no lease; the action is left uncertain for settlement. `operator_call` not
+  touched; schema stays 4; no row is relabelled. SQL bodies change, so the
+  candidate takes a new identity (owner decision, 29 October 2026); 0.1.0b3
+  was never tagged.
+
+## 0.1.0b3 — 2026-10-28 (beta candidate, unpublished; never tagged)
+
+- Migration `013_live_lease_expiry_guard.sql`: the execution-lifetime expiry
+  statement of `worker_call('reconcile_due')` and the expiry that
+  `operator_call('resume')` applies to held rows now read the delivery facts
+  before recording `expired`, with the two guards `expire_due_effects` already
+  had: no live delivery lease and no unsettled write attempt. Before, a send
+  recorded against a lease that was still live when the deadline passed was
+  written terminally expired with `uncertain=false`; `worker_stopped` could no
+  longer fence it and `settle_unknown` refused it. Found by the scheduled
+  nightly Hypothesis profile (which had never passed; 28 October 2026),
+  reproduced deterministically on pglite, direct SQL regression T43
+  (`tests/postgres/assertions_live_lease_expiry.sql`) failing on 012 and
+  passing on 013. Schema stays 4; no row is relabelled. This changes SQL
+  bodies, so the candidate takes a new identity (owner decision, 28 October
+  2026); 0.1.0b2 was never tagged.
+- Release verifier and attestation verifier accept explicit beta versions and
+  reviewed beta tags (`X.Y.Z(a|b)N`), PR #63.
+
+## 0.1.0b2 — 2026-10-28 (beta candidate, unpublished; never tagged)
 
 - Assign the next beta candidate identity to the integrated main after PRs #45
   to #60 (owner decision, 28 October 2026). 0.1.0b1 was published as GitHub

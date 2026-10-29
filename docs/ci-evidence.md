@@ -276,3 +276,20 @@ Zabalack, Alrust, Voalack and Forgehold jobs on 9 October 2026 and approved this
 adoption on 15 October 2026. It adds no evidence pack and no artifact upload; the
 hosted `ci.yml` jobs remain the candidate evidence. The runner, its registration
 and its host boundaries belong to the Forgehold session.
+
+## Ledger soak (owner decision, 29 October 2026)
+
+`.github/workflows/soak.yml` calls `ci.yml` every three hours (`41 */3 * * *`)
+and does nothing else: one job, `uses: ./.github/workflows/ci.yml`, no inputs,
+no secrets, `contents: read`, schedule only. A called workflow receives its
+caller's `github` context, so every soak run is a scheduled run of the full
+`ci.yml` (nightly unseeded Hypothesis profile, nightly mutation catalogue,
+scheduled evidence collection) on the same free standard `ubuntu-24.04` hosted
+runners, with its own concurrency group (`Ledger soak-<ref>`). Its purpose is
+volume: rare ledger interleavings that the daily run reaches only every few
+nights. The owner's condition is free usage only: this public repository's
+standard hosted runners; no paid runners or minutes are to be enabled. If
+GitHub stops starting these jobs, the soak moves to the Forgehold laptop lane
+(above), coordinated with the Forgehold session, not to paid minutes. Soak runs
+are exploration, not candidate evidence; failing focuses and minimized
+sequences stay on the runner as in `docs/stateful-testing.md`.

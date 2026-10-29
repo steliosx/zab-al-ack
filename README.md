@@ -131,18 +131,51 @@ for native PostgreSQL, PgBouncer and optional real-Zabbix procedures.
 ## Status
 
 The published GitHub prerelease remains **0.1.0b1**. The current development
-candidate is **0.1.0b2**, with setuptools 84.1.0; it has not been tagged or released. Current-candidate qualification and
+candidate is **0.1.0b4**, with setuptools 84.1.0; it has not been tagged or released. Current-candidate qualification and
 historical test results are recorded separately; a result belongs to the exact
 revision and artifact that produced it.
 
 | Area | Current position | Where to read more |
 | --- | --- | --- |
-| Development | 0.1.0b2 candidate on main; published prerelease remains 0.1.0b1; further qualification remains | [Release notes](docs/release/RELEASE_NOTES_v0.1.0b1.md) |
+| Development | 0.1.0b4 candidate on main; published prerelease remains 0.1.0b1; further qualification remains | [Release notes](docs/release/RELEASE_NOTES_v0.1.0b1.md) |
 | Publication and acceptance | GitHub prerelease only; PyPI is not authorised; installed and deployment gates remain open | [Beta readiness](docs/BETA_READINESS.md) · [Release record](docs/release/TAG_PROPOSAL_v0.1.0b1.md) |
 | Evidence | Unit/mock, PostgreSQL WASM, native-service and installed-path records have distinct scopes | [Evidence guide](evidence/README.md) · [Compatibility and evidence](#compatibility-and-evidence) |
 | Production use | No production environment validated; external writes disabled by default | [Deployment](docs/deployment.md) · [Runbook](docs/runbook.md) |
 
-### Current development checkpoint — 28 October 2026
+### Current development checkpoint — 29 October 2026
+
+Main [`9cff02cb`](https://github.com/steliosx/zab-al-ack/commit/9cff02cb80d98b17d256498797a86c7cb6c1c144)
+contains two ledger-expiry corrections: [PR #64](https://github.com/steliosx/zab-al-ack/pull/64),
+exact head `5186f6ce`, adds migration 013 so expiry and operator resume cannot
+erase an outstanding write or live lease; [PR #65](https://github.com/steliosx/zab-al-ack/pull/65),
+exact head `8f56cd41`, adds migration 014 so an abandoned send is fenced as
+uncertain before expiry, without issuing an expired intent a new lease.
+The latter advances the candidate to **0.1.0b4**. Both have direct regression
+cases and published Codex source-only dispositions. Those dispositions do not
+claim independent runtime execution.
+
+[Exact-main ordinary run 40968133596](https://github.com/steliosx/zab-al-ack/actions/runs/40968133596)
+passed all five jobs, including **313 native tests**, with no failures or skips.
+Its package log records setuptools 84.1.0 and byte-identical repeated builds.
+The [public scan](https://github.com/steliosx/zab-al-ack/actions/runs/40968133638)
+reports zero known lock advisories and zero Gitleaks findings in its two scopes;
+[CodeQL](https://github.com/steliosx/zab-al-ack/actions/runs/40968133564) also completed
+successfully. These are scoped checks, not independent security or deployment acceptance.
+
+The broader [29 October nightly](https://github.com/steliosx/zab-al-ack/actions/runs/40855680678)
+ran on the earlier b3 merge `c80681a1`: **207 native passes, one generated-ledger
+failure**, a reference-suite failure and skipped packaging. Its native minimized
+counterexample is not present in the inspected diagnostics. The directly
+reproduced expiry defects are fixed in source; their identity with that nightly
+failure is not established. No b4 nightly pass is claimed.
+
+[PR #66](https://github.com/steliosx/zab-al-ack/pull/66), exact head `344931fe`,
+adds a schedule-only three-hour soak using the existing CI workflow. Its source
+is merged; no completed soak execution was observed at this checkpoint.
+The published b1 release is unchanged. G1–G8, A5, T40/T41 and successor
+qualification requirements are not closed by these merges.
+
+### Historical development checkpoint — 28 October 2026
 
 Main [`7d170231`](https://github.com/steliosx/zab-al-ack/commit/7d170231a4cbc19648333c645b18042cb49de64e)
 includes [PR #62](https://github.com/steliosx/zab-al-ack/pull/62), exact head

@@ -1,4 +1,4 @@
-"""T29/T31/T42 coordination regression; engine/lab scope follows pg_lab evidence."""
+"""T29/T31/T42/T43/T44 coordination regression; engine/lab scope follows pg_lab evidence."""
 from pathlib import Path
 import pytest
 from conftest import connect_role
@@ -53,6 +53,34 @@ def test_T42_an_abandoned_send_is_fenced_whatever_state_it_was_left_in(pg_lab):
     send is recorded against that lease, and the lease expires unobserved.
     """
     script = Path(__file__).with_name('assertions_abandoned_attempt.sql').read_text()
+    with connect_role(pg_lab, 'zabalack_worker') as conn:
+        conn.execute('RESET ROLE')
+        conn.execute(script)
+
+
+def test_T43_a_send_in_flight_under_a_live_lease_is_never_expired_with_certainty(pg_lab):
+    """The execution-lifetime expiry statement reads the delivery facts.
+
+    The nightly profile's minimized sequence (28 October 2026), deterministic
+    and without Hypothesis: a retry requeues a claimed action while its lease
+    is live, the send is recorded against that lease, the deadline passes
+    while the lease is still live, and the worker stops.
+    """
+    script = Path(__file__).with_name('assertions_live_lease_expiry.sql').read_text()
+    with connect_role(pg_lab, 'zabalack_worker') as conn:
+        conn.execute('RESET ROLE')
+        conn.execute(script)
+
+
+def test_T44_a_claim_after_the_deadline_fences_an_abandoned_send_before_expiring_it(pg_lab):
+    """claim_delivery reads the delivery facts before recording a lifetime expiry.
+
+    The nightly profile's minimized sequence (29 October 2026), deterministic
+    and without Hypothesis: the send is recorded under a live lease, the
+    deadline passes, the lease expires, and the next claim arrives before any
+    reconciliation pass.
+    """
+    script = Path(__file__).with_name('assertions_claim_expiry_fence.sql').read_text()
     with connect_role(pg_lab, 'zabalack_worker') as conn:
         conn.execute('RESET ROLE')
         conn.execute(script)

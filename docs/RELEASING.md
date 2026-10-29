@@ -1,6 +1,6 @@
 # Preparing and publishing the alpha
 
-The candidate under qualification is 0.1.0b2. Creating its source archive/wheel does not
+The candidate under qualification is 0.1.0b4. Creating its source archive/wheel does not
 publish it, assign a public namespace or authorize production changes. No
 publication workflow is active: `release/publish.yml.example` is a template.
 
@@ -98,7 +98,7 @@ Complete the single publication register, `config/publication.pending.json`:
 5. Run `python tools/public_audit.py --publication`. It returns 2 until required
    publication inputs are recorded, and 1 for a public-export check failure.
 
-Create a reviewed tag `v0.1.0b2` only after those edits and final reruns. Review
+Create a reviewed tag `v0.1.0b4` only after those edits and final reruns. Review
 the exact GitHub Actions run for that commit and clearly disclose unavailable
 native/real-source checks in the prerelease notes. Source-only alpha evaluation
 is possible while such gaps remain, but stable production support is not claimed.
