@@ -572,6 +572,19 @@ def test_alpha_workflow_filters_pushes_without_filtering_prs_or_required_events(
         assert 'if' not in job
 
 
+def test_ledger_soak_runs_ci_on_its_own_schedule_and_nothing_else():
+    """The soak repeats ci.yml under the scheduled profile; it adds no job, input or secret."""
+    workflow = yaml.load((ROOT / '.github/workflows/soak.yml').read_text(), Loader=yaml.BaseLoader)
+    assert workflow['name'] == 'Ledger soak' != 'Alpha reference checks'
+    # Schedule only: a dispatched or pushed caller would run ci.yml under the
+    # pr profile, and the soak exists for the nightly one.
+    assert set(workflow['on']) == {'schedule'}
+    assert workflow['on']['schedule'] == [{'cron': '41 */3 * * *'}]
+    assert workflow['permissions'] == {'contents': 'read'}
+    assert workflow['jobs'] == {'soak': {'uses': './.github/workflows/ci.yml'}}
+    assert 'concurrency' not in workflow and 'env' not in workflow
+
+
 def test_ci_package_waits_for_same_run_required_jobs_and_rebuilds_mapping():
     workflow = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
     assert set(workflow['jobs']['package']['needs']) == set(ci.KINDS)
@@ -642,14 +655,19 @@ def test_every_active_job_runs_on_the_hosted_ubuntu_2404_runner_by_owner_decisio
     # ARM64 runner is held; see docs/ci-evidence.md "Hosted execution for the beta".
     # Owner decisions 2026-10-09 and 2026-10-15: the Forgehold lane's quality job may run on
     # the local Forgehold runner; see docs/ci-evidence.md "Forgehold lane".
+    # Owner decision 2026-10-29: the ledger soak calls ci.yml, so its jobs run where ci.yml's
+    # do (free standard hosted runners only); see docs/ci-evidence.md "Ledger soak".
     paths = list((ROOT / '.github/workflows').glob('*.yml'))
     assert {path.name for path in paths} == {'ci.yml', 'security.yml', 'codeql.yml', 'deployment-e2e.yml',
-                                             'forgehold-lane.yml'}
+                                             'forgehold-lane.yml', 'soak.yml'}
     for path in paths:
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         if path.name == 'forgehold-lane.yml':
             assert set(workflow['on']) == {'workflow_dispatch'}
             assert set(workflow['jobs']) == {'quality'}
+        if path.name == 'soak.yml':
+            assert workflow['jobs'] == {'soak': {'uses': './.github/workflows/ci.yml'}}
+            continue
         for job in workflow['jobs'].values():
             if path.name == 'forgehold-lane.yml':
                 assert job['runs-on'] == ['self-hosted', 'Linux', 'X64', 'forgehold']

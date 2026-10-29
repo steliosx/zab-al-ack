@@ -1,0 +1,23 @@
+# Ledger soak: the whole of ci.yml under the scheduled (nightly, unseeded)
+# Hypothesis profile, every three hours, so rare ledger interleavings are found
+# between nightly runs. A scheduled caller passes its own github context to the
+# called workflow, so ci.yml selects the nightly profile and the evidence
+# collector sees a scheduled run, exactly as for the daily run; ci.yml's
+# concurrency group takes this workflow's name, so a soak never cancels, and is
+# never cancelled by, the push or daily runs.
+#
+# Free standard GitHub-hosted runners only (public repository). Owner decision,
+# 29 October 2026: no paid Actions usage; if GitHub stops starting these jobs,
+# the soak moves to the Forgehold laptop lane rather than to paid minutes.
+name: Ledger soak
+
+on:
+  schedule:
+    - cron: '41 */3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    uses: ./.github/workflows/ci.yml

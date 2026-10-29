@@ -89,6 +89,12 @@ def test_live_publish_workflow_absent_and_ci_permissions_are_narrow():
         for name, job in value['jobs'].items():
             expected = {'contents': 'read', 'security-events': 'write'} if (path.name, name) == ('codeql.yml', 'analyze') else {'contents': 'read'}
             assert job.get('permissions', value['permissions']) == expected
+            if 'uses' in job:
+                # A job may only call this repository's own CI, never another
+                # repository's workflow, and runs no steps of its own.
+                assert path.name == 'soak.yml' and job['uses'] == './.github/workflows/ci.yml'
+                assert 'steps' not in job and 'secrets' not in job and 'with' not in job
+                continue
             if expected.get('security-events') == 'write':
                 assert job['if'] == "${{ vars.ZABALACK_CODEQL_ENABLED == 'true' }}"
             for step in job['steps']:

@@ -55,6 +55,19 @@ ACK_HYPOTHESIS_PROFILE=nightly ACK_HYPOTHESIS_SEED=20260912 python lab/pglite_ex
 profile (pure tests plus the WASM ledger sequences, fixed seed) as
 `evidence/property-nightly-run.json` with a redacted JUnit, bound to the tree.
 
+In CI the `nightly` profile runs unseeded wherever the run was started by a
+schedule: the daily `ci.yml` run and the ledger soak, `.github/workflows/soak.yml`,
+which calls `ci.yml` every three hours (`41 */3 * * *`). A called workflow takes
+its caller's event and name, so the soak gets the nightly profile and scheduled
+evidence collection, and its concurrency group (`Ledger soak-<ref>`) never meets
+the push or daily runs. The soak exists because unseeded exploration finds rare
+interleavings by volume: the 28 and 29 October 2026 defects (R30, R31) each took
+roughly ten unseeded passes to reach. It uses only the free standard
+GitHub-hosted runners of this public repository; by owner decision (29 October
+2026) no paid Actions usage is enabled, and if GitHub stops starting these jobs
+the soak moves to the Forgehold laptop lane instead. Failing focuses and
+minimized sequences remain on the runner, as above.
+
 The reference runner includes the pure tests in its unit phase and SQL sequences
 in the PostgreSQL WASM phase. The native runner uses the same `pg_lab` fixture and
 test file. A missing isolated PostgreSQL fixture is an explicit environment skip.
