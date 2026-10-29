@@ -1,6 +1,6 @@
 # Zab-al-ack 0.1.0a17 — integrated recovery candidate
 
-> **Superseded identity (11 October 2026; current candidate 0.1.0b3 since 28 October 2026, amendment R30).** The current candidate is `0.1.0b3`; see
+> **Superseded identity (11 October 2026; current candidate 0.1.0b4 since 29 October 2026, amendment R31).** The current candidate is `0.1.0b4`; see
 > `CHANGELOG.md`, `docs/BETA_READINESS.md` and amendment R23. This a17 report is
 > retained as history and is not rebound to the beta candidate.
 

@@ -1,6 +1,23 @@
 # Zab-al-ack changelog
 
-## 0.1.0b3 — 2026-10-28 (beta candidate, unpublished)
+## 0.1.0b4 — 2026-10-29 (beta candidate, unpublished)
+
+- Migration `014_claim_expiry_fence.sql`: `worker_call('claim_delivery')` now
+  runs its abandoned-attempt fence before its lifetime-expiry branch. Before,
+  a claim that arrived after the execution deadline, for an action whose send
+  was recorded against a lease that had since expired, recorded the send as
+  `expired` with `uncertain=false` and returned before the fence; the operator
+  could not settle it. Same class as 013, third statement. The first scheduled
+  nightly on 0.1.0b3 still failed one native focus; a local nightly pass found
+  the sequence, and a direct SQL probe reproduced it deterministically. Direct
+  SQL regression T44 (`tests/postgres/assertions_claim_expiry_fence.sql`)
+  fails on 013 and passes on 014. A claim past the deadline still hands out
+  no lease; the action is left uncertain for settlement. `operator_call` not
+  touched; schema stays 4; no row is relabelled. SQL bodies change, so the
+  candidate takes a new identity (owner decision, 29 October 2026); 0.1.0b3
+  was never tagged.
+
+## 0.1.0b3 — 2026-10-28 (beta candidate, unpublished; never tagged)
 
 - Migration `013_live_lease_expiry_guard.sql`: the execution-lifetime expiry
   statement of `worker_call('reconcile_due')` and the expiry that

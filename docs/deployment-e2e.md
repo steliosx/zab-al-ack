@@ -38,7 +38,7 @@ path and independently obtained SHA-256:
 
 ```bash
 python tools/run_deployment_e2e.py --isolated-lab \
-  --wheel /private/artifacts/zabalack-0.1.0b3-py3-none-any.whl \
+  --wheel /private/artifacts/zabalack-0.1.0b4-py3-none-any.whl \
   --wheel-sha256 "$EXPECTED_WHEEL_SHA256"
 ```
 

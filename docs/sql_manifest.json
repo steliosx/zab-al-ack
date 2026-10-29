@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package": "zabalack",
-  "package_version": "0.1.0b3",
+  "package_version": "0.1.0b4",
   "files": [
     {
       "path": "sql/install/00_roles.sql",
@@ -82,6 +82,10 @@
     {
       "path": "sql/migrations/013_live_lease_expiry_guard.sql",
       "sha256": "67a2e440d248565018b3f124deb729338e7c423b6b74393fdc74346c57a205a3"
+    },
+    {
+      "path": "sql/migrations/014_claim_expiry_fence.sql",
+      "sha256": "913377b2f04715ccc7992303b42e74817ae9fa2ae9d887e5bdf1a508f8f06229"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",
