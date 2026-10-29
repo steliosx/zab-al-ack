@@ -1121,11 +1121,12 @@ The first scheduled run of `ci.yml` on 0.1.0b3 (main `c80681a1`, run
 40855680678, 29 October 2026) failed again, but narrower: the native
 PostgreSQL postgres phase failed 1 of 208 (every earlier sampled night failed
 2), again `test_generated_delivery_ledger`, focus not exposed by the native
-summary; the reference pglite phase also exited 1. Migration 013 had removed
-one of the two native failures.
+summary; the reference pglite phase also exited 1. That 013 removed one of the
+two native failures is an inference from the counts only: the native focuses
+and counterexamples were never exposed, before or after 013.
 
 Local nightly-profile passes on main's exact tree (pglite, unseeded; run one at
-a time under the owner's thermal limit) found the remaining sequence on the
+a time under the owner's thermal limit) found a failing sequence on the
 tenth pass, for the `settled_retry` and `expired_generation` focuses, same
 assertion as R30 (settlement expects `uncertain=true`, finds `false`): the send
 is recorded under a live lease → the execution deadline passes (013 correctly
@@ -1138,9 +1139,10 @@ and lease set one second past → a second claim records
 
 Cause: `claim_delivery` ran its lifetime-expiry branch
 (`execute_before<=now_at … AND NOT a.uncertain` → `expired`, return) before
-its own abandoned-attempt fence. Before 013, `reconcile_due` usually expired
-such a row first; 013 closed that statement and so moved the case onto the
-claim. Migration `014_claim_expiry_fence.sql` is 013's `worker_call` body with
+its own abandoned-attempt fence. A plausible reading, not established, is that
+before 013 `reconcile_due` usually expired such a row first, so 013 moved the
+case onto the claim. Whether this local sequence is the failure the scheduled
+native run hit is unknown; the next scheduled run is the test. Migration `014_claim_expiry_fence.sql` is 013's `worker_call` body with
 the lease lookup, live-lease return and abandoned-attempt fence moved, unchanged,
 to just before the expiry branch, followed by one new line: a claim whose action
 is past its deadline returns without a lease once the fence has made it

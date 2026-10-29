@@ -8,8 +8,9 @@
   was recorded against a lease that had since expired, recorded the send as
   `expired` with `uncertain=false` and returned before the fence; the operator
   could not settle it. Same class as 013, third statement. The first scheduled
-  nightly on 0.1.0b3 still failed one native focus; a local nightly pass found
-  the sequence, and a direct SQL probe reproduced it deterministically. Direct
+  nightly on 0.1.0b3 still failed one native focus (not exposed); separately, a
+  local nightly pass found this sequence and a direct SQL probe reproduced it
+  deterministically. Whether it is the native failure is not established. Direct
   SQL regression T44 (`tests/postgres/assertions_claim_expiry_fence.sql`)
   fails on 013 and passes on 014. A claim past the deadline still hands out
   no lease; the action is left uncertain for settlement. `operator_call` not

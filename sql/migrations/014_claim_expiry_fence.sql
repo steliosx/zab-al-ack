@@ -8,12 +8,13 @@
 -- could see it. settle_unknown then refuses it, as in 013's case.
 --
 -- The scheduled nightly on 0.1.0b3 (29 October 2026) still failed one native
--- focus; a local nightly pass found it for the settled_retry and
--- expired_generation focuses, minimized to: the send is recorded under a live
--- lease -> the deadline passes (013 correctly leaves the action unexpired) ->
--- the lease expires -> another worker's claim arrives -> the operator cannot
--- settle. Before 013, reconcile_due usually expired such a row first, which
--- is why this surfaced only after 013. tests/postgres/
+-- focus, not exposed. Separately, a local nightly pass found a failing
+-- sequence for the settled_retry and expired_generation focuses, minimized
+-- to: the send is recorded under a live lease -> the deadline passes (013
+-- correctly leaves the action unexpired) -> the lease expires -> another
+-- worker's claim arrives -> the operator cannot settle. Whether it is the
+-- native failure is not established; that reconcile_due expired such rows
+-- first before 013 is an inference, not shown. tests/postgres/
 -- assertions_claim_expiry_fence.sql (T44) is the direct reproduction, failing
 -- on 013 and passing here.
 --

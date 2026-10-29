@@ -85,7 +85,7 @@
     },
     {
       "path": "sql/migrations/014_claim_expiry_fence.sql",
-      "sha256": "913377b2f04715ccc7992303b42e74817ae9fa2ae9d887e5bdf1a508f8f06229"
+      "sha256": "6f5693db54efe839a107a0e24c9b2193dda065ae8b19b2c91776e742babeda17"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",
