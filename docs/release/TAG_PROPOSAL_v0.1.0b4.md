@@ -73,11 +73,22 @@ Each exception needs the owner's explicit approval in the final approval below. 
    `public_content_review_approved` and `pypi_namespace_confirmed`. `tools/public_audit.py --publication`
    does not pass. Register completeness is **waived**, not passed, as for `v0.1.0b1`. The producer run's
    ordinary export audit (`evidence/public-audit.json`) reads `PASS` with 0 findings.
-2. **Non-documentation delta after the producer.** For `v0.1.0b1` the delta from the tag target to `main`
-   was documentation only. Here `9cff02cb..main` also contains PR #67: `.github/workflows/forgehold-smoke.yml`
-   (a dispatch-only CI workflow) and `tests/release/test_ci_collection.py` (its policy test), besides
-   `docs/`. Nothing under `src/`, `sql/`, `config/`, `pyproject.toml`, `MANIFEST.in` or the
-   `requirements*` locks changes. The tag stays on `9cff02cb`, so the released files do not contain PR #67.
+2. **Exact non-documentation delta after the producer.** For `v0.1.0b1` the delta from the tag target
+   to `main` was documentation only. Here the only permitted delta from `9cff02cb` to the notes-bearing
+   `main` is exactly these five paths, with exactly this content:
+
+   | Path | Content | Source |
+   |---|---|---|
+   | `.github/workflows/forgehold-smoke.yml` | blob `31327954ef868560b69cca77b990a003c8d8254e` | PR #67 (a dispatch-only CI workflow) |
+   | `tests/release/test_ci_collection.py` | blob `60d565ea82f3380998426dfa7ab703247daedf36` | PR #67 (its policy test) |
+   | `docs/ci-evidence.md` | blob `7dbaa6706d8c833062fea178b41e225ef3b3594d` | PR #67 |
+   | `docs/release/TAG_PROPOSAL_v0.1.0b4.md` | the blob at the documentation review head | this record |
+   | `docs/release/RELEASE_NOTES_v0.1.0b4.md` | the blob at the documentation review head | these notes |
+
+   PR #67 merged as `5c607100c33eb1fbea442855164511f51097c7e8`. The tag stays on `9cff02cb`, so the
+   released files do not contain PR #67. No other path and no other content is permitted; any later change
+   to `main`, including a documentation-only one, stops the procedure until this record names it and the
+   owner and reviewer approve it again.
 3. **Deferred, as for `v0.1.0b1`:** the private security-report test, the external security review
    (`independent_external_security_review: PENDING`), and reviewer inspection of the release bytes (stays
    **NOT_INSPECTED** unless the reviewer inspects them).
@@ -92,9 +103,10 @@ Each exception needs the owner's explicit approval in the final approval below. 
 
 ## Operative sequence
 
-1. Re-read live `main`. Confirm that `9cff02cb` is an ancestor of it. List `git diff --name-only
-   9cff02cb main` and classify each path (documentation, CI configuration, test). Stop if any path is
-   under `src/`, `sql/`, `config/`, or is `pyproject.toml`, `MANIFEST.in` or a `requirements*` lock.
+1. Re-read live `main`. Confirm that `9cff02cb` is an ancestor of it and that `main` is the merge commit
+   of the documentation PR carrying this record. List `git diff --name-only 9cff02cb main`. Stop unless the
+   list is exactly the five paths of exception 2 and each path's blob at `main` is exactly the one that
+   exception names. Record the list and the blob IDs.
 2. Owner approval (recorded below) of the exact commit, the release set and exceptions 1 to 4, and the
    independent reviewer's signed agreement on this record. No advisor objection.
 3. Create the annotated tag `v0.1.0b4` on `9cff02cb`. Its message names the notes-bearing `main` commit.

@@ -52,7 +52,8 @@ Run 41039220769 on the tagged commit:
 
 Three further runs on the same commit passed with the same wheel: the merge run 40968133596 (PR
 profile) and the ledger soak runs 41013846096 and 41063710126 (nightly profile). Run 41039220769 is the
-first scheduled nightly run that passed on record.
+first daily scheduled `ci.yml` run with the nightly profile that passed on record; the soak run
+41013846096, also scheduled with the nightly profile, passed earlier the same day.
 
 ## Changes since 0.1.0b1
 
@@ -78,7 +79,9 @@ Toolchain and dependencies:
 Lab, CI and documentation:
 
 - Zabbix lab reference 7.0.10 → 7.0.25; the 7.0.25 qualifications stay not run.
-- Dispatch-only Forgehold lane workflow for the quality checks on a local runner.
+- Dispatch-only Forgehold lane workflow `forgehold-lane.yml` (PR #54) for the quality checks on a
+  local runner. The later dispatch-only smoke workflow `forgehold-smoke.yml` (PR #67) is on `main` after
+  the tagged commit and is not part of this release.
 - Ledger soak: `ci.yml` also runs every three hours on a schedule with the nightly profile, on free
   hosted runners only.
 - PostgreSQL tuning benchmark report; 0.2.0 action-sync and source-binding designs. Documentation only.
