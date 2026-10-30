@@ -277,6 +277,23 @@ adoption on 15 October 2026. It adds no evidence pack and no artifact upload; th
 hosted `ci.yml` jobs remain the candidate evidence. The runner, its registration
 and its host boundaries belong to the Forgehold session.
 
+## Forgehold smoke (30 October 2026)
+
+`.github/workflows/forgehold-smoke.yml` is a second dispatch-only workflow for
+the same lane. It only checks that the Preloop App and the Forgehold micro-VM
+lane reach this repository: one job, `smoke`, on `runs-on: [self-hosted, Linux,
+X64, forgehold]`, a three-minute timeout, `contents: read`, a pinned
+`actions/checkout` without persisted credentials, and no install or build. It
+confirms the checked-out commit is `GITHUB_SHA` and prints two `FH_SMOKE`
+lines. The file is copied byte for byte from the Forgehold session's template
+(SHA-256 `7bbe12bf72e0d185731cf44bf363958f2d408c7b8de01159705d68ecb7747ac6`),
+which is identical in the Alrust, Voalack, Forgehold and Zabalack repositories
+and pinned by hash in the Forgehold queue; do not edit it here. Pushing it
+starts nothing; the Forgehold queue dispatches it. It was added at the owner's
+request as relayed by the Forgehold session on 30 October 2026, under the
+9 October 2026 permission for local self-hosted execution. Like the lane's
+`quality` job it produces no candidate evidence.
+
 ## Ledger soak (owner decision, 29 October 2026)
 
 `.github/workflows/soak.yml` calls `ci.yml` every three hours (`41 */3 * * *`)

@@ -657,19 +657,25 @@ def test_every_active_job_runs_on_the_hosted_ubuntu_2404_runner_by_owner_decisio
     # the local Forgehold runner; see docs/ci-evidence.md "Forgehold lane".
     # Owner decision 2026-10-29: the ledger soak calls ci.yml, so its jobs run where ci.yml's
     # do (free standard hosted runners only); see docs/ci-evidence.md "Ledger soak".
+    # Owner priority relayed by the Forgehold session 2026-10-30: one dispatch-only smoke job
+    # on the local Forgehold runner, identical in all four repositories; see docs/ci-evidence.md
+    # "Forgehold smoke".
     paths = list((ROOT / '.github/workflows').glob('*.yml'))
     assert {path.name for path in paths} == {'ci.yml', 'security.yml', 'codeql.yml', 'deployment-e2e.yml',
-                                             'forgehold-lane.yml', 'soak.yml'}
+                                             'forgehold-lane.yml', 'forgehold-smoke.yml', 'soak.yml'}
     for path in paths:
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         if path.name == 'forgehold-lane.yml':
             assert set(workflow['on']) == {'workflow_dispatch'}
             assert set(workflow['jobs']) == {'quality'}
+        if path.name == 'forgehold-smoke.yml':
+            assert set(workflow['on']) == {'workflow_dispatch'}
+            assert set(workflow['jobs']) == {'smoke'}
         if path.name == 'soak.yml':
             assert workflow['jobs'] == {'soak': {'uses': './.github/workflows/ci.yml'}}
             continue
         for job in workflow['jobs'].values():
-            if path.name == 'forgehold-lane.yml':
+            if path.name in ('forgehold-lane.yml', 'forgehold-smoke.yml'):
                 assert job['runs-on'] == ['self-hosted', 'Linux', 'X64', 'forgehold']
             else:
                 assert job['runs-on'] == 'ubuntu-24.04'
