@@ -1,7 +1,8 @@
 # Zabalack 0.1.0b4 — beta prerelease (release notes)
 
-Prepared 30 October 2026. Status: **proposed; not published.** The operative procedure is
-`docs/release/TAG_PROPOSAL_v0.1.0b4.md`. **Not published to PyPI.**
+Prepared 30 October 2026. Status: **published as a GitHub prerelease on 30 October 2026 at 6:31 PM Nassau
+(2026-10-30T22:31:57Z)**, with the disclosed exceptions in `docs/release/TAG_PROPOSAL_v0.1.0b4.md`.
+**Not published to PyPI.**
 This is a beta for development and isolated evaluation. It is **not qualified for
 production deployment**; see "Open items" below.
 
@@ -107,8 +108,8 @@ These are open at this release. Each is tracked in `docs/BETA_READINESS.md`.
 
 ## Deferred by owner decision
 
-These items are deferred, subject to the owner's approval of the exceptions recorded in the tag
-proposal. They are **not** done:
+These items are deferred under the owner's approval of the exceptions recorded in the tag proposal.
+They are **not** done:
 
 | Item | Status |
 |---|---|
