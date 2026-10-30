@@ -308,12 +308,18 @@ def _focuses(root: Path) -> tuple:
         return ()
 
 
-def ledger_counterexamples(root: Path) -> dict:
-    """Allowlisted facts of the minimized ledger sequences; the raw files stay on the runner."""
+def ledger_counterexamples(root: Path, invocation, engine: str, profile, focuses) -> dict:
+    """Allowlisted facts of this invocation's minimized ledger sequences; raw files stay on the runner."""
     try:
-        return ledger_failure_facts.collect(root, {name: value[0] for name, value in EXCEPTIONS.items()})
-    except (OSError, ValueError, UnicodeError, SyntaxError, RecursionError, StopIteration):
+        return ledger_failure_facts.collect(root, {name: value[0] for name, value in EXCEPTIONS.items()},
+                                            invocation=invocation, engine=engine, profile=profile,
+                                            focuses=set(focuses))
+    except (OSError, ValueError, TypeError, UnicodeError, SyntaxError, RecursionError, StopIteration):
         return {"status": "UNAVAILABLE"}
+
+
+def failed_ledger_focuses(root: Path, nodeids) -> set[str]:
+    return ledger_failure_facts.failed_focuses(nodeids, _focuses(root))
 
 
 def build_summary(root: Path) -> dict:
@@ -354,7 +360,15 @@ def build_summary(root: Path) -> dict:
             except (OSError, ValueError, TypeError, UnicodeError):
                 item["diagnostics_status"] = "UNAVAILABLE"
             if ledger_failure_facts.TEST in NATIVE_PHASES[name]:
-                item["ledger_counterexamples"] = ledger_counterexamples(root)
+                # Bound to this phase's run id (its basetemp), the native engine, the
+                # profile this job ran and the focuses its own JUnit reports as failed.
+                run = re.fullmatch(r"build/evidence-raw/native-" + re.escape(name) + r"-([0-9a-f]{10,32})",
+                                   str(phase.get("diagnostic_dir")))
+                focuses = {failure["stateful_focus"] for failure in item["pytest"].get("failures", [])
+                           if "stateful_focus" in failure}
+                item["ledger_counterexamples"] = ledger_counterexamples(
+                    root, run[1] if run else None, "native_postgres18",
+                    os.environ.get("ACK_HYPOTHESIS_PROFILE", "pr"), focuses)
             summary["phases"].append(item)
     except (OSError, ValueError, TypeError, UnicodeError):
         pass

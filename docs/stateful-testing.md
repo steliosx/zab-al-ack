@@ -43,17 +43,24 @@ receives facts rebuilt from it by `tools/ledger_failure_facts.py`, an allowlist
 drawn from the test module itself (owner decision, 30 October 2026). The native
 job writes them into `evidence/native-failure-summary.json`
 (`ledger_counterexamples`), which it also prints, and the reference job prints
-them after a failed `postgres-wasm` phase. They are:
-the focus and profile from the file name; header fields of known shape (seed,
-profile, focus, engine, Hypothesis version, test and migration hashes, and
-whether those hashes match the current tree); each minimized step whose rule,
-keyword and value the state machine declares, rebuilt rather than copied; the
-innermost frame in this test module (function and line); the exception class
-from the native summary's allowlist; and the `@reproduce_failure` blob. Messages,
-paths, other traceback text and the example database are not exported;
-dropped lines and header fields are counted. A run killed before the test's
-exception handler writes no file; the failed focus then still appears in the
-native summary's pytest classification and in the public JUnit properties.
+them after a failed `postgres-wasm` phase. Only this invocation's files are
+used: each runner passes `ACK_LEDGER_INVOCATION` (the native run id, or a fresh
+token per reference phase), the test records it in the file header, and a file
+is exported only when its invocation, engine, profile and focus match the
+failing phase and its own JUnit reports that focus as failed. Older files, for
+example from an earlier run on a persistent runner, are counted in
+`other_files`, never exported and never removed. The exported facts are: the
+focus and profile; header fields of known shape (seed, engine, invocation,
+Hypothesis version, test and migration hashes, and whether those hashes match
+the current tree); each minimized step whose rule, keyword and value the state
+machine declares, rebuilt rather than copied; the innermost frame in this test
+module (function and line); the exception class from the native summary's
+allowlist; the SHA-256 of the file; and the SHA-256 of the `@reproduce_failure`
+blob. The blob itself is opaque and stays in the private file; replay needs the
+runner's file or the example database. Messages, paths, other traceback text and
+the example database are not exported; dropped lines and header fields are
+counted. A failed focus with no matching file, for example a run killed before
+the test's exception handler wrote one, is listed in `focuses_without_file`.
 
 Run the short pure profile with:
 

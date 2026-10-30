@@ -157,7 +157,8 @@ def main() -> int:
                            ACK_TEST_DESTRUCTIVE_LAB='YES_ISOLATED_LAB',
                            ACK_TEST_PGBOUNCER_DSN=f'postgresql://zabalack_probe@127.0.0.1:{ports["pgbouncer"]}/alerta',
                            ACK_TEST_PGBOUNCER_EXPECTED_PORT=str(ports['pgbouncer']),
-                           TZ='UTC', HYPOTHESIS_STORAGE_DIRECTORY=str(ROOT / 'build/private/hypothesis'))
+                           TZ='UTC', HYPOTHESIS_STORAGE_DIRECTORY=str(ROOT / 'build/private/hypothesis'),
+                           ACK_LEDGER_INVOCATION=run_id)
                 raw_xml = raw / ('native-' + phase + '.xml')
                 public_xml = evidence / raw_xml.name
                 raw_xml.unlink(missing_ok=True)

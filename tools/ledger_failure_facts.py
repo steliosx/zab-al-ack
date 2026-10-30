@@ -8,8 +8,11 @@ minimized "Failing test case" and the `@reproduce_failure` blob. The file stays
 private. This module rebuilds only what it can validate against the test module's
 own vocabulary: header fields of known shape, step calls whose rule, keyword and
 value the state machine declares, the innermost test-module frame, the exception
-class from a caller-supplied allowlist, and the replay blob. Messages, paths and
-any other text are dropped and counted.
+class from a caller-supplied allowlist, and only a digest of the replay blob (the
+blob is opaque, so it stays private). Messages, paths and any other text are
+dropped and counted. Only files written by the caller's own invocation, engine and
+profile, for a focus that failed in that invocation, are exported; any other file
+is counted, never read into the export and never removed.
 """
 from __future__ import annotations
 
@@ -32,6 +35,7 @@ MAX_STEPS = 128
 MAX_SQL = 64
 MAX_INTEGER = 1_000_000
 HEX64 = re.compile(r"[0-9a-f]{64}")
+INVOCATION = re.compile(r"[0-9a-f]{10,32}")
 VERSION = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}")
 SQL_NAME = re.compile(r"[0-9]{3}_[a-z0-9_]{1,64}\.sql")
 FRAME = re.compile(r'\s*File "(?P<path>[^"\n]{1,4096})", line (?P<line>[0-9]{1,6}), in (?P<function>[A-Za-z_][A-Za-z0-9_]{0,63})')
@@ -113,6 +117,10 @@ def _header(line: str, words: dict) -> tuple[dict, int]:
         header["seed"] = seed
     else:
         dropped += 1
+    if isinstance(value.get("invocation"), str) and INVOCATION.fullmatch(value["invocation"]):
+        header["invocation"] = value["invocation"]
+    else:
+        dropped += 1
     for key, allowed in (("profile", PROFILES), ("focus", words["focuses"]), ("engine", ENGINES)):
         if value.get(key) in allowed:
             header[key] = value[key]
@@ -134,7 +142,8 @@ def _header(line: str, words: dict) -> tuple[dict, int]:
         dropped += len(sql) - len(header["sql_sha256"])
     else:
         dropped += 1
-    dropped += len(set(value) - {"seed", "profile", "focus", "engine", "hypothesis", "test_sha256", "sql_sha256"})
+    dropped += len(set(value) - {"seed", "profile", "focus", "engine", "invocation", "hypothesis",
+                                 "test_sha256", "sql_sha256"})
     return header, dropped
 
 
@@ -197,7 +206,10 @@ def facts_from_text(text: str, words: dict, exceptions: dict, current: dict | No
             continue
         reproduce = REPRODUCE.search(stripped)
         if reproduce and stripped.startswith("You can reproduce this test case"):
-            result["reproduce"] = {"hypothesis": reproduce["version"], "blob": reproduce["blob"]}
+            # The blob is opaque: its content cannot be checked against the vocabulary,
+            # so only its digest leaves; the blob itself stays in the private file.
+            result["replay"] = {"hypothesis": reproduce["version"],
+                                "blob_sha256": hashlib.sha256(reproduce["blob"].encode()).hexdigest()}
             continue
         if stripped and not line[:1].isspace():
             named = EXCEPTION.fullmatch(stripped)
@@ -237,29 +249,62 @@ def _safe_text(path: Path) -> str:
     return data.decode("utf-8")
 
 
-def collect(root: Path, exceptions: dict) -> dict:
-    """Facts for every counterexample file on this runner; the example database is never read."""
-    result: dict = {"files": [], "malformed_files": 0, "truncated": False}
+FAILED_CASE = re.compile(r"tests\.postgres\.test_stateful_ledger::test_generated_delivery_ledger\[(?P<focus>[a-z_]{1,32})\]")
+
+
+def failed_focuses(nodeids, focuses) -> set[str]:
+    """Focuses of failed generated-ledger cases, from JUnit node ids of this invocation."""
+    return {match["focus"] for nodeid in nodeids
+            if isinstance(nodeid, str) and (match := FAILED_CASE.fullmatch(nodeid)) and match["focus"] in focuses}
+
+
+def collect(root: Path, exceptions: dict, *, invocation: str, engine: str, profile: str,
+            focuses: set[str]) -> dict:
+    """Facts for this invocation's counterexamples of the failed focuses; nothing else is read.
+
+    A file left by another invocation, engine or profile, or for a focus that did
+    not fail here, is counted in `other_files` and stays private and in place. A
+    failed focus without a matching file (for example a run killed before the
+    test's handler wrote one) is listed in `focuses_without_file`.
+    """
+    result: dict = {"files": [], "other_files": 0, "malformed_files": 0, "truncated": False}
+    if (not INVOCATION.fullmatch(invocation or "") or engine not in ENGINES or profile not in PROFILES):
+        result["status"] = "UNBOUND"
+        return result
     directory = root.joinpath(*CORPUS)
     if not directory.is_dir() or any(p.is_symlink() for p in (directory, *directory.parents)):
         result["status"] = "NO_CORPUS"
+        result["focuses_without_file"] = sorted(focuses)
         return result
     words = vocabulary(root)
     current = current_digests(root)
+    focuses = {focus for focus in focuses if focus in words["focuses"]}
     names = re.compile(r"ledger-(?P<focus>" + "|".join(map(re.escape, words["focuses"]))
                        + r")-(?P<profile>pr|nightly)-failure\.txt")
-    candidates = sorted(name for name in os.listdir(directory) if names.fullmatch(name))
-    for name in candidates:
+    found: set[str] = set()
+    for name in sorted(name for name in os.listdir(directory) if names.fullmatch(name)):
+        match = names.fullmatch(name)
+        if match["focus"] not in focuses or match["profile"] != profile:
+            result["other_files"] += 1
+            continue
         if len(result["files"]) >= MAX_FILES:
             result["truncated"] = True
             break
-        match = names.fullmatch(name)
         try:
-            text = _safe_text(directory / name)
+            data = _safe_text(directory / name)
             item = {"focus": match["focus"], "profile": match["profile"]}
-            item.update(facts_from_text(text, words, exceptions, current))
-            result["files"].append(item)
+            item.update(facts_from_text(data, words, exceptions, current))
         except (OSError, ValueError, UnicodeError):
             result["malformed_files"] += 1
+            continue
+        header = item["header"]
+        if (header.get("invocation") != invocation or header.get("engine") != engine
+                or header.get("profile") != profile or header.get("focus") != match["focus"]):
+            result["other_files"] += 1
+            continue
+        item["file_sha256"] = hashlib.sha256(data.encode("utf-8")).hexdigest()
+        result["files"].append(item)
+        found.add(match["focus"])
+    result["focuses_without_file"] = sorted(focuses - found)
     result["status"] = "AVAILABLE" if result["files"] else "NO_COUNTEREXAMPLE"
     return result
