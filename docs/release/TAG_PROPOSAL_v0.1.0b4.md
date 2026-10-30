@@ -5,7 +5,9 @@ created only after the owner approves the exact commit, the five-file release se
 below, and after the independent reviewer (Codex) agrees on this record. No PyPI upload and no deployment
 is authorized by this proposal.
 
-Status: **proposed**. The approval table and the completion record are empty.
+Status: **completed on 30 October 2026** (Nassau): GitHub prerelease `v0.1.0b4` published at 6:31:57 PM
+(2026-10-30T22:31:57Z). The approval table and the completion record below were filled after publication
+by one reviewed edit; everything above them is the reviewed proposal text, unchanged.
 
 Authority to start: owner decision of 30 October 2026, given in the Zabalack Claude session (owner-local
 record `OWNER-DECISION-ZABALACK-B4-TAG-20261030.md`): start the 0.1.0b4 tag procedure on `9cff02cb`; GitHub
@@ -129,11 +131,36 @@ each command.
 
 ## Approvals
 
-| Party | Decision | Exact commit confirmed | Date (Nassau) | Reference |
+| Party | Decision | Exact commit confirmed | Date and time (Nassau) | Reference |
 |---|---|---|---|---|
-| Owner | pending | | | |
-| Codex (independent reviewer) | pending | | | |
+| Owner | Start the procedure on `9cff02cb` | `9cff02cb` | 30 October 2026, 3:57 PM (record time) | AskUserQuestion answer in the Zabalack session (owner-local record `OWNER-DECISION-ZABALACK-B4-TAG-20261030.md`) |
+| Owner | Final approval as a rule: "as long as you and codex agree- and your advisor has no objection, move forward with all similar requests"; clarified that Codex reporting no problem in a step is enough | `9cff02cb80d98b17d256498797a86c7cb6c1c144` named in the question | 30 October 2026, 5:45 PM and 6:06 PM (record times) | AskUserQuestion answers in the Zabalack session (`OWNER-DECISION-ZABALACK-B4-FINAL-AND-STANDING-20261030.md`) |
+| Owner | Mutation-coverage difference (exception 4): "whatever you and codex agree, as long as your advisor has no objection. for this and all similar questions please" | as above | 30 October 2026, 6:18 PM (record time) | same record |
+| Codex (independent reviewer) | `AGREE_SOURCE_ONLY_EXACT_COMMIT` on this record | documentation head `99ff0336` | 30 October 2026 | `20261030T213152Z-codex-omarchy-4e0c1d1d` (after `CHANGES_REQUIRED` `d9ea27dd` on `ce0ceb35`) |
+| Codex | Step 1 source reconciliation: no finding | `main` `59b7910a` | 30 October 2026 | `20261030T214637Z-codex-omarchy-58494542` |
+| Codex | Step 3 tag identity reconciled; step 4 report changes required, then no remaining finding in the corrected report and the narrow coverage accounting | tag `27589e32` → `9cff02cb` | 30 October 2026 | `20261030T220127Z-codex-omarchy-72ed4dea`, `20261030T221628Z-codex-omarchy-dca41580`, `20261030T223108Z-codex-omarchy-ca99af23` |
+
+Codex records the owner decisions as peer-reported, because the owner gave them in the Zabalack session. Codex's
+dispositions are recorded as given: source agreement, reconciliation and "no remaining finding". None of them is
+a release approval, and the release bytes stay **NOT_INSPECTED** by Codex.
 
 ## Completion record
 
-Empty until the steps run.
+Times are UTC unless marked Nassau. Each time states its basis.
+
+| Step | Result | Time |
+|---|---|---|
+| Docs | PR #68 merged at head `99ff03368868f0f353a97d8564a16f45060aa571`; notes-bearing `main` = `59b7910a93ee0eced11a254775b9fd412c63f0b5` | clock read 21:42:23Z before the merge command; API `mergedAt` 21:42:25Z |
+| 1 | `9cff02cb` is an ancestor of `main`; the delta is exactly the five paths of exception 2, each with the named blob | right after the merge, before 21:47Z |
+| 2 | Owner rule and Codex agreement recorded above; advisor no objection | about 21:45Z |
+| 3 | annotated tag `v0.1.0b4`, object `27589e3293ec86907e7e1690f44cbcf84c2ae599`, on `9cff02cb`; tag ref pushed alone | clock reads 21:47:57Z before the tag and before the push |
+| 4 | tag run 41133668597 attempt 1: tested SHA `9cff02cb`; all jobs, security run 41133668939 and CodeQL run 41133668799 succeeded; wheel byte-identical. File-by-file comparison with the producer: differences only in run-context evidence files, the generated matrix and the derived checksums. One test's node ID carries a random UUID per run; the native raw JUnit contents are not retained and stay UNKNOWN | tag run created on the push; comparison report 21:57:26Z |
+| 4 | **Coverage exception** (owner rule): the tag run used the `pr` profile on a tag push and ran the 12 PR-catalogue mutants (12 killed); the 8 nightly-only mutants were **NOT_RUN** on the tag run. All 20 were killed on producer run 41039220769, with the same source and harness digests | disposition agreed 22:31Z (Codex `ca99af23`) |
+| 4 | **Sequence deviation**: the step-4 comparison and its report were made before Codex reviewed step 3, contrary to "each step reviewed before the next". Nothing was changed or published by step 4. Recorded as it happened; it is not relabelled as a prior review | Codex collected the step 3 and step 4 reports together at 22:00Z |
+| 5 | GitHub prerelease created (release ID 429549390), prerelease true, draft false; uploaded assets = the five files of the release set, copied from the preserved producer artifact | clock read 22:31:53Z before the command; API `publishedAt` 22:31:57Z = 6:31:57 PM Nassau |
+| 5 | post-upload: fresh download; `sha256sum -c SHA256SUMS` 4/4 OK; all five downloaded assets, `SHA256SUMS` included, equal the release-set table | download finished 22:32:07Z |
+
+The release's `target_commitish` field reads `main`, but the release uses the existing tag, which resolves to
+`9cff02cb`. The release notes published with it are the reviewed text at `59b7910a` (blob `6a5216ea…`); this edit
+changes their status line in the repository only. GitHub's automatically generated source archives are outside the
+reviewed set and were not inspected. No PyPI upload and no deployment took place.
