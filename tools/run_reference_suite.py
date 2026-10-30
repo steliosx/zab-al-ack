@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import secrets
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -61,6 +62,7 @@ def main() -> int:
         public_xml.unlink(missing_ok=True)
         command.append('--junitxml=' + str(raw_xml.relative_to(ROOT)))
         started = datetime.now(timezone.utc).isoformat()
+        env['ACK_LEDGER_INVOCATION'] = secrets.token_hex(16)
         with (raw_dir / (name + '.log')).open('w') as log:
             try:
                 run = subprocess.run(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=600)
@@ -81,6 +83,14 @@ def main() -> int:
             'exit_code': code, 'started_at': started, 'finished_at': datetime.now(timezone.utc).isoformat(),
             'junit': str(public_xml.relative_to(ROOT)) if public_xml.exists() else None})
         print(json.dumps({'phase': name, 'exit_code': code, 'layer': layer}), flush=True)
+        if name == 'postgres-wasm' and code != 0:
+            # Job log only, not the reference record: allowlisted facts of the
+            # minimized ledger sequences; the raw counterexample files stay here.
+            from native_failure_summary import failed_ledger_focuses, ledger_counterexamples
+            focuses = failed_ledger_focuses(ROOT, [row['nodeid'] for row in phase_cases if row['status'] == 'failed'])
+            print(json.dumps({'phase': name, 'ledger_counterexamples': ledger_counterexamples(
+                ROOT, env['ACK_LEDGER_INVOCATION'], 'postgres18_wasm', env['ACK_HYPOTHESIS_PROFILE'], focuses)},
+                sort_keys=True), flush=True)
     counts = {status: sum(value == status for value in observed.values()) for status in priority}
     by_layer = {layer: {status: sum(key[1] == layer and value == status for key, value in observed.items())
                  for status in priority} for layer in sorted({key[1] for key in observed})}

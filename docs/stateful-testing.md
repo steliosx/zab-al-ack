@@ -38,6 +38,30 @@ Replay the indicated profile, seed and focus; for an unseeded failure reuse the
 same private example database or apply the printed `@reproduce_failure` blob to
 the state-machine factory. Preserve the pinned Hypothesis version with a corpus.
 
+The file itself never leaves the runner. When a CI run fails, the job log
+receives facts rebuilt from it by `tools/ledger_failure_facts.py`, an allowlist
+drawn from the test module itself (owner decision, 30 October 2026). The native
+job writes them into `evidence/native-failure-summary.json`
+(`ledger_counterexamples`), which it also prints, and the reference job prints
+them after a failed `postgres-wasm` phase. Only this invocation's files are
+used: each runner passes `ACK_LEDGER_INVOCATION` (the native run id, or a fresh
+token per reference phase), the test records it in the file header, and a file
+is exported only when its invocation, engine, profile and focus match the
+failing phase and its own JUnit reports that focus as failed. Older files, for
+example from an earlier run on a persistent runner, are counted in
+`other_files`, never exported and never removed. The exported facts are: the
+focus and profile; header fields of known shape (seed, engine, invocation,
+Hypothesis version, test and migration hashes, and whether those hashes match
+the current tree); each minimized step whose rule, keyword and value the state
+machine declares, rebuilt rather than copied; the innermost frame in this test
+module (function and line); the exception class from the native summary's
+allowlist; the SHA-256 of the file; and the SHA-256 of the `@reproduce_failure`
+blob. The blob itself is opaque and stays in the private file; replay needs the
+runner's file or the example database. Messages, paths, other traceback text and
+the example database are not exported; dropped lines and header fields are
+counted. A failed focus with no matching file, for example a run killed before
+the test's exception handler wrote one, is listed in `focuses_without_file`.
+
 Run the short pure profile with:
 
 ```sh
@@ -65,8 +89,9 @@ interleavings by volume: the 28 and 29 October 2026 defects (R30, R31) each took
 roughly ten unseeded passes to reach. It uses only the free standard
 GitHub-hosted runners of this public repository; by owner decision (29 October
 2026) no paid Actions usage is enabled, and if GitHub stops starting these jobs
-the soak moves to the Forgehold laptop lane instead. Failing focuses and
-minimized sequences remain on the runner, as above.
+the soak moves to the Forgehold laptop lane instead. A failing focus and its
+minimized sequence reach the job log as allowlisted facts, as above; the raw
+counterexample file and the example database remain on the runner.
 
 The reference runner includes the pure tests in its unit phase and SQL sequences
 in the PostgreSQL WASM phase. The native runner uses the same `pg_lab` fixture and

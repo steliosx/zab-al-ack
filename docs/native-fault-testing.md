@@ -48,7 +48,10 @@ from PostgreSQL exception classes, and counts. A bounded `source_test` identifie
 is included only when the JUnit module and base function match a top-level
 `test_*` definition in the current phase's fixed source files. Test source is
 parsed without execution, at most once per module the JUnit names; parameter
-values are discarded. Missing, unsupported or unsafe identities are omitted
+values are discarded, except that a failed `test_generated_delivery_ledger` case
+also reports its `stateful_focus` when the parameter is one of the focuses the
+test module declares. For a phase that runs that test, the summary adds
+`ledger_counterexamples`, described in `docs/stateful-testing.md`. Missing, unsupported or unsafe identities are omitted
 without discarding the failure classification. Counts and classifications cover
 every case in the bounded document; `truncated` marks dropped export detail
 rather than unread input.

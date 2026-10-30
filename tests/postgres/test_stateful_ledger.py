@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import traceback
 import uuid
@@ -549,6 +550,9 @@ def test_generated_delivery_ledger(pg_lab, focus, record_property):
         migrations = source.parents[2] / "sql" / "migrations"
         path.write_text(json.dumps({"seed": chosen_seed(), "profile": profile_name(),
                                     "focus": focus, "engine": pg_lab["backend"],
+                                    # Set by the CI runners so a summary exports only
+                                    # this invocation's counterexamples.
+                                    "invocation": os.environ.get("ACK_LEDGER_INVOCATION"),
                                     "hypothesis": hypothesis.__version__,
                                     "test_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
                                     "sql_sha256": {item.name: hashlib.sha256(item.read_bytes()).hexdigest()
