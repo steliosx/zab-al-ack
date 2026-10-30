@@ -1,4 +1,5 @@
-# Forgehold minimal smoke: proves the Preloop App + Forgehold micro-VM lane end to end (checkout only, no build).
+# Forgehold minimal smoke: checks that the dispatched commit is checked out (HEAD == GITHUB_SHA) and prints two
+# FH_SMOKE markers; no build. It is not by itself evidence of App provenance, isolation, admission or cleanup.
 # Dispatch only (the Forgehold queue sends exactly one dispatch); pushing this file starts nothing.
 # Copy this file byte-for-byte; do not edit it (the queue pins its sha256).
 name: forgehold-smoke
