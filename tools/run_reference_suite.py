@@ -81,6 +81,12 @@ def main() -> int:
             'exit_code': code, 'started_at': started, 'finished_at': datetime.now(timezone.utc).isoformat(),
             'junit': str(public_xml.relative_to(ROOT)) if public_xml.exists() else None})
         print(json.dumps({'phase': name, 'exit_code': code, 'layer': layer}), flush=True)
+        if name == 'postgres-wasm' and code != 0:
+            # Job log only, not the reference record: allowlisted facts of the
+            # minimized ledger sequences; the raw counterexample files stay here.
+            from native_failure_summary import ledger_counterexamples
+            print(json.dumps({'phase': name, 'ledger_counterexamples': ledger_counterexamples(ROOT)},
+                             sort_keys=True), flush=True)
     counts = {status: sum(value == status for value in observed.values()) for status in priority}
     by_layer = {layer: {status: sum(key[1] == layer and value == status for key, value in observed.items())
                  for status in priority} for layer in sorted({key[1] for key in observed})}

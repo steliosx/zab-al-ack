@@ -311,5 +311,6 @@ nights. The owner's condition is free usage only: this public repository's
 standard hosted runners; no paid runners or minutes are to be enabled. If
 GitHub stops starting these jobs, the soak moves to the Forgehold laptop lane
 (above), coordinated with the Forgehold session, not to paid minutes. Soak runs
-are exploration, not candidate evidence; failing focuses and minimized
-sequences stay on the runner as in `docs/stateful-testing.md`.
+are exploration, not candidate evidence. A failing focus and its minimized
+sequence reach the job log as allowlisted facts; the raw files stay on the
+runner (`docs/stateful-testing.md`).

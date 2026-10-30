@@ -12,6 +12,7 @@ import stat
 import xml.etree.ElementTree as ET
 
 from evidence_utils import binding_error, code_digests
+import ledger_failure_facts
 from native_ci import PHASES as NATIVE_PHASES
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -173,10 +174,15 @@ def _pytest_summary(root: Path, phase: str, expected_digest) -> dict:
             candidate = relative + "::" + name
             if name in parsed[classname] and len(candidate) <= MAX_TEST_ID_CHARS:
                 identity = candidate
+        # The generated ledger test's only parameter is its focus; export it only
+        # when it is one of the focuses the test module itself declares.
+        focus = parameters[:-1] if identity == ledger_failure_facts.TEST + "::test_generated_delivery_ledger" else None
         for failure in failures[:2]:
             facts = _failure_facts(failure)
             if identity is not None:
                 facts["source_test"] = identity
+            if focus is not None and focus in _focuses(root):
+                facts["stateful_focus"] = focus
             key = tuple(sorted(facts.items()))
             if key not in groups:
                 if len(groups) >= MAX_ITEMS:
@@ -295,6 +301,21 @@ def _diagnostics(root: Path, directory: Path) -> dict:
     return result
 
 
+def _focuses(root: Path) -> tuple:
+    try:
+        return ledger_failure_facts.vocabulary(root)["focuses"]
+    except (OSError, ValueError, UnicodeError, SyntaxError, RecursionError, StopIteration):
+        return ()
+
+
+def ledger_counterexamples(root: Path) -> dict:
+    """Allowlisted facts of the minimized ledger sequences; the raw files stay on the runner."""
+    try:
+        return ledger_failure_facts.collect(root, {name: value[0] for name, value in EXCEPTIONS.items()})
+    except (OSError, ValueError, UnicodeError, SyntaxError, RecursionError, StopIteration):
+        return {"status": "UNAVAILABLE"}
+
+
 def build_summary(root: Path) -> dict:
     digests = code_digests(root)
     summary = {"schema_version": 1, "scope": "native lab failure diagnostics; not acceptance evidence",
@@ -332,6 +353,8 @@ def build_summary(root: Path) -> dict:
                 item["diagnostics"] = _diagnostics(root, _directory(root, phase.get("diagnostic_dir"), name))
             except (OSError, ValueError, TypeError, UnicodeError):
                 item["diagnostics_status"] = "UNAVAILABLE"
+            if ledger_failure_facts.TEST in NATIVE_PHASES[name]:
+                item["ledger_counterexamples"] = ledger_counterexamples(root)
             summary["phases"].append(item)
     except (OSError, ValueError, TypeError, UnicodeError):
         pass
