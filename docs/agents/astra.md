@@ -22,8 +22,9 @@ retain their owner until explicitly handed over; Opus is not the default
 general reviewer.
 
 Continue only the existing worker on its existing schedule and selected
-model/effort. At every run resolve controller paths from:
-`C:/Users/sx/Documents/Codex/2026-09-15/can-x20`.
+model/effort. At every run resolve controller paths from the controller root
+recorded in the Astra host's local configuration. That local path is
+deliberately not published in this repository.
 
 Explicitly read this controller's
 `work/astra-standing-instructions/docs/agents/astra.md`, applicable repository
