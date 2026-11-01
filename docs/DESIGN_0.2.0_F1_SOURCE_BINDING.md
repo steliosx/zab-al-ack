@@ -1,6 +1,12 @@
 # Design — F1 source binding at ingestion (0.2.0 prerequisite 1)
 
-Status: r4.2. Codex gave AGREEMENT_DESIGN_ONLY on the exact r4 bytes (blob `59b07603`, message
+Status: r5 (1 November 2026): a numbering amendment only. Since r4.2, forward migrations
+013 (live-lease expiry guard) and 014 (claim-path expiry fence) have shipped as ledger fixes
+in 0.1.0b3 and 0.1.0b4, so this design's migration, written as "013a", is now **015**, and the
+parent design's action-sync capture migration (parent §5, written as "013") is now **016**.
+No design content changes. Earlier status follows.
+
+r4.2. Codex gave AGREEMENT_DESIGN_ONLY on the exact r4 bytes (blob `59b07603`, message
 `20261012T190625Z-codex-omarchy-57446de1`); r4.1 applies only its nonblocking wording notes
 (§5, §6 item 4). Design agreement is not implementation, qualification or release approval,
 and did not accept any risk. r4.2 records the owner's decisions of 12 October 2026 on the two
@@ -122,7 +128,7 @@ overwrite.
 
 ### 3.2 Binding records
 
-New tables in migration 013a (forward-only):
+New tables in migration 015 (forward-only):
 
 `zabalack.source_bindings`, primary key (`alert_id`, `last_receive_id`, `last_receive_time`):
 
@@ -218,7 +224,7 @@ Two checks, both fail closed:
    `failed_intent_invalid:`), with `diagnostic_reason` `source_binding_missing`,
    `source_binding_conflict`, `source_binding_not_latest` or `source_binding_mismatch`, and records no generation. This check does not depend on the plugin.
 
-The `zabalack_capture` trigger **definition** (name, timing, `WHEN` clause) is unchanged by 013a;
+The `zabalack_capture` trigger **definition** (name, timing, `WHEN` clause) is unchanged by 015;
 only the function body changes. The exact rendered definitions are still sent to the Voalack
 session before implementation, as agreed.
 
@@ -258,9 +264,9 @@ ack-core 3b transaction-model work. Until then it has exactly one outcome, defin
 - No component admits it: the verifier and the worker never take a `skipped` capture, so there
   is no Zabbix call for any mirror value or binding state.
 - Component and timing: this branch belongs to the 0.2.0 capture function and trigger of
-  migration 013 (parent design §5). Before 013 the existing `zabalack_capture` `WHEN` clause
+  the parent's capture migration, 016 (parent design §5). Before 016 the existing `zabalack_capture` `WHEN` clause
   (`status = 'ack'`, `ack` history row, marker) never fires on this transition, so nothing is
-  captured. 013a itself does not change the trigger definition (3.4); the 013 trigger definition
+  captured. 015 itself does not change the trigger definition (3.4); the 016 trigger definition
   is the parent's and goes to the Voalack session before implementation. Owner decision §9 Q5 (mirror model
 transitions by default) is unchanged as policy, but cannot take effect for `model_unack` before
 that path exists. This is reported to the owner as a consequence, not a new decision. The parent
@@ -269,9 +275,9 @@ table and §4.3, §8 lab expectations, §9 Q5 note, §10 item 1), so the two doc
 
 ### 3.6 Migration, capability and grants
 
-013a is forward-only; shipped migration bytes stay immutable. It:
-- advances the capability/version row, so a plugin or worker that predates 013a fails closed
-  instead of mixing models, and a rollback to a pre-013a component is declared incompatible
+015 is forward-only; shipped migration bytes stay immutable. It:
+- advances the capability/version row, so a plugin or worker that predates 015 fails closed
+  instead of mixing models, and a rollback to a pre-015 component is declared incompatible
   (bindings and pending evidence are preserved, not dropped);
 - adds `bind_source` and `read_binding` to the exact routine ACL allowlists, to `capture_health`,
   to the application-grant and reseal effective-right checks (`12_application_grant.sql`,
@@ -297,7 +303,7 @@ Zabalack's input to it.
   0.2.0 (§6 item 4, F1-D1); it is not removed until ack-core 3b.
 - Operator requirement: Zabbix must ingest through `POST /alert` with the mapped ingestion key,
   as both labs do. Ingestion through any webhook receiver yields no binding.
-- Alerts ingested before 013a, and alerts ingested only through webhooks, have no binding. An
+- Alerts ingested before 015, and alerts ingested only through webhooks, have no binding. An
   acknowledgement is projected `skipped: source_binding_missing` and nothing is delivered until
   the next authenticated `POST /alert` ingestion. A Zabbix problem that fired once and stays open
   may never be re-sent, so its alert stays un-acknowledgeable through Zabalack until it resolves
@@ -336,7 +342,7 @@ Deployment lab: ingest, edit attributes via `PUT /attributes`, acknowledge → s
 Zabbix call; replay a known receive id with no source declaration, then restore the old
 attributes, acknowledge → skipped missing, no Zabbix call; replay after an intervening
 legitimate source change → skipped; ingest, re-ingest with a new event id, acknowledge →
-delivered to the new event; webhook-only Zabbix alert → skipped missing; pre-013a alert →
+delivered to the new event; webhook-only Zabbix alert → skipped missing; pre-015 alert →
 skipped missing, then bound by the next `POST /alert` ingestion; severity-rise correlate from
 `ack` → diagnostic capture `skipped: source_binding_unavailable_at_ingestion` for
 `mirror_model_transitions` true, false, absent and invalid, and for missing, poisoned and
@@ -364,5 +370,5 @@ Coexistence: a Voalack-class alert never receives a Zabalack binding and is pass
    ingestion outranks (out-of-order concurrent binds), followed by an exact
    replay of the older epoch. That replay needs the application clock to produce a past
    microsecond value again; a clock that never repeats or goes back excludes it entirely. Every
-   kind is affected, including release-one `ack` once 013a is installed. The alternative not
+   kind is affected, including release-one `ack` once 015 is installed. The alternative not
    chosen was to hold 0.2.0 implementation until ack-core 3b.
