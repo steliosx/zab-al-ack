@@ -297,6 +297,21 @@ dispatching it remains the Forgehold lane's responsibility under its own owner
 decisions, separate from this repository's source review. It produces no
 candidate evidence.
 
+## Forgehold Docker probe (owner decision, 1 November 2026)
+
+`.github/workflows/forgehold-probe-docker.yml` is a third dispatch-only workflow for
+the Forgehold lane. Its one job, `docker`, runs on `[self-hosted, Linux, X64,
+forgehold]` with a four-minute timeout, `contents: read`, no checkout, no action and
+no secrets. It only observes whether the lane's guest can run Docker. It prints one
+`PROBE_DOCKER` JSON line each for the Docker CLI, the daemon, a `docker run --rm
+hello-world` and Docker Compose v2, and then a final completion line. The job ends 0
+whatever Docker's state is, so the result is in those lines, not in the job status.
+The answer decides whether this repository's native job, which starts PostgreSQL and
+PgBouncer with Docker, could ever run in the lane. The probe produces no candidate
+evidence. The file is copied byte for byte from the Forgehold session's template
+(SHA-256 `d6cef8c65b40c71907a49b84559b4e71ecd81e5c68a764d185d8ee6a259ceeae`), which that
+session pins by hash in its queue; change it there, not here.
+
 ## Ledger soak (owner decision, 29 October 2026)
 
 `.github/workflows/soak.yml` calls `ci.yml` every three hours (`41 */3 * * *`)
