@@ -1,0 +1,53 @@
+# Forgehold lane Docker probe v2: does the guest have a usable Docker daemon? Observation only; no repository checkout.
+# Dispatch only (the Forgehold queue sends exactly one dispatch); pushing this file starts nothing.
+# Prints PROBE_DOCKER lines with fixed outcome codes only; no raw Docker output is ever printed. The job ends 0
+# whatever Docker's state is, so the markers carry the result. Copy byte-for-byte; the queue pins its sha256.
+name: forgehold-probe-docker
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forgehold-probe-docker
+  cancel-in-progress: false
+
+jobs:
+  docker:
+    runs-on: [self-hosted, Linux, X64, forgehold]
+    timeout-minutes: 4
+    steps:
+      - name: Docker probe
+        run: |
+          python3 -I - <<'PY'
+          import json, re, shutil, subprocess
+          def emit(d): print("PROBE_DOCKER " + json.dumps(d, sort_keys=True, separators=(",", ":")), flush=True)
+          def run(args, t):
+              try:
+                  r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=t)
+                  return r.returncode, "ok" if r.returncode == 0 else "command_failed", r.stdout or ""
+              except FileNotFoundError:
+                  return None, "cli_missing", ""
+              except subprocess.TimeoutExpired:
+                  return None, "timeout", ""
+          def first(out, pat):
+              line = out.strip().splitlines()[0] if out.strip() else ""
+              return line if re.fullmatch(pat, line) else None
+          if not shutil.which("docker"):
+              emit({"probe": "cli", "outcome": "cli_missing"})
+          else:
+              rc, oc, out = run(["docker", "--version"], 20)
+              v = first(out, r"Docker version [0-9A-Za-z.,+ -]{1,80}") if rc == 0 else None
+              emit({"probe": "cli", "rc": rc, "outcome": oc if (rc != 0 or v) else "version_unrecognised", "version": v})
+              rc, oc, out = run(["docker", "version", "--format", "{{.Server.Version}}"], 30)
+              sv = first(out, r"[0-9A-Za-z.+-]{1,40}") if rc == 0 else None
+              emit({"probe": "daemon", "reachable": rc == 0, "rc": rc, "outcome": oc if (rc != 0 or sv) else "version_unrecognised", "server_version": sv})
+              rc, oc, out = run(["docker", "run", "--rm", "hello-world"], 120)
+              emit({"probe": "hello_world", "rc": rc, "outcome": oc, "hello_line": "Hello from Docker!" in out})
+              rc, oc, out = run(["docker", "compose", "version"], 20)
+              cv = first(out, r"Docker Compose version [0-9A-Za-z.,+ -]{1,80}") if rc == 0 else None
+              emit({"probe": "compose_v2", "rc": rc, "outcome": oc if (rc != 0 or cv) else "version_unrecognised", "version": cv})
+          emit({"probe": "done", "result": "PASS"})
+          PY
