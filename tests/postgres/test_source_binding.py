@@ -35,6 +35,8 @@ def lab(pg_lab):
                       (CUSTOMER, INSTANCE, TRIGGER))
     yield pg_lab
     with connect_role(pg_lab, "zabalack_owner") as owner:
+        owner.execute("""DELETE FROM zabalack.verification_leases WHERE capture_id IN
+                      (SELECT capture_id FROM zabalack.captures WHERE customer=%s)""", (CUSTOMER,))
         owner.execute("""DELETE FROM zabalack.outbox WHERE capture_id IN
                       (SELECT capture_id FROM zabalack.captures WHERE customer=%s)""", (CUSTOMER,))
         owner.execute("DELETE FROM zabalack.captures WHERE customer=%s", (CUSTOMER,))
@@ -259,23 +261,67 @@ VOALACK_CLASS = {"event": "VeeamOneAlarm", "resource": "veeamone:synthetic"}
 
 
 def assert_never_claimed(lab, alert_id):
-    """claim_verification, as zabalack_worker, returns no claim for this alert's failed capture.
+    """claim_verification, as zabalack_worker, returns no claim for this alert's capture.
 
     Every other due capture is postponed and this one is made due now, so the claim (which takes
     the oldest, or every fourth turn the newest, due row) could only return this one if it were
-    admissible at all."""
+    admissible at all. The exact due times changed here are saved first and restored in a
+    `finally`, on success and on failure alike: the lab is session scoped and autocommit, so
+    nothing else would put them back (Codex F1-A-3)."""
     with connect_role(lab, "zabalack_owner") as owner:
         capture_id = owner.execute("SELECT capture_id FROM zabalack.captures WHERE alert_id=%s",
                                    (alert_id,)).fetchone()[0]
-        owner.execute("UPDATE zabalack.outbox SET due_at=clock_timestamp()+interval '1 hour' WHERE capture_id<>%s "
-                      "AND state IN ('captured_unverified','verifier_hold') AND due_at<=clock_timestamp()", (capture_id,))
-        owner.execute("UPDATE zabalack.outbox SET due_at=least(due_at,clock_timestamp()) WHERE capture_id=%s",
-                      (capture_id,))
-    for turn in range(4):   # covers the every-fourth-turn newest-first pick
-        with connect_role(lab, "zabalack_worker") as worker:
-            claimed = worker.execute("SELECT zabalack.worker_call('claim_verification',%s)", (Jsonb(
-                {"worker_id": "binding-verifier-" + uuid.uuid4().hex[:8]}),)).fetchone()[0]
-        assert claimed is None, (turn, claimed)
+        saved = owner.execute(
+            "SELECT capture_id,due_at FROM zabalack.outbox WHERE capture_id=%s OR "
+            "(state IN ('captured_unverified','verifier_hold') AND due_at<=clock_timestamp())",
+            (capture_id,)).fetchall()
+    try:
+        with connect_role(lab, "zabalack_owner") as owner:
+            others = [row[0] for row in saved if row[0] != capture_id]
+            owner.execute("UPDATE zabalack.outbox SET due_at=clock_timestamp()+interval '1 hour' "
+                          "WHERE capture_id=ANY(%s)", (others,))
+            owner.execute("UPDATE zabalack.outbox SET due_at=least(due_at,clock_timestamp()) WHERE capture_id=%s",
+                          (capture_id,))
+        for turn in range(4):   # covers the every-fourth-turn newest-first pick
+            with connect_role(lab, "zabalack_worker") as worker:
+                claimed = worker.execute("SELECT zabalack.worker_call('claim_verification',%s)", (Jsonb(
+                    {"worker_id": "binding-verifier-" + uuid.uuid4().hex[:8]}),)).fetchone()[0]
+            assert claimed is None, (turn, claimed)
+    finally:
+        with connect_role(lab, "zabalack_owner") as owner:
+            for saved_id, due_at in saved:
+                owner.execute("UPDATE zabalack.outbox SET due_at=%s WHERE capture_id=%s", (due_at, saved_id))
+
+
+def test_F1_the_no_claim_check_restores_unrelated_scheduling(lab):
+    """A due capture the check does not concern keeps its exact due time, whether the check
+    passes or fails (Codex F1-A-3 regression)."""
+    unrelated = new_alert(lab, event_id="61210")
+    with connect_role(lab, "alerta_app") as app:
+        ingest(app, unrelated, CUSTOMER, source("61210"))
+    assert acknowledge(lab, unrelated, source("61210"))[0] == [("captured_unverified", None, "captured_unverified")]
+    with connect_role(lab, "zabalack_owner") as owner:
+        owner.execute("UPDATE zabalack.outbox SET due_at='2026-01-01 00:00:00.123456+00' WHERE capture_id="
+                      "(SELECT capture_id FROM zabalack.captures WHERE alert_id=%s)", (unrelated,))
+
+    def unrelated_due():
+        with connect_role(lab, "zabalack_owner") as owner:
+            return owner.execute("SELECT o.due_at FROM zabalack.outbox o JOIN zabalack.captures c USING(capture_id) "
+                                 "WHERE c.alert_id=%s", (unrelated,)).fetchone()[0]
+    original = unrelated_due()
+
+    refused = new_alert(lab, event_id="61211", **VOALACK_CLASS)          # passing path
+    assert acknowledge(lab, refused, source("61211"))[0] == [("failed", "source_binding_missing", "failed")]
+    assert_never_claimed(lab, refused)
+    assert unrelated_due() == original
+
+    claimable = new_alert(lab, event_id="61212")                         # failing path
+    with connect_role(lab, "alerta_app") as app:
+        ingest(app, claimable, CUSTOMER, source("61212"))
+    assert acknowledge(lab, claimable, source("61212"))[0] == [("captured_unverified", None, "captured_unverified")]
+    with pytest.raises(AssertionError):
+        assert_never_claimed(lab, claimable)
+    assert unrelated_due() == original
 
 
 def test_F1_an_eligible_marked_alert_without_a_binding_fails_closed_locally(lab):
