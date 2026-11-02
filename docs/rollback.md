@@ -148,3 +148,22 @@ branch and, past the deadline, returns without a lease. It ships no new structur
    and refuses to run unless the digest it finds matches what 013 left.
 3. **It relabels no row.** An action an earlier tree already expired this way
    stays as it is; review it as the 013 section describes.
+
+## 015 F1 source binding (schema 4 -> 5)
+
+Migration 015 adds `zabalack.source_bindings`, `zabalack.binding_events`, the
+functions `bind_source()`, `read_binding()`, `select_binding()` and
+`binding_order_intact()`, a body-only change to `capture_ack()` and an extended
+`capture_health()`, and sets the schema to 5. The trigger definition is unchanged.
+
+1. **Rolling it back returns F1.** Without 015 the source of an acknowledgement
+   is again read from the alert's mutable attributes.
+2. **A pre-015 component is incompatible with a schema-5 database.** Workers and
+   plugins pin the schema and fail closed; there is no mixed-version mode.
+3. **Bindings and binding events are evidence and are never dropped.** A
+   reverse migration is not shipped; restore from a pre-upgrade backup taken as
+   `docs/deployment.md` describes if the upgrade must be undone, and keep the
+   binding tables of the abandoned installation.
+4. **After a restore or a re-run**, run `12_application_grant.sql` and then
+   `13_reseal.sql`; capture health reports unhealthy until both have run.
+

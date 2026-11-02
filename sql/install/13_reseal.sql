@@ -20,8 +20,8 @@ DO $$
 DECLARE installed integer;
 BEGIN
  SELECT schema_version INTO STRICT installed FROM zabalack.installation WHERE singleton;
- IF installed<>4 THEN
-  RAISE EXCEPTION 'expected zabalack schema version 4, found %; apply the migrations first',installed;
+ IF installed<>5 THEN
+  RAISE EXCEPTION 'expected zabalack schema version 5, found %; apply the migrations first',installed;
  END IF;
  IF to_regprocedure('zabalack.stage_generation(text,uuid,jsonb)') IS NULL
   OR to_regprocedure('zabalack.newest_generation(text)') IS NULL
@@ -29,8 +29,14 @@ BEGIN
   OR to_regprocedure('zabalack.intent_retirable(jsonb,interval,timestamptz)') IS NULL
   OR to_regprocedure('zabalack.intent_due_at(jsonb,interval)') IS NULL
   OR to_regprocedure('zabalack.claim_retirement_slot()') IS NULL
-  OR to_regclass('zabalack.alert_generations') IS NULL THEN
-  RAISE EXCEPTION 'schema version 4 objects absent; refusing to seal an incomplete tree';
+  OR to_regclass('zabalack.alert_generations') IS NULL
+  OR to_regprocedure('zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text)') IS NULL
+  OR to_regprocedure('zabalack.read_binding(text,text,timestamp without time zone)') IS NULL
+  OR to_regprocedure('zabalack.select_binding(text,text,timestamp without time zone)') IS NULL
+  OR to_regprocedure('zabalack.binding_order_intact()') IS NULL
+  OR to_regclass('zabalack.source_bindings') IS NULL
+  OR to_regclass('zabalack.binding_events') IS NULL THEN
+  RAISE EXCEPTION 'schema version 5 objects absent; refusing to seal an incomplete tree';
  END IF;
  -- Before anything below reads public.alerts: this script runs as
  -- zabalack_owner, and so do stage_generation(), project() and
@@ -79,6 +85,16 @@ BEGIN
       AND e.grantee<>0 AND pg_get_userbyid(e.grantee)=i.application_role)) THEN
   RAISE EXCEPTION 'zabalack.stage_generation() must have exactly one grantee, the recorded application role; run sql/install/12_application_grant.sql for that role, or revoke any other, before sealing';
  END IF;
+ -- 015 (F1): the same for the two binding entry points. Without them every
+ -- ingestion binds nothing and every acknowledgement is refused as unbound.
+ IF EXISTS(SELECT 1 FROM zabalack.installation i CROSS JOIN unnest(ARRAY['zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text)'::regprocedure,'zabalack.read_binding(text,text,timestamp without time zone)'::regprocedure]) entry(proc)
+    WHERE i.singleton AND ((SELECT count(*) FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+      WHERE p.oid=entry.proc AND e.grantee<>p.proowner)<>1
+     OR NOT EXISTS(SELECT 1 FROM pg_proc p CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
+      WHERE p.oid=entry.proc AND e.grantee<>p.proowner
+       AND e.grantee<>0 AND pg_get_userbyid(e.grantee)=i.application_role))) THEN
+  RAISE EXCEPTION 'zabalack.bind_source() and zabalack.read_binding() must each have exactly one grantee, the recorded application role; run sql/install/12_application_grant.sql for that role, or revoke any other, before sealing';
+ END IF;
  -- ...and it can still open a session as itself. Alerta connects as this role
  -- and no member of it is permitted, so a role altered to NOLOGIN, given a
  -- connection limit of zero, or stripped of CONNECT leaves nothing able to
@@ -122,13 +138,13 @@ BEGIN
  IF EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
     JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER') CROSS JOIN pg_proc p
     WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace
-     AND p.oid<>'zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
+     AND p.oid NOT IN ('zabalack.stage_generation(text,uuid,jsonb)'::regprocedure,'zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text)'::regprocedure,'zabalack.read_binding(text,text,timestamp without time zone)'::regprocedure)
      AND has_function_privilege(r.oid,p.oid,'EXECUTE')
      AND NOT (r.rolname=i.application_role
               AND r.oid=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)
               AND p.oid IN ('zabalack.capture_ack()'::regprocedure,
                             'zabalack.seal_installation()'::regprocedure))) THEN
-  RAISE EXCEPTION 'the recorded application role executes a zabalack function other than the staging entry point; worker_call() alone is a signature check skipped — revoke those grants before sealing';
+  RAISE EXCEPTION 'the recorded application role executes a zabalack function other than its entry points (stage_generation, bind_source, read_binding); worker_call() alone is a signature check skipped — revoke those grants before sealing';
  END IF;
  IF EXISTS(SELECT 1 FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
     JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER') CROSS JOIN pg_class c
@@ -157,7 +173,7 @@ BEGIN
                AND e.grantee IN ('zabalack_probe'::regrole,'zabalack_operator'::regrole))
            OR (p.oid IN ('zabalack.capture_ack()'::regprocedure,'zabalack.seal_installation()'::regprocedure)
                AND e.grantee=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass))
-           OR (p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
+           OR (p.oid IN ('zabalack.stage_generation(text,uuid,jsonb)'::regprocedure,'zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text)'::regprocedure,'zabalack.read_binding(text,text,timestamp without time zone)'::regprocedure)
                AND pg_get_userbyid(e.grantee)=i.application_role))) THEN
   RAISE EXCEPTION 'a zabalack function has a grantee the installation does not make; revoke it before sealing';
  END IF;
@@ -291,7 +307,7 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM zabalack.installation i
     WHERE i.singleton AND i.routine_bodies_md5 IS NOT NULL
      AND i.routine_bodies_md5=(SELECT zabalack.catalog_fingerprints()->>'routines')) THEN
-  RAISE EXCEPTION 'a zabalack routine body is not the one migration 008 shipped; sealing would record the redefinition as the baseline — restore the shipped definitions before sealing';
+  RAISE EXCEPTION 'a zabalack routine body is not the one the migrations shipped; sealing would record the redefinition as the baseline — restore the shipped definitions before sealing';
  END IF;
  -- No routine here has drifted in how it runs: every one keeps its search_path
  -- pinned to pg_catalog, zabalack, which ALTER FUNCTION ... SET search_path can
@@ -367,6 +383,12 @@ BEGIN
  END IF;
  IF NOT zabalack.generation_order_intact() THEN
   RAISE EXCEPTION 'zabalack.alert_generations_seq_seq stands below a generation already recorded; the next staging would be ordered beneath an earlier one — restore its position before sealing';
+ END IF;
+ -- 015 (F1): the same for the binding order. The selection rule reads
+ -- bind_seq DESC, so a cached, cycling or rewound generator would rank a later
+ -- binding beneath an earlier one.
+ IF NOT zabalack.binding_order_intact() THEN
+  RAISE EXCEPTION 'the sequence behind zabalack.source_bindings.bind_seq does not count upward by one without caching or cycling, or stands below a binding already recorded — restore it before sealing';
  END IF;
  -- No role outside the recorded installer topology may assume any of the four,
  -- whichever it is and whoever the member: a NOINHERIT member resolves no

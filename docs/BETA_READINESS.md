@@ -1,6 +1,6 @@
 # Beta readiness
 
-The candidate under qualification is 0.1.0b4 (assigned 29 October 2026; see amendment R31; R30 records why 0.1.0b2 and R31 why 0.1.0b3 were never tagged). Earlier results remain bound to 0.1.0b3 and before. A beta requires the intended automation to
+The candidate under qualification is 0.2.0a1 (assigned 1 November 2026; see amendment R32). It follows the GitHub prerelease `v0.1.0b4` (30 October 2026) and adds F1 source binding (migration 015, schema 5). R30 records why 0.1.0b2 and R31 why 0.1.0b3 were never tagged. Earlier results remain bound to 0.1.0b4 and before. A beta requires the intended automation to
 execute successfully on its exact commit in supported environments, plus the
 publication-owner inputs. See `ALPHA_REPORT.md` for current executed results.
 The original a16 release narrative below is historical. Its reference, mutation,

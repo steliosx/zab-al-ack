@@ -20,6 +20,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from alerta.models.alert import Alert
+from zabalack_ingestion import create_ingested
 from zabalack.config import Settings
 from zabalack.worker import Worker
 
@@ -90,7 +91,7 @@ async def test_T30_real_per_alert_batches_supplemental(persisted_api, pg_lab, co
             g.login = 'http-ingest'
             alert = Alert('synthetic-batch-' + str(uuid4()), 'stable-trigger-family', attributes=source,
                           customer='http-lab-customer', severity='major', status='open')
-            identities.append((alert.create().id, source['zabbix_event_id']))
+            identities.append((create_ingested(alert).id, source['zabbix_event_id']))  # 015 (F1)
     api_seconds, committed_at = [], {}
     started = time.monotonic()
     for identity, event_id in identities:

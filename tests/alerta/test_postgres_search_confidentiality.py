@@ -53,6 +53,7 @@ from flask import g
 from alerta.app import db, plugins
 from alerta.models.alert import Alert
 
+from zabalack_ingestion import create_ingested
 from zabalack.config import Settings
 from zabalack.normalizer import ZabbixNormaliser
 from zabalack.plugins import AckSigningPlugin, create_app
@@ -133,7 +134,7 @@ def search_api(pg_lab, pgdb, monkeypatch):
             alert = Alert("synthetic-" + str(uuid4()), "search-trigger-family", attributes=source,
                           customer=ALERT_CUSTOMER, severity="major", status="open",
                           service=["search-lab-service"])
-            return alert.create().id
+            return create_ingested(alert).id   # 015 (F1): bound as POST /alert would
 
     yield SimpleNamespace(
         client=app.test_client(), new_alert=new_alert, pgdb=pgdb,
