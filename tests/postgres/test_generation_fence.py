@@ -134,9 +134,13 @@ def stage(lab, *, issued=None, action_id=None, staged=True, extra=None):
         # 015 (F1): the alert arrived through Zabalack's authenticated ingestion.
         # The native upgrade tests build alerts on a schema-3 tree, before the
         # binding entry point exists; those alerts stay unbound, as a real
-        # pre-015 alert does (F1-D2), until they are re-ingested.
-        if conn.execute("SELECT to_regprocedure('zabalack.bind_source(text,text,timestamp without time zone,"
-                        "text,text,text,text)') IS NOT NULL").fetchone()[0]:
+        # pre-015 alert does (F1-D2), until they are re-ingested. The check reads
+        # pg_catalog, which every role can read: on a schema-3 tree alerta_app has
+        # no USAGE on zabalack (granted from 008), so a schema-qualified
+        # to_regprocedure() raises permission denied there on native PostgreSQL.
+        if conn.execute("SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n "
+                        "ON n.oid=p.pronamespace WHERE n.nspname='zabalack' AND p.proname='bind_source')"
+                        ).fetchone()[0]:
             ingest(conn, alert_id, CUSTOMER, payload["source"])
         if staged:
             conn.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
