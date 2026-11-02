@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package": "zabalack",
-  "package_version": "0.1.0b4",
+  "package_version": "0.2.0a1",
   "files": [
     {
       "path": "sql/install/00_roles.sql",
@@ -21,11 +21,11 @@
     },
     {
       "path": "sql/install/12_application_grant.sql",
-      "sha256": "857ae750952e39fd8ae865a95c20bb8d6ed3c83425ea3837b389b18d2402f014"
+      "sha256": "bd9c8c619687d2877d804839740d5aacc982e12fa8cad50334e9b5abdb85215c"
     },
     {
       "path": "sql/install/13_reseal.sql",
-      "sha256": "34f89e3192197359a435bcad1239f694007b8d326fc8611bb0feb0d19d8cfaa5"
+      "sha256": "961f10930d4acaf5dd164d9d00e9e72cce13a51711cc6f79315e8e237bcb0d7b"
     },
     {
       "path": "sql/migrate.py",
@@ -88,6 +88,10 @@
       "sha256": "6f5693db54efe839a107a0e24c9b2193dda065ae8b19b2c91776e742babeda17"
     },
     {
+      "path": "sql/migrations/015_source_binding.sql",
+      "sha256": "c273e3b57cb07f2120505f32cc34b082487f078e15a9cde231e7743ade56b291"
+    },
+    {
       "path": "sql/rollback/disable_trigger.sql",
       "sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
     },
@@ -96,5 +100,5 @@
       "sha256": "5bfbb4ecbb5f14f0fff45e40f9d60027dd7b5ea760849d52e1a2a6b0f0f1b7c8"
     }
   ],
-  "database_schema_version": 4
+  "database_schema_version": 5
 }

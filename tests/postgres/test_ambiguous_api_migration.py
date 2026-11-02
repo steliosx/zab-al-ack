@@ -15,6 +15,8 @@ def test_T28_T29_forward_application_error_migration_and_guards(pg_lab):
     new = (ROOT / 'sql/migrations/010_ambiguous_api_failure.sql').read_text()
     with connect_role(pg_lab, 'zabalack_owner') as conn:
         with conn.transaction(force_rollback=True):
+            # A schema-4 tree, as before 015: these migrations were written for it.
+            conn.execute('UPDATE zabalack.installation SET schema_version=4 WHERE singleton')
             conn.execute(old_body)
             conn.execute('SELECT zabalack.seal_installation()')
             assert conn.execute('SELECT zabalack.capture_health()').fetchone()[0]['functions_ok']
@@ -51,6 +53,8 @@ def test_T29_T31_forward_late_suspension_migration_and_guards(pg_lab):
     new = (ROOT / 'sql/migrations/011_late_ambiguous_suspension.sql').read_text()
     with connect_role(pg_lab, 'zabalack_owner') as conn:
         with conn.transaction(force_rollback=True):
+            # A schema-4 tree, as before 015: these migrations were written for it.
+            conn.execute('UPDATE zabalack.installation SET schema_version=4 WHERE singleton')
             conn.execute(old_body)
             conn.execute('SELECT zabalack.seal_installation()')
             assert conn.execute('SELECT zabalack.capture_health()').fetchone()[0]['functions_ok']
@@ -86,6 +90,8 @@ def test_T44_forward_claim_expiry_fence_migration_and_guards(pg_lab):
     new = (ROOT / 'sql/migrations/014_claim_expiry_fence.sql').read_text()
     with connect_role(pg_lab, 'zabalack_owner') as conn:
         with conn.transaction(force_rollback=True):
+            # A schema-4 tree, as before 015: these migrations were written for it.
+            conn.execute('UPDATE zabalack.installation SET schema_version=4 WHERE singleton')
             conn.execute(old_body)
             conn.execute('SELECT zabalack.seal_installation()')
             assert conn.execute('SELECT zabalack.capture_health()').fetchone()[0]['functions_ok']
@@ -130,6 +136,8 @@ def test_T43_forward_live_lease_expiry_migration_and_guards(pg_lab):
     new = (ROOT / 'sql/migrations/013_live_lease_expiry_guard.sql').read_text()
     with connect_role(pg_lab, 'zabalack_owner') as conn:
         with conn.transaction(force_rollback=True):
+            # A schema-4 tree, as before 015: these migrations were written for it.
+            conn.execute('UPDATE zabalack.installation SET schema_version=4 WHERE singleton')
             # 004's slice carries no digest re-record; 012's tail re-records
             # the routine pin over whatever bodies are live, so it runs last.
             conn.execute(old_operator)
@@ -170,6 +178,8 @@ def test_T29_T31_forward_settled_attempt_migration_and_guards(pg_lab):
     new = (ROOT / 'sql/migrations/012_settled_attempt_suspension.sql').read_text()
     with connect_role(pg_lab, 'zabalack_owner') as conn:
         with conn.transaction(force_rollback=True):
+            # A schema-4 tree, as before 015: these migrations were written for it.
+            conn.execute('UPDATE zabalack.installation SET schema_version=4 WHERE singleton')
             conn.execute(old_body)
             conn.execute('SELECT zabalack.seal_installation()')
             assert conn.execute('SELECT zabalack.capture_health()').fetchone()[0]['functions_ok']

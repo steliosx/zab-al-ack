@@ -113,7 +113,10 @@ def test_T42_the_repair_migration_refuses_what_it_cannot_repair(pg_lab):
     version_guard, routine_guard = guards_of_the_repair_migration()
     with connect_role(pg_lab, 'zabalack_owner') as owner:
         installed = owner.execute('SELECT schema_version FROM zabalack.installation WHERE singleton').fetchone()[0]
-        assert installed == 4, 'precondition: the lab is at the version 009 is written for'
+        assert installed == 5, 'precondition: the lab is at schema 5 (migration 015)'
+        # 009 was written for a schema-4 tree; present one for its guard, and
+        # restore the lab's own version below.
+        owner.execute('UPDATE zabalack.installation SET schema_version=4 WHERE singleton')
         owner.execute(version_guard)
         owner.execute(routine_guard)
         owner.execute('UPDATE zabalack.installation SET schema_version=3 WHERE singleton')

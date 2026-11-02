@@ -17,7 +17,9 @@ from flask import g
 from psycopg import sql
 from alerta.app import db, plugins
 from alerta.models.alert import Alert
+from alerta.models.key import ApiKey
 
+from zabalack_ingestion import create_ingested
 from zabalack.config import Settings
 from zabalack.crypto import verify_capture
 from zabalack.normalizer import ZabbixNormaliser
@@ -89,7 +91,7 @@ def persisted_api(pg_lab, pgdb, monkeypatch):
                 source["zabbix_event_id"] = str(event_id)
             alert = Alert("synthetic-" + str(uuid4()), "stable-trigger-family", attributes=source,
                           customer="http-lab-customer", severity="major", status="open")
-            return alert.create().id
+            return create_ingested(alert).id   # 015 (F1): bound as POST /alert would
 
     yield SimpleNamespace(app=app, client=app.test_client(), headers={"Authorization": "Bearer " + token},
                           new_alert=new_alert, pgdb=pgdb, signer=signer)
@@ -123,6 +125,82 @@ def test_T1_T36_real_HTTP_capture_then_409(persisted_api):
     with lab.pgdb("alerta_app") as app:
         history = app.execute("SELECT (history[1]).type,(history[1]).text,status FROM alerts WHERE id=%s", (identity,)).fetchone()
     assert history[0] == "ack" and history[2] == "ack" and "[zabalack:" in history[1]
+
+
+
+def _ingest_over_http(lab, event_id, **extra):
+    """One authenticated POST /alert by the mapped ingestion API key: the production path
+    through the normaliser's pre_receive and post_receive, with no fixture binding."""
+    with lab.app.test_request_context("/synthetic-lab-setup"):
+        key = ApiKey(user="http-ingest", scopes=["write:alerts"], text="synthetic F1 ingestion key",
+                     customer="http-lab-customer").create().key
+    attributes = dict(deepcopy(SOURCE), zabbix_event_id=event_id, **extra)
+    response = lab.client.post("/alert", headers={"Authorization": "Key " + key}, json=dict(
+        resource="synthetic-" + str(uuid4()), event="stable-trigger-family", environment="Production",
+        severity="major", customer="http-lab-customer", attributes=attributes))
+    assert response.status_code == 201, response.get_json()
+    return response.get_json()["id"]
+
+
+def bindings_of(lab, alert_id):
+    with lab.pgdb("alerta_app") as app:
+        epoch = app.execute("SELECT last_receive_id,last_receive_time FROM alerts WHERE id=%s", (alert_id,)).fetchone()
+    with lab.pgdb("zabalack_owner") as owner:
+        return owner.execute("""SELECT state,customer,zabbix_instance,zabbix_event_id,zabbix_trigger_id,
+                     last_receive_id=%s AND last_receive_time=%s
+                     FROM zabalack.source_bindings WHERE alert_id=%s ORDER BY bind_seq""",
+                             (epoch[0], epoch[1], alert_id)).fetchall()
+
+
+def test_F1_real_POST_alert_binds_the_epoch_and_the_acknowledgement_uses_it(persisted_api):
+    lab = persisted_api
+    identity = _ingest_over_http(lab, "910021")
+    assert bindings_of(lab, identity) == [("bound", "http-lab-customer", "http-lab", "910021", "910002", True)]
+    response = lab.client.put(f"/alert/{identity}/action", headers=lab.headers,
+                              json={"action": "ack", "text": "synthetic note"})
+    assert response.status_code == 200, response.get_json()
+    rows = capture_rows(lab, identity)
+    assert len(rows) == 1
+    assert rows[0][5]["source"]["zabbix_event_id"] == "910021"
+    with lab.pgdb("zabalack_owner") as owner:
+        assert owner.execute("SELECT o.state FROM zabalack.outbox o JOIN zabalack.captures c USING(capture_id) "
+                             "WHERE c.alert_id=%s", (identity,)).fetchall() == [("captured_unverified",)]
+
+
+@pytest.mark.parametrize("related, reason", [
+    ({"zabbix_cause_event_id": "910032", "zabbix_recovery_event_id": "910033"}, "source_binding_mismatch"),
+    ({}, "legacy_missing_mapping"),
+], ids=["related-ids-set", "related-ids-null"])
+def test_F1_an_attribute_edit_after_ingestion_cannot_retarget_the_acknowledgement(persisted_api, related, reason):
+    """Review finding F1 end to end: a principal with write access edits the alert's Zabbix
+    source attributes between ingestion and acknowledgement. The acknowledgement is never
+    signed or captured for either event.
+
+    Alerta's attribute update drops keys whose value is null. With non-null cause and
+    recovery ids the edited alert still passes source validation and the binding check
+    refuses it (source_binding_mismatch). With the usual null ids the edit removes those
+    keys, so source validation refuses first and the operator sees legacy_missing_mapping:
+    the same fail-closed result under the earlier, pre-existing reason."""
+    lab = persisted_api
+    identity = _ingest_over_http(lab, "910031", **related)
+    edited = lab.client.put(f"/alert/{identity}/attributes", headers=lab.headers,
+                            json={"attributes": {"zabbix_event_id": "910099"}})
+    assert edited.status_code == 200, edited.get_json()
+    with lab.pgdb("alerta_app") as app:
+        assert app.execute("SELECT attributes->>'zabbix_event_id' FROM alerts WHERE id=%s",
+                           (identity,)).fetchone()[0] == "910099", "precondition: the edit landed"
+    response = lab.client.put(f"/alert/{identity}/action", headers=lab.headers,
+                              json={"action": "ack", "text": "synthetic note"})
+    assert response.status_code == 200, response.get_json()
+    # The signer stages nothing: the bound source no longer matches the alert's
+    # attributes, so the acknowledgement is skipped rather than signed for either event.
+    assert capture_rows(lab, identity) == []
+    with lab.pgdb("alerta_app") as app:
+        attributes = app.execute("SELECT attributes FROM alerts WHERE id=%s", (identity,)).fetchone()[0]
+    assert attributes["zabbix_ack_sync"] == "skipped"
+    assert attributes["zabbix_ack_sync_reason"] == reason
+    assert "zabbix_ack_sync_intent" not in attributes
+    assert bindings_of(lab, identity) == [("bound", "http-lab-customer", "http-lab", "910031", "910002", True)]
 
 
 def test_T5_T6_real_status_and_attribute_changes_do_not_capture(persisted_api):

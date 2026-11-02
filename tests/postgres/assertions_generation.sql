@@ -9,6 +9,9 @@ DO $$ DECLARE ts timestamptz:=clock_timestamp(); alertid uuid:=gen_random_uuid()
 BEGIN
  INSERT INTO public.alerts(id,resource,event,status,customer,attributes,history) VALUES(alertid,'synthetic-generation','stable-trigger','open','Synthetic A',
   '{"source_system":"zabbix","zabbix_instance":"lab-zabbix","zabbix_event_id":"2000","zabbix_trigger_id":"100"}',ARRAY[]::public.history[]);
+ -- 015 (F1): model Zabalack's authenticated ingestion that binds this source.
+ UPDATE public.alerts SET last_receive_id='receive-'||alertid,last_receive_time=ts AT TIME ZONE 'UTC' WHERE id=alertid::text;
+ PERFORM zabalack.bind_source(alertid::text,'receive-'||alertid,ts AT TIME ZONE 'UTC','Synthetic A','lab-zabbix','2000','100');
  FOR n IN 1..2 LOOP
   aid:=gen_random_uuid();
   i:=jsonb_build_object('version',1,'action_id',aid,'alert_id',alertid,'customer','Synthetic A',

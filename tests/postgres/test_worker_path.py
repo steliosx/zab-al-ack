@@ -22,6 +22,7 @@ from zabalack.rpc import RPCError
 from zabalack.reconciler import Reconciler
 from zabalack.worker import Worker
 from conftest import connect_role
+from zabalack_ingestion import ingest
 
 KEY = b"synthetic-postgres-path-test-key!!"
 COHORT = {"customer": "SQL Worker Synthetic", "zabbix_instance": "lab-worker-path", "zabbix_trigger_id": "81200",
@@ -93,6 +94,7 @@ def seed(pg_lab, event_id):
     with connect_role(pg_lab, "alerta_app") as conn:
         conn.execute("INSERT INTO alerts(id,resource,event,status,customer,attributes,history) VALUES(%s,'synthetic-worker','stable-trigger','open',%s,%s,ARRAY[]::history[])",
             (intent["alert_id"], intent["customer"], Jsonb(attributes)))
+        ingest(conn, intent["alert_id"], intent["customer"], intent["source"])  # 015 (F1)
         conn.execute("UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,'stable-trigger',NULL,'ack',NULL,%s,'ack',clock_timestamp() AT TIME ZONE 'UTC',%s,NULL)::history],update_time=clock_timestamp() AT TIME ZONE 'UTC' WHERE id=%s",
             (str(uuid.uuid4()), "synthetic note " + sign_intent(intent, "lab", KEY), intent["actor"]["login"], intent["alert_id"]))
     return intent

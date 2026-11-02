@@ -102,7 +102,11 @@ def reader_lab(monkeypatch):
     # Mocked storage: the protected staging operation is recorded, not executed.
     signer = AckSigningPlugin(settings=settings, probe=SimpleNamespace(check=lambda: {}),
                               keys={"lab": b"synthetic-hmac-lab-only-32bytes!!!"},
-                              stager=lambda alert_id, intent: 1)
+                              stager=lambda alert_id, intent: 1,
+                              # 015 (F1): the alert's binding, as authenticated ingestion recorded it.
+                              binding_reader=lambda alert_id, receive_id, receive_time: {
+                                  "outcome": "usable", "customer": "lab-a",
+                                  **{key: SOURCE[key] for key in ("zabbix_instance", "zabbix_event_id", "zabbix_trigger_id")}})
     monkeypatch.setattr(plugins, "plugins", OrderedDict(signer=signer))
     monkeypatch.setattr(plugins, "rules", None)
     monkeypatch.setattr(plugins, "config", app.config)

@@ -36,6 +36,7 @@ import psycopg.errors
 import pytest
 
 from conftest import connect_role
+from zabalack_ingestion import ingest
 
 pytestmark = pytest.mark.postgres
 
@@ -130,10 +131,29 @@ def stage(lab, *, issued=None, action_id=None, staged=True, extra=None):
         conn.execute("INSERT INTO alerts(id,resource,event,status,customer,service,attributes,history) "
                      "VALUES(%s,'fence-resource','fence-event','open',%s,ARRAY['fence-service'],%s,"
                      "ARRAY[]::history[])", (alert_id, CUSTOMER, Jsonb(attributes)))
+        # 015 (F1): the alert arrived through Zabalack's authenticated ingestion.
+        # The native upgrade tests build alerts on a schema-3 tree, before the
+        # binding entry point exists; those alerts stay unbound, as a real
+        # pre-015 alert does (F1-D2), until they are re-ingested. The check reads
+        # pg_catalog, which every role can read: on a schema-3 tree alerta_app has
+        # no USAGE on zabalack (granted from 008), so a schema-qualified
+        # to_regprocedure() raises permission denied there on native PostgreSQL.
+        if conn.execute("SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n "
+                        "ON n.oid=p.pronamespace WHERE n.nspname='zabalack' AND p.proname='bind_source')"
+                        ).fetchone()[0]:
+            ingest(conn, alert_id, CUSTOMER, payload["source"])
         if staged:
             conn.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
                          (alert_id, payload["action_id"], Jsonb(payload)))
     return alert_id, event_id, payload
+
+
+def reingest(lab, alert_id, event_id):
+    """The next authenticated POST /alert ingestion of an existing alert (F1-D2: the only way a
+    pre-015 alert becomes acknowledgeable through Zabalack)."""
+    with connect_role(lab, "alerta_app") as conn:
+        ingest(conn, alert_id, CUSTOMER, {"zabbix_instance": INSTANCE, "zabbix_event_id": event_id,
+                                          "zabbix_trigger_id": TRIGGER})
 
 
 def stage_over(lab, alert_id, event_id, *, issued=None):
@@ -392,7 +412,7 @@ def test_T41_the_staging_entry_point_is_hardened_and_nothing_in_the_schema_is_pu
         assert grantees == []
     with connect_role(lab, "zabalack_probe") as probe:
         health = probe.execute("SELECT zabalack.capture_health()").fetchone()[0]
-    assert health["functions_ok"] is True and health["zabalack_schema_version"] == 4
+    assert health["functions_ok"] is True and health["zabalack_schema_version"] == 5
 
 
 # --- the sweep retires, and preserves what it must ---------------------------
@@ -1910,7 +1930,7 @@ def test_T41_a_role_that_reaches_a_recorded_installer_is_refused_too(lab):
 
 
 @pytest.mark.parametrize("grantee,refusal", [
-    ("alerta_app", "other than the staging entry point"),
+    ("alerta_app", "other than its entry points"),
     ("zabalack_probe", "a grantee the installation does not make"),
 ])
 def test_T41_a_procedure_is_executable_too(lab, grantee, refusal):
@@ -2478,7 +2498,7 @@ def test_T41_a_routine_body_is_the_one_the_migration_shipped(lab):
             ).fetchone()[0] is True, "the flags round thirty pins are untouched"
         assert health() == "false", "a redefined body is unhealthy under a matching seal"
         with connect_role(lab, "zabalack_owner") as owner:
-            with pytest.raises(Exception, match="not the one migration 008 shipped"):
+            with pytest.raises(Exception, match="not the one the migrations shipped"):
                 owner.execute(reseal)
     finally:
         with connect_role(lab, "zabalack_owner") as owner:
@@ -2509,9 +2529,9 @@ def test_T41_the_migration_refuses_a_tree_it_was_not_written_for(lab):
     with connect_role(lab, "zabalack_owner") as owner:
         installed = owner.execute("SELECT schema_version FROM zabalack.installation "
                                   "WHERE singleton").fetchone()[0]
-        assert installed == 4, "precondition: the lab is at the version 008 produces"
+        assert installed == 5, "precondition: the lab is at schema 5 (migration 015)"
         # Applying 008 again, as a retained database would have it applied.
-        with pytest.raises(Exception, match="upgrades schema 3 to 4, and found schema 4"):
+        with pytest.raises(Exception, match="upgrades schema 3 to 4, and found schema 5"):
             owner.execute(precondition)
         # ...and the superseded set's version reports 9.
         owner.execute("UPDATE zabalack.installation SET schema_version=9 WHERE singleton")
@@ -2760,7 +2780,8 @@ def test_T41_changing_the_application_role_revokes_the_former_one(lab):
         assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
 
 
-def test_T41_the_application_grant_is_exactly_one_function(lab):
+def test_T41_the_application_grant_is_exactly_the_three_entry_points(lab):
+    """Since 015 (F1): stage_generation(), bind_source() and read_binding(), no table."""
     with connect_role(lab, "zabalack_owner") as owner:
         granted = owner.execute(
             "SELECT p.proname FROM pg_proc p WHERE p.pronamespace='zabalack'::regnamespace "
@@ -2770,7 +2791,7 @@ def test_T41_the_application_grant_is_exactly_one_function(lab):
             "AND (has_table_privilege('alerta_app',c.oid,'SELECT') OR has_table_privilege('alerta_app',c.oid,'INSERT') "
             "OR has_table_privilege('alerta_app',c.oid,'UPDATE') OR has_table_privilege('alerta_app',c.oid,'DELETE'))"
         ).fetchall()
-    assert granted == [("stage_generation",)]
+    assert granted == [("bind_source",), ("read_binding",), ("stage_generation",)]
     assert tables == []
 
 
@@ -2784,7 +2805,7 @@ def test_T41_published_migrations_keep_their_registered_digests(lab):
         assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == registered[path], \
             f"{path} no longer matches its registered digest; ship a forward migration instead"
     with connect_role(lab, "zabalack_owner") as owner:
-        assert owner.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 4
+        assert owner.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 5
 
 
 # --- regressions from review -------------------------------------------------

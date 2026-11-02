@@ -26,7 +26,7 @@ import pytest
 
 from conftest import connect_role
 from test_generation_fence import (ACTION_KEY, INTENT, attributes_of, cleanup, enrol, fence,
-                                   fire_ack, intent_for, new_action, newest, project, stage,
+                                   fire_ack, intent_for, new_action, newest, project, reingest, stage,
                                    settle_through_worker_call, stage_over, stage_pre_fence, sweep,
                                    verify_through_worker_call)
 
@@ -569,7 +569,7 @@ def upgrade(lab, migrator):
         db.execute((ROOT / "sql/install/12_application_grant.sql").read_text().replace(':"alert_app_role"', '"alerta_app"'))
         db.execute((ROOT / "sql/install/13_reseal.sql").read_text())
         db.execute("RESET ROLE")
-        assert db.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 4
+        assert db.execute("SELECT schema_version FROM zabalack.installation").fetchone()[0] == 5
 
 
 def remove_live_intent(lab, alert_id):
@@ -668,7 +668,7 @@ END $$;
         assert upgrade_health(lab, healthy=True)["zabalack_schema_version"] == 3
 
         upgrade(lab, migrator)
-        assert upgrade_health(lab, healthy=True)["zabalack_schema_version"] == 4
+        assert upgrade_health(lab, healthy=True)["zabalack_schema_version"] == 5
         after = migration_state(lab)
         for table in ("captures", "outbox", "verification_leases", "actions", "effects"):
             assert after[table] == before[table], f"forward recovery rewrote retained {table}"
@@ -706,7 +706,7 @@ def test_T41_native_an_incomplete_installation_refuses_health_until_forward_reco
                         ":'installer_roles'", "''"))
                     assert owner.execute("SELECT installer_roles,application_role FROM zabalack.installation "
                                          "WHERE singleton").fetchone() == ([], None)
-            assert upgrade_health(lab, healthy=False)["zabalack_schema_version"] == 4
+            assert upgrade_health(lab, healthy=False)["zabalack_schema_version"] == 5
             with connect_role(lab, "alerta_app") as app:
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
                     app.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
@@ -729,6 +729,8 @@ def test_T41_native_an_incomplete_installation_refuses_health_until_forward_reco
                 "SELECT DISTINCT p.oid::regprocedure::text FROM pg_proc p CROSS JOIN pg_roles r "
                 "WHERE p.pronamespace='zabalack'::regnamespace AND pg_has_role('alerta_app',r.oid,'MEMBER') "
                 "AND has_function_privilege(r.oid,p.oid,'EXECUTE') ORDER BY 1").fetchall() == [
+                    ("zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text)",),
+                    ("zabalack.read_binding(text,text,timestamp without time zone)",),
                     ("zabalack.stage_generation(text,uuid,jsonb)",)]
             assert owner.execute(
                 "SELECT c.relname FROM pg_class c CROSS JOIN pg_roles r "
@@ -752,6 +754,7 @@ def test_T41_native_an_incomplete_installation_refuses_health_until_forward_reco
         with connect_role(lab, "zabalack_owner") as owner:
             owner.execute(reseal)
         upgrade_health(lab, healthy=True)
+        reingest(lab, alert_id, event_id)   # F1-D2: a pre-015 alert binds at its next ingestion
         with connect_role(lab, "alerta_app") as app:
             app.execute("SELECT zabalack.stage_generation(%s,%s,%s)",
                         (alert_id, payload["action_id"], Jsonb(payload)))
@@ -787,7 +790,7 @@ def test_T41_native_application_grant_before_installer_record_refuses_reseal_the
         assert before["readiness_manifest"] and len(before["captures"]) == len(before["outbox"]) == 1
         assert before["outbox"][0][0]["state"] == "captured_unverified", "pending capture precondition"
         assert [row[:2] for row in generations_before] == [(pending["action_id"], "migration")]
-        assert upgrade_health(lab, healthy=False)["zabalack_schema_version"] == 4
+        assert upgrade_health(lab, healthy=False)["zabalack_schema_version"] == 5
         with connect_role(lab, "zabalack_owner") as owner:
             with pytest.raises(psycopg.errors.RaiseException) as refused:
                 owner.execute(reseal)
@@ -808,7 +811,7 @@ def test_T41_native_application_grant_before_installer_record_refuses_reseal_the
         upgrade_health(lab, healthy=False)
         with connect_role(lab, "zabalack_owner") as owner:
             owner.execute(reseal)
-        assert upgrade_health(lab, healthy=True)["zabalack_schema_version"] == 4
+        assert upgrade_health(lab, healthy=True)["zabalack_schema_version"] == 5
         recovered = migration_state(lab)
         for table in ("captures", "outbox", "verification_leases", "actions", "effects"):
             assert recovered[table] == before[table], f"forward recovery rewrote retained {table}"
@@ -856,8 +859,9 @@ def test_T41_native_a_populated_database_upgrades_through_the_migration_runner(n
         assert fence(lab, malformed) == [], "a malformed intent is skipped by the backfill, not fatal to it"
         with connect_role(lab, "zabalack_probe") as probe:
             health = probe.execute("SELECT zabalack.capture_health()").fetchone()[0]
-        assert health["functions_ok"] is True and health["trigger_ok"] is True and health["zabalack_schema_version"] == 4
+        assert health["functions_ok"] is True and health["trigger_ok"] is True and health["zabalack_schema_version"] == 5
         assert project(lab, first["action_id"]) == "projection_action_generation_mismatch"
+        reingest(lab, alert_id, event_id)   # F1-D2: a pre-015 alert binds at its next ingestion
         fire_ack(lab, alert_id, second)
         verify_through_worker_call(lab, second)
         assert project(lab, second["action_id"]) == "projected"

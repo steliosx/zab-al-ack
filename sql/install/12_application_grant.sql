@@ -21,6 +21,10 @@ DO $$ BEGIN
  IF (SELECT schema_version FROM zabalack.installation WHERE singleton)<4 THEN
   RAISE EXCEPTION 'apply migration 008 before granting the staging entry point';
  END IF;
+ IF to_regprocedure('zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text)') IS NULL
+   OR to_regprocedure('zabalack.read_binding(text,text,timestamp without time zone)') IS NULL THEN
+  RAISE EXCEPTION 'apply migration 015 before granting the application entry points';
+ END IF;
 END $$;
 -- The function admits one non-owner grantee. Every existing one loses it
 -- first, so changing the application role never leaves a former role's
@@ -38,9 +42,14 @@ DECLARE former name;
 BEGIN
  FOR former IN SELECT pg_get_userbyid(e.grantee) FROM pg_proc p
    CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) e
-   WHERE p.oid='zabalack.stage_generation(text,uuid,jsonb)'::regprocedure AND e.grantee<>p.proowner AND e.grantee<>0
+   WHERE p.oid IN ('zabalack.stage_generation(text,uuid,jsonb)'::regprocedure,
+    'zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text)'::regprocedure,
+    'zabalack.read_binding(text,text,timestamp without time zone)'::regprocedure)
+    AND e.grantee<>p.proowner AND e.grantee<>0
  LOOP
   EXECUTE format('REVOKE EXECUTE ON FUNCTION zabalack.stage_generation(text,uuid,jsonb) FROM %I',former);
+  EXECUTE format('REVOKE EXECUTE ON FUNCTION zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text) FROM %I',former);
+  EXECUTE format('REVOKE EXECUTE ON FUNCTION zabalack.read_binding(text,text,timestamp without time zone) FROM %I',former);
   IF former<>ALL(ARRAY['zabalack_owner','zabalack_worker','zabalack_probe','zabalack_operator'])
    AND former<>(SELECT r.rolname FROM pg_class c JOIN pg_roles r ON r.oid=c.relowner
                 WHERE c.oid='public.alerts'::regclass) THEN
@@ -50,6 +59,9 @@ BEGIN
 END $$;
 GRANT USAGE ON SCHEMA zabalack TO :"alert_app_role";
 GRANT EXECUTE ON FUNCTION zabalack.stage_generation(text,uuid,jsonb) TO :"alert_app_role";
+-- 015 (F1): the two binding entry points, to the same role and no other.
+GRANT EXECUTE ON FUNCTION zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text) TO :"alert_app_role";
+GRANT EXECUTE ON FUNCTION zabalack.read_binding(text,text,timestamp without time zone) TO :"alert_app_role";
 -- Record the grantee. capture_health() reports functions_ok false while the
 -- function has any non-owner grantee other than this one, and 13_reseal.sql
 -- refuses to seal such a tree.
@@ -123,7 +135,9 @@ BEGIN
   FROM zabalack.installation i JOIN pg_roles a ON a.rolname=i.application_role
   JOIN pg_roles r ON pg_has_role(a.oid,r.oid,'MEMBER') CROSS JOIN pg_proc p
   WHERE i.singleton AND p.pronamespace='zabalack'::regnamespace
-   AND p.oid<>'zabalack.stage_generation(text,uuid,jsonb)'::regprocedure
+   AND p.oid NOT IN ('zabalack.stage_generation(text,uuid,jsonb)'::regprocedure,
+    'zabalack.bind_source(text,text,timestamp without time zone,text,text,text,text)'::regprocedure,
+    'zabalack.read_binding(text,text,timestamp without time zone)'::regprocedure)
    AND has_function_privilege(r.oid,p.oid,'EXECUTE')
    AND NOT (r.rolname=i.application_role
             AND r.oid=(SELECT c.relowner FROM pg_class c WHERE c.oid='public.alerts'::regclass)

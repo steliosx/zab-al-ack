@@ -148,3 +148,39 @@ branch and, past the deadline, returns without a lease. It ships no new structur
    and refuses to run unless the digest it finds matches what 013 left.
 3. **It relabels no row.** An action an earlier tree already expired this way
    stays as it is; review it as the 013 section describes.
+
+## 015 F1 source binding (schema 4 -> 5)
+
+Migration 015 adds `zabalack.source_bindings`, `zabalack.binding_events`, the
+functions `bind_source()`, `read_binding()`, `select_binding()` and
+`binding_order_intact()`, a body-only change to `capture_ack()` and an extended
+`capture_health()`, and sets the schema to 5. The trigger definition is unchanged.
+
+1. **Rolling it back returns F1.** Without 015 the source of an acknowledgement
+   is again read from the alert's mutable attributes.
+2. **A pre-015 component is incompatible with a schema-5 database.** Workers and
+   plugins pin the schema and fail closed; there is no mixed-version mode.
+3. **Bindings and binding events are evidence and are never dropped.** No
+   reverse migration is shipped, and none is written by editing 015.
+4. **First keep the system safe, whichever way you then go.** Keep every eligible
+   acknowledgement path drained (or bypassed, as above) and the external-write
+   switch false until the chosen exact version and schema are validated. Keep the
+   bindings, binding events, pending actions and any possibly-applied remote
+   effects of the installation you leave; nothing here deletes or replays them.
+5. **Undoing 015 is a restore, not a rerun of the current scripts.** Going back
+   to schema 4 means restoring a pre-015 database backup, which stays the
+   separately approved recovery operation described at the top of this page, with
+   its replication-RPO and remote-side-effect consequences. Pair the restored
+   database with the exact pre-015 package and its own install scripts (0.1.0b4
+   or earlier) and rerun *that* package's `12_application_grant.sql` and
+   `13_reseal.sql`. The 015 versions refuse a schema-4 database by design —
+   `12_application_grant.sql` stops while `bind_source()` and `read_binding()`
+   are absent ("apply migration 015"), and `13_reseal.sql` stops on any schema
+   other than 5 — and their guards are not to be weakened or bypassed. Applying
+   015 again to satisfy them is not a rollback; it is the forward path below.
+6. **Forward recovery stays on schema 5.** To repair a schema-5 installation
+   (an interrupted upgrade, a re-run, or a decision to keep F1), apply 015 through
+   the migration runner if it is not recorded yet, then run this package's
+   `12_application_grant.sql` and then `13_reseal.sql`. Capture health reads
+   unhealthy until both have run.
+

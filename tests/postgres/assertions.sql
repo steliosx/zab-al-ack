@@ -26,6 +26,9 @@ BEGIN
  INSERT INTO public.alerts(id,resource,event,status,customer,attributes,history)
   VALUES(alert_id,'synthetic:1','stable-trigger','open','Synthetic A',
    jsonb_build_object('source_system','zabbix','zabbix_instance','lab-zabbix','zabbix_event_id','1001','zabbix_trigger_id','100','custom_preserved','yes','zabbix_ack_sync_intent',i),ARRAY[]::public.history[]);
+ -- 015 (F1): model Zabalack's authenticated ingestion that binds this source.
+ UPDATE public.alerts SET last_receive_id='receive-'||alert_id,last_receive_time=ts AT TIME ZONE 'UTC' WHERE id=alert_id;
+ PERFORM zabalack.bind_source(alert_id,'receive-'||alert_id,ts AT TIME ZONE 'UTC','Synthetic A','lab-zabbix','1001','100');
  UPDATE public.alerts SET status='ack',history=ARRAY[ROW('change-1','stable-trigger',NULL,'ack',NULL,'private note '||mark,'ack',ts AT TIME ZONE 'UTC','synthetic.operator',NULL)::public.history],update_time=ts AT TIME ZONE 'UTC' WHERE id=alert_id;
  PERFORM set_config('ack_test.action_id',action_id::text,false);
 END $$;

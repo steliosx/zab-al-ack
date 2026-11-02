@@ -30,7 +30,7 @@
 </p>
 
 > [!IMPORTANT]
-> **0.1.0b4 · beta candidate under qualification · development and isolated evaluation.**
+> **0.2.0a1 · development candidate (F1 source binding) · development and isolated evaluation.** The latest beta prerelease is `v0.1.0b4`.
 > The candidate is unpublished and no production environment has been validated.
 > Production examples keep external writes disabled, with no active cohorts or endpoints.
 > See the [alpha report](ALPHA_REPORT.md) and [remaining qualification gates](docs/BETA_READINESS.md).
@@ -126,7 +126,7 @@ for native PostgreSQL, PgBouncer and optional real-Zabbix procedures.
 
 ## Status
 
-The development baseline is **0.1.0b4** (beta candidate). Current-candidate qualification and
+The development baseline is **0.2.0a1** (development candidate after the `v0.1.0b4` beta prerelease). Current-candidate qualification and
 historical test results are recorded separately; a result belongs to the exact
 revision and artifact that produced it.
 
