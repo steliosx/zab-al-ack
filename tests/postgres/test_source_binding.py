@@ -51,13 +51,14 @@ def source(event_id="61200", *, instance=INSTANCE, trigger=TRIGGER):
     return {"zabbix_instance": instance, "zabbix_event_id": event_id, "zabbix_trigger_id": trigger}
 
 
-def new_alert(lab, event_id="61200", *, source_system="zabbix", trigger=TRIGGER):
+def new_alert(lab, event_id="61200", *, source_system="zabbix", trigger=TRIGGER,
+              resource="binding-resource", event="binding-event"):
     alert_id = str(uuid.uuid4())
     attributes = {"source_system": source_system, **source(event_id, trigger=trigger)}
     with connect_role(lab, "alerta_app") as app:
         app.execute("INSERT INTO alerts(id,resource,event,status,customer,attributes,history) "
-                    "VALUES(%s,'binding-resource','binding-event','open',%s,%s,ARRAY[]::history[])",
-                    (alert_id, CUSTOMER, Jsonb(attributes)))
+                    "VALUES(%s,%s,%s,'open',%s,%s,ARRAY[]::history[])",
+                    (alert_id, resource, event, CUSTOMER, Jsonb(attributes)))
     return alert_id
 
 
@@ -88,7 +89,7 @@ def acknowledge(lab, alert_id, src, *, with_intent=True):
         if with_intent:
             app.execute("UPDATE alerts SET attributes=attributes||%s WHERE id=%s",
                         (Jsonb({"zabbix_ack_sync_intent": intent}), alert_id))
-        app.execute("UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,'binding-event',NULL,'ack',NULL,%s,'ack',"
+        app.execute("UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,event,NULL,'ack',NULL,%s,'ack',"
                     "clock_timestamp() AT TIME ZONE 'UTC',%s,NULL)::history] WHERE id=%s",
                     (str(uuid.uuid4()), "note " + sign_intent(intent, "lab", KEY), "binding-engineer", alert_id))
     with connect_role(lab, "zabalack_owner") as owner:
@@ -245,23 +246,51 @@ def test_F1_poisoned_and_superseded_epochs_are_refused_at_capture(lab):
 # --- coexistence (Voalack review, 1 November 2026) ------------------------------------------
 
 def test_F1_an_alert_outside_zabalack_eligibility_writes_no_row(lab):
-    """Not source_system=zabbix, or no enabled cohort: passed through with zero rows, marker or not."""
+    """Not source_system=zabbix, or no enabled cohort: untouched, nothing recorded (zero capture
+    rows, zero generations)."""
     foreign = new_alert(lab, source_system="voalack")
     assert acknowledge(lab, foreign, source()) == ([], 0)
     uncohorted = new_alert(lab, trigger="61999")
     assert acknowledge(lab, uncohorted, source(trigger="61999")) == ([], 0)
 
 
-def test_F1_an_eligible_alert_another_owner_also_claims_fails_closed_locally(lab):
-    """Matches Zabalack's selector and carries a [zabalack: ack but no Zabalack binding: one failed
-    local record, zero generations, no verification admission (the worker never takes a failed
-    capture), no remote call."""
-    alert_id = new_alert(lab)
+# Voalack's alert class (Astra review 61c86918): with these the alert matches both selectors.
+VOALACK_CLASS = {"event": "VeeamOneAlarm", "resource": "veeamone:synthetic"}
+
+
+def assert_never_claimed(lab, alert_id):
+    """claim_verification, as zabalack_worker, returns no claim for this alert's failed capture.
+
+    Every other due capture is postponed and this one is made due now, so the claim (which takes
+    the oldest, or every fourth turn the newest, due row) could only return this one if it were
+    admissible at all."""
+    with connect_role(lab, "zabalack_owner") as owner:
+        capture_id = owner.execute("SELECT capture_id FROM zabalack.captures WHERE alert_id=%s",
+                                   (alert_id,)).fetchone()[0]
+        owner.execute("UPDATE zabalack.outbox SET due_at=clock_timestamp()+interval '1 hour' WHERE capture_id<>%s "
+                      "AND state IN ('captured_unverified','verifier_hold') AND due_at<=clock_timestamp()", (capture_id,))
+        owner.execute("UPDATE zabalack.outbox SET due_at=least(due_at,clock_timestamp()) WHERE capture_id=%s",
+                      (capture_id,))
+    for turn in range(4):   # covers the every-fourth-turn newest-first pick
+        with connect_role(lab, "zabalack_worker") as worker:
+            claimed = worker.execute("SELECT zabalack.worker_call('claim_verification',%s)", (Jsonb(
+                {"worker_id": "binding-verifier-" + uuid.uuid4().hex[:8]}),)).fetchone()[0]
+        assert claimed is None, (turn, claimed)
+
+
+def test_F1_an_eligible_marked_alert_without_a_binding_fails_closed_locally(lab):
+    """An alert that matches Zabalack's selector and Voalack's class (event VeeamOneAlarm,
+    resource veeamone:synthetic) and carries a [zabalack: acknowledgement, with no Zabalack
+    binding: one failed local record, zero generations, and claim_verification never returns it.
+    Voalack's classifier is not run here; the overlap is in the alert's shape only."""
+    alert_id = new_alert(lab, **VOALACK_CLASS)
     rows, generations = acknowledge(lab, alert_id, source())
     assert rows == [("failed", "source_binding_missing", "failed")] and generations == 0
-    no_intent = new_alert(lab)
+    assert_never_claimed(lab, alert_id)
+    no_intent = new_alert(lab, **VOALACK_CLASS)
     rows, generations = acknowledge(lab, no_intent, source(), with_intent=False)
     assert rows == [("failed", "intent_missing", "failed")] and generations == 0
+    assert_never_claimed(lab, no_intent)
 
 
 # --- health ----------------------------------------------------------------------------------
@@ -283,6 +312,8 @@ def test_F1_a_cached_binding_generator_reads_unhealthy(lab):
     "GRANT EXECUTE ON FUNCTION zabalack.select_binding(text,text,timestamp without time zone) TO alerta_app",
 ], ids=["bind-grant-missing", "read-grant-missing", "worker-reads-bindings", "app-reaches-internal-helper"])
 def test_F1_the_binding_grant_map_is_asserted_both_ways(lab, change):
+    """A missing or extra binding grant makes capture_health() read unhealthy immediately, in the
+    same transaction. Nothing here re-seals, so no claim is made about the state after a reseal."""
     with connect_role(lab, "zabalack_owner") as owner:
         assert owner.execute("SELECT (zabalack.capture_health())->>'functions_ok'").fetchone()[0] == "true"
         with owner.transaction(force_rollback=True):
