@@ -131,8 +131,8 @@ for native PostgreSQL, PgBouncer and optional real-Zabbix procedures.
 ## Status
 
 The latest published GitHub prerelease is **0.1.0b4**, frozen at `9cff02cb`.
-Main has advanced to `be9b933f` with workflow, diagnostics and release-record
-changes. Results remain bound to the exact revision and artifact that produced them.
+Main has advanced to `ede9c939` with workflow, diagnostics, release-record
+and documentation changes. Results remain bound to the exact revision and artifact that produced them.
 
 | Area | Current position | Where to read more |
 | --- | --- | --- |
@@ -141,7 +141,34 @@ changes. Results remain bound to the exact revision and artifact that produced t
 | Evidence | Unit/mock, PostgreSQL WASM, native-service and installed-path records have distinct scopes | [Evidence guide](evidence/README.md) · [Compatibility and evidence](#compatibility-and-evidence) |
 | Production use | No production environment validated; external writes disabled by default | [Deployment](docs/deployment.md) · [Runbook](docs/runbook.md) |
 
-### Current release and evidence checkpoint — 30 October 2026
+### Current development checkpoint — 1 November 2026
+
+[Main `ede9c939`](https://github.com/steliosx/zab-al-ack/commit/ede9c939e592b4406bc5ffc2b89b08862bd17d8a)
+merges two documentation-only changes. [PR #71](https://github.com/steliosx/zab-al-ack/pull/71),
+reviewed head `c8f5254d`, removes a local controller path from the current
+role document; it does not rewrite history or grant a security clearance.
+[PR #72](https://github.com/steliosx/zab-al-ack/pull/72), head `1ef53589`,
+renumbers the planned 0.2.0 source-binding and action-sync migrations to
+**015 and 016**, because 013/014 already shipped as ledger fixes.
+The recorded Codex disposition is **design-only**. No new migration or
+0.2.0 runtime implementation is introduced by this merge.
+
+[Exact-main run 41332904614](https://github.com/steliosx/zab-al-ack/actions/runs/41332904614)
+passed all five jobs and **313 native tests with no failures/skips**.
+CodeQL, public checks and the later main soak also succeeded.
+The published b4 artifact remains frozen at `9cff02cb`; none of these
+later results changes its bytes or closes installed/live qualification.
+
+Unmerged [PR #73](https://github.com/steliosx/zab-al-ack/pull/73), exact head
+`a844f249472a1d901ef47cc77dda3382f0c4cd03`, adds a dispatch-only Docker
+probe. Source inspection confirms bounded commands and sanitized outcome
+fields. **Its job always exits zero and prints a completion PASS even when
+Docker is unavailable**: capability is determined from the individual
+`PROBE_DOCKER` observations, not the green job badge or completion marker.
+Its ordinary CI pass is not execution of the probe; no lane result was
+observed at this checkpoint. This produces no candidate or deployment evidence.
+
+### Historical release and evidence checkpoint — 30 October 2026
 
 [Main `be9b933f`](https://github.com/steliosx/zab-al-ack/commit/be9b933f9d08c2e1d97d899e1be8ba6221bcb1ea)
 records the completed b4 publication in [PR #70](https://github.com/steliosx/zab-al-ack/pull/70),
