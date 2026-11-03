@@ -6,7 +6,7 @@
   "description": "Supplemental single-backend PostgreSQL WASM checks; never native-HA evidence",
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",
-    "@electric-sql/pglite-socket": "0.2.11"
+    "@electric-sql/pglite-socket": "0.2.14"
   },
   "scripts": {
     "sql-checks": "node pglite_checks.mjs --isolated-lab",
