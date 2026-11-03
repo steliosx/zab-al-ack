@@ -30,7 +30,7 @@
 </p>
 
 > [!IMPORTANT]
-> **0.1.0b4 · published GitHub beta prerelease · development and isolated evaluation.**
+> **0.2.0a1 · unpublished development candidate · development and isolated evaluation.** The latest GitHub beta prerelease is `v0.1.0b4`.
 > [Download the prerelease](https://github.com/steliosx/zab-al-ack/releases/tag/v0.1.0b4).
 > Published on 30 October 2026 from frozen producer `9cff02cb`.
 > It is not on PyPI and is not qualified for production. External writes remain
@@ -130,18 +130,59 @@ for native PostgreSQL, PgBouncer and optional real-Zabbix procedures.
 
 ## Status
 
-The latest published GitHub prerelease is **0.1.0b4**, frozen at `9cff02cb`.
-Main has advanced to `ede9c939` with workflow, diagnostics, release-record
-and documentation changes. Results remain bound to the exact revision and artifact that produced them.
+The development baseline is **0.2.0a1**, with source binding and database schema 5.
+The latest published GitHub prerelease remains **v0.1.0b4**, frozen at `9cff02cb`.
+[Main `a92c9a68`](https://github.com/steliosx/zab-al-ack/commit/a92c9a687e9a6ef016a3100c7c814967b33a4704)
+is later development source. Results belong to the exact revision and artifact tested.
 
 | Area | Current position | Where to read more |
 | --- | --- | --- |
-| Development | Published b4 prerelease; later main changes are separate; further qualification remains | [Release notes](docs/release/RELEASE_NOTES_v0.1.0b4.md) |
+| Development | Unpublished 0.2.0a1 source; b4 remains the latest beta prerelease; further qualification remains | [Release notes](docs/release/RELEASE_NOTES_v0.1.0b4.md) |
 | Publication and acceptance | GitHub prerelease only; PyPI is not authorised; installed and deployment gates remain open | [Beta readiness](docs/BETA_READINESS.md) · [Release record](docs/release/TAG_PROPOSAL_v0.1.0b4.md) |
 | Evidence | Unit/mock, PostgreSQL WASM, native-service and installed-path records have distinct scopes | [Evidence guide](evidence/README.md) · [Compatibility and evidence](#compatibility-and-evidence) |
 | Production use | No production environment validated; external writes disabled by default | [Deployment](docs/deployment.md) · [Runbook](docs/runbook.md) |
 
-### Current development checkpoint — 1 November 2026
+### Current development checkpoint — 2 November 2026
+
+[PR #76](https://github.com/steliosx/zab-al-ack/pull/76), final head
+`2960455950c4b4906f3e2f5c43bcf4846d183390`, merged F1 source binding:
+authenticated ingestion records the source for the alert's exact receive epoch,
+and the signer and SQL capture refuse a missing, conflicting, stale or mismatched
+binding. Migration **015** advances schema 4 to **5**. Source inspection confirms
+that refused bindings do not fall back to mutable attributes. The documented
+freshness residual and pre-015/webhook no-binding window remain accepted limits;
+there is no backfill. Rollback and forward recovery are separate procedures in
+[the rollback guide](docs/rollback.md), not an interchangeable script rerun.
+
+[PR #77](https://github.com/steliosx/zab-al-ack/pull/77), head `b63e6705`,
+corrected a material evidence gap: #76's CI omitted the new F1 SQL test file.
+It is now in both native and WASM suite lists, with a list-membership regression
+guard. [Exact-main CI 41538257473](https://github.com/steliosx/zab-al-ack/actions/runs/41538257473)
+passed all five jobs. The executed native phases report **229 + 5 + 6 + 94 + 2 =
+336 passed, zero failed/skipped**, including the 20 added F1 SQL cases.
+The textual guard alone does not prove execution. CodeQL and public dependency/
+secret checks also succeeded on this main; they are separate from independent
+security acceptance.
+
+The PR records report Codex source review and Voalack coexistence review with
+explicit local/static limits. #76's body names earlier reviewed head `01cab386`;
+its final native-fixture correction is `29604559`. Original signed dispositions
+for that final head were not available to this presentation review. Automatic
+reviews on #76/#77 failed under a usage limit, not a completed clean review.
+
+[PR #73](https://github.com/steliosx/zab-al-ack/pull/73) is merged. Its
+[Docker App check](https://github.com/steliosx/zab-al-ack/runs/125472845988)
+at `b744df55` is successful, and Forgehold reports CLI/daemon/hello-world/Compose
+observations. The probe always exits zero: its green badge means completion,
+not native-job qualification; container cleanup and a usable full CI lane remain
+separate evidence.
+
+This main is **not a release or installed/live acceptance**. Fresh install,
+upgrade/rollback, installed coexistence, real Zabbix and G1–G8/A5/T40/T41 and
+successor gates keep their own requirements. Migration 016/action-sync and
+ack-core 3b are not implemented by F1 alone.
+
+### Historical development checkpoint — 1 November 2026
 
 [Main `ede9c939`](https://github.com/steliosx/zab-al-ack/commit/ede9c939e592b4406bc5ffc2b89b08862bd17d8a)
 merges two documentation-only changes. [PR #71](https://github.com/steliosx/zab-al-ack/pull/71),

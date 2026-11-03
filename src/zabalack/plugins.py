@@ -7,7 +7,7 @@ from importlib.metadata import version as installed_version
 import logging
 import traceback
 import json
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from uuid import UUID
 
 from flask import current_app, g, has_request_context, request
@@ -321,6 +321,30 @@ def stage_generation(alert_id: str, intent: dict[str, Any]) -> int:
     return int(row[0])
 
 
+def read_binding(alert_id: str, receive_id: Any, receive_time: Any) -> dict[str, Any]:
+    """F1 (migration 015): the binding the selection rule selects for this exact epoch.
+
+    Read on the request's own Alerta connection through `zabalack.read_binding()`,
+    granted to that role alone, and committed so no transaction is left open
+    before the staging below.
+    """
+    from alerta.app import db
+    connection = db.get_db()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT zabalack.read_binding(%s,%s,%s)", (alert_id, receive_id, receive_time))
+            row = cursor.fetchone()
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    value = row[0]
+    return json.loads(value) if isinstance(value, str) else dict(value)
+
+
+BINDING_REFUSALS = frozenset({"source_binding_missing", "source_binding_conflict", "source_binding_not_latest"})
+
+
 # Coexistence contract (R26). Another Alerta acknowledgement plugin declares, as CLASS
 # attributes: ACK_FOREIGN_SOURCE_PASSTHROUGH = True (it returns alerts of sources it does
 # not own unchanged and raises nothing for them) and ACK_OWNED_SOURCE_SYSTEMS, a frozenset
@@ -353,7 +377,8 @@ class AckSigningPlugin(PluginBase):
 
     def __init__(self, name: str | None = None, *, settings: Settings | None = None,
                  probe: Any = None, keys: dict[str, bytes] | None = None,
-                 stager: Callable[[str, dict[str, Any]], int] | None = None) -> None:
+                 stager: Callable[[str, dict[str, Any]], int] | None = None,
+                 binding_reader: Callable[[str, Any, Any], dict[str, Any]] | None = None) -> None:
         super().__init__(name)
         self.settings = settings
         self.probe = probe
@@ -361,6 +386,8 @@ class AckSigningPlugin(PluginBase):
         # The protected staging operation. Injected only by tests with no
         # PostgreSQL behind them; the real one is the database function.
         self.stager = stager if stager is not None else stage_generation
+        # F1: the binding read, injected only by tests with no PostgreSQL behind them.
+        self.binding_reader = binding_reader if binding_reader is not None else read_binding
         observe_routing()
 
     def pre_receive(self, alert: Any, **kwargs: Any) -> Any:
@@ -482,6 +509,25 @@ class AckSigningPlugin(PluginBase):
         if new_status != "ack":
             return project_skip(alert, "skipped_no_ack_transition", settings), action, text
         self._check_health(settings)
+        # F1 (015): stage only for the source Zabalack's authenticated ingestion
+        # recorded for this alert's exact current epoch, and take the intent's
+        # source from that binding, never from the mutable attributes. The
+        # database applies the same rule at capture; this check lets the operator
+        # see the reason without a capture row.
+        try:
+            bound = self.binding_reader(str(alert.id), getattr(alert, "last_receive_id", None),
+                                        getattr(alert, "last_receive_time", None))
+        except Exception:
+            raise AlertaException("zabalack_binding_unavailable", code=503) from None
+        outcome = bound.get("outcome") if isinstance(bound, dict) else None
+        if outcome in BINDING_REFUSALS:
+            return project_skip(alert, outcome, settings), action, text
+        if outcome != "usable":
+            raise AlertaException("zabalack_binding_unavailable", code=503)
+        bound_source = {key: bound.get(key) for key in ("zabbix_instance", "zabbix_event_id", "zabbix_trigger_id")}
+        if bound.get("customer") != alert.customer or bound_source != source:
+            return project_skip(alert, "source_binding_mismatch", settings), action, text
+        source = cast(Any, bound_source)
         try:
             intent = build_intent(
                 alert_id=str(alert.id), customer=alert.customer, source=source,

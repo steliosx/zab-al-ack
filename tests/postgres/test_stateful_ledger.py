@@ -28,6 +28,7 @@ import pytest
 
 from zabalack.crypto import BindingError, build_intent, parse_time, sign_intent, verify_capture
 from conftest import connect_role
+from zabalack_ingestion import ingest
 from property.profiles import chosen_seed, corpus_directory, profile_name, property_seed, property_settings
 
 pytestmark = pytest.mark.postgres
@@ -197,6 +198,8 @@ class LedgerMachine(RuleBasedStateMachine):
             "ON CONFLICT(id) DO UPDATE SET status='open',attributes=excluded.attributes",
             (intent["alert_id"], intent["customer"], Jsonb(attributes)),
         )
+        # 015 (F1): model the authenticated ingestion that binds this source.
+        ingest(self.conn, intent["alert_id"], intent["customer"], intent["source"])
         self.conn.execute(
             "UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,'stable-trigger',NULL,'ack',NULL,%s,'ack',"
             "clock_timestamp() AT TIME ZONE 'UTC',%s,NULL)::history] WHERE id=%s",

@@ -16,6 +16,7 @@ import pytest
 
 from zabalack.crypto import build_intent, sign_intent, verify_capture
 from conftest import connect_role
+from zabalack_ingestion import ingest
 
 pytestmark = pytest.mark.postgres
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +70,7 @@ class SettlementFixture:
         self.connection.execute("INSERT INTO alerts(id,resource,event,status,customer,attributes,history) "
             "VALUES(%s,'synthetic-expiry','stable-trigger','open',%s,%s,ARRAY[]::history[])",
             (intent["alert_id"], intent["customer"], Jsonb(attributes)))
+        ingest(self.connection, intent["alert_id"], intent["customer"], intent["source"])  # 015 (F1)
         self.connection.execute("UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,'stable-trigger',NULL,'ack',NULL,%s,"
             "'ack',clock_timestamp() AT TIME ZONE 'UTC',%s,NULL)::history] WHERE id=%s",
             (str(uuid.uuid4()), sign_intent(intent, "lab", KEY), intent["actor"]["login"], intent["alert_id"]))

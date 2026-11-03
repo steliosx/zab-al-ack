@@ -88,7 +88,11 @@ def context(monkeypatch):
     # No PostgreSQL behind this app: the protected staging operation is recorded
     # instead of executed, in the order it is called relative to the writes.
     signer = AckSigningPlugin(settings=SETTINGS, probe=probe, keys={"lab": b"synthetic-test-key-only-32bytes!!!!"},
-                              stager=lambda alert_id, intent: generations.append((alert_id, intent["action_id"], len(updates))) or 1)
+                              stager=lambda alert_id, intent: generations.append((alert_id, intent["action_id"], len(updates))) or 1,
+                              # 015 (F1): the alert's binding, as authenticated ingestion recorded it.
+                              binding_reader=lambda alert_id, receive_id, receive_time: {
+                                  "outcome": "usable", "customer": "synthetic-a",
+                                  **{key: SOURCE[key] for key in ("zabbix_instance", "zabbix_event_id", "zabbix_trigger_id")}})
     observer = Observer()
     monkeypatch.setattr(plugins, "plugins", OrderedDict(observer=observer, signer=signer))
     monkeypatch.setattr(plugins, "rules", None)
@@ -622,3 +626,56 @@ def test_T40_rebinding_the_builder_reinstalls_the_guard_at_the_rebinding(context
     qb.init_app(context.app)
 
     assert query_guard.is_installed(qb.alerts), "a fresh builder was left unguarded"
+
+
+# --- F1 (migration 015): stage only for the binding authenticated ingestion recorded ---
+
+def bound(**changes):
+    value = {"outcome": "usable", "customer": "synthetic-a",
+             **{key: SOURCE[key] for key in ("zabbix_instance", "zabbix_event_id", "zabbix_trigger_id")}}
+    value.update(changes)
+    return lambda alert_id, receive_id, receive_time: dict(value)
+
+
+@pytest.mark.parametrize("outcome", ["source_binding_missing", "source_binding_conflict", "source_binding_not_latest"])
+def test_F1_no_usable_binding_stages_nothing(context, outcome):
+    context.signer.binding_reader = bound(outcome=outcome)
+    stage(context)
+    assert context.generations == []
+    assert context.alert.attributes["zabbix_ack_sync_reason"] == outcome
+    assert "zabbix_ack_sync_intent" not in context.alert.attributes
+
+
+@pytest.mark.parametrize("changes", [{"zabbix_event_id": "402"}, {"zabbix_trigger_id": "102"},
+                                     {"zabbix_instance": "other-zbx"}, {"customer": "synthetic-b"}],
+                         ids=["event", "trigger", "instance", "customer"])
+def test_F1_attributes_that_differ_from_the_binding_stage_nothing(context, changes):
+    """An attribute edit after ingestion cannot select a source: the binding decides."""
+    context.signer.binding_reader = bound(**changes)
+    stage(context)
+    assert context.generations == []
+    assert context.alert.attributes["zabbix_ack_sync_reason"] == "source_binding_mismatch"
+
+
+@pytest.mark.parametrize("reader", [
+    lambda alert_id, receive_id, receive_time: (_ for _ in ()).throw(RuntimeError("synthetic")),
+    bound(outcome="unexpected"), lambda alert_id, receive_id, receive_time: None,
+], ids=["raises", "unknown-outcome", "not-a-mapping"])
+def test_F1_an_unreadable_binding_refuses_the_acknowledgement(context, reader):
+    context.signer.binding_reader = reader
+    with pytest.raises(AlertaException, match="zabalack_binding_unavailable"):
+        stage(context)
+    assert context.generations == []
+
+
+def test_F1_the_binding_is_read_for_the_alerts_exact_epoch(context):
+    seen = []
+    usable = bound()
+    context.signer.binding_reader = lambda *args: seen.append(args) or usable(*args)
+    context.alert.last_receive_id = "receive-1"
+    context.alert.last_receive_time = "2026-11-01T18:00:00.123456"
+    stage(context)
+    assert seen == [(ALERT_ID, "receive-1", "2026-11-01T18:00:00.123456")]
+    assert len(context.generations) == 1
+    assert context.alert.attributes["zabbix_ack_sync_intent"]["source"] == {
+        key: SOURCE[key] for key in ("zabbix_instance", "zabbix_event_id", "zabbix_trigger_id")}

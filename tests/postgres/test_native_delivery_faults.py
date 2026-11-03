@@ -21,6 +21,7 @@ import pytest
 from zabalack.crypto import build_intent, sign_intent
 from zabalack.db import Postgres
 from conftest import connect_role
+from zabalack_ingestion import ingest
 from native_support.fault_harness import SyntheticSource, WorkerProcess, protected_file
 
 pytestmark = pytest.mark.postgres
@@ -89,6 +90,7 @@ class FaultLab:
                     "INSERT INTO alerts(id,resource,event,status,customer,attributes,history) "
                     "VALUES(%s,'synthetic-native','stable-trigger','open',%s,%s,ARRAY[]::history[])",
                     (intent["alert_id"], intent["customer"], Jsonb(attributes)))
+                ingest(connection, intent["alert_id"], intent["customer"], intent["source"])  # 015 (F1)
                 connection.execute(
                     "UPDATE alerts SET status='ack',history=ARRAY[ROW(%s,'stable-trigger',NULL,'ack',NULL,%s,"
                     "'ack',clock_timestamp() AT TIME ZONE 'UTC',%s,NULL)::history],"

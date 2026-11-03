@@ -1170,3 +1170,28 @@ Identity: because 014 changes a SQL body, the candidate takes version 0.1.0b4
 released; its evidence stays bound to `c80681a1`. The GitHub prerelease
 `v0.1.0b1` stands unchanged. R24, R28, R29 and R30 carry forward. No tag,
 upload, release or deployment is authorized by this amendment.
+
+## R32 — 0.2.0a1: F1 source binding at ingestion (migration 015, schema 5; 1 November 2026)
+
+Internal review finding F1 (disclosed in the 0.1.0b1 and 0.1.0b4 notes): an Alerta
+principal with write access for the customer could edit an alert's Zabbix source
+attributes before acknowledging and so retarget the acknowledgement. Migration 015
+implements the reviewed design (`docs/DESIGN_0.2.0_F1_SOURCE_BINDING.md` r5; Codex
+design agreement on r4 and on the r5 numbering; rendered interface agreed before the
+plugin hooks were written; Voalack's coexistence reviewer accepted the documented
+overlap behaviour). From 015 an acknowledgement is delivered only to a source that
+Zabalack's authenticated `POST /alert` ingestion recorded for the alert's exact current
+epoch, and only while that record is the latest recorded binding.
+
+Owner decisions carried (12 October 2026): F1-D1, the freshness residual, accepted for
+0.2.0; F1-D2, the no-binding window with no backfill. Both appear in the changelog and
+must appear in the 0.2.0 release notes and upgrade guide.
+
+Identity: 015 changes SQL bodies and the schema version, so the candidate takes
+version 0.2.0a1, the first 0.2.0 development candidate (owner direction of 1 November
+2026 to proceed with F1; identity agreed by Codex as a proposed name). `v0.1.0b4`
+remains the published beta prerelease and is unchanged. No tag, upload, release or
+deployment is authorized by this amendment. Native PostgreSQL results, the
+deployment-lab cases (design section 5, slice B) and the `model_unack` diagnostic
+cases (dependent on 016 and ack-core 3b) are not claimed here.
+

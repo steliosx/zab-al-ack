@@ -660,9 +660,13 @@ def test_every_active_job_runs_on_the_hosted_ubuntu_2404_runner_by_owner_decisio
     # Owner priority relayed (unsigned) by the Forgehold session 2026-10-30: one dispatch-only smoke job
     # on the local Forgehold runner, identical in all four repositories; see docs/ci-evidence.md
     # "Forgehold smoke".
+    # Owner decision 2026-11-01: one dispatch-only Docker probe on the local Forgehold runner,
+    # copied byte for byte from the Forgehold session's template; see docs/ci-evidence.md
+    # "Forgehold Docker probe".
     paths = list((ROOT / '.github/workflows').glob('*.yml'))
     assert {path.name for path in paths} == {'ci.yml', 'security.yml', 'codeql.yml', 'deployment-e2e.yml',
-                                             'forgehold-lane.yml', 'forgehold-smoke.yml', 'soak.yml'}
+                                             'forgehold-lane.yml', 'forgehold-smoke.yml', 'forgehold-probe-docker.yml',
+                                             'soak.yml'}
     for path in paths:
         workflow = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
         if path.name == 'forgehold-lane.yml':
@@ -671,11 +675,14 @@ def test_every_active_job_runs_on_the_hosted_ubuntu_2404_runner_by_owner_decisio
         if path.name == 'forgehold-smoke.yml':
             assert set(workflow['on']) == {'workflow_dispatch'}
             assert set(workflow['jobs']) == {'smoke'}
+        if path.name == 'forgehold-probe-docker.yml':
+            assert set(workflow['on']) == {'workflow_dispatch'}
+            assert set(workflow['jobs']) == {'docker'}
         if path.name == 'soak.yml':
             assert workflow['jobs'] == {'soak': {'uses': './.github/workflows/ci.yml'}}
             continue
         for job in workflow['jobs'].values():
-            if path.name in ('forgehold-lane.yml', 'forgehold-smoke.yml'):
+            if path.name in ('forgehold-lane.yml', 'forgehold-smoke.yml', 'forgehold-probe-docker.yml'):
                 assert job['runs-on'] == ['self-hosted', 'Linux', 'X64', 'forgehold']
             else:
                 assert job['runs-on'] == 'ubuntu-24.04'

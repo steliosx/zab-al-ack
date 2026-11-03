@@ -1,6 +1,32 @@
 # Zab-al-ack changelog
 
-## 0.1.0b4 — 2026-10-29 (beta candidate, unpublished)
+## 0.2.0a1 — 2026-11-01 (development candidate, unpublished)
+
+- F1 source binding at ingestion (migration `015_source_binding.sql`, schema 5;
+  design `docs/DESIGN_0.2.0_F1_SOURCE_BINDING.md` r5). An acknowledgement is
+  delivered only to a source that Zabalack's own authenticated `POST /alert`
+  ingestion recorded for the alert's exact current ingestion epoch
+  (`last_receive_id`, `last_receive_time`), and only while that record is the
+  alert's latest recorded binding. Editing `zabbix_event_id` or
+  `zabbix_trigger_id` through `PUT /alert/<id>/attributes` can no longer select
+  the Zabbix event an acknowledgement goes to (internal review finding F1).
+  The normaliser binds through `zabalack.bind_source()` after each
+  authenticated `POST /alert`; the signer reads `zabalack.read_binding()` before
+  staging and takes the intent's source from the binding; `capture_ack()`
+  refuses a capture whose source is not the selected binding
+  (`source_binding_missing`, `_conflict`, `_not_latest`, `_mismatch`). The
+  `zabalack_capture` trigger definition is unchanged.
+- Upgrade: run `015`, then `12_application_grant.sql` again (it now grants the
+  two binding functions), then `13_reseal.sql`. Workers and plugins pin schema
+  5 and fail closed against schema 4.
+- Accepted by the owner for 0.2.0 (12 October 2026): alerts ingested before
+  015, and alerts ingested only through a webhook, have no binding and cannot
+  be acknowledged through Zabalack until their next authenticated `POST /alert`
+  ingestion, with no backfill (F1-D2); and the latest recorded binding is not
+  always the latest authenticated ingestion in commit order, so a narrow
+  replay residual remains until ack-core 3b (F1-D1).
+
+## 0.1.0b4 — 2026-10-29 (beta candidate; GitHub prerelease `v0.1.0b4`, 30 October 2026)
 
 - Migration `014_claim_expiry_fence.sql`: `worker_call('claim_delivery')` now
   runs its abandoned-attempt fence before its lifetime-expiry branch. Before,

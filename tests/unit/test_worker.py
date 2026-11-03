@@ -213,7 +213,7 @@ async def test_T28_health_requires_ambiguous_api_recovery_capability(capability)
     settings = Settings(external_writes_enabled=True, database_name="lab-db",
                         deployment_id="lab-deployment", config_revision="lab-revision")
     health = {"in_recovery": False, "database_name": "lab-db", "deployment_id": "lab-deployment",
-              "config_revision": "lab-revision", "zabalack_schema_version": 4,
+              "config_revision": "lab-revision", "zabalack_schema_version": 5,
               "trigger_ok": True, "functions_ok": True, "capture_disabled": False}
     if capability is not None:
         health["api_error_recovery_version"] = capability
@@ -223,6 +223,23 @@ async def test_T28_health_requires_ambiguous_api_recovery_capability(capability)
             return health
     value = Worker(settings, HealthDB(), {}, client_factory=lambda _: Client())
     assert await value.check_health() is (type(capability) is int and capability == 1)
+
+
+@pytest.mark.parametrize("schema", [4, "4", 6, None])
+async def test_F1_worker_refuses_a_database_without_the_binding_model(schema):
+    """Schema 5 is migration 015 (F1 source binding): a worker meeting a schema-4
+    database, or any other version, reports unhealthy instead of mixing models."""
+    settings = Settings(external_writes_enabled=True, database_name="lab-db",
+                        deployment_id="lab-deployment", config_revision="lab-revision")
+    health = {"in_recovery": False, "database_name": "lab-db", "deployment_id": "lab-deployment",
+              "config_revision": "lab-revision", "zabalack_schema_version": schema,
+              "api_error_recovery_version": 1,
+              "trigger_ok": True, "functions_ok": True, "capture_disabled": False}
+    class HealthDB(FakeDB):
+        async def call(self, op, payload=None):
+            return health
+    value = Worker(settings, HealthDB(), {}, client_factory=lambda _: Client())
+    assert await value.check_health() is False
 
 
 @pytest.mark.asyncio

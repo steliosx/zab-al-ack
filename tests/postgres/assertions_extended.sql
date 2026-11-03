@@ -15,6 +15,9 @@ BEGIN
   mark:='[zabalack:v1 action='||aid||' kid=lab mac='||repeat('0',64)||']';
   INSERT INTO public.alerts(id,resource,event,status,customer,attributes,history) VALUES(alertid,'synthetic:'||n,'stable-trigger','open','Synthetic A',
    jsonb_build_object('source_system','zabbix','zabbix_instance','lab-zabbix','zabbix_event_id',(1000+n)::text,'zabbix_trigger_id','100','zabbix_ack_sync_intent',i),ARRAY[]::public.history[]);
+  -- 015 (F1): model Zabalack's authenticated ingestion that binds this source.
+  UPDATE public.alerts SET last_receive_id='receive-'||alertid,last_receive_time=ts AT TIME ZONE 'UTC' WHERE id=alertid::text;
+  PERFORM zabalack.bind_source(alertid::text,'receive-'||alertid,ts AT TIME ZONE 'UTC','Synthetic A','lab-zabbix',(1000+n)::text,'100');
   UPDATE public.alerts SET status='ack',history=ARRAY[ROW('change','stable-trigger',NULL,'ack',NULL,mark,'ack',ts AT TIME ZONE 'UTC','synthetic.operator',NULL)::public.history] WHERE id=alertid::text;
  END LOOP;
 END $$;
