@@ -26,7 +26,7 @@ Repository = "https://github.com/steliosx/zab-al-ack"
 Issues = "https://github.com/steliosx/zab-al-ack/issues"
 
 [project.optional-dependencies]
-alerta = ["alerta-server==9.1.0", "psycopg2-binary==2.9.10"]
+alerta = ["alerta-server==9.1.0", "psycopg2-binary==2.9.13"]
 test = ["pytest==9.0.3", "pytest-asyncio==1.3.0", "build==1.3.0"]
 
 [project.scripts]
