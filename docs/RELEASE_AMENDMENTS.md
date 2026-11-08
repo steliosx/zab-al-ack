@@ -1195,3 +1195,36 @@ deployment is authorized by this amendment. Native PostgreSQL results, the
 deployment-lab cases (design section 5, slice B) and the `model_unack` diagnostic
 cases (dependent on 016 and ack-core 3b) are not claimed here.
 
+## R33 — 0.2.0a2: claim-path corrections (migration 016, schema 5; 8 November 2026)
+
+A read-only audit of main `a92c9a68` (tree `eb00f876`), requested by the owner on
+8 November 2026, found the cohort-policy branch of `claim_delivery` that R31 noted for review: it
+returned before the abandoned-attempt fence, so a cohort change between an
+abandoned send and the next claim recorded the send `failed` with
+`uncertain=false`, outside `reconcile_due`'s fence and `settle_unknown`'s reach.
+Direct SQL regression T45 (`tests/postgres/assertions_cohort_policy_fence.sql`)
+fails on 015's tree at case 1 and passes on 016. Migration 016 also locks the
+action before `instance_control` in `record_reconciliation` (the order
+`claim_delivery` uses), fences a verification outcome that omits its lease
+generation (T46), and accepts a capture recorded up to 5 seconds before the
+signed `issued_at` (T48; the worker applies the same allowance, so the SQL
+lifetime error stays unreachable for a capture the worker accepts).
+`test_T47_forward_claim_delivery_order_migration_and_guards` exercises 016's
+preconditions, resealing, grants and statement order from a tree carrying 014's
+body. The deadlock correction is shown by statement order only; no concurrent
+native run is claimed. `operator_call`'s pause and resume still update action rows
+after locking `instance_control`; that order is unchanged here and noted for review.
+
+Separately, `config-check` now refuses an endpoint entry without its own
+`logical_instance`, which `EndpointRegistry.resolve()` already required.
+
+Numbering: 016 is this correction, and the action-sync capture migration of
+`docs/DESIGN_0.2.0_ACTION_SYNC.md` (016 since PR #72) becomes 017. R32's mention of
+"016" refers to that design migration, now 017.
+
+Identity: 016 changes a SQL body, so the candidate takes version 0.2.0a2, as R31
+did for 014. 0.2.0a1 was never tagged, uploaded or released. `v0.1.0b4` remains
+the published beta prerelease and is unchanged. No tag, upload, release or
+deployment is authorized by this amendment. Native PostgreSQL results for 016 come
+from CI; local results are PGlite/WASM single backend only.
+

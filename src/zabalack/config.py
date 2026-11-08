@@ -168,7 +168,9 @@ def validate_settings(settings: Settings) -> Settings:
         seen.add(ident)
     for instance, endpoint in settings.endpoint_registry.items():
         validate_endpoint(endpoint, lab_mode=settings.lab_mode)
-        if endpoint.get("logical_instance", instance) != instance:
+        # The registry's resolve() requires the field, so a missing one must
+        # fail here rather than fail every delivery terminally at run time.
+        if endpoint.get("logical_instance") != instance:
             raise ConfigError("endpoint_logical_instance_mismatch")
         if endpoint["api_version"] not in settings.approved_versions:
             raise ConfigError("unrecognised_reference_version")

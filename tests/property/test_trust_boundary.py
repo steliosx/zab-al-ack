@@ -26,6 +26,9 @@ from property.profiles import property_seed, property_settings
 
 _EPOCH = datetime(2026, 1, 1, tzinfo=timezone.utc)
 _UINT64_MAX = (1 << 64) - 1
+# The reviewed clock-difference allowance (crypto.CAPTURE_CLOCK_SKEW, SQL 016),
+# pinned here as a literal so that widening it fails this suite.
+SKEW_US = 5_000_000
 _TOKEN = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789-é", max_size=20)
 _SOURCE_FIELDS = ("zabbix_instance", "zabbix_event_id", "zabbix_trigger_id")
 
@@ -283,7 +286,7 @@ def test_marker_extraction_accepts_only_one_complete_suffix(malformation, packet
     _assert_redacted(error, "marker_malformed", capture)
 
 
-@pytest.mark.parametrize("observed_us", (-1, 0, 1, 59_999_999, 60_000_000, 60_000_001))
+@pytest.mark.parametrize("observed_us", (-5_000_001, -5_000_000, -1, 0, 1, 59_999_999, 60_000_000, 60_000_001))
 @property_seed()
 @property_settings()
 @given(packet=signed_packets(), worker_delay_seconds=st.integers(61, 60 * 60 * 24 * 30))
@@ -295,7 +298,7 @@ def test_capture_interval_boundaries_depend_on_observed_time_not_worker_delay(
     # Verification is deliberately repeatable even beyond execution expiry;
     # delivery owns its separate four-hour gate, and reconciliation can verify.
     for worker_time in (issued, issued + timedelta(seconds=worker_delay_seconds)):
-        if 0 <= observed_us <= 60_000_000:
+        if -SKEW_US <= observed_us <= 60_000_000:
             assert verify_capture(capture, keys, now=worker_time) == capture["intent"]
         else:
             with pytest.raises(BindingError) as error:
@@ -316,7 +319,7 @@ def test_capture_lifetime_matches_the_observed_interval_for_generated_times(
     capture, keys, issued = packet
     capture["captured_at"] = timestamp(issued + timedelta(microseconds=observed_us))
     worker_time = issued + timedelta(seconds=worker_delay_seconds)
-    if 0 <= observed_us <= 60_000_000:
+    if -SKEW_US <= observed_us <= 60_000_000:
         assert verify_capture(capture, keys, now=worker_time) == capture["intent"]
     else:
         with pytest.raises(BindingError) as error:

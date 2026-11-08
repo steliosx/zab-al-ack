@@ -1,4 +1,4 @@
-"""T29/T31/T42/T43/T44 coordination regression; engine/lab scope follows pg_lab evidence."""
+"""T29/T31/T42/T43/T44/T45/T46/T47/T48 coordination regression; engine/lab scope follows pg_lab evidence."""
 from pathlib import Path
 import pytest
 from conftest import connect_role
@@ -84,6 +84,121 @@ def test_T44_a_claim_after_the_deadline_fences_an_abandoned_send_before_expiring
     with connect_role(pg_lab, 'zabalack_worker') as conn:
         conn.execute('RESET ROLE')
         conn.execute(script)
+
+
+def test_T45_a_cohort_change_fences_an_abandoned_send_before_failing_it(pg_lab):
+    """claim_delivery reads the delivery facts before its cohort-policy branch.
+
+    The send is recorded under a live lease, the lease expires before the
+    deadline, the cohort revision changes (or the cohort is disabled), and the
+    next claim arrives before any reconciliation pass.
+    """
+    script = Path(__file__).with_name('assertions_cohort_policy_fence.sql').read_text()
+    with connect_role(pg_lab, 'zabalack_worker') as conn:
+        conn.execute('RESET ROLE')
+        conn.execute(script)
+
+
+T46_SCRIPT = """
+BEGIN;
+DO $t46$
+DECLARE cid uuid:=gen_random_uuid(); lost boolean:=false; result jsonb;
+BEGIN
+ SET ROLE zabalack_owner;
+ INSERT INTO zabalack.captures(capture_id,alert_id,customer,snapshot,history_type,resulting_status,state)
+  VALUES(cid,cid::text,'Verification lease synthetic','{}','ack','ack','captured_unverified');
+ INSERT INTO zabalack.outbox(capture_id,due_at) VALUES(cid,clock_timestamp()+interval '1 day');
+ INSERT INTO zabalack.verification_leases(capture_id,owner,generation,expires_at)
+  VALUES(cid,'t46-verifier',7,clock_timestamp()+interval '1 minute');
+ SET ROLE zabalack_worker;
+ BEGIN
+  PERFORM zabalack.worker_call('reject_capture',jsonb_build_object('worker_id','t46-verifier','capture_id',cid,'reason','failed_intent_invalid'));
+ EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM<>'verification lease lost' THEN RAISE; END IF;
+  lost:=true;
+ END;
+ IF NOT lost THEN RAISE EXCEPTION 'T46: a verification outcome without lease_generation passed the generation fence'; END IF;
+ -- Control: the same call with the lease's own generation is accepted.
+ result:=zabalack.worker_call('reject_capture',jsonb_build_object('worker_id','t46-verifier','capture_id',cid,'lease_generation',7,'reason','failed_intent_invalid'));
+ IF result->>'state'<>'failed' THEN RAISE EXCEPTION 'T46 control: the matching generation was not accepted: %',result; END IF;
+END $t46$;
+ROLLBACK;
+"""
+
+
+def test_T46_a_verification_outcome_without_its_lease_generation_is_refused(pg_lab):
+    """verify_complete, reject_capture and hold_capture fence on the lease
+    generation; a payload that omits it is a lost lease, not a skipped check."""
+    with connect_role(pg_lab, 'zabalack_worker') as conn:
+        conn.execute('RESET ROLE')
+        conn.execute(T46_SCRIPT)
+
+
+def test_T48_verification_allows_a_bounded_signing_clock_lead(pg_lab):
+    """An intent issued up to 5 s after the database recorded its capture is
+    verified; 7 s after is refused (Alerta host clock ahead of the database)."""
+    script = Path(__file__).with_name('assertions_capture_clock_skew.sql').read_text()
+    with connect_role(pg_lab, 'zabalack_worker') as conn:
+        conn.execute('RESET ROLE')
+        conn.execute(script)
+
+
+def _branch(body, start, end):
+    begin = body.index(start)
+    return body[begin:body.index(end, begin)]
+
+
+def test_T47_forward_claim_delivery_order_migration_and_guards(pg_lab):
+    """016's own preconditions, resealing requirement, grants and statement
+    order, from a tree carrying 014's worker_call (schema 5)."""
+    import psycopg
+    old = (ROOT / 'sql/migrations/014_claim_expiry_fence.sql').read_text()
+    # 014's slice re-creates worker_call and ends with the routine-digest
+    # re-record, so it leaves a consistent schema-5 tree with 014's body.
+    old_body = old[old.index('CREATE OR REPLACE FUNCTION zabalack.worker_call'):]
+    new = (ROOT / 'sql/migrations/016_claim_delivery_order.sql').read_text()
+    with connect_role(pg_lab, 'zabalack_owner') as conn:
+        with conn.transaction(force_rollback=True):
+            conn.execute(old_body)
+            conn.execute('SELECT zabalack.seal_installation()')
+            assert conn.execute('SELECT zabalack.capture_health()').fetchone()[0]['functions_ok']
+            before = conn.execute("SELECT pg_get_functiondef('zabalack.worker_call(text,jsonb)'::regprocedure)").fetchone()[0]
+            with pytest.raises(psycopg.Error, match='found schema 4'):
+                with conn.transaction():
+                    conn.execute('UPDATE zabalack.installation SET schema_version=4 WHERE singleton')
+                    conn.execute(new)
+            with pytest.raises(psycopg.Error, match='routine body drift before 016'):
+                with conn.transaction():
+                    conn.execute("UPDATE zabalack.installation SET routine_bodies_md5='not-the-live-digest' WHERE singleton")
+                    conn.execute(new)
+            operator_before = conn.execute("SELECT pg_get_functiondef('zabalack.operator_call(text,jsonb)'::regprocedure)").fetchone()[0]
+            conn.execute(new)
+            health = conn.execute('SELECT zabalack.capture_health()').fetchone()[0]
+            assert health['zabalack_schema_version'] == 5
+            assert health['functions_ok'] is False, 'upgrade must not silently reseal'
+            worker = conn.execute("SELECT pg_get_functiondef('zabalack.worker_call(text,jsonb)'::regprocedure)").fetchone()[0]
+            operator = conn.execute("SELECT pg_get_functiondef('zabalack.operator_call(text,jsonb)'::regprocedure)").fetchone()[0]
+            assert operator == operator_before, '016 must not touch operator_call'
+            # In claim_delivery the fence now precedes the cohort-policy branch.
+            cohort = "reason='cohort_policy_changed'"
+            claim = _branch(worker, "ELSIF op='claim_delivery' THEN", "ELSIF op IN ('before_write'")
+            assert claim.index("reason='abandoned_attempt'") < claim.index(cohort)
+            old_claim = _branch(before, "ELSIF op='claim_delivery' THEN", "ELSIF op IN ('before_write'")
+            assert old_claim.index(cohort) < old_claim.index("reason='abandoned_attempt'")
+            # record_reconciliation locks the action before instance_control,
+            # the order claim_delivery uses.
+            action_lock = "FROM zabalack.actions WHERE action_id=(p->>'action_id')::uuid"
+            control_lock = 'FROM zabalack.instance_control WHERE instance='
+            record = _branch(worker, "ELSIF op='record_reconciliation' THEN", "ELSIF op='worker_stopped'")
+            assert record.index(action_lock) < record.index(control_lock)
+            old_record = _branch(before, "ELSIF op='record_reconciliation' THEN", "ELSIF op='worker_stopped'")
+            assert old_record.index(control_lock) < old_record.index(action_lock)
+            assert claim.index('FOR UPDATE OF ac') < claim.index(control_lock)
+            conn.execute('SELECT zabalack.seal_installation()')
+            assert conn.execute('SELECT zabalack.capture_health()').fetchone()[0]['functions_ok']
+            for role, function, expected in (('alerta_app', 'worker_call', False), ('zabalack_worker', 'worker_call', True),
+                                             ('alerta_app', 'operator_call', False), ('zabalack_operator', 'operator_call', True)):
+                assert conn.execute(f"SELECT has_function_privilege('{role}','zabalack.{function}(text,jsonb)','EXECUTE')").fetchone()[0] is expected
 
 
 def guards_of_the_repair_migration():

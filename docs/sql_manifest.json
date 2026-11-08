@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "package": "zabalack",
-  "package_version": "0.2.0a1",
+  "package_version": "0.2.0a2",
   "files": [
     {
       "path": "sql/install/00_roles.sql",
@@ -90,6 +90,10 @@
     {
       "path": "sql/migrations/015_source_binding.sql",
       "sha256": "c273e3b57cb07f2120505f32cc34b082487f078e15a9cde231e7743ade56b291"
+    },
+    {
+      "path": "sql/migrations/016_claim_delivery_order.sql",
+      "sha256": "3f88cd161dfe433996e480339b7e18caab723d7e7869956cff748c55ae96a235"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",

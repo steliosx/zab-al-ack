@@ -137,10 +137,10 @@
     "production_endpoints": [],
     "production_access": "NOT_AUTHORIZED_NOT_ATTEMPTED"
   },
-  "alpha_version": "0.2.0a1",
+  "alpha_version": "0.2.0a2",
   "ci_workflows": "SUPPLIED_NOT_RUN_ON_GITHUB",
   "database_schema_version": 5,
-  "database_schema_note": "0.2.0a1 requires schema 5 (migration 015, F1 source binding); the worker and the health probe refuse any other version. Schema 4 (migration 008, 0.1.0a16 to 0.1.0b4) is historical: the review_status and native_and_real_zabbix_evidence entries below describe the a16/schema-4 review and its evidence with their original dates, hashes and limits, and are not schema-5 qualification.",
+  "database_schema_note": "0.2.0a2 requires schema 5 (migration 015, F1 source binding; migration 016 replaces worker_call() and keeps schema 5); the worker and the health probe refuse any other version. Schema 4 (migration 008, 0.1.0a16 to 0.1.0b4) is historical: the review_status and native_and_real_zabbix_evidence entries below describe the a16/schema-4 review and its evidence with their original dates, hashes and limits, and are not schema-5 qualification.",
   "review_base_commit": "14b8c72f34d93b16c102013a232a995d75f7a6eb",
   "review_status": "Historical (schema 4, recorded before 015): Zab-al-ack a16 with A5 stage two under review (PR #11, unreleased): migration 008 moves the schema to 4 and adds the generation fence, zabalack.stage_generation(), the retirement sweep, the application grant (12) and re-seal (13) scripts and the matching plugin, worker and health changes; the a16 review outcome (ten writer regressions, R20 history, R21 verifier dependency) is retained in docs/RELEASE_AMENDMENTS.md",
   "native_and_real_zabbix_evidence": "a16 evidence, recorded before A5 stage two and predating every T41 case: evidence/native-run.json 42 passed, evidence/real-zabbix-run.json 6 passed, evidence/deployment-e2e-run.json 4 passed with 13/13 observations (local services, not_docker: true). The T41 native, worker and HTTP cases run in the native CI job; evidence for schema 4 is re-recorded as a new run before the next release, never by replacing these digests.",
