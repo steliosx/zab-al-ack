@@ -45,6 +45,16 @@
 - New tests: the event-identity guard (recovery event, other source or object,
   several results), the worker's own admin-exception gate, retry bounds,
   reconciler host paging and group drift.
+- CI: the `Alpha reference checks` and CodeQL concurrency groups include the
+  event name, so a push to `main` no longer cancels the scheduled run on the
+  same ref (or the reverse).
+- `tools/security_scan.py` also queries `requirements-runtime.lock`, the set
+  the Ansible install deploys; a runtime pin that drifts from
+  `requirements.lock` now fails the scan as a conflict.
+- `tests/postgres/test_ambiguous_api_migration.py` joins the native
+  `postgres` phase (it ran on WASM only). The suite-completeness guard also
+  requires every `tests/<dir>` to be named by a CI suite. A wall-clock bound
+  that only added flakiness was removed from T29.
 - Upgrade: run `016` through the migration runner, then `13_reseal.sql`.
   `12_application_grant.sql` is unchanged. Capture health reads unhealthy
   until the reseal.
