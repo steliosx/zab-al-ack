@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def run_audit(executable: str, raw_dir: Path) -> dict:
     output = ROOT / 'evidence/pip-audit.json'
     output.unlink(missing_ok=True)
-    locks = [ROOT / 'requirements.lock']
+    # requirements-runtime.lock is what deploy/ansible installs; scanning it
+    # also makes a pin that drifts from requirements.lock a conflict below.
+    locks = [ROOT / 'requirements.lock', ROOT / 'requirements-runtime.lock']
     if (ROOT / 'requirements-quality.lock').is_file():
         locks.append(ROOT / 'requirements-quality.lock')
     # Advisory queries consume names and versions, never install requirements.

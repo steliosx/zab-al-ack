@@ -14,7 +14,9 @@ env:
   TZ: UTC
   ACK_HYPOTHESIS_PROFILE: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # The event is part of the group: a push to main must not cancel the
+  # scheduled nightly run on the same ref, nor the nightly a push run.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   quality:
