@@ -98,6 +98,8 @@ def test_advisory_queries_include_quality_pins_without_enabling_installation(tmp
     import security_scan
     root = tree(tmp_path)
     (root / 'requirements.lock').write_text('base==1.0\nshared==2.0\n')
+    # The deployed runtime set is scanned too; a pin only it carries is queried.
+    (root / 'requirements-runtime.lock').write_text('runtime_only==4.0\nshared==2.0\n')
     (root / 'requirements-quality.lock').write_text('quality==3.0 --hash=sha256:abc\nshared==2.0 --hash=sha256:def\n')
     raw = root / 'build/evidence-raw'
     raw.mkdir(parents=True)
@@ -106,10 +108,23 @@ def test_advisory_queries_include_quality_pins_without_enabling_installation(tmp
     def scanner(command, **kwargs):
         assert '--disable-pip' in command and '--no-deps' in command
         query = Path(command[command.index('-r') + 1]).read_text()
-        assert query == 'base==1.0\nquality==3.0\nshared==2.0\n'
+        assert query == 'base==1.0\nquality==3.0\nruntime-only==4.0\nshared==2.0\n'
         Path(command[command.index('-o') + 1]).write_text(json.dumps({'dependencies': [
-            {'name': name, 'vulns': []} for name in ('base', 'quality', 'shared')]}))
+            {'name': name, 'vulns': []} for name in ('base', 'quality', 'runtime-only', 'shared')]}))
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(security_scan.subprocess, 'run', scanner)
     assert security_scan.run_audit('synthetic-scanner', raw)['status'] == 'PASS'
+
+
+def test_a_runtime_pin_that_drifts_from_the_application_lock_fails_the_scan(tmp_path, monkeypatch):
+    import security_scan
+    root = tree(tmp_path)
+    (root / 'requirements.lock').write_text('httpx==0.28.1\n')
+    (root / 'requirements-runtime.lock').write_text('httpx==0.28.0\n')
+    raw = root / 'build/evidence-raw'
+    raw.mkdir(parents=True)
+    monkeypatch.setattr(security_scan, 'ROOT', root)
+    with pytest.raises(ValueError, match='Conflicting advisory dependency pins'):
+        security_scan.run_audit('synthetic-scanner', raw)
+
