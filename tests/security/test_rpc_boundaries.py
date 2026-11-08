@@ -87,3 +87,23 @@ async def test_T28_redirect_never_resolves_target(token_file):
     with pytest.raises(RPCError):
         await client.call('event.get', {'eventids': ['101']})
     assert len(requests) == 1
+
+
+_EVENT = {'eventid': '101', 'objectid': '201', 'source': '0', 'object': '0', 'value': '1',
+          'clock': '1700000000', 'acknowledged': '0', 'r_eventid': '0', 'hosts': [{'hostid': '301'}]}
+
+
+@pytest.mark.parametrize(('result', 'reason'), [
+    ([_EVENT | {'value': '0'}], 'not_original_problem_event'),
+    ([_EVENT | {'source': '1'}], 'not_original_problem_event'),
+    ([_EVENT | {'object': '1'}], 'not_original_problem_event'),
+    ([_EVENT, _EVENT | {'eventid': '102'}], 'event_result_shape'),
+])
+def test_T12_only_the_single_original_problem_event_is_acknowledged(result, reason):
+    """A recovery event, another source or object, or several results never
+    reach the write, whatever the request filter returned."""
+    source = {'zabbix_event_id': '101', 'zabbix_trigger_id': '201'}
+    assert validate_event([_EVENT], source, {'host_ids': ['301']})['eventid'] == '101'
+    with pytest.raises(ValidationError, match=reason):
+        validate_event(result, source, {'host_ids': ['301']})
+

@@ -71,3 +71,49 @@ async def test_T41_a_failing_sweep_does_not_take_the_cycle_down(monkeypatch):
     assert db.calls.count('retire_intents') == 2, 'the sweep is asked again on the next cycle'
     assert db.calls.count('host_inventory_due') == 2, 'the sweep failure must not starve the other sweeps'
 
+
+class InventoryDB:
+    def __init__(self, cohort):
+        self.cohort, self.records = cohort, []
+    async def call(self, operation, payload):
+        if operation == 'host_inventory_due':
+            return [dict(self.cohort)]
+        if operation == 'claim_background':
+            return {'allowed': True, 'lease_generation': 3}
+        if operation == 'record_host_inventory':
+            self.records.append(payload)
+            self.cohort['host_cursor'] = payload.get('next_cursor', 0)
+        return {}
+
+
+class InventoryClient:
+    def __init__(self, drifted):
+        self.drifted, self.batches = drifted, []
+    async def host_get(self, batch):
+        self.batches.append(list(batch))
+        return [{'hostid': h, 'hostgroups': [{'groupid': 'other' if h in self.drifted else 'approved'}]} for h in batch]
+
+
+class AnyRegistry:
+    def resolve(self, instance):
+        return object()
+
+
+@pytest.mark.parametrize('drifted', [set(), {'55'}])
+async def test_T33_host_inventory_pages_the_cohort_and_reports_group_drift(drifted):
+    """60 approved hosts: the first pass checks 1-50 and sets the cursor to 50,
+    the second checks 51-60 and wraps to 0. A host outside the approved group
+    is reported as group drift on the pass that checks it."""
+    cohort = {'zabbix_instance': 'lab', 'customer': 'lab-customer', 'zabbix_trigger_id': '1', 'revision': 'r1',
+              'host_ids': [str(n) for n in range(1, 61)], 'group_ids': ['approved'], 'host_cursor': 0}
+    db, client = InventoryDB(cohort), InventoryClient(drifted)
+    reconciler = Reconciler(SimpleNamespace(fast_budget=200, host_inventory_seconds=900), db, AnyRegistry(),
+                            worker_id='lab-worker', client_factory=lambda endpoint: client)
+    assert await reconciler.host_inventory() == 1
+    assert await reconciler.host_inventory() == 1
+    assert [len(b) for b in client.batches] == [50, 10]
+    assert [r['next_cursor'] for r in db.records] == [50, 0]
+    expected = ['host_inventory_ok', 'cohort_host_group_drift' if drifted else 'host_inventory_ok']
+    assert [r['reason'] for r in db.records] == expected
+    assert db.records[1]['group_mismatch_ids'] == sorted(drifted)
+
