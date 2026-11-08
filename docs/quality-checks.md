@@ -17,9 +17,12 @@ dependency upgrade. Keep the two lock-file install commands separate: each lock
 carries its own hashes and scope (`requirements.lock` since 0.2.0a2).
 An offline installation can add `--no-index --find-links /path/to/wheelhouse`
 to each install command when its complete pinned wheel set is available.
-Like the quality lock, `requirements.lock` hashes only Linux (manylinux x86_64
-and aarch64) and platform-independent wheels, plus the sdists, for CPython
-3.12: an install on macOS or Windows is refused in hash-checking mode.
+`requirements.lock` covers CPython 3.12 on Linux: for each pin its hashes list
+the platform-independent wheels, the manylinux x86_64 and aarch64 wheels and
+the source archive (sdist). Binary wheels for other platforms are not listed.
+Hash checking authenticates the listed files; it does not restrict the
+platform. On another platform pip may build a pin from its hashed sdist; such
+builds are not covered or tested here.
 
 ## Enforced scope
 
