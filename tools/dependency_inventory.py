@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def generate(root: Path = ROOT) -> tuple[dict, dict]:
     names = [line.split('==')[0] for line in (root / 'requirements.lock').read_text().splitlines()
-             if line.strip() and not line.startswith('#')]
+             if line.strip() and not line.startswith(('#', ' ', '-')) and '==' in line]
     names += [line.split('==')[0] for line in (root / 'requirements-quality.lock').read_text().splitlines()
               if line.strip() and not line.startswith(('#', ' ', '-')) and '==' in line]
     names.append('zabalack')

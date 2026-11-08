@@ -37,7 +37,7 @@ jobs:
           test ! -e "$RUNNER_TEMP/venv"
           python -m venv "$RUNNER_TEMP/venv"
           printf '%s\n' "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
-      - run: python -m pip install -r requirements.lock
+      - run: python -m pip install --require-hashes -r requirements.lock
       - run: python -m pip check
       - run: flock -n "$HOME/zabalack-shared-linux-lab.lock" python tools/run_deployment_e2e.py --isolated-lab
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

@@ -55,6 +55,12 @@
   `postgres` phase (it ran on WASM only). The suite-completeness guard also
   requires every `tests/<dir>` to be named by a CI suite. A wall-clock bound
   that only added flakiness was removed from T29.
+- Supply chain: `requirements.lock` (50 pins) and `requirements-runtime.lock`
+  (9 pins) are hash-checked. Each SHA256 is taken from the official PyPI release
+  JSON for py3/abi3/cp312 wheels (any platform, or manylinux x86_64/aarch64)
+  and the sdist. CI (`ci.yml`, `deployment-e2e.yml`) and the Ansible
+  wheelhouse install pass `--require-hashes`. `tools/dependency_inventory.py`
+  reads the hashed format.
 - Upgrade: run `016` through the migration runner, then `13_reseal.sql`.
   `12_application_grant.sql` is unchanged. Capture health reads unhealthy
   until the reseal.
