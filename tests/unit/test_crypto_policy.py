@@ -152,3 +152,24 @@ def test_T19_rename_does_not_wrap_legacy_proof_in_new_signature(packet, prefix):
     capture, _ = packet
     with pytest.raises(BindingError, match='reserved_marker_in_note'):
         append_marker(prefix + 'synthetic-private-note]', capture['marker'])
+
+
+ENDPOINT = {"url": "https://zbx.example.invalid/api_jsonrpc.php", "token_file": "/run/zabalack/token",
+            "ca_file": "/run/zabalack/ca.pem", "api_version": "7.0.25"}
+
+
+@pytest.mark.parametrize("entry", [ENDPOINT, ENDPOINT | {"logical_instance": "lab-B"}])
+def test_endpoint_without_its_own_logical_instance_is_refused_at_config_check(entry):
+    """EndpointRegistry.resolve() requires logical_instance == the registry key;
+    a config that omits it must fail validation, not every delivery later."""
+    from zabalack.config import validate_settings
+    with pytest.raises(ConfigError, match="endpoint_logical_instance_mismatch"):
+        validate_settings(Settings(endpoint_registry={"lab-A": entry}, approved_versions=("7.0.25",)))
+
+
+def test_endpoint_naming_its_own_logical_instance_is_accepted_and_resolves():
+    from zabalack.config import validate_settings
+    from zabalack.rpc import EndpointRegistry
+    entry = ENDPOINT | {"logical_instance": "lab-A"}
+    validate_settings(Settings(endpoint_registry={"lab-A": entry}, approved_versions=("7.0.25",)))
+    assert EndpointRegistry({"lab-A": entry}, approved_versions=("7.0.25",)).resolve("lab-A")
