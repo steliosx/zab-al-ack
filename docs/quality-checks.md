@@ -17,6 +17,9 @@ dependency upgrade. Keep the two lock-file install commands separate: each lock
 carries its own hashes and scope (`requirements.lock` since 0.2.0a2).
 An offline installation can add `--no-index --find-links /path/to/wheelhouse`
 to each install command when its complete pinned wheel set is available.
+Like the quality lock, `requirements.lock` hashes only Linux (manylinux x86_64
+and aarch64) and platform-independent wheels, plus the sdists, for CPython
+3.12: an install on macOS or Windows is refused in hash-checking mode.
 
 ## Enforced scope
 
