@@ -10,6 +10,9 @@ from typing import Any, Literal, Mapping, TypedDict, cast
 from .config import read_protected_file
 from .policy import make_snapshot, PolicyError, SourceSnapshot
 
+# Largest accepted lead of the signing host clock over the database clock.
+CAPTURE_CLOCK_SKEW = timedelta(seconds=5)
+
 
 class ActorIdentity(TypedDict):
     login: str
@@ -240,7 +243,9 @@ def verify_capture(capture: dict[str, Any], keys: Mapping[str, bytes], now: date
         raise BindingError("history_actor_mismatch")
     observed = parse_time(capture.get("captured_at"))
     issued = parse_time(intent["issued_at"])
-    if not issued <= observed <= parse_time(intent["capture_expires_at"]):
+    # issued_at is the Alerta host's clock, captured_at the database's: allow a
+    # bounded difference on the lower bound only (SQL 016 applies the same).
+    if not issued - CAPTURE_CLOCK_SKEW <= observed <= parse_time(intent["capture_expires_at"]):
         raise BindingError("capture_expired")
     # Worker processing time does NOT govern capture expiry. Execution expiry is checked
     # separately by delivery and database before each source write (read-only reconciliation survives).

@@ -78,6 +78,18 @@ def test_key_unavailability_is_hold_not_forgery(packet):
     capture,_=packet
     with pytest.raises(KeyUnavailable):verify_capture(capture,{})
 
+@pytest.mark.parametrize(("lead", "accepted"), [(timedelta(seconds=3), True), (timedelta(seconds=5), True),
+                                                  (timedelta(seconds=5, microseconds=1), False)])
+def test_capture_allows_a_bounded_signing_clock_lead(packet, lead, accepted):
+    """issued_at is the Alerta host clock, captured_at the database clock."""
+    capture,keys=packet
+    from zabalack.crypto import parse_time
+    capture["captured_at"]=timestamp(parse_time(capture["intent"]["issued_at"])-lead)
+    if accepted:
+        assert verify_capture(capture,keys)==capture["intent"]
+    else:
+        with pytest.raises(BindingError,match="capture_expired"):verify_capture(capture,keys)
+
 def test_capture_time_uses_database_clock(packet):
     capture,keys=packet
     from zabalack.crypto import parse_time

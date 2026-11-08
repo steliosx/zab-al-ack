@@ -93,7 +93,7 @@
     },
     {
       "path": "sql/migrations/016_claim_delivery_order.sql",
-      "sha256": "4813d284cbe65d03be942acde654bb35b3c369af0c77b57e4fb87e10ab05edeb"
+      "sha256": "3f88cd161dfe433996e480339b7e18caab723d7e7869956cff748c55ae96a235"
     },
     {
       "path": "sql/rollback/disable_trigger.sql",

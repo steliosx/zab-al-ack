@@ -1,4 +1,4 @@
-"""T29/T31/T42/T43/T44/T45/T46/T47 coordination regression; engine/lab scope follows pg_lab evidence."""
+"""T29/T31/T42/T43/T44/T45/T46/T47/T48 coordination regression; engine/lab scope follows pg_lab evidence."""
 from pathlib import Path
 import pytest
 from conftest import connect_role
@@ -132,6 +132,15 @@ def test_T46_a_verification_outcome_without_its_lease_generation_is_refused(pg_l
     with connect_role(pg_lab, 'zabalack_worker') as conn:
         conn.execute('RESET ROLE')
         conn.execute(T46_SCRIPT)
+
+
+def test_T48_verification_allows_a_bounded_signing_clock_lead(pg_lab):
+    """An intent issued up to 5 s after the database recorded its capture is
+    verified; 7 s after is refused (Alerta host clock ahead of the database)."""
+    script = Path(__file__).with_name('assertions_capture_clock_skew.sql').read_text()
+    with connect_role(pg_lab, 'zabalack_worker') as conn:
+        conn.execute('RESET ROLE')
+        conn.execute(script)
 
 
 def _branch(body, start, end):

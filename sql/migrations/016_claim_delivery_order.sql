@@ -1,5 +1,5 @@
--- Correct three worker_call statements found by the read-only audit of main
--- a92c9a68 (handoffs/ZABALACK-PONYTAIL-AUDIT-a92c9a68.md). Schema stays 5.
+-- Correct four worker_call statements found by a read-only audit of main
+-- a92c9a68 (8 November 2026; amendment R33). Schema stays 5.
 --
 -- 1. claim_delivery: the cohort-policy branch ran before the abandoned-send
 --    fence. A worker records a send under a lease and dies; the lease expires;
@@ -19,8 +19,16 @@
 --    lease generation with <>. A payload without lease_generation made the
 --    comparison NULL and the check was skipped; it is now IS DISTINCT FROM,
 --    as before_write already uses.
+-- 4. verify_complete refused a capture recorded before the signed issued_at.
+--    issued_at comes from the Alerta host clock and captured_at from the
+--    database clock, so an Alerta host a few milliseconds ahead of the
+--    database refused every capture. The lower bound now allows 5 seconds;
+--    the upper bound (capture_expires_at) and the 60 s / 4 h lifetimes are
+--    unchanged. src/zabalack/crypto.py applies the same allowance
+--    (CAPTURE_CLOCK_SKEW), so a capture the worker refuses never reaches this
+--    statement and one it accepts is not refused here.
 --
--- worker_call's body is 014's with those three changes; operator_call is not
+-- worker_call's body is 014's with those four changes; operator_call is not
 -- touched. No row is relabelled. Run 13_reseal.sql afterwards.
 DO $$
 DECLARE installed integer;
@@ -107,7 +115,7 @@ BEGIN
    DELETE FROM zabalack.verification_leases WHERE capture_id=cid;
    RETURN jsonb_build_object('state','failed','reason','failed_actor_or_cohort_policy');
   END IF;
-  IF c.captured_at<(i->>'issued_at')::timestamptz OR c.captured_at>(i->>'capture_expires_at')::timestamptz
+  IF c.captured_at<(i->>'issued_at')::timestamptz-interval '5 seconds' OR c.captured_at>(i->>'capture_expires_at')::timestamptz
     OR (i->>'capture_expires_at')::timestamptz>(i->>'issued_at')::timestamptz+interval '60 seconds'
     OR (i->>'execution_expires_at')::timestamptz>(i->>'issued_at')::timestamptz+interval '4 hours' THEN RAISE EXCEPTION 'invalid capture lifetime'; END IF;
   aid:=(i->>'action_id')::uuid;

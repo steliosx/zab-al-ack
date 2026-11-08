@@ -40,7 +40,7 @@ CATALOG = (
            'or capture.get("history_user") != intent["actor"]["login"]):',
            'or False):', 'T8/T14: committed history must identify the signed actor'),
     Mutant('capture_window_removed', 'src/zabalack/crypto.py',
-           'if not issued <= observed <= parse_time(intent["capture_expires_at"]):',
+           'if not issued - CAPTURE_CLOCK_SKEW <= observed <= parse_time(intent["capture_expires_at"]):',
            'if False:', 'T9: database observation must fall within the original capture window'),
     Mutant('actor_customer_scope_removed', 'src/zabalack/policy.py',
            'return actor.get("admin") is False and customer in actor.get("customers", [])',
