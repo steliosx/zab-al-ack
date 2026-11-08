@@ -197,3 +197,36 @@ async def test_non_200_read_response_is_rejected_and_certain(endpoint, status):
         await client.call("event.get", {"eventids": ["12001"]}, background=True)
     assert error.value.reason == "http_rejected"
     assert error.value.uncertain is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("write", [False, True])
+async def test_deeply_nested_json_is_an_invalid_response_not_an_escape(endpoint, write):
+    body = b"[" * 200_000 + b"]" * 200_000
+    def handler(request):
+        return httpx.Response(200, content=body, headers={"Content-Type": "application/json"})
+    client = ZabbixClient(endpoint, transport=httpx.MockTransport(handler))
+    with pytest.raises(RPCError) as error:
+        if write:
+            await client.acknowledge("12001", comment=False, public_reference="publicreference0123456",
+                                     issued_at="2026-01-01T01:00:00Z")
+        else:
+            await client.event_get("12001", {"host_ids": ["1"], "group_ids": ["2"]})
+    assert (error.value.reason, error.value.uncertain) == ("json_response_invalid", write)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("write", [False, True])
+async def test_undecodable_content_encoding_is_classified_transport_failure(endpoint, write):
+    def handler(request):
+        return httpx.Response(200, content=b"not-gzip", headers={"Content-Encoding": "gzip"})
+    client = ZabbixClient(endpoint, transport=httpx.MockTransport(handler))
+    with pytest.raises(RPCError) as error:
+        if write:
+            await client.acknowledge("12001", comment=False, public_reference="publicreference0123456",
+                                     issued_at="2026-01-01T01:00:00Z")
+        else:
+            await client.event_get("12001", {"host_ids": ["1"], "group_ids": ["2"]})
+    expected = ("outcome_unknown", True, True) if write else ("read_transient", True, False)
+    assert (error.value.reason, error.value.transient, error.value.uncertain) == expected
+
