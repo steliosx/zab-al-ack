@@ -149,6 +149,27 @@ branch and, past the deadline, returns without a lease. It ships no new structur
 3. **It relabels no row.** An action an earlier tree already expired this way
    stays as it is; review it as the 013 section describes.
 
+## 016 claim-path corrections (schema stays 5)
+
+Migration 016 replaces `worker_call()` with 014's body in which `claim_delivery`
+runs its abandoned-attempt fence before its cohort-policy branch,
+`record_reconciliation` locks the action before `instance_control`, the
+verification-lease generation is compared with `IS DISTINCT FROM`, and
+`verify_complete` allows the signing clock to lead the database clock by up to
+5 seconds. It ships no new structure, and the recorded schema version stays 5.
+
+1. **Rolling it back returns the gap.** Without it, a claim after a cohort change
+   records an abandoned send `failed` with `uncertain=false`, and `settle_unknown`
+   refuses it. Prefer a forward migration.
+2. **It re-records `installation.routine_bodies_md5`**, as 009 and 013 to 015 do,
+   and refuses to run unless the digest it finds matches what 015 left. Run
+   `13_reseal.sql` after it.
+3. **It relabels no row.** An action an earlier tree already failed this way
+   stays as it is; review its attempts by hand before any retry.
+4. **The 0.2.0a2 worker accepts the 5-second allowance.** A 0.2.0a1 worker
+   against a 016 database still refuses such captures itself; mixing them is not
+   supported.
+
 ## 015 F1 source binding (schema 4 -> 5)
 
 Migration 015 adds `zabalack.source_bindings`, `zabalack.binding_events`, the

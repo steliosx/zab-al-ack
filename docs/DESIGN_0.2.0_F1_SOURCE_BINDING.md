@@ -3,7 +3,7 @@
 Status: r5 (1 November 2026): a numbering amendment only. Since r4.2, forward migrations
 013 (live-lease expiry guard) and 014 (claim-path expiry fence) have shipped as ledger fixes
 in 0.1.0b3 and 0.1.0b4, so this design's migration, written as "013a", is now **015**, and the
-parent design's action-sync capture migration (parent §5, written as "013") is now **016**.
+parent design's action-sync capture migration (parent §5, written as "013") was 016 until 8 November 2026 and is now **017** (016 became the claim-path correction; R33).
 No design content changes. Earlier status follows.
 
 r4.2. Codex gave AGREEMENT_DESIGN_ONLY on the exact r4 bytes (blob `59b07603`, message
@@ -264,9 +264,9 @@ ack-core 3b transaction-model work. Until then it has exactly one outcome, defin
 - No component admits it: the verifier and the worker never take a `skipped` capture, so there
   is no Zabbix call for any mirror value or binding state.
 - Component and timing: this branch belongs to the 0.2.0 capture function and trigger of
-  the parent's capture migration, 016 (parent design §5). Before 016 the existing `zabalack_capture` `WHEN` clause
+  the parent's capture migration, 017 (parent design §5). Before 017 the existing `zabalack_capture` `WHEN` clause
   (`status = 'ack'`, `ack` history row, marker) never fires on this transition, so nothing is
-  captured. 015 itself does not change the trigger definition (3.4); the 016 trigger definition
+  captured. 015 itself does not change the trigger definition (3.4); the 017 trigger definition
   is the parent's and goes to the Voalack session before implementation. Owner decision §9 Q5 (mirror model
 transitions by default) is unchanged as policy, but cannot take effect for `model_unack` before
 that path exists. This is reported to the owner as a consequence, not a new decision. The parent

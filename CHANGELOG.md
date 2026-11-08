@@ -1,5 +1,34 @@
 # Zab-al-ack changelog
 
+## 0.2.0a2 — 2026-11-08 (development candidate, unpublished)
+
+- Migration `016_claim_delivery_order.sql` replaces `worker_call()` (014's body
+  with four changes; schema stays 5; `operator_call` untouched). Found by a
+  read-only audit of main `a92c9a68` (amendment R33).
+  - `claim_delivery` runs its abandoned-attempt fence before its cohort-policy
+    branch. Before, a claim arriving after a cohort revision, policy or
+    enablement change (or recorded host drift), for an action whose send was
+    recorded against a since-expired lease, recorded the send `failed` with
+    `uncertain=false`; `reconcile_due` never revisited it and `settle_unknown`
+    refused it. The fenced action is now left uncertain for settlement and is
+    handed no lease. R31 had noted this branch for review. Regression T45.
+  - `record_reconciliation` locks the action row before `instance_control`,
+    the order `claim_delivery` uses, so the two cannot deadlock.
+  - `verify_complete`, `reject_capture` and `hold_capture` treat a missing
+    `lease_generation` as a lost lease (`IS DISTINCT FROM`). Regression T46.
+  - `verify_complete` accepts a capture recorded up to 5 seconds before the
+    signed `issued_at` (the Alerta host clock may lead the database clock);
+    the worker's `verify_capture()` applies the same allowance. Regressions
+    T48 and the trust-boundary properties.
+- `config-check` refuses an endpoint entry whose `logical_instance` is missing
+  or differs from its registry key. Before, a missing value passed validation
+  and every delivery then failed terminally with `logical_instance_mismatch`.
+- Upgrade: run `016` through the migration runner, then `13_reseal.sql`.
+  `12_application_grant.sql` is unchanged. Capture health reads unhealthy
+  until the reseal.
+- The planned action-sync capture migration (`docs/DESIGN_0.2.0_ACTION_SYNC.md`)
+  is renumbered from 016 to 017.
+
 ## 0.2.0a1 — 2026-11-01 (development candidate, unpublished)
 
 - F1 source binding at ingestion (migration `015_source_binding.sql`, schema 5;
