@@ -92,6 +92,10 @@
       "sha256": "c273e3b57cb07f2120505f32cc34b082487f078e15a9cde231e7743ade56b291"
     },
     {
+      "path": "sql/migrations/016_claim_delivery_order.sql",
+      "sha256": "4813d284cbe65d03be942acde654bb35b3c369af0c77b57e4fb87e10ab05edeb"
+    },
+    {
       "path": "sql/rollback/disable_trigger.sql",
       "sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
     },
