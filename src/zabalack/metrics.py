@@ -49,6 +49,18 @@ class Metrics:
                     for k, v in sorted(self._counters.items())]
 
 
+def capture_health_ok(health: dict[str, Any], settings: Any) -> bool:
+    """The one capture-health rule shared by the worker's delivery gate and the
+    exported zabalack_capture_healthy gauge (capture_health() fields only)."""
+    return (health.get("in_recovery") is False and
+            health.get("database_name") == settings.database_name and
+            str(health.get("deployment_id")) == str(settings.deployment_id) and
+            str(health.get("zabalack_schema_version")) == "5" and
+            health.get("trigger_ok") is True and health.get("functions_ok") is True and
+            health.get("capture_disabled") is False and
+            health.get("config_revision") == settings.config_revision)
+
+
 def prometheus_text(status: dict[str, Any], settings: Any) -> str:
     """Render authoritative DB gauges for an existing textfile collector; no server."""
     from datetime import datetime, timezone
@@ -63,10 +75,7 @@ def prometheus_text(status: dict[str, Any], settings: Any) -> str:
             if isinstance(value, (int, float)):
                 emit("zabalack_" + key, value, instance=instance)
     health = status.get("health", {})
-    healthy = (health.get("in_recovery") is False and health.get("functions_ok") is True and
-               health.get("trigger_ok") is True and health.get("capture_disabled") is False and
-               health.get("config_revision") == settings.config_revision and
-               str(health.get("deployment_id")) == str(settings.deployment_id))
+    healthy = capture_health_ok(health, settings)
     emit("zabalack_capture_healthy", int(healthy))
     failures = set()
     for row in status.get("active_incidents", []):

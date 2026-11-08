@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .db import Database
-from .metrics import Metrics, log_event
+from .metrics import Metrics, capture_health_ok, log_event
 from .rpc import EndpointRegistry, RPCError, Timeouts, ValidationError, ZabbixClient, validate_event
 
 
@@ -116,7 +116,14 @@ class Worker:
             await self.complete(action, "pending", "unknown_outcome_reconciliation", uncertain=True, retry_delay=60)
             return
         if expired(action["execution_expires_at"]):
-            await self.complete(action, "expired", "execution_expired")
+            # The worker's clock may lead the database's. Expiry is the database's
+            # decision (before_write); no endpoint or credential is resolved here.
+            ready = await self.db.call("before_write", self.lease_payload(action))
+            reason = ready.get("reason") if isinstance(ready, dict) else None
+            if reason in {"execution_expired", "execution_lifetime_expired"}:
+                await self.complete(action, "expired", reason)
+            else:
+                await self.complete(action, "pending", reason or "worker_clock_ahead", retry_delay=60)
             return
         if not self.settings.external_writes_enabled:
             await self.complete(action, "pending", "shadow_hold", retry_delay=60)
@@ -160,7 +167,7 @@ class Worker:
                                 attempt_id=attempt_id, uncertain=exc.uncertain)
         except RPCError as exc:
             state = "pending" if exc.transient or exc.uncertain else "failed"
-            retry = min(300, 2 ** min(int(action.get("attempts", 0)) + 1, 8)) if state == "pending" else 0
+            retry = 2 ** min(int(action.get("attempts", 0)) + 1, 8) if state == "pending" else 0
             await self.complete(action, state, exc.reason, uncertain=exc.uncertain,
                                 attempt_id=attempt_id, retry_delay=retry)
             if not exc.transient:
@@ -181,15 +188,9 @@ class Worker:
         """Drift readiness is separately stored; startup never auto-repairs DDL/grants."""
         result = await self.db.call("doctor", {})
         health = result.get("health", result) if isinstance(result, dict) else {}
-        self._healthy = (health.get("in_recovery") is False and
-                         health.get("database_name") == self.settings.database_name and
-                         str(health.get("deployment_id")) == str(self.settings.deployment_id) and
-                         str(health.get("zabalack_schema_version")) == "5" and
+        self._healthy = (capture_health_ok(health, self.settings) and
                          type(health.get("api_error_recovery_version")) is int and
-                         health["api_error_recovery_version"] == 1 and
-                         health.get("trigger_ok") is True and health.get("functions_ok") is True and
-                         health.get("capture_disabled") is False and
-                         health.get("config_revision") == self.settings.config_revision)
+                         health["api_error_recovery_version"] == 1)
         self._last_health = time.monotonic()
         return self._healthy
 

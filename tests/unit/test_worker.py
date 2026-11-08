@@ -281,11 +281,26 @@ async def test_T32_pause_after_validation_holds_without_write():
 @pytest.mark.asyncio
 async def test_expired_action_cannot_resolve_endpoint():
     db, row = FakeDB(), action()
+    db.ready = {"allowed": False, "reason": "execution_lifetime_expired"}
     row["execution_expires_at"] = timestamp(datetime.now(timezone.utc) - timedelta(seconds=1))
     w = worker(db)
     await w.deliver(row)
     w.registry.resolve.assert_not_called()
     assert db.outcomes()[-1]["state"] == "expired"
+
+
+@pytest.mark.asyncio
+async def test_a_worker_clock_ahead_of_the_database_does_not_expire_an_action():
+    """The local clock says expired, the database does not: hold, never expire,
+    and still resolve no endpoint or credential."""
+    db, row, client = FakeDB(), action(), Client()
+    row["execution_expires_at"] = timestamp(datetime.now(timezone.utc) - timedelta(seconds=1))
+    w = worker(db, client)
+    await w.deliver(row)
+    w.registry.resolve.assert_not_called()
+    assert not client.reads and not client.writes
+    outcome = db.outcomes()[-1]
+    assert (outcome["state"], outcome["reason"], outcome["retry_delay"]) == ("pending", "worker_clock_ahead", 60)
 
 
 @pytest.mark.asyncio
@@ -736,3 +751,55 @@ def test_metrics_export_uses_actual_instance_gauges_and_incident_grouping():
     assert 'zabalack_oldest_pending_seconds{instance="lab-zabbix"} 121.0' in text
     assert 'zabalack_instance_failure{failure_class="permission",instance="lab-zabbix"} 1.0' in text
     assert "zabalack:v1" not in text
+
+
+@pytest.mark.parametrize("change", [{"zabalack_schema_version": 4}, {"database_name": "other"}, {"functions_ok": False}])
+def test_the_health_gauge_and_the_delivery_gate_share_one_rule(change):
+    """A database the worker refuses (wrong schema, wrong database) must not
+    export zabalack_capture_healthy 1."""
+    from zabalack.metrics import capture_health_ok, prometheus_text
+    settings = Settings(config_revision="v1", deployment_id="lab", database_name="alerta")
+    health = {"in_recovery": False, "database_name": "alerta", "deployment_id": "lab", "zabalack_schema_version": 5,
+              "trigger_ok": True, "functions_ok": True, "capture_disabled": False, "config_revision": "v1"}
+    assert capture_health_ok(health, settings)
+    assert "zabalack_capture_healthy 1.0" in prometheus_text({"health": health}, settings)
+    assert "zabalack_capture_healthy 0.0" in prometheus_text({"health": health | change}, settings)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("attempts", "delay"), [(0, 2), (2, 8), (7, 256), (50, 256)])
+async def test_transient_read_failure_backs_off_to_a_256_second_bound(attempts, delay):
+    db, row = FakeDB(), action()
+    row["attempts"] = attempts
+    await worker(db, Client(read_error=RPCError("endpoint_unreachable", transient=True))).deliver(row)
+    outcome = db.outcomes()[-1]
+    assert (outcome["state"], outcome["retry_delay"]) == ("pending", delay)
+
+
+def _admin_capture(login):
+    moment = datetime.now(timezone.utc)
+    intent = build_intent(str(uuid.uuid4()), COHORT["customer"],
+        {"zabbix_instance": "lab-zabbix", "zabbix_event_id": "41001", "zabbix_trigger_id": "21001"},
+        {"login": login, "customers": [], "admin": True, "auth_type": "user"}, "1", "1", now=moment)
+    return {"capture_id": str(uuid.uuid4()), "lease_generation": 1, "intent": intent,
+        "marker": sign_intent(intent, "lab", KEY), "alert_id": intent["alert_id"], "customer": intent["customer"],
+        "source": intent["source"].copy(), "history_type": "ack", "history_user": login,
+        "resulting_status": "ack", "captured_at": timestamp(moment + timedelta(milliseconds=10))}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("exceptions", "rejected"), [((), True), (("synthetic-admin",), False)])
+async def test_worker_refuses_an_admin_intent_outside_admin_exceptions(exceptions, rejected):
+    """The worker's own gate (second to the plugin's T24): a cohort that allows
+    admins is not enough without the login in admin_exceptions."""
+    db = FakeDB([_admin_capture("synthetic-admin")])
+    settings = Settings(cohorts=(COHORT | {"allow_admin": True},), admin_exceptions=exceptions)
+    w = Worker(settings, db, {"lab": KEY}, registry=Mock(), client_factory=lambda endpoint: Client())
+    assert await w.verify_once()
+    ops = [op for op, _ in db.calls]
+    if rejected:
+        assert "verify_complete" not in ops
+        assert [p["reason"] for op, p in db.calls if op == "reject_capture"] == ["admin_exception_required"]
+    else:
+        assert "verify_complete" in ops and "reject_capture" not in ops
+

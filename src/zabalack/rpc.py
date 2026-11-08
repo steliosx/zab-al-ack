@@ -148,7 +148,9 @@ class ZabbixClient:
             try:
                 from .config import strict_json_loads
                 data = strict_json_loads(body)
-            except (ValueError, UnicodeError) as exc:
+            except (ValueError, UnicodeError, RecursionError) as exc:
+                # RecursionError: nesting deep enough to exhaust the parser fits
+                # inside the response limit and must classify like any bad body.
                 raise RPCError("json_response_invalid", uncertain=write) from exc
             if not isinstance(data, dict) or data.get("jsonrpc") != "2.0" or data.get("id") != request_id:
                 raise RPCError("jsonrpc_binding_invalid", uncertain=write)
@@ -176,6 +178,10 @@ class ZabbixClient:
         except (httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
             raise RPCError("connect_timeout", transient=True) from exc
         except (TimeoutError, httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+            raise RPCError("outcome_unknown" if write else "read_transient", transient=True, uncertain=write) from exc
+        except httpx.HTTPError as exc:
+            # Any other transport failure (DecodingError, LocalProtocolError, ...)
+            # is classified, never left to escape delivery unrecorded.
             raise RPCError("outcome_unknown" if write else "read_transient", transient=True, uncertain=write) from exc
 
     async def event_get(self, event_id: str, cohort: dict[str, Any], *, history: bool = False,

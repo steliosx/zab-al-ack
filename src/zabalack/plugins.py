@@ -566,12 +566,22 @@ class AckSigningPlugin(PluginBase):
             raise AlertaException("zabalack_final_routing_invalid", code=503)
         context = next(iter(contexts.values()))
         intent = context["intent"]
-        actor = _human_actor(settings)
-        if (not settings.enabled or settings.capture_bypass
-                or context["config_revision"] != settings.config_revision
-                or intent != alert.attributes.get("zabbix_ack_sync_intent")
-                or actor != intent["actor"] or alert.customer != intent["customer"]
-                or make_snapshot(alert.attributes) != intent["source"]):
+        # Any failure here (PolicyError from make_snapshot, a malformed actor)
+        # must stop the transition. AlertaException propagates even when
+        # Alerta is configured to suppress generic plugin errors; a generic
+        # exception would let the acknowledgement commit without its proof.
+        try:
+            actor = _human_actor(settings)
+            bound = (settings.enabled and not settings.capture_bypass
+                     and context["config_revision"] == settings.config_revision
+                     and intent == alert.attributes.get("zabbix_ack_sync_intent")
+                     and actor == intent["actor"] and alert.customer == intent["customer"]
+                     and make_snapshot(alert.attributes) == intent["source"])
+        except AlertaException:
+            raise
+        except Exception:
+            bound = False
+        if not bound:
             raise AlertaException("zabalack_final_binding_invalid", code=503)
         if context["signed"]:
             marker = context["marker"]

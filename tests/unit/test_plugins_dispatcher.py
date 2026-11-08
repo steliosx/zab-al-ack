@@ -679,3 +679,16 @@ def test_F1_the_binding_is_read_for_the_alerts_exact_epoch(context):
     assert len(context.generations) == 1
     assert context.alert.attributes["zabbix_ack_sync_intent"]["source"] == {
         key: SOURCE[key] for key in ("zabbix_instance", "zabbix_event_id", "zabbix_trigger_id")}
+
+
+def test_a_final_check_that_fails_internally_stops_the_transition_with_alerta_exception(context):
+    """A source that make_snapshot() rejects at the final stage raises
+    AlertaException(503), which Alerta propagates even when generic plugin
+    errors are suppressed, never a bare PolicyError."""
+    from alerta.exceptions import AlertaException
+    alert, action, note, timeout = stage(context)
+    alert.attributes["zabbix_event_id"] = "not-an-event-id"
+    with pytest.raises(AlertaException) as error:
+        context.signer.status_change(alert, "ack", note)
+    assert error.value.code == 503
+

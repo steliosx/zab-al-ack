@@ -23,6 +23,28 @@
 - `config-check` refuses an endpoint entry whose `logical_instance` is missing
   or differs from its registry key. Before, a missing value passed validation
   and every delivery then failed terminally with `logical_instance_mismatch`.
+- Worker: when its own clock says an action's execution lifetime has passed,
+  the worker asks the database (`before_write`) and records `expired` only if
+  the database agrees; otherwise the action stays `pending`
+  (`worker_clock_ahead`). It still resolves no endpoint or credential for it.
+- One capture-health rule (`metrics.capture_health_ok`) now drives both the
+  worker's delivery gate and the `zabalack_capture_healthy` gauge. The gauge
+  used to ignore the database name and schema version, so it could read 1
+  while delivery was stopped.
+- RPC: a response nested deeply enough to exhaust the JSON parser, and any
+  other `httpx` transport error (for example an undecodable
+  `Content-Encoding`), are classified as RPC failures (uncertain for a write)
+  instead of escaping delivery unrecorded.
+- Signer: a failure inside the final binding check of `status_change` (for
+  example `PolicyError` from an invalid source id) raises
+  `AlertaException(503)`, which Alerta propagates even when generic plugin
+  errors are suppressed, so the acknowledgement cannot commit without its
+  proof.
+- Retry backoff for transient delivery failures is `2 ** min(attempts + 1, 8)`
+  seconds (2 s to 256 s); the unused 300 s cap is removed. No behaviour change.
+- New tests: the event-identity guard (recovery event, other source or object,
+  several results), the worker's own admin-exception gate, retry bounds,
+  reconciler host paging and group drift.
 - Upgrade: run `016` through the migration runner, then `13_reseal.sql`.
   `12_application_grant.sql` is unchanged. Capture health reads unhealthy
   until the reseal.
