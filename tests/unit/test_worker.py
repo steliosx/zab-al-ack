@@ -803,3 +803,126 @@ async def test_worker_refuses_an_admin_intent_outside_admin_exceptions(exception
     else:
         assert "verify_complete" in ops and "reject_capture" not in ops
 
+
+HEALTHY_DOCTOR = {"in_recovery": False, "database_name": "alerta", "deployment_id": "lab", "zabalack_schema_version": 5,
+                  "trigger_ok": True, "functions_ok": True, "capture_disabled": False, "config_revision": "v1",
+                  "api_error_recovery_version": 1}
+
+
+class DoctorDB(FakeDB):
+    def __init__(self, doctor):
+        super().__init__()
+        self.doctor = doctor
+
+    async def call(self, op, payload=None):
+        if op == "doctor":
+            self.calls.append((op, payload))
+            if isinstance(self.doctor, Exception):
+                raise self.doctor
+            return self.doctor
+        return await super().call(op, payload)
+
+
+class FailingReconciler:
+    def __init__(self):
+        self.fail = True
+
+    async def fast_cycle(self):
+        if self.fail:
+            raise RuntimeError("canceling statement due to statement timeout")
+
+    async def scheduled_sweeps(self):
+        return None
+
+
+def health_worker(doctor, client=None):
+    settings = Settings(external_writes_enabled=True, cohorts=(COHORT,), config_revision="v1",
+                        deployment_id="lab", database_name="alerta", fast_cycle_seconds=60)
+    registry = Mock()
+    registry.resolve.return_value = object()
+    return Worker(settings, DoctorDB(doctor), {"lab": KEY}, registry=registry,
+                  client_factory=lambda endpoint: client or Client())
+
+
+async def gated_steps(w):
+    """Run the delivery loop briefly; return how many steps it let through."""
+    import asyncio
+    steps = []
+
+    async def step():
+        steps.append(1)
+        w.stop.set()
+        return True
+
+    async def stop_soon():
+        await asyncio.sleep(0.05)
+        w.stop.set()
+
+    await asyncio.gather(w._loop(step, health_gate=True), stop_soon())
+    return len(steps)
+
+
+@pytest.mark.asyncio
+async def test_F6_a_failing_sweep_does_not_close_delivery_while_health_is_good():
+    w = health_worker(dict(HEALTHY_DOCTOR))
+    assert await w.health_once()
+    assert not await w.maintenance_once(FailingReconciler())
+    assert w.maintenance_failing and w.delivery_gate_open()
+    assert await gated_steps(w) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("doctor", [RuntimeError("doctor unavailable"), HEALTHY_DOCTOR | {"zabalack_schema_version": 4},
+                                    HEALTHY_DOCTOR | {"api_error_recovery_version": 0}, "not-a-dict"])
+async def test_F6_a_failed_or_unhealthy_health_check_closes_delivery(doctor):
+    w = health_worker(dict(HEALTHY_DOCTOR))
+    assert await w.health_once() and w.delivery_gate_open()
+    w.db.doctor = doctor
+    assert not await w.health_once()
+    assert not w.delivery_gate_open()
+    assert await gated_steps(w) == 0
+
+
+@pytest.mark.asyncio
+async def test_F6_stale_health_cannot_keep_delivery_open(monkeypatch):
+    import zabalack.worker as worker_module
+    w = health_worker(dict(HEALTHY_DOCTOR))
+    assert await w.health_once()
+    checked = w._last_health
+    monkeypatch.setattr(worker_module.time, "monotonic", lambda: checked + 3 * 60)
+    assert w.delivery_gate_open()
+    monkeypatch.setattr(worker_module.time, "monotonic", lambda: checked + 3 * 60 + 1)
+    assert not w.delivery_gate_open()
+
+
+@pytest.mark.asyncio
+async def test_F6_uncertain_and_circuit_open_actions_stay_fenced_while_maintenance_fails():
+    client = Client()
+    w = health_worker(dict(HEALTHY_DOCTOR), client)
+    assert await w.health_once()
+    assert not await w.maintenance_once(FailingReconciler())
+    uncertain = action() | {"uncertain": True}
+    await w.deliver(uncertain)
+    assert w.db.outcomes()[-1]["reason"] == "unknown_outcome_reconciliation" and not client.writes
+    w.db.ready = {"allowed": False, "reason": "instance_circuit_open"}
+    await w.deliver(action())
+    assert w.db.outcomes()[-1]["reason"] == "instance_circuit_open" and not client.writes
+
+
+@pytest.mark.asyncio
+async def test_F6_maintenance_failure_and_recovery_are_reported_apart_from_capture_health(monkeypatch):
+    import zabalack.worker as worker_module
+    events = []
+    monkeypatch.setattr(worker_module, "log_event", lambda event, **fields: events.append(event))
+    w = health_worker(dict(HEALTHY_DOCTOR))
+    reconciler = FailingReconciler()
+    assert await w.health_once()
+    assert not await w.maintenance_once(reconciler)
+    assert ("worker", "maintenance_failure") in w.metrics._incidents
+    assert ("worker", "capture_health_check_failed") not in w.metrics._incidents
+    reconciler.fail = False
+    assert await w.maintenance_once(reconciler)
+    assert not w.maintenance_failing and ("worker", "maintenance_failure") not in w.metrics._incidents
+    assert events == ["reconciler_error", "maintenance_recovered"]
+    assert w.delivery_gate_open()
+
