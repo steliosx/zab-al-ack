@@ -4,7 +4,7 @@ Run from the repository root using Python 3.12. Install application and test
 dependencies first, then the separate hash-checked quality tools:
 
 ```sh
-python -m pip install -r requirements.lock
+python -m pip install --require-hashes -r requirements.lock
 python -m pip install --require-hashes --only-binary=:all: -r requirements-quality.lock
 python -m pip install --no-deps --no-build-isolation -e .
 python -m pip check
@@ -13,10 +13,16 @@ python -m mypy --config-file mypy.ini
 ```
 
 The quality lock contains development tools only and is not an application
-dependency upgrade. Do not combine the two lock-file install commands: pip's
-hash-checking mode would also require hashes on every application requirement.
+dependency upgrade. Keep the two lock-file install commands separate: each lock
+carries its own hashes and scope (`requirements.lock` since 0.2.0a2).
 An offline installation can add `--no-index --find-links /path/to/wheelhouse`
 to each install command when its complete pinned wheel set is available.
+`requirements.lock` covers CPython 3.12 on Linux: for each pin its hashes list
+the platform-independent wheels, the manylinux x86_64 and aarch64 wheels and
+the source archive (sdist). Binary wheels for other platforms are not listed.
+Hash checking authenticates the listed files; it does not restrict the
+platform. On another platform pip may build a pin from its hashed sdist; such
+builds are not covered or tested here.
 
 ## Enforced scope
 

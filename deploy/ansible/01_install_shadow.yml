@@ -81,7 +81,7 @@
       ansible.builtin.pip:
         requirements: "{{ zabalack_root }}/requirements-runtime.lock"
         executable: "{{ zabalack_root }}/venv/bin/pip"
-        extra_args: "--no-index --find-links {{ zabalack_root }}/wheelhouse"
+        extra_args: "--require-hashes --no-index --find-links {{ zabalack_root }}/wheelhouse"
     - name: Install only the supplied integration wheel
       ansible.builtin.pip:
         name: "{{ zabalack_root }}/{{ zabalack_wheel_file | basename }}"

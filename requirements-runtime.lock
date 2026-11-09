@@ -1,9 +1,70 @@
-anyio==4.15.1
-certifi==2026.10.19
-h11==0.16.0
-httpcore==1.0.9
-httpx==0.28.1
-idna==3.19
-psycopg==3.2.10
-psycopg-binary==3.2.10
-typing-extensions==4.16.0
+# Worker runtime set installed by deploy/ansible (offline wheelhouse). Same
+# source and scope as requirements.lock; tools/security_scan.py fails on a pin
+# that drifts from it. Every pin is hash-checked (pip's hash-checking mode): the
+# SHA256 of each listed file was taken from the official PyPI release JSON on
+# 2026-11-08 (URL above each pin). Listed files: py3/abi3/cp312 wheels for any
+# platform or manylinux x86_64/aarch64, and the sdist. Installation and
+# execution are validated by CI and the deployment lab, not by these hashes.
+
+# https://pypi.org/pypi/anyio/4.15.1/json
+# anyio-4.15.1-py3-none-any.whl
+# anyio-4.15.1.tar.gz
+anyio==4.15.1 \
+    --hash=sha256:6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101 \
+    --hash=sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94
+
+# https://pypi.org/pypi/certifi/2026.10.19/json
+# certifi-2026.10.19-py3-none-any.whl
+# certifi-2026.10.19.tar.gz
+certifi==2026.10.19 \
+    --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae \
+    --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
+
+# https://pypi.org/pypi/h11/0.16.0/json
+# h11-0.16.0-py3-none-any.whl
+# h11-0.16.0.tar.gz
+h11==0.16.0 \
+    --hash=sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1 \
+    --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
+
+# https://pypi.org/pypi/httpcore/1.0.9/json
+# httpcore-1.0.9-py3-none-any.whl
+# httpcore-1.0.9.tar.gz
+httpcore==1.0.9 \
+    --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
+    --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
+
+# https://pypi.org/pypi/httpx/0.28.1/json
+# httpx-0.28.1-py3-none-any.whl
+# httpx-0.28.1.tar.gz
+httpx==0.28.1 \
+    --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
+    --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
+
+# https://pypi.org/pypi/idna/3.19/json
+# idna-3.19-py3-none-any.whl
+# idna-3.19.tar.gz
+idna==3.19 \
+    --hash=sha256:5e0811a4383b21dc5838069f801c4fb62113b7447663d2530d2bd6e77b49bf15 \
+    --hash=sha256:815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4
+
+# https://pypi.org/pypi/psycopg/3.2.10/json
+# psycopg-3.2.10-py3-none-any.whl
+# psycopg-3.2.10.tar.gz
+psycopg==3.2.10 \
+    --hash=sha256:0bce99269d16ed18401683a8569b2c5abd94f72f8364856d56c0389bcd50972a \
+    --hash=sha256:ab5caf09a9ec42e314a21f5216dbcceac528e0e05142e42eea83a3b28b320ac3
+
+# https://pypi.org/pypi/psycopg-binary/3.2.10/json
+# psycopg_binary-3.2.10-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
+# psycopg_binary-3.2.10-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+psycopg-binary==3.2.10 \
+    --hash=sha256:14bcbcac0cab465d88b2581e43ec01af4b01c9833e663f1352e05cb41be19e44 \
+    --hash=sha256:484d2b1659afe0f8f1cef5ea960bb640e96fa864faf917086f9f833f5c7a8034
+
+# https://pypi.org/pypi/typing-extensions/4.16.0/json
+# typing_extensions-4.16.0-py3-none-any.whl
+# typing_extensions-4.16.0.tar.gz
+typing-extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
+    --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
