@@ -598,6 +598,14 @@ def test_ci_package_waits_for_same_run_required_jobs_and_rebuilds_mapping():
     assert commands.index(collect) < commands.index('python tools/update_acceptance.py')
     assert commands.index('python tools/update_acceptance.py') < commands.index('python tools/public_audit.py --write-report')
     assert commands.index('python tools/public_audit.py --write-report') < commands.index('python tools/build_release.py')
+    assert commands.index('python tools/build_release.py') < commands.index('python tools/verify_release.py')
+    verify_step = next(i for i, step in enumerate(steps) if step.get('run') == 'python tools/verify_release.py')
+    upload_step = next(i for i, step in enumerate(steps)
+                       if step.get('uses', '').startswith('actions/upload-artifact@')
+                       and step['with']['name'].startswith('zabalack-candidate-'))
+    assert verify_step < upload_step
+    assert 'if' not in steps[verify_step]
+    assert '--candidate' not in steps[verify_step]['run']
     for kind in ci.KINDS:
         steps = workflow['jobs'][kind]['steps']
         commands = [step['run'] for step in steps if 'run' in step]

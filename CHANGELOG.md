@@ -58,6 +58,9 @@
 - CI: the `Alpha reference checks` and CodeQL concurrency groups include the
   event name, so a push to `main` no longer cancels the scheduled run on the
   same ref (or the reverse).
+- CI: the package job runs `python tools/verify_release.py` on the dist it
+  just built, before uploading the candidate. It does not pass `--candidate`
+  and does not stage signing subjects.
 - `tools/security_scan.py` also queries `requirements-runtime.lock`, the set
   the Ansible install deploys; a runtime pin that drifts from
   `requirements.lock` now fails the scan as a conflict.
