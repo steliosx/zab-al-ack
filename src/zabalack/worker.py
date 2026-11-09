@@ -193,17 +193,22 @@ class Worker:
 
     async def check_health(self) -> bool:
         """Drift readiness is separately stored; startup never auto-repairs DDL/grants."""
+        # Fetch, normalisation and validation are one fail-closed step: any
+        # error or non-mapping result closes the gate at once, and only a
+        # healthy result refreshes the timestamp the gate's age bound reads.
         try:
             result = await self.db.call("doctor", {})
+            health = result.get("health", result) if isinstance(result, dict) else None
+            healthy = (isinstance(health, dict) and capture_health_ok(health, self.settings) and
+                       type(health.get("api_error_recovery_version")) is int and
+                       health["api_error_recovery_version"] == 1)
         except BaseException:
             self._healthy = False
             raise
-        health = result.get("health", result) if isinstance(result, dict) else {}
-        self._healthy = (capture_health_ok(health, self.settings) and
-                         type(health.get("api_error_recovery_version")) is int and
-                         health["api_error_recovery_version"] == 1)
-        self._last_health = time.monotonic()
-        return self._healthy
+        self._healthy = healthy
+        if healthy:
+            self._last_health = time.monotonic()
+        return healthy
 
     def delivery_gate_open(self) -> bool:
         """Delivery runs only on a healthy and current capture-health result.

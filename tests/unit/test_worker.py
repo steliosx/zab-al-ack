@@ -926,3 +926,23 @@ async def test_F6_maintenance_failure_and_recovery_are_reported_apart_from_captu
     assert events == ["reconciler_error", "maintenance_recovered"]
     assert w.delivery_gate_open()
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("nested", [None, [], "invalid", 5])
+async def test_F6_a_malformed_nested_health_value_closes_delivery_at_once(nested):
+    """Codex 20261109T015849Z: after a healthy result, a doctor reply whose
+    nested health is not a mapping must close the gate immediately, not after
+    the old result ages out, and must not refresh the success timestamp."""
+    w = health_worker({"health": dict(HEALTHY_DOCTOR)})
+    assert await w.health_once() and w.delivery_gate_open()
+    checked = w._last_health
+    w.db.doctor = {"health": nested}
+    assert not await w.health_once()
+    assert w._healthy is False and not w.delivery_gate_open()
+    assert w._last_health == checked
+    assert await gated_steps(w) == 0
+    w.stop.clear()
+    w.db.doctor = {"health": dict(HEALTHY_DOCTOR)}
+    assert await w.health_once() and w.delivery_gate_open()
+    assert w._last_health > checked
+
