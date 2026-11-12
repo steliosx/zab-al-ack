@@ -23,6 +23,12 @@ def expired(value: str, now: datetime | None = None) -> bool:
     return datetime.fromisoformat(value.replace("Z", "+00:00")) <= (now or utcnow())
 
 
+# Delivery needs a capture-health result no older than this many fast cycles.
+# Health is refreshed every cycle by its own task, so one or two slow or failed
+# refreshes are tolerated; a stalled or failing refresh closes the gate.
+HEALTH_MAX_AGE_CYCLES = 3
+
+
 class Worker:
     def __init__(self, settings: Any, db: Database, keys: dict[str, bytes], *,
                  worker_id: str | None = None,
@@ -40,6 +46,7 @@ class Worker:
         self.stop = asyncio.Event()
         self._healthy = False
         self._last_health = 0.0
+        self.maintenance_failing = False
 
     def lease_payload(self, row: dict[str, Any]) -> dict[str, Any]:
         fields = {k: row[k] for k in ("capture_id", "action_id", "lease_generation") if k in row}
@@ -186,20 +193,68 @@ class Worker:
 
     async def check_health(self) -> bool:
         """Drift readiness is separately stored; startup never auto-repairs DDL/grants."""
-        result = await self.db.call("doctor", {})
-        health = result.get("health", result) if isinstance(result, dict) else {}
-        self._healthy = (capture_health_ok(health, self.settings) and
-                         type(health.get("api_error_recovery_version")) is int and
-                         health["api_error_recovery_version"] == 1)
-        self._last_health = time.monotonic()
-        return self._healthy
+        # Fetch, normalisation and validation are one fail-closed step: any
+        # error or non-mapping result closes the gate at once, and only a
+        # healthy result refreshes the timestamp the gate's age bound reads.
+        try:
+            result = await self.db.call("doctor", {})
+            health = result.get("health", result) if isinstance(result, dict) else None
+            healthy = (isinstance(health, dict) and capture_health_ok(health, self.settings) and
+                       type(health.get("api_error_recovery_version")) is int and
+                       health["api_error_recovery_version"] == 1)
+        except BaseException:
+            self._healthy = False
+            raise
+        self._healthy = healthy
+        if healthy:
+            self._last_health = time.monotonic()
+        return healthy
+
+    def delivery_gate_open(self) -> bool:
+        """Delivery runs only on a healthy and current capture-health result.
+
+        The decision comes from the doctor/capture-health check alone. A failing
+        maintenance sweep does not close it; a failed, unhealthy or stale health
+        check does. SQL fences (uncertainty, circuit, leases, policy,
+        before_write/start_attempt) apply to every action regardless.
+        """
+        age = time.monotonic() - self._last_health
+        return self._healthy and 0 <= age <= HEALTH_MAX_AGE_CYCLES * self.settings.fast_cycle_seconds
+
+    async def health_once(self) -> bool:
+        try:
+            healthy = await self.check_health()
+        except Exception as exc:
+            self.metrics.incident("worker", "capture_health_check_failed")
+            log_event("health_check_error", error_class=type(exc).__name__)
+            return False
+        if healthy:
+            self.metrics.clear_incident("worker", "capture_health_check_failed")
+        return healthy
+
+    async def maintenance_once(self, reconciler: Any) -> bool:
+        """One reconciliation pass; its failure is reported on its own and never
+        closes the delivery gate."""
+        try:
+            await reconciler.fast_cycle()
+            await reconciler.scheduled_sweeps()
+        except Exception as exc:
+            self.maintenance_failing = True
+            self.metrics.incident("worker", "maintenance_failure")
+            log_event("reconciler_error", error_class=type(exc).__name__)
+            return False
+        if self.maintenance_failing:
+            self.maintenance_failing = False
+            self.metrics.clear_incident("worker", "maintenance_failure")
+            log_event("maintenance_recovered", worker_id=self.worker_id)
+        return True
 
     async def _loop(self, step: Callable[[], Any], *, health_gate: bool = False) -> None:
         idle = getattr(self.settings, "idle_poll_seconds", 0.25)
         delay = idle
         while not self.stop.is_set():
             try:
-                if health_gate and not self._healthy:
+                if health_gate and not self.delivery_gate_open():
                     worked = False
                 else:
                     worked = await step()
@@ -228,20 +283,18 @@ class Worker:
         await self.check_health()
         reconciler = Reconciler(self.settings, self.db, self.registry,
                                 worker_id=self.worker_id, client_factory=self.client_factory)
-        async def maintenance() -> None:
+        async def every_cycle(step: Callable[[], Any]) -> None:
+            # Health and maintenance run as separate tasks: a slow or failing
+            # sweep neither blocks the health refresh nor closes delivery.
             while not self.stop.is_set():
-                try:
-                    await self.check_health()
-                    await reconciler.fast_cycle()
-                    await reconciler.scheduled_sweeps()
-                except Exception as exc:
-                    self._healthy = False
-                    log_event("reconciler_error", error_class=type(exc).__name__)
+                await step()
                 try:
                     await asyncio.wait_for(self.stop.wait(), timeout=self.settings.fast_cycle_seconds)
                 except TimeoutError:
                     pass
-        tasks = [asyncio.create_task(self._loop(self.verify_once)), asyncio.create_task(maintenance())]
+        tasks = [asyncio.create_task(self._loop(self.verify_once)),
+                 asyncio.create_task(every_cycle(self.health_once)),
+                 asyncio.create_task(every_cycle(lambda: self.maintenance_once(reconciler)))]
         # Local capacity is bounded; the database remains the ALL-site instance authority.
         tasks.extend(asyncio.create_task(self._loop(self.delivery_once, health_gate=True)) for _ in range(4))
         await self.stop.wait()

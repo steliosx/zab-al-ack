@@ -61,6 +61,13 @@
   and the sdist. CI (`ci.yml`, `deployment-e2e.yml`) and the Ansible
   wheelhouse install pass `--require-hashes`. `tools/dependency_inventory.py`
   reads the hashed format.
+- Worker delivery gate: it now depends only on a healthy `doctor` result no
+  older than three fast cycles, refreshed in its own task. A failing
+  reconciliation sweep is reported as a separate `maintenance_failure` incident
+  (cleared on recovery) and no longer closes delivery; a doctor error, an
+  unhealthy result or a stale result does. Before, any sweep exception closed
+  every delivery loop until the next cycle, and the last healthy result had no
+  age limit. Documented in DESIGN 5.7.
 - Upgrade: run `016` through the migration runner, then `13_reseal.sql`.
   `12_application_grant.sql` is unchanged. Capture health reads unhealthy
   until the reseal.
