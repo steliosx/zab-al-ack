@@ -101,6 +101,11 @@
   `verify_complete`: `verified` or `verified_replay` with the action's state,
   `refused` with the database's reason, or `unknown`. A capture the worker
   itself rejects is `rejected`; that line and a refusal carry no instance.
+- Development pins (amendment R34): pytest 9.0.3 -> 9.1.1, wheel 0.46.2 ->
+  0.48.0, psycopg2-binary 2.9.10 -> 2.9.13, each in `pyproject.toml` and the
+  hash lock together. The mutation runner's own pytest pin moves with them. A
+  release test now fails when an exact pin in `pyproject.toml` differs from
+  `requirements.lock`. No runtime dependency changes.
 
 ## 0.2.0a1 — 2026-11-01 (development candidate, unpublished)
 

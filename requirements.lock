@@ -1,6 +1,7 @@
 # Application and test dependencies for CPython 3.12. Every pin is hash-checked
 # (pip's hash-checking mode): the SHA256 of each listed file was taken from the
-# official PyPI release JSON on 2026-11-08 (URL above each pin). Listed files:
+# official PyPI release JSON on 2026-11-08 (URL above each pin; pytest, wheel
+# and psycopg2-binary on 2026-11-12). Listed files:
 # py3/abi3/cp312 wheels for any platform or manylinux x86_64/aarch64, and the
 # sdist. Installation and execution are validated by CI, not by these hashes.
 
@@ -267,14 +268,14 @@ psycopg-binary==3.2.10 \
     --hash=sha256:14bcbcac0cab465d88b2581e43ec01af4b01c9833e663f1352e05cb41be19e44 \
     --hash=sha256:484d2b1659afe0f8f1cef5ea960bb640e96fa864faf917086f9f833f5c7a8034
 
-# https://pypi.org/pypi/psycopg2-binary/2.9.10/json
-# psycopg2-binary-2.9.10.tar.gz
-# psycopg2_binary-2.9.10-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
-# psycopg2_binary-2.9.10-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
-psycopg2-binary==2.9.10 \
-    --hash=sha256:4b3df0e6990aa98acda57d983942eff13d824135fe2250e6522edaa782a06de2 \
-    --hash=sha256:8cd9b4f2cfab88ed4a9106192de509464b75a906462fb846b936eabe45c2063e \
-    --hash=sha256:e3923c1d9870c49a2d44f795df0c889a22380d36ef92440ff618ec315757e539
+# https://pypi.org/pypi/psycopg2-binary/2.9.13/json
+# psycopg2_binary-2.9.13-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+# psycopg2_binary-2.9.13-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+# psycopg2_binary-2.9.13.tar.gz
+psycopg2-binary==2.9.13 \
+    --hash=sha256:3dc3372b3731b3ef23407fe06b94f640ef87a2bda242fa386033d5589c87514a \
+    --hash=sha256:e324ecf60f952d21dd11413b8bbed0951bbd99579a06fd06f28bfc37737cd373 \
+    --hash=sha256:e3861eba31f8ea8663fd876166b032fd89179e42aa63764d6feb281f13f9eb60
 
 # https://pypi.org/pypi/pycparser/3.0/json
 # pycparser-3.0-py3-none-any.whl
@@ -311,12 +312,12 @@ pyproject_hooks==1.2.0 \
     --hash=sha256:1e859bd5c40fae9448642dd871adf459e5e2084186e8d2c2a79a824c970da1f8 \
     --hash=sha256:9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913
 
-# https://pypi.org/pypi/pytest/9.0.3/json
-# pytest-9.0.3-py3-none-any.whl
-# pytest-9.0.3.tar.gz
-pytest==9.0.3 \
-    --hash=sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9 \
-    --hash=sha256:b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c
+# https://pypi.org/pypi/pytest/9.1.1/json
+# pytest-9.1.1-py3-none-any.whl
+# pytest-9.1.1.tar.gz
+pytest==9.1.1 \
+    --hash=sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313 \
+    --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
 
 # https://pypi.org/pypi/pytest-asyncio/1.3.0/json
 # pytest_asyncio-1.3.0-py3-none-any.whl
@@ -411,9 +412,9 @@ Werkzeug==3.1.9 \
     --hash=sha256:55ca7c70a75689be937aa27f8ff4b018f06ff4838fc73045560bf0f5a1291060 \
     --hash=sha256:6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab
 
-# https://pypi.org/pypi/wheel/0.46.2/json
-# wheel-0.46.2-py3-none-any.whl
-# wheel-0.46.2.tar.gz
-wheel==0.46.2 \
-    --hash=sha256:33ae60725d69eaa249bc1982e739943c23b34b58d51f1cb6253453773aca6e65 \
-    --hash=sha256:3d79e48fde9847618a5a181f3cc35764c349c752e2fe911e65fa17faab9809b0
+# https://pypi.org/pypi/wheel/0.48.0/json
+# wheel-0.48.0-py3-none-any.whl
+# wheel-0.48.0.tar.gz
+wheel==0.48.0 \
+    --hash=sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab \
+    --hash=sha256:94800765601e9171bf5d58d066e640662842bcedcbab982b2c90787a2c987322

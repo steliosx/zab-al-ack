@@ -46,7 +46,8 @@ the mutant and its test; an invalid anchor is not a successful kill.
    requires the exact selected catalogue, matching case inventory and integer
    counts. Skipped, missing, extra or duplicated cases cannot improve the result.
 
-The pinned pytest 9.0.3 source was inspected before implementing its hooks:
+The pinned pytest source was inspected before implementing its hooks, and
+again at the move from 9.0.3 to 9.1.1 (the 9.1.1 wheel, SHA-256 `37a86b45…4f0c`):
 `_pytest/hookspec.py` defines `pytest_collection_modifyitems`,
 `pytest_runtest_makereport` and `pytest_sessionfinish`; `_pytest/junitxml.py` writes
 failure messages without an exception-type attribute. The observer therefore

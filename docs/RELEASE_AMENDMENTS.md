@@ -1228,3 +1228,47 @@ the published beta prerelease and is unchanged. No tag, upload, release or
 deployment is authorized by this amendment. Native PostgreSQL results for 016 come
 from CI; local results are PGlite/WASM single backend only.
 
+## R34 — Development pin refresh: pytest, wheel, psycopg2-binary (12 November 2026)
+
+One coherent change replaces four open proposals (PRs #1, #2, #3 and #26). Each
+of those changed `pyproject.toml` alone, or one pin; the hash-checked
+`requirements.lock` would have kept installing the old files.
+
+| Package | Previous pin | New pin | Reason |
+|---|---|---|---|
+| pytest | 9.0.3 | 9.1.1 | Routine refresh. No advisory is claimed for 9.0.3. |
+| wheel | 0.46.2 | 0.48.0 | Upstream release notes for 0.48.0 list a fix for `wheel convert` writing outside the destination directory. This project does not call `wheel convert`; no exploit path here is claimed. |
+| psycopg2-binary | 2.9.10 | 2.9.13 | Routine refresh of the Alerta-side driver. No advisory is claimed for 2.9.10. |
+
+The hashes in `requirements.lock` are those of the official PyPI release JSON,
+read on 12 November 2026: the sdist and the `py3` wheel for pytest and wheel;
+the sdist and the CPython 3.12 manylinux x86_64 and aarch64 wheels for
+psycopg2-binary. The pytest 9.1.1 and wheel 0.48.0 wheels were downloaded and
+their SHA-256 matched (`37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c`,
+`3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab`). Their
+metadata replaces the earlier entries in `tooling_reference_manifest.json`;
+neither contains `pkg_resources`. The requirements of pytest 9.1.1 (iniconfig,
+packaging, pluggy, pygments) and of wheel 0.48.0 (packaging >= 24) are met by
+the existing pins.
+
+Two facts a reader of the Dependabot proposals would not see:
+
+- `tools/run_mutation_checks.py` refuses any pytest other than its pinned
+  version (`mutation_pytest_version_mismatch`). Its pin moves to 9.1.1. In the
+  9.1.1 wheel, `_pytest/hookspec.py` still defines `pytest_collection_modifyitems`,
+  `pytest_runtest_makereport` and `pytest_sessionfinish`, and
+  `_pytest/junitxml.py` still writes a failure message without an
+  exception-type attribute.
+- The psycopg2-binary 2.9.13 aarch64 wheel is tagged `manylinux_2_27` /
+  `manylinux_2_28`. The 2.9.10 aarch64 wheel was `manylinux_2_17`. An ARM64 host
+  with a C library older than glibc 2.27 would need the sdist. The x86_64 wheel
+  remains `manylinux_2_17`.
+
+`tests/release/test_hashed_locks.py` now fails when an exact pin in
+`pyproject.toml` (build system, dependencies, extras) differs from
+`requirements.lock`, and when the mutation runner's pytest pin differs from the
+lock. `docs/compatibility_manifest.json` (the 13 September observation) and the
+committed `evidence/` inventory keep their recorded versions; they are dated
+records and are regenerated only with a release identity. This change adds no
+runtime dependency, changes no SQL and no application code, and qualifies
+nothing: the hash-checked install and the suites run in this change's CI.

@@ -33,6 +33,29 @@ def test_the_runtime_lock_is_the_application_lock_restricted():
     assert all(runtime[name] == application[name] for name in runtime)
 
 
+def test_every_exact_pin_in_pyproject_equals_the_application_lock():
+    """A bump of pyproject.toml alone leaves the hash lock installing the old
+    file. `pip check` does not see that: it never reads the build-system pins,
+    and CI installs the project with --no-deps."""
+    import tomllib
+    project = tomllib.loads((ROOT / 'pyproject.toml').read_text())
+    declared = [*project['build-system']['requires'], *project['project']['dependencies'],
+                *(pin for group in project['project']['optional-dependencies'].values() for pin in group)]
+    locked = pins('requirements.lock')
+    assert len(declared) >= 9
+    for requirement in declared:
+        match = re.fullmatch(r'([A-Za-z0-9_.-]+)(?:\[[a-z,]+\])?==(\S+)', requirement)
+        assert match, requirement
+        assert locked[match.group(1).lower().replace('_', '-')][0] == match.group(2), requirement
+
+
+def test_the_mutation_runner_pins_the_locked_pytest():
+    locked = pins('requirements.lock')
+    source = (ROOT / 'tools/run_mutation_checks.py').read_text()
+    assert f'pytest.__version__ != "{locked["pytest"][0]}"' in source
+    assert f'version("pytest-asyncio") != "{locked["pytest-asyncio"][0]}"' in source
+
+
 def test_ci_and_ansible_install_the_locks_in_hash_checking_mode():
     for workflow in ('.github/workflows/ci.yml', '.github/workflows/deployment-e2e.yml'):
         text = (ROOT / workflow).read_text()

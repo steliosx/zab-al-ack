@@ -46,7 +46,7 @@ _items = []
 _assertion_failures = 0
 
 def pytest_sessionstart(session):
-    if pytest.__version__ != "9.0.3" or importlib.metadata.version("pytest-asyncio") != "1.3.0":
+    if pytest.__version__ != "9.1.1" or importlib.metadata.version("pytest-asyncio") != "1.3.0":
         raise pytest.UsageError("mutation_pytest_version_mismatch")
 
 def pytest_collection_modifyitems(items):
