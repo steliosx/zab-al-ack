@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="#status"><img src="docs/assets/badge-alpha.svg" alt="Stage: alpha candidate" width="156" height="28"></a>
+  <a href="#status"><img src="docs/assets/badge-alpha.svg" alt="Stage: beta prerelease" width="156" height="28"></a>
   <a href="#getting-started"><img src="docs/assets/badge-python.svg" alt="Python reference: 3.12" width="119" height="28"></a>
   <a href="#how-it-works"><img src="docs/assets/badge-postgresql.svg" alt="Database: PostgreSQL" width="184" height="28"></a>
   <a href="LICENSE"><img src="docs/assets/badge-license.svg" alt="License: Apache-2.0" width="179" height="28"></a>
@@ -30,10 +30,14 @@
 </p>
 
 > [!IMPORTANT]
-> **0.2.0a2 · development candidate (F1 source binding and claim-path corrections) · development and isolated evaluation.** The latest beta prerelease is `v0.1.0b4`.
-> The candidate is unpublished and no production environment has been validated.
-> Production examples keep external writes disabled, with no active cohorts or endpoints.
-> See the [alpha report](ALPHA_REPORT.md) and [remaining qualification gates](docs/BETA_READINESS.md).
+> **0.2.0a2 · unpublished development candidate · development and isolated evaluation.** The latest GitHub beta prerelease is `v0.1.0b4`.
+> [Download the prerelease](https://github.com/steliosx/zab-al-ack/releases/tag/v0.1.0b4).
+> Published on 30 October 2026 from frozen producer `9cff02cb`.
+> It is not on PyPI and is not qualified for production. External writes remain
+> disabled by default, with no active cohorts or endpoints.
+> See the [release notes](docs/release/RELEASE_NOTES_v0.1.0b4.md),
+> [recorded exceptions](docs/release/TAG_PROPOSAL_v0.1.0b4.md) and
+> [remaining qualification gates](docs/BETA_READINESS.md).
 
 ---
 
@@ -75,7 +79,7 @@ the source and checks the problem and approved scope before delivery.
   <img src="docs/assets/delivery-outcomes.svg" alt="Already acknowledged: record the observation without an extra acknowledgement or comment. Eligible delivery: check the original problem and scope before bounded delivery. Unknown outcome: preserve uncertainty and investigate by reads, with no blind resend." width="1280">
 </p>
 
-These are explanatory views of the alpha design. They do not establish a passed
+These are explanatory views of the implementation design. They do not establish a passed
 qualification gate. Read the [implementation design](docs/DESIGN.md) or the
 [illustrated architecture guide](https://zabalack.stel.chatgpt.site/architecture.html)
 for the detailed capture, delivery and reconciliation boundaries.
@@ -126,16 +130,304 @@ for native PostgreSQL, PgBouncer and optional real-Zabbix procedures.
 
 ## Status
 
-The development baseline is **0.2.0a2** (development candidate after the `v0.1.0b4` beta prerelease). Current-candidate qualification and
-historical test results are recorded separately; a result belongs to the exact
-revision and artifact that produced it.
+The development baseline is **0.2.0a2**, with source binding, claim-path corrections and database schema 5.
+The latest published GitHub prerelease remains **v0.1.0b4**, frozen at `9cff02cb`.
+[Main `2bf0e11a`](https://github.com/steliosx/zab-al-ack/commit/2bf0e11a1afd6f397de911dea4f16784df5c35d1)
+is later development source. Results belong to the exact revision and artifact tested.
 
 | Area | Current position | Where to read more |
 | --- | --- | --- |
-| Development | Integrated alpha candidate, under qualification | [Alpha report](ALPHA_REPORT.md) |
-| Beta and publication | Remaining technical qualification and owner inputs are open | [Beta readiness](docs/BETA_READINESS.md) |
+| Development | Unpublished 0.2.0a2 source; b4 remains the latest beta prerelease; further qualification remains | [Release notes](docs/release/RELEASE_NOTES_v0.1.0b4.md) |
+| Publication and acceptance | GitHub prerelease only; PyPI is not authorised; installed and deployment gates remain open | [Beta readiness](docs/BETA_READINESS.md) · [Release record](docs/release/TAG_PROPOSAL_v0.1.0b4.md) |
 | Evidence | Unit/mock, PostgreSQL WASM, native-service and installed-path records have distinct scopes | [Evidence guide](evidence/README.md) · [Compatibility and evidence](#compatibility-and-evidence) |
 | Production use | No production environment validated; external writes disabled by default | [Deployment](docs/deployment.md) · [Runbook](docs/runbook.md) |
+
+### Current development checkpoint — 12 November 2026
+
+A read-only audit of main `a92c9a68` led to five merged corrections. The
+candidate identity is **0.2.0a2**; the database schema stays **5**.
+
+- [PR #78](https://github.com/steliosx/zab-al-ack/pull/78), head `940400f3`:
+  migration **016** replaces `worker_call()`. `claim_delivery` now fences an
+  abandoned send as uncertain before its cohort-policy branch, instead of
+  recording it as a certain failure. Because 016 keeps schema 5, the schema
+  version alone does not show whether 016 is applied.
+- [PR #79](https://github.com/steliosx/zab-al-ack/pull/79), head `f02437db`:
+  worker expiry follows the database's verdict, one capture-health rule drives
+  both the delivery gate and the gauge, and RPC and signer failures are
+  classified instead of escaping.
+- [PR #80](https://github.com/steliosx/zab-al-ack/pull/80), head `1ffb8b33`,
+  and [PR #81](https://github.com/steliosx/zab-al-ack/pull/81), head `5c16eaec`:
+  CI concurrency and suite-list guards, and hash-checked dependency locks in CI
+  and the Ansible install.
+- [PR #84](https://github.com/steliosx/zab-al-ack/pull/84), head `06f2a929`:
+  the worker's delivery gate follows a current doctor result, and a maintenance
+  failure is its own incident.
+
+Each head has a recorded Codex **source-only** agreement on the exact commit.
+Those agreements do not claim independent test execution.
+
+[Exact-main CI 43219261576](https://github.com/steliosx/zab-al-ack/actions/runs/43219261576)
+on `2bf0e11a` passed all five jobs. The executed native phases report **238 + 5
++ 6 + 94 + 2 = 345 passed, zero failed/skipped**. CodeQL and the public
+dependency and secret checks also succeeded on this main; they are separate from
+independent security acceptance.
+
+A second read of main `51ff995b` left follow-ups that are **not fixed** here: a
+malformed `token_expires_at` can stop the whole metrics export, a required
+reference phase whose cases all skip can still report PASS, the reference alert
+rules do not cover credential-expiry metadata, and worker-only counters are not
+exported.
+
+This main is **not a release or installed/live acceptance**. No 0.2.0 tag or
+package exists. Fresh install, upgrade/rollback, installed coexistence, real
+Zabbix and G1–G8/A5/T40/T41 and successor gates keep their own requirements.
+Action-sync (planned migration 017) and ack-core 3b are not implemented.
+
+### Historical development checkpoint — 2 November 2026
+
+At this checkpoint the baseline was 0.2.0a1 and main was
+[`a92c9a68`](https://github.com/steliosx/zab-al-ack/commit/a92c9a687e9a6ef016a3100c7c814967b33a4704).
+
+
+[PR #76](https://github.com/steliosx/zab-al-ack/pull/76), final head
+`2960455950c4b4906f3e2f5c43bcf4846d183390`, merged F1 source binding:
+authenticated ingestion records the source for the alert's exact receive epoch,
+and the signer and SQL capture refuse a missing, conflicting, stale or mismatched
+binding. Migration **015** advances schema 4 to **5**. Source inspection confirms
+that refused bindings do not fall back to mutable attributes. The documented
+freshness residual and pre-015/webhook no-binding window remain accepted limits;
+there is no backfill. Rollback and forward recovery are separate procedures in
+[the rollback guide](docs/rollback.md), not an interchangeable script rerun.
+
+[PR #77](https://github.com/steliosx/zab-al-ack/pull/77), head `b63e6705`,
+corrected a material evidence gap: #76's CI omitted the new F1 SQL test file.
+It is now in both native and WASM suite lists, with a list-membership regression
+guard. [Exact-main CI 41538257473](https://github.com/steliosx/zab-al-ack/actions/runs/41538257473)
+passed all five jobs. The executed native phases report **229 + 5 + 6 + 94 + 2 =
+336 passed, zero failed/skipped**, including the 20 added F1 SQL cases.
+The textual guard alone does not prove execution. CodeQL and public dependency/
+secret checks also succeeded on this main; they are separate from independent
+security acceptance.
+
+The PR records report Codex source review and Voalack coexistence review with
+explicit local/static limits. #76's body names earlier reviewed head `01cab386`;
+its final native-fixture correction is `29604559`. Original signed dispositions
+for that final head were not available to this presentation review. Automatic
+reviews on #76/#77 failed under a usage limit, not a completed clean review.
+
+[PR #73](https://github.com/steliosx/zab-al-ack/pull/73) is merged. Its
+[Docker App check](https://github.com/steliosx/zab-al-ack/runs/125472845988)
+at `b744df55` is successful, and Forgehold reports CLI/daemon/hello-world/Compose
+observations. The probe always exits zero: its green badge means completion,
+not native-job qualification; container cleanup and a usable full CI lane remain
+separate evidence.
+
+This main is **not a release or installed/live acceptance**. Fresh install,
+upgrade/rollback, installed coexistence, real Zabbix and G1–G8/A5/T40/T41 and
+successor gates keep their own requirements. At that checkpoint, action-sync
+(then planned as migration 016) and ack-core 3b were not implemented by F1 alone.
+
+### Historical development checkpoint — 1 November 2026
+
+[Main `ede9c939`](https://github.com/steliosx/zab-al-ack/commit/ede9c939e592b4406bc5ffc2b89b08862bd17d8a)
+merges two documentation-only changes. [PR #71](https://github.com/steliosx/zab-al-ack/pull/71),
+reviewed head `c8f5254d`, removes a local controller path from the current
+role document; it does not rewrite history or grant a security clearance.
+[PR #72](https://github.com/steliosx/zab-al-ack/pull/72), head `1ef53589`,
+renumbers the planned 0.2.0 source-binding and action-sync migrations to
+**015 and 016**, because 013/014 already shipped as ledger fixes.
+The recorded Codex disposition is **design-only**. No new migration or
+0.2.0 runtime implementation is introduced by this merge.
+
+[Exact-main run 41332904614](https://github.com/steliosx/zab-al-ack/actions/runs/41332904614)
+passed all five jobs and **313 native tests with no failures/skips**.
+CodeQL, public checks and the later main soak also succeeded.
+The published b4 artifact remains frozen at `9cff02cb`; none of these
+later results changes its bytes or closes installed/live qualification.
+
+Unmerged [PR #73](https://github.com/steliosx/zab-al-ack/pull/73), exact head
+`a844f249472a1d901ef47cc77dda3382f0c4cd03`, adds a dispatch-only Docker
+probe. Source inspection confirms bounded commands and sanitized outcome
+fields. **Its job always exits zero and prints a completion PASS even when
+Docker is unavailable**: capability is determined from the individual
+`PROBE_DOCKER` observations, not the green job badge or completion marker.
+Its ordinary CI pass is not execution of the probe; no lane result was
+observed at this checkpoint. This produces no candidate or deployment evidence.
+
+### Historical release and evidence checkpoint — 30 October 2026
+
+[Main `be9b933f`](https://github.com/steliosx/zab-al-ack/commit/be9b933f9d08c2e1d97d899e1be8ba6221bcb1ea)
+records the completed b4 publication in [PR #70](https://github.com/steliosx/zab-al-ack/pull/70),
+reviewed head `71595ff2`. The annotated tag `v0.1.0b4` resolves to
+`9cff02cb80d98b17d256498797a86c7cb6c1c144`, not later main.
+The five declared release assets are published. GitHub-reported digests match
+the release record; this presentation review did not download those built files.
+
+The [frozen producer run 41039220769](https://github.com/steliosx/zab-al-ack/actions/runs/41039220769)
+used the broader nightly profile and passed all five jobs, including **313 native
+tests with no failures/skips**. Three observed soak runs also succeeded, two at
+the frozen b4 commit and one at later `5c607100`. These are successful new
+episodes; they do not identify the missing minimized example from the earlier
+b3 failure or prove that randomized exploration is complete.
+
+The [tag run 41133668597](https://github.com/steliosx/zab-al-ack/actions/runs/41133668597)
+passed, but used the narrower PR profile: its **12** catalogue mutants were killed;
+the **8 nightly-only mutants were NOT_RUN**. The producer killed all 20.
+The release record discloses that accepted coverage exception, incomplete
+publication-register waiver, deferred reviews and a step-order deviation.
+Codex's recorded source agreement and reconciliations are not release-byte
+inspection; those bytes remain **NOT_INSPECTED by Codex**.
+
+[PR #69](https://github.com/steliosx/zab-al-ack/pull/69), reviewed head `a39113fa`,
+adds invocation-bound, allowlisted ledger-failure facts to job output while
+keeping raw failure files private. Source inspection confirms the binding and
+reconstruction boundary. Its synthetic exporter controls do not prove the new
+failure-header path under an actual failing PostgreSQL run.
+[Exact-main ordinary CI](https://github.com/steliosx/zab-al-ack/actions/runs/41141245412)
+passed all five jobs and 313 native tests; public scan and CodeQL also succeeded.
+
+[PR #67](https://github.com/steliosx/zab-al-ack/pull/67), head `c4b9ece9`,
+merges the dispatch-only Forgehold smoke workflow. Its checkout equality and
+two markers do not establish product correctness, App provenance, admission,
+isolation, evidence custody or cleanup. No live deployment, installed acceptance
+or G1–G8/A5/T40/T41 closure follows from publication.
+
+### Historical development checkpoint — 29 October 2026
+
+Main [`9cff02cb`](https://github.com/steliosx/zab-al-ack/commit/9cff02cb80d98b17d256498797a86c7cb6c1c144)
+contains two ledger-expiry corrections: [PR #64](https://github.com/steliosx/zab-al-ack/pull/64),
+exact head `5186f6ce`, adds migration 013 so expiry and operator resume cannot
+erase an outstanding write or live lease; [PR #65](https://github.com/steliosx/zab-al-ack/pull/65),
+exact head `8f56cd41`, adds migration 014 so an abandoned send is fenced as
+uncertain before expiry, without issuing an expired intent a new lease.
+The latter advances the candidate to **0.1.0b4**. Both have direct regression
+cases and published Codex source-only dispositions. Those dispositions do not
+claim independent runtime execution.
+
+[Exact-main ordinary run 40968133596](https://github.com/steliosx/zab-al-ack/actions/runs/40968133596)
+passed all five jobs, including **313 native tests**, with no failures or skips.
+Its package log records setuptools 84.1.0 and byte-identical repeated builds.
+The [public scan](https://github.com/steliosx/zab-al-ack/actions/runs/40968133638)
+reports zero known lock advisories and zero Gitleaks findings in its two scopes;
+[CodeQL](https://github.com/steliosx/zab-al-ack/actions/runs/40968133564) also completed
+successfully. These are scoped checks, not independent security or deployment acceptance.
+
+The broader [29 October nightly](https://github.com/steliosx/zab-al-ack/actions/runs/40855680678)
+ran on the earlier b3 merge `c80681a1`: **207 native passes, one generated-ledger
+failure**, a reference-suite failure and skipped packaging. Its native minimized
+counterexample is not present in the inspected diagnostics. The directly
+reproduced expiry defects are fixed in source; their identity with that nightly
+failure is not established. No b4 nightly pass is claimed.
+
+[PR #66](https://github.com/steliosx/zab-al-ack/pull/66), exact head `344931fe`,
+adds a schedule-only three-hour soak using the existing CI workflow. Its source
+is merged; no completed soak execution was observed at this checkpoint.
+The published b1 release is unchanged. G1–G8, A5, T40/T41 and successor
+qualification requirements are not closed by these merges.
+
+### Historical development checkpoint — 28 October 2026
+
+Main [`7d170231`](https://github.com/steliosx/zab-al-ack/commit/7d170231a4cbc19648333c645b18042cb49de64e)
+includes [PR #62](https://github.com/steliosx/zab-al-ack/pull/62), exact head
+`c950d208`: the 0.1.0b2 candidate identity and setuptools 84.1.0. The published
+b1 producer, files and evidence remain unchanged; no tag or release follows from
+this merge. [PR #63](https://github.com/steliosx/zab-al-ack/pull/63), head
+`0ae9c83d`, corrects the release and attestation verifiers to accept explicit
+alpha or beta versions, while retaining rejection of rc/dev/post/local versions.
+Its source approval is not a real-artifact verifier PASS.
+
+[Exact-main Alpha run 40770409415](https://github.com/steliosx/zab-al-ack/actions/runs/40770409415)
+passed all five jobs, including 311 native tests with no failures or skips.
+The package log records setuptools 84.1.0 and byte-identical repeated builds.
+The [exact-main public scan](https://github.com/steliosx/zab-al-ack/actions/runs/40770409404)
+reports zero known advisory entries and zero Gitleaks findings in both scopes.
+CodeQL also completed successfully. These scoped results are not independent
+security clearance, installed-artifact acceptance or live qualification.
+
+The broader [28 October nightly](https://github.com/steliosx/zab-al-ack/actions/runs/40667514019)
+ran earlier on `d074665e` and still recorded 205 native passes and two
+generated-ledger failures, plus a WASM failure. The later ordinary-profile pass
+does not close that failure or establish a nightly pass for b2. Its minimized
+replay and root cause remain unresolved in the inspected evidence.
+
+### Historical development checkpoint — 27 October 2026
+
+Main [`d074665e`](https://github.com/steliosx/zab-al-ack/commit/d074665e482f1b3a85f114f1ed930142320990e2)
+includes [PR #60](https://github.com/steliosx/zab-al-ack/pull/60): brotli 1.2.1
+and certifi 2026.10.19 in the applicable locks. The
+[exact-main security run](https://github.com/steliosx/zab-al-ack/actions/runs/40569303744)
+now reports one advisory entry, down from four. The setuptools 83.0.0 finding
+remains open; no suppression was added. Changing the release build backend needs
+a separate toolchain decision and qualification. These changes do not alter the
+frozen published prerelease or qualify an installed environment.
+
+The [PR's ordinary Alpha run](https://github.com/steliosx/zab-al-ack/actions/runs/40568056599)
+passed all five jobs. Its
+[post-merge run](https://github.com/steliosx/zab-al-ack/actions/runs/40569303765)
+passed quality, mutation and reference, but native services were **NOT_RUN**:
+`docker compose version` timed out before any native phase; packaging was skipped.
+The earlier [27 October nightly](https://github.com/steliosx/zab-al-ack/actions/runs/40478762602)
+at `78305a30` still recorded 205 native passes and two generated-ledger failures,
+plus a PostgreSQL WASM failure. A passing ordinary profile does not close the
+nightly failure; no minimized replay or root cause is established here.
+
+[PR #59](https://github.com/steliosx/zab-al-ack/pull/59) publishes the
+[PostgreSQL tuning benchmark](docs/pg-tuning-benchmark.md). Its derived figures
+are exploratory; no material improving flag repeated on the same metric across
+two attempts. It recommends no tuning setting and grants no deployment credit.
+
+### Historical evidence checkpoint — 14 October 2026
+
+- **Frozen artifact:** tag `v0.1.0b1` resolves to
+  [`f85212e2`](https://github.com/steliosx/zab-al-ack/commit/f85212e238fb6322802b163219096db48e428291).
+  The release attaches the five original files from
+  [producer run 38187030741](https://github.com/steliosx/zab-al-ack/actions/runs/38187030741).
+  GitHub-reported asset digests match the release record; this README review did
+  not independently download or inspect those built files.
+- **Main at that checkpoint:** [`c66e7f30`](https://github.com/steliosx/zab-al-ack/commit/c66e7f3049b5a06123e90f362f9a11c4eb1c1e92)
+  contains the reviewed completion record from [PR #52](https://github.com/steliosx/zab-al-ack/pull/52),
+  whose exact head was `c2f194c0`. The delta from the frozen producer is documentation only.
+- **Keep both CI outcomes:** [push run 38505508373](https://github.com/steliosx/zab-al-ack/actions/runs/38505508373)
+  passed all five jobs. Later [nightly run 38538128393](https://github.com/steliosx/zab-al-ack/actions/runs/38538128393)
+  failed the WASM PostgreSQL phase and native PostgreSQL generated-ledger tests
+  (native: 205 passed, two failed); packaging was skipped. The scheduled profile is
+  broader than the PR/push profile. Its sanitized diagnostics do not include the
+  minimized failing examples, so the underlying cause remains undetermined.
+- **Publication is not acceptance:** register completeness was waived by the owner,
+  not passed. External security review and the independent reviewer's built-file
+  inspection were deferred, not completed. The release record also retains the
+  owner's explicit artifact-comparison exception. A2, A4/G5 and G1–G8 remain open.
+  A published beta is not approval to enable writes in a real environment.
+
+### Forgehold quality lane — 17 October 2026
+
+[PR #54](https://github.com/steliosx/zab-al-ack/pull/54), reviewed at
+`4c25f1c3`, adopted the dispatch-only quality workflow onto
+[main `b9db4ab0`](https://github.com/steliosx/zab-al-ack/commit/b9db4ab0ed980e7758722e830b2278e1fd10334a).
+The existing hosted pipeline remains the candidate-evidence lane.
+
+At that exact main commit, the Preloop App's
+[quality check 116876268249](https://github.com/steliosx/zab-al-ack/runs/116876268249)
+reports success on 16 October, including dependency installation, `pip check`
+and `tools/run_quality.py`. This is an App-reported job result; the raw
+execution records, independent custody readback and VM cleanup were not
+inspected in this presentation review. It is not full Forgehold qualification.
+
+The [ordinary push run](https://github.com/steliosx/zab-al-ack/actions/runs/38828449095)
+passed all five jobs. The scheduled runs on
+[16 October](https://github.com/steliosx/zab-al-ack/actions/runs/38872931967) and
+[17 October](https://github.com/steliosx/zab-al-ack/actions/runs/39015416743)
+both failed the PostgreSQL WASM phase and the same native generated-ledger test
+(native each time: 205 passed, two failed); packaging was skipped. The
+quality-only lane result does not clear those failures. Their minimized
+counterexamples and root cause remain unavailable in the retained public
+summaries.
+
+The [open runner-policy documentation finding](https://github.com/steliosx/zab-al-ack/pull/54#discussion_r4289531492)
+also remains: the general hosted-only statements need to distinguish this
+explicit self-hosted exception. No production, installed-account or release
+gate is closed by adopting or running the quality lane.
 
 Use [the changelog](CHANGELOG.md) for the release narrative and
 [open pull requests](https://github.com/steliosx/zab-al-ack/pulls) for proposed work.
@@ -151,7 +443,7 @@ Use [the changelog](CHANGELOG.md) for the release narrative and
   operator controls and conservative handling of unknown remote outcomes.
 
 Bulk actions, chatops, arbitrary status/attribute updates and fan-in alerts are
-outside this alpha's write-back scope. A later source unacknowledgement does not
+outside this release's write-back scope. A later source unacknowledgement does not
 automatically cause re-acknowledgement. See [design](docs/DESIGN.md),
 [source-backed amendment A1](docs/SPEC_AMENDMENTS.md) and
 [final-review interpretations](docs/final_review_notes.md).
@@ -183,7 +475,7 @@ been satisfied. See [installation and operations](#installation-and-operations).
 <details>
 <summary><strong>Which acknowledgements are supported?</strong></summary>
 
-The alpha supports an authorised human acknowledging one eligible Alerta alert
+The beta supports an authorised human acknowledging one eligible Alerta alert
 through the single-alert action route, mapped to one original Zabbix problem in
 an approved scope. Bulk actions, chatops and fan-in alerts are outside that scope.
 A later source unacknowledgement does not automatically trigger re-acknowledgement.
@@ -232,9 +524,11 @@ currently records no validated production environment.
 See [mutation testing](docs/mutation-testing.md),
 [deployment E2E](docs/deployment-e2e.md),
 [security automation](docs/security-automation.md) and
-[release provenance](docs/release-provenance.md). Hosted CodeQL and signed
-attestation issuance have not run here. The attestation template is inactive
-and package publication stays disabled.
+[release provenance](docs/release-provenance.md). Hosted CodeQL has executed:
+[run 43219261878](https://github.com/steliosx/zab-al-ack/actions/runs/43219261878)
+on main `2bf0e11a` completed successfully. Workflow completion is not external security approval
+or independent verification of alert dispositions. Signed attestation issuance
+remains NOT_RUN; its template is inactive. PyPI publication remains unauthorised.
 
 </details>
 
