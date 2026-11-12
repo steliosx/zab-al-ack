@@ -753,6 +753,24 @@ def test_metrics_export_uses_actual_instance_gauges_and_incident_grouping():
     assert "zabalack:v1" not in text
 
 
+@pytest.mark.parametrize("bad", [1893456000, 0, None, "", ["2030-01-01T00:00:00Z"], {"at": "x"}, True,
+                                 "not-a-time", "2030-01-01T00:00:00"])
+def test_unusable_token_expiry_fails_its_own_instance_and_not_the_export(bad):
+    """A number (or any non-time) in token_expires_at used to raise
+    AttributeError out of prometheus_text, so every gauge disappeared."""
+    from zabalack.metrics import prometheus_text
+    settings = Settings(config_revision="v1", deployment_id="lab", endpoint_registry={
+        "bad-zabbix": {"token_expires_at": bad}, "good-zabbix": {"token_expires_at": "2999-01-01T00:00:00Z"},
+        "plain-zabbix": {}})
+    text = prometheus_text({"per_instance": [{"instance": "good-zabbix", "pending_count": 3}]}, settings)
+    assert 'zabalack_instance_failure{failure_class="credential_expiry_metadata",instance="bad-zabbix"} 1.0' in text
+    assert 'zabalack_pending_count{instance="good-zabbix"} 3.0' in text
+    assert 'zabalack_credential_expiry_seconds{instance="good-zabbix"}' in text
+    assert 'zabalack_credential_expiry_seconds{instance="bad-zabbix"}' not in text
+    assert text.count("credential_expiry_metadata") == 1
+    assert 'zabalack_credential_expiry_seconds{instance="plain-zabbix"}' not in text
+
+
 @pytest.mark.parametrize("change", [{"zabalack_schema_version": 4}, {"database_name": "other"}, {"functions_ok": False}])
 def test_the_health_gauge_and_the_delivery_gate_share_one_rule(change):
     """A database the worker refuses (wrong schema, wrong database) must not

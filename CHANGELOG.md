@@ -77,6 +77,17 @@
   re-creates, a unified diff against its previous definition (016's
   `worker_call` is +15 −7 against 014). Read-only; it decides nothing.
 - Removed the unused `crypto.public_reference()`.
+- Metrics export: an endpoint's optional `token_expires_at` that is not an ISO
+  8601 time with an offset (a number, a list, an empty or naive string) now
+  marks only that instance with `credential_expiry_metadata`. Before, a
+  non-string value raised out of `prometheus_text` and the whole textfile
+  export failed, including the pending-age gauges. `config-check` refuses such
+  a value (`endpoint_token_expiry_invalid`); an absent key still means that no
+  expiry is declared.
+- `tools/run_reference_suite.py` records exit code 3 for a required phase in
+  which no case passed. Before, a phase whose cases were all skipped counted
+  as succeeded. Only `optional-services`, which this runner cannot execute and
+  reports as `NOT_RUN`, may run nothing.
 
 ## 0.2.0a1 — 2026-11-01 (development candidate, unpublished)
 

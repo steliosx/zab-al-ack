@@ -7,6 +7,8 @@ from collections import Counter
 from threading import Lock
 from typing import Any
 
+from .config import token_expiry
+
 LOG = logging.getLogger("zabalack")
 SAFE_FIELDS = frozenset({"action_id", "capture_id", "instance", "event_id", "result", "reason", "attempt", "latency_ms", "error_class", "worker_id"})
 
@@ -88,13 +90,17 @@ def prometheus_text(status: dict[str, Any], settings: Any) -> str:
     for instance in settings.endpoint_registry:
         if not healthy:
             failures.add((instance, "capture_health"))
-        expiry = settings.endpoint_registry[instance].get("token_expires_at")
-        if expiry:
-            try:
-                remaining = (datetime.fromisoformat(expiry.replace("Z", "+00:00")) - datetime.now(timezone.utc)).total_seconds()
-                emit("zabalack_credential_expiry_seconds", remaining, instance=instance)
-            except (TypeError, ValueError):
+        entry = settings.endpoint_registry[instance]
+        # An absent key means no expiry is declared. Any other value that is not
+        # a usable time is this instance's failure, never the whole export's.
+        if not isinstance(entry, dict):
+            failures.add((instance, "credential_expiry_metadata"))
+        elif "token_expires_at" in entry:
+            expires = token_expiry(entry["token_expires_at"])
+            if expires is None:
                 failures.add((instance, "credential_expiry_metadata"))
+            else:
+                emit("zabalack_credential_expiry_seconds", (expires - datetime.now(timezone.utc)).total_seconds(), instance=instance)
     if status.get("verifier_unhealthy", 0):
         failures.add(("verifier", "verifier_key"))
     for instance, code in sorted(failures):

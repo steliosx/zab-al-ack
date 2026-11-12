@@ -12,6 +12,9 @@ from datetime import datetime, timezone
 from evidence_utils import redact_junit, cases, code_digests
 
 ROOT = Path(__file__).resolve().parents[1]
+# Only this phase may run nothing: this runner strips the native and real-Zabbix
+# fixtures, so its cases skip by design and are reported as NOT_RUN below.
+OPTIONAL_PHASES = frozenset({'optional-services'})
 
 
 def main() -> int:
@@ -79,6 +82,8 @@ def main() -> int:
                     observed[key] = row['status']
         if code == 0 and not phase_cases:
             code = 3  # A successful process with no executed report is not a pass.
+        elif code == 0 and name not in OPTIONAL_PHASES and not any(row['status'] == 'passed' for row in phase_cases):
+            code = 3  # Neither is a required phase whose every case was skipped.
         results.append({'phase': name, 'layer': layer, 'command': ['python' if x == sys.executable else x for x in command],
             'exit_code': code, 'started_at': started, 'finished_at': datetime.now(timezone.utc).isoformat(),
             'junit': str(public_xml.relative_to(ROOT)) if public_xml.exists() else None})

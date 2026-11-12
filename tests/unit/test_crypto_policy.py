@@ -179,6 +179,20 @@ def test_endpoint_without_its_own_logical_instance_is_refused_at_config_check(en
         validate_settings(Settings(endpoint_registry={"lab-A": entry}, approved_versions=("7.0.25",)))
 
 
+@pytest.mark.parametrize("bad", [1893456000, 0, None, "", ["2030-01-01T00:00:00Z"], True, "soon", "2030-01-01T00:00:00"])
+def test_endpoint_with_an_unusable_token_expiry_is_refused_at_config_check(bad):
+    from zabalack.config import validate_endpoint
+    with pytest.raises(ConfigError, match="endpoint_token_expiry_invalid"):
+        validate_endpoint(ENDPOINT | {"token_expires_at": bad})
+
+
+@pytest.mark.parametrize("good", ["2030-01-01T00:00:00Z", "2030-01-01T02:00:00+02:00"])
+def test_endpoint_token_expiry_with_an_offset_or_no_expiry_is_accepted(good):
+    from zabalack.config import validate_endpoint
+    validate_endpoint(ENDPOINT | {"token_expires_at": good})
+    validate_endpoint(ENDPOINT)
+
+
 def test_endpoint_naming_its_own_logical_instance_is_accepted_and_resolves():
     from zabalack.config import validate_settings
     from zabalack.rpc import EndpointRegistry

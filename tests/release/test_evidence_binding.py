@@ -203,6 +203,47 @@ def test_reference_runner_binds_its_record_to_the_tree_before_running(tmp_path, 
     assert report['code_digests'] != evidence_utils.code_digests(root)
 
 
+def _reference_run(tmp_path, monkeypatch, case_xml, *argv):
+    """Run the reference runner with children that only write a JUnit report."""
+    root = synthetic_tree(tmp_path)
+    (root / 'build/evidence-raw').mkdir(parents=True)
+
+    def child(command, **kwargs):
+        target = next(part for part in command if part.startswith('--junitxml=')).split('=', 1)[1]
+        phase = Path(target).stem
+        (root / target).write_text('<testsuites><testsuite>' + case_xml(phase) + '</testsuite></testsuites>')
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(run_reference_suite, 'ROOT', root)
+    monkeypatch.setattr(run_reference_suite.subprocess, 'run', child)
+    monkeypatch.setattr(sys, 'argv', ['run_reference_suite.py', *argv])
+    code = run_reference_suite.main()
+    report = json.loads((root / 'evidence/reference-run.json').read_text())
+    return code, report, {row['phase']: row['exit_code'] for row in report['phases']}
+
+
+PASSED_CASE = '<testcase classname="tests.unit.test_x" name="test_a"/>'
+SKIPPED_CASE = '<testcase classname="tests.unit.test_x" name="test_b"><skipped message="synthetic"/></testcase>'
+
+
+def test_reference_runner_refuses_a_required_phase_whose_cases_all_skipped(tmp_path, monkeypatch):
+    """Exit status 0 with a report of skips only used to be recorded as PASS."""
+    code, report, exits = _reference_run(tmp_path, monkeypatch,
+        lambda phase: SKIPPED_CASE if phase == 'worker-sql-wasm' else PASSED_CASE, '--wasm')
+    assert code == 1 and report['status'] == 'FAIL' and report['all_executed_phases_succeeded'] is False
+    assert exits['worker-sql-wasm'] == 3
+    assert {phase for phase, value in exits.items() if value != 0} == {'worker-sql-wasm'}
+
+
+def test_reference_runner_still_accepts_the_optional_phase_running_nothing(tmp_path, monkeypatch):
+    """optional-services skips by design here; its layers stay NOT_RUN in the record."""
+    code, report, exits = _reference_run(tmp_path, monkeypatch,
+        lambda phase: SKIPPED_CASE if phase == 'optional-services' else PASSED_CASE + SKIPPED_CASE, '--wasm')
+    assert code == 0 and report['status'] == 'PASS'
+    assert set(exits.values()) == {0} and len(exits) == 6
+    assert (report['native_postgres'], report['real_zabbix']) == ('NOT_RUN', 'NOT_RUN')
+
+
 def test_native_runner_binds_its_record_to_the_tree(tmp_path, monkeypatch):
     root = synthetic_tree(tmp_path)
     (root / 'build/evidence-raw').mkdir(parents=True)
