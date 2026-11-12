@@ -91,13 +91,16 @@
 - `zabbix/monitoring.rules.yml`: the failure rule now matches
   `credential_expiry_metadata` (PromQL `=~` is anchored, so `credential` did
   not), and two rules read `zabalack_credential_expiry_seconds`: warning with
-  30 days left, critical when the declared expiry has passed (the runbook's
+  30 days left (and not yet expired), critical when the declared expiry has passed (the runbook's
   90-day token, rotation before day 60). Tests bind the rules to the metric
   names and failure classes the exporter emits.
 - The worker's in-process counters are removed: nothing read them, and
   `zabalack metrics` runs in another process and reads the ledger. Each
   capture result is now one `capture_result` log line (delivery already had
-  `delivery_result`). A rejected capture's line carries no instance.
+  `delivery_result`). Its result is the database's own answer to
+  `verify_complete`: `verified` or `verified_replay` with the action's state,
+  `refused` with the database's reason, or `unknown`. A capture the worker
+  itself rejects is `rejected`; that line and a refusal carry no instance.
 
 ## 0.2.0a1 — 2026-11-01 (development candidate, unpublished)
 

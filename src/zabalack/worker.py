@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .db import Database
-from .metrics import Metrics, capture_health_ok, log_event
+from .metrics import Metrics, capture_disposition, capture_health_ok, log_event
 from .rpc import EndpointRegistry, RPCError, Timeouts, ValidationError, ZabbixClient, validate_event
 
 
@@ -73,7 +73,10 @@ class Worker:
             actor_ref = hashlib.sha256((intent["action_id"] + "|actor").encode()).hexdigest()
             result = await self.db.call("verify_complete", {**lease, "intent": intent,
                 "actor_ref": actor_ref})
-            log_event("capture_result", capture_id=lease.get("capture_id"), instance=intent["source"]["zabbix_instance"], result="verified")
+            disposition = capture_disposition(result)
+            if "action_id" in disposition:
+                disposition["instance"] = intent["source"]["zabbix_instance"]
+            log_event("capture_result", capture_id=lease.get("capture_id"), **disposition)
             if result and result.get("action_id"):
                 await self.db.call("project", {"action_id": result["action_id"]})
         except KeyUnavailable:

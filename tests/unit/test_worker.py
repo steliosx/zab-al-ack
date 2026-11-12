@@ -5,7 +5,6 @@ import copy
 import json
 import re
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from unittest.mock import Mock
 import uuid
 
@@ -807,29 +806,94 @@ def test_the_reference_rules_read_only_metrics_the_exporter_emits():
         used = set(re.findall(r"zabalack_\w+", rule["expr"]))
         assert used and used <= emitted, rule["alert"]
     expiring, expired = rules["AlertaZabbixAckCredentialExpiring"], rules["AlertaZabbixAckCredentialExpired"]
-    assert expiring["expr"].endswith("(zabalack_credential_expiry_seconds) < 2592000") and expiring["labels"]["severity"] == "warning"
+    assert expiring["expr"] == ("(min by (instance) (zabalack_credential_expiry_seconds) < 2592000)"
+                                " and (min by (instance) (zabalack_credential_expiry_seconds) > 0)")
+    assert expiring["labels"]["severity"] == "warning"
     assert expired["expr"].endswith("(zabalack_credential_expiry_seconds) <= 0") and expired["labels"]["severity"] == "critical"
+
+
+AID = "11111111-2222-3333-4444-555555555555"
+
+
+async def _capture_lines(caplog, captures, answer=...):
+    import logging
+    db = FakeDB(captures)
+    if answer is not ...:
+        original = db.call
+
+        async def call(op, payload=None):
+            value = await original(op, payload)
+            return answer if op == "verify_complete" else value
+        db.call = call
+    w = worker(db)
+    with caplog.at_level(logging.INFO, logger="zabalack"):
+        for _ in captures:
+            await w.verify_once()
+    return db, [json.loads(r.getMessage()) for r in caplog.records if '"capture_result"' in r.getMessage()]
 
 
 @pytest.mark.asyncio
 async def test_capture_results_are_log_lines_and_the_worker_keeps_no_unread_counters(caplog):
     """Counts come from the ledger; the per-process counters had no reader."""
-    import logging
     from zabalack.metrics import Metrics
     assert not hasattr(Metrics(), "increment") and not hasattr(Metrics(), "snapshot")
     good, denied = signed_capture(), signed_capture()
     denied["intent"]["actor"]["customers"] = ["other-customer"]
     denied["marker"] = sign_intent(denied["intent"], "lab", KEY)
-    w = worker(FakeDB([good, denied]))
-    with caplog.at_level(logging.INFO, logger="zabalack"):
-        await w.verify_once()
-        await w.verify_once()
-    records = [json.loads(r.getMessage()) for r in caplog.records if '"capture_result"' in r.getMessage()]
-    assert records[0] == {"event": "capture_result", "capture_id": good["capture_id"],
-                          "instance": good["intent"]["source"]["zabbix_instance"], "result": "verified"}
+    _, records = await _capture_lines(caplog, [good, denied])
+    assert records[0] == {"event": "capture_result", "capture_id": good["capture_id"], "result": "verified",
+                          "action_id": good["intent"]["action_id"], "reason": "authorised",
+                          "instance": good["intent"]["source"]["zabbix_instance"]}
     assert records[1]["result"] == "rejected" and records[1]["capture_id"] == denied["capture_id"]
     assert "instance" not in records[1] and re.fullmatch(r"[a-z_]{1,96}", records[1]["reason"])
     assert len(records) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_database_refusal_is_not_logged_as_a_verified_capture(caplog):
+    """verify_complete can answer state=failed without raising (the cohort
+    changed after the worker's own check). The line said `verified`."""
+    capture = signed_capture()
+    db, records = await _capture_lines(caplog, [capture], {"state": "failed", "reason": "failed_actor_or_cohort_policy"})
+    assert records == [{"event": "capture_result", "capture_id": capture["capture_id"],
+                        "result": "refused", "reason": "failed_actor_or_cohort_policy"}]
+    assert not any(op == "project" for op, _ in db.calls)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("answer", "expected"), [
+    ({"action_id": AID, "state": "authorised"}, {"result": "verified", "action_id": AID, "reason": "authorised"}),
+    ({"action_id": AID, "state": "held", "reason": "shared_source_effect"}, {"result": "verified", "action_id": AID, "reason": "held"}),
+    ({"action_id": AID, "state": "expired", "reason": "execution_lifetime_expired"}, {"result": "verified", "action_id": AID, "reason": "expired"}),
+    ({"action_id": AID, "state": "authorised", "replay": True}, {"result": "verified_replay", "action_id": AID, "reason": "authorised"}),
+])
+async def test_an_accepted_capture_logs_the_databases_action_state(caplog, answer, expected):
+    capture = signed_capture()
+    _, records = await _capture_lines(caplog, [capture], answer)
+    assert records == [{"event": "capture_result", "capture_id": capture["capture_id"],
+                        "instance": capture["intent"]["source"]["zabbix_instance"], **expected}]
+
+
+@pytest.mark.parametrize("answer", [
+    None, {}, [], "verified", 1, True,
+    {"state": "failed"}, {"state": "failed", "reason": None}, {"state": "failed", "reason": "Bad Reason"},
+    {"state": "failed", "reason": "x" * 97}, {"state": "authorised", "reason": "ok"},
+    {"state": "failed", "reason": "ok", "replay": True},
+    {"action_id": AID}, {"action_id": AID, "state": None}, {"action_id": AID, "state": "NOT A CODE"},
+    {"action_id": "not-a-uuid", "state": "authorised"}, {"action_id": 7, "state": "authorised"},
+    {"action_id": AID + "\n", "state": "authorised"}, {"action_id": AID, "state": "authorised", "replay": "yes"},
+    {"action_id": AID, "state": "authorised", "replay": False},
+])
+def test_an_unexpected_database_answer_is_unknown_and_copies_nothing(answer):
+    from zabalack.metrics import capture_disposition
+    assert capture_disposition(answer) == {"result": "unknown", "reason": "unexpected_database_result"}
+
+
+def test_a_disposition_never_carries_other_fields_of_the_answer():
+    from zabalack.metrics import capture_disposition
+    answer = {"action_id": AID, "state": "authorised", "actor_ref": "secret-ref", "customer": "acme",
+              "event_id": "41001", "reason": "free text with a name"}
+    assert capture_disposition(answer) == {"result": "verified", "action_id": AID, "reason": "authorised"}
 
 
 @pytest.mark.parametrize("change", [{"zabalack_schema_version": 4}, {"database_name": "other"}, {"functions_ok": False}])

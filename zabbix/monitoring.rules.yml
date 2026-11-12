@@ -19,7 +19,8 @@ groups:
         annotations: {summary: "Acknowledgement integration blocked for this instance"}
       # Runbook token policy: 90-day expiry, rotation before day 60 (30 days left).
       - alert: AlertaZabbixAckCredentialExpiring
-        expr: min by (instance) (zabalack_credential_expiry_seconds) < 2592000
+        # Positive only: an expired token raises the critical rule alone.
+        expr: (min by (instance) (zabalack_credential_expiry_seconds) < 2592000) and (min by (instance) (zabalack_credential_expiry_seconds) > 0)
         labels: {severity: warning, failure_class: credential_expiry}
         annotations: {summary: "Zabbix API token is inside its rotation window"}
       - alert: AlertaZabbixAckCredentialExpired
