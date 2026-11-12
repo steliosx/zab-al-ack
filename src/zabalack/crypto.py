@@ -250,6 +250,3 @@ def verify_capture(capture: dict[str, Any], keys: Mapping[str, bytes], now: date
     # Worker processing time does NOT govern capture expiry. Execution expiry is checked
     # separately by delivery and database before each source write (read-only reconciliation survives).
     return intent
-
-def public_reference() -> str:
-    return uuid.uuid4().hex

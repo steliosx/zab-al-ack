@@ -66,6 +66,10 @@
   until the reseal.
 - The planned action-sync capture migration (`docs/DESIGN_0.2.0_ACTION_SYNC.md`)
   is renumbered from 016 to 017.
+- Review aid `tools/migration_function_diff.py`: for each function a migration
+  re-creates, a unified diff against its previous definition (016's
+  `worker_call` is +15 −7 against 014). Read-only; it decides nothing.
+- Removed the unused `crypto.public_reference()`.
 
 ## 0.2.0a1 — 2026-11-01 (development candidate, unpublished)
 
