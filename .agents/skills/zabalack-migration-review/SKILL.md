@@ -13,6 +13,10 @@ Inspect pinned upstream schema and current migration checksums. Shipped/applied
 migrations are immutable; add a forward migration for a new SQL correction.
 Never adjust a stored checksum to make an old migration run again.
 
+A migration re-creates whole function bodies. Run
+`python tools/migration_function_diff.py [migration]` to see each function's
+real change against its previous definition; review that diff, then the file.
+
 Keep zabalack_owner separate from the alerts installation principal. Preserve
 explicit function grants, controlled search_path and PUBLIC revocation. A JSONB
 column grant does not restrict JSON keys. Test actual caller/owner denials in
