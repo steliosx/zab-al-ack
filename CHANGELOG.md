@@ -2,6 +2,16 @@
 
 ## 0.2.0a2 — 2026-11-08 (development candidate, unpublished)
 
+- Three source corrections carried forward from the unmerged PR #29, each
+  reproduced on main first. (1) Alerta's log context attaches the raw request
+  body, the query arguments and the full URL to every record, and its JSON
+  format prints them; the redactor now blanks the body and arguments and
+  keeps only the path of the URL. (2) The capture-health probe replaced its
+  lock when it first saw a new process id, so two threads could both enter
+  the guarded section and one could release a lock it did not hold; fork
+  detection now runs under a second lock that `check` never replaces.
+  (3) The reader guard's plain-name test used `^…$`, which accepts a
+  trailing newline; it now uses `\A…\Z`, so such a key is refused.
 - Migration `016_claim_delivery_order.sql` replaces `worker_call()` (014's body
   with four changes; schema stays 5; `operator_call` untouched). Found by a
   read-only audit of main `a92c9a68` (amendment R33).
