@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-from collections import Counter
 from threading import Lock
 from typing import Any
 
@@ -20,16 +19,13 @@ def log_event(event: str, **fields: Any) -> None:
 
 
 class Metrics:
-    """Counters plus incident de-duplication; scrape stdout or export the snapshot."""
+    """Incident de-duplication for one process. Counts are not kept here: the
+    ledger holds them (`status`, exported by prometheus_text) and each result
+    is one log_event line."""
 
     def __init__(self) -> None:
-        self._counters: Counter[tuple[str, str, str]] = Counter()
         self._incidents: set[tuple[str, str]] = set()
         self._lock = Lock()
-
-    def increment(self, name: str, instance: str = "unknown", reason: str = "") -> None:
-        with self._lock:
-            self._counters[(name, instance, reason)] += 1
 
     def incident(self, instance: str, failure_class: str) -> bool:
         """One incident per instance/class per process; SQL is cross-process authority."""
@@ -44,11 +40,6 @@ class Metrics:
     def clear_incident(self, instance: str, failure_class: str) -> None:
         with self._lock:
             self._incidents.discard((instance, failure_class))
-
-    def snapshot(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [{"metric": k[0], "instance": k[1], "reason": k[2], "value": v}
-                    for k, v in sorted(self._counters.items())]
 
 
 def capture_health_ok(health: dict[str, Any], settings: Any) -> bool:

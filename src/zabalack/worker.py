@@ -73,7 +73,7 @@ class Worker:
             actor_ref = hashlib.sha256((intent["action_id"] + "|actor").encode()).hexdigest()
             result = await self.db.call("verify_complete", {**lease, "intent": intent,
                 "actor_ref": actor_ref})
-            self.metrics.increment("verified", intent["source"]["zabbix_instance"])
+            log_event("capture_result", capture_id=lease.get("capture_id"), instance=intent["source"]["zabbix_instance"], result="verified")
             if result and result.get("action_id"):
                 await self.db.call("project", {"action_id": result["action_id"]})
         except KeyUnavailable:
@@ -83,10 +83,11 @@ class Worker:
         except (BindingError, PolicyError) as exc:
             reason = str(exc) if re.fullmatch(r"[a-z_]{1,96}", str(exc)) else "failed_intent_invalid"
             await self.db.call("reject_capture", {**lease, "reason": reason, "failure_class": "failed_intent_invalid"})
-            self.metrics.increment("invalid_candidates")
+            # No instance: an unverified candidate's own claim is not a real instance.
+            log_event("capture_result", capture_id=lease.get("capture_id"), result="rejected", reason=reason)
         except (ValueError, TypeError, KeyError):
             await self.db.call("reject_capture", {**lease, "reason": "failed_intent_invalid"})
-            self.metrics.increment("invalid_candidates")
+            log_event("capture_result", capture_id=lease.get("capture_id"), result="rejected", reason="failed_intent_invalid")
         return True
 
     def make_client(self, endpoint: Any) -> ZabbixClient:
@@ -107,7 +108,6 @@ class Worker:
             payload["attempt_id"] = attempt_id
         await self.db.call("complete", payload)
         await self.db.call("project", {"action_id": action["action_id"]})
-        self.metrics.increment(state, action["instance"], reason)
         log_event("delivery_result", action_id=action["action_id"], instance=action["instance"], result=state, reason=reason)
 
     async def delivery_once(self) -> bool:

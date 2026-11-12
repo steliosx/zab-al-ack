@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -769,6 +770,66 @@ def test_unusable_token_expiry_fails_its_own_instance_and_not_the_export(bad):
     assert 'zabalack_credential_expiry_seconds{instance="bad-zabbix"}' not in text
     assert text.count("credential_expiry_metadata") == 1
     assert 'zabalack_credential_expiry_seconds{instance="plain-zabbix"}' not in text
+
+
+def _reference_rules():
+    import yaml
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[2] / "zabbix" / "monitoring.rules.yml"
+    return {rule["alert"]: rule for group in yaml.safe_load(path.read_text())["groups"] for rule in group["rules"]}
+
+
+def test_every_exported_failure_class_is_matched_by_the_reference_alert_rule():
+    """PromQL =~ is fully anchored: `credential` did not match
+    `credential_expiry_metadata`, so that failure raised no alert."""
+    from zabalack.metrics import prometheus_text
+    settings = Settings(config_revision="v1", deployment_id="lab", endpoint_registry={
+        "a": {"token_expires_at": 7}, "b": {}})
+    text = prometheus_text({"verifier_unhealthy": 1, "active_incidents": [
+        {"instance": "b", "failure_class": "api_permission_or_request_rejected"},
+        {"instance": "b", "failure_class": "token_rejected"}]}, settings)
+    exported = set(re.findall(r'zabalack_instance_failure\{failure_class="([^"]+)"', text))
+    assert exported == {"credential", "credential_expiry_metadata", "permission", "capture_health", "verifier_key"}
+    expr = _reference_rules()["AlertaZabbixAckCredentialOrPermission"]["expr"]
+    pattern = re.search(r'failure_class=~"([^"]+)"', expr).group(1)
+    assert {code for code in exported if re.fullmatch(pattern, code)} == exported
+
+
+def test_the_reference_rules_read_only_metrics_the_exporter_emits():
+    from zabalack.metrics import prometheus_text
+    settings = Settings(config_revision="v1", deployment_id="lab", endpoint_registry={
+        "a": {"token_expires_at": "2999-01-01T00:00:00Z"}})
+    text = prometheus_text({"per_instance": [{"instance": "a", "oldest_pending_seconds": 1}],
+        "active_incidents": [{"instance": "a", "failure_class": "token_rejected"}]}, settings)
+    emitted = set(re.findall(r"^(zabalack_\w+)", text, re.MULTILINE))
+    rules = _reference_rules()
+    for rule in rules.values():
+        used = set(re.findall(r"zabalack_\w+", rule["expr"]))
+        assert used and used <= emitted, rule["alert"]
+    expiring, expired = rules["AlertaZabbixAckCredentialExpiring"], rules["AlertaZabbixAckCredentialExpired"]
+    assert expiring["expr"].endswith("(zabalack_credential_expiry_seconds) < 2592000") and expiring["labels"]["severity"] == "warning"
+    assert expired["expr"].endswith("(zabalack_credential_expiry_seconds) <= 0") and expired["labels"]["severity"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_capture_results_are_log_lines_and_the_worker_keeps_no_unread_counters(caplog):
+    """Counts come from the ledger; the per-process counters had no reader."""
+    import logging
+    from zabalack.metrics import Metrics
+    assert not hasattr(Metrics(), "increment") and not hasattr(Metrics(), "snapshot")
+    good, denied = signed_capture(), signed_capture()
+    denied["intent"]["actor"]["customers"] = ["other-customer"]
+    denied["marker"] = sign_intent(denied["intent"], "lab", KEY)
+    w = worker(FakeDB([good, denied]))
+    with caplog.at_level(logging.INFO, logger="zabalack"):
+        await w.verify_once()
+        await w.verify_once()
+    records = [json.loads(r.getMessage()) for r in caplog.records if '"capture_result"' in r.getMessage()]
+    assert records[0] == {"event": "capture_result", "capture_id": good["capture_id"],
+                          "instance": good["intent"]["source"]["zabbix_instance"], "result": "verified"}
+    assert records[1]["result"] == "rejected" and records[1]["capture_id"] == denied["capture_id"]
+    assert "instance" not in records[1] and re.fullmatch(r"[a-z_]{1,96}", records[1]["reason"])
+    assert len(records) == 2
 
 
 @pytest.mark.parametrize("change", [{"zabalack_schema_version": 4}, {"database_name": "other"}, {"functions_ok": False}])
