@@ -90,3 +90,22 @@ has executable tests for false kills, stale/incomplete evidence, source-copy
 cleanup and the actual pinned pytest callback, including runtime/import failures,
 skips and a wrong-source import. Native and SQL mutation coverage remain future
 work and must use disposable real databases with separate truthful evidence.
+
+### Baseline failure diagnostics
+
+The mutation job always writes and uploads `mutation-failure-summary.json`, a
+separate diagnostic artifact named with the run and attempt. It is not passing
+gate evidence and cannot substitute for the four same-attempt evidence kinds.
+The summary labels missing/stale inputs unavailable, binds current reports to
+source/harness digests and CI identifiers, and exports only outcome/count fields
+and failed function names confirmed against the selected test source. Parameter
+IDs, assertion text, exceptions, stdout and raw JUnit remain private. Unsupported
+or unrecognised identities are counted as omitted; missing XML is not a pass.
+Artifacts retain the existing three-day retention. An infrastructure failure
+before the summary command can run may still leave no artifact.
+
+A green retry does not identify an earlier intermittent failure's cause. Use the
+failed function identities to develop a deterministic reproduction, preserve the
+original attempt, and keep the root cause open until demonstrated. The original
+PR87 baseline failure remains unexplained; this change does not retroactively
+recover its missing diagnostics.

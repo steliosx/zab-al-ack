@@ -2,6 +2,22 @@
 
 ## 0.2.0a2 — 2026-11-08 (development candidate, unpublished)
 
+- Invalid acknowledgement notes, including JSON strings with unpaired Unicode
+  surrogates, now fail with `zabalack_note_invalid` before signing. This avoids
+  Alerta suppressing a generic encoding error and continuing the status hook.
+  Nontext duplicate callbacks also fail through the explicit API boundary.
+  Tests exercise the real dispatcher with mocked persistence; no live delivery
+  or database outcome is inferred.
+- Migration function review ignores declarations inside comments, strings and
+  dollar bodies, accepts multiline headers and tagged dollar quotes, and refuses
+  ambiguous signatures or a same-named file outside the selected directory.
+- Mutation CI retains a separate attempt/source-bound diagnostic summary even
+  after failure. Only validated identifiers, counts and source-known test names
+  are exported; raw logs, parameter values and exception text remain private.
+  Baseline errors still fail the gate. The first PR #87 failure remains unexplained.
+- Dependency-install regression checks inspect actual YAML command steps and
+  execute the pytest version guard, rejecting inert or optional install text.
+
 - Three source corrections carried forward from the unmerged PR #29, each
   reproduced on main first. (1) Alerta's log context attaches the raw request
   body, the query arguments and the full URL to every record, and its JSON

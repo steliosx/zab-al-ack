@@ -620,11 +620,11 @@ def test_ci_package_waits_for_same_run_required_jobs_and_rebuilds_mapping():
         evidence_upload = next(step for step in uploads if step['with']['name'].startswith('zabalack-evidence-'))
         assert 'if' not in evidence_upload
         always = [step for step in steps if step.get('if') == 'always()']
-        if kind == 'native':
+        if kind in {'native', 'mutation'}:
             assert len(always) == 2
-            assert always[0]['run'] == 'python tools/native_failure_summary.py'
-            assert always[1]['with']['name'].startswith('zabalack-native-diagnostics-')
-            assert always[1]['with']['path'] == 'evidence/native-failure-summary.json'
+            assert always[0]['run'] == f'python tools/{kind}_failure_summary.py'
+            assert always[1]['with']['name'].startswith(f'zabalack-{kind}-diagnostics-')
+            assert always[1]['with']['path'] == f'evidence/{kind}-failure-summary.json'
         else:
             assert not always
     assert workflow['env']['TZ'] == 'UTC'

@@ -103,6 +103,15 @@ jobs:
           path: build/ci-artifacts/mutation/
           if-no-files-found: error
           retention-days: 3
+      - run: python tools/mutation_failure_summary.py
+        if: always()
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: zabalack-mutation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/mutation-failure-summary.json
+          if-no-files-found: error
+          retention-days: 3
   reference:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

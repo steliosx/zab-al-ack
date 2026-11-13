@@ -25,6 +25,7 @@ import xml.etree.ElementTree as ET
 
 from evidence_utils import binding_error, code_digests
 from mutation_catalog import TESTS, selected
+from mutation_failure_summary import context as diagnostic_context, failure_cases
 from review_runs import private_directory, workspace_lock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -224,6 +225,7 @@ def run_pytest(tree: Path, raw: Path, label: str, timeout: int, baseline: dict |
             if process is not None and process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
+    result['diagnostics'] = failure_cases(junit, tree, raw)
     result['duration_ms'] = round((time.monotonic() - started) * 1000)
     return result
 
@@ -281,6 +283,7 @@ def _run_locked(root: Path, *, profile: str, timeout: int) -> int:
     output = root / 'evidence/mutation-run.json'
     report = {'schema_version': 1, 'status': 'RUNNING', 'profile': profile,
               'code_digests': code_digests(root), 'started_at_utc': _now(),
+              'ci_context': diagnostic_context(),
               'selected_count': len(catalogue), 'baseline': None, 'mutants': [],
               'scope': 'Curated Python trust/worker/RPC assertion mutations with mocked dependencies; no SQL/native/deployment coverage'}
     # Invalidate any previous PASS before preparation or launching a child.

@@ -602,11 +602,19 @@ class AckSigningPlugin(PluginBase):
         if context["signed"]:
             marker = context["marker"]
             # A duplicate hook can return the same proof, never a second one.
-            if text.endswith(marker):
+            if isinstance(text, str) and text.endswith(marker):
                 return alert, status, text
             raise AlertaException("zabalack_duplicate_callback_conflict", code=503)
-        if (not isinstance(text, str) or any(prefix in text.lower() for prefix in ("[zabalack:", "[ackline:"))
-                or len(text.encode("utf-8")) > 8192):
+        try:
+            valid_note = (isinstance(text, str)
+                          and not any(prefix in text.lower() for prefix in ("[zabalack:", "[ackline:"))
+                          and len(text.encode("utf-8")) <= 8192)
+        except UnicodeEncodeError:
+            # JSON can carry an unpaired surrogate. A generic encoding error
+            # may be suppressed by Alerta's dispatcher, allowing an unsigned
+            # transition; reject it through the explicit API error boundary.
+            valid_note = False
+        if not valid_note:
             raise AlertaException("zabalack_note_invalid", code=400)
         try:
             keys = self.keys if self.keys is not None else load_key_files(settings.signing_keys)
