@@ -205,3 +205,18 @@ functions `bind_source()`, `read_binding()`, `select_binding()` and
    `12_application_grant.sql` and then `13_reseal.sql`. Capture health reads
    unhealthy until both have run.
 
+
+## 017 background-result fencing (schema stays 5)
+
+Migration 017 requires a nonempty worker identifier, a matching live background
+lease and allowed read evidence before recording successful reconciliation. It
+also fences host-check and host-inventory recording. Released/null or expired
+leases refuse recording; expiry is checked after acquiring the row lock.
+
+Keep eligible acknowledgement paths drained and external writes disabled during
+the upgrade; apply through the checksum migration runner as `zabalack_owner`,
+then run `13_reseal.sql` separately. Readiness remains unhealthy until resealed.
+017 changes no existing capture, action, effect, outcome or audit row. Historical
+results recorded before this correction are not retroactively reclassified.
+Prefer a forward correction: restoring the older function reopens the NULL gap.
+Do not remove ledger rows, reset lease generations or replay external effects.

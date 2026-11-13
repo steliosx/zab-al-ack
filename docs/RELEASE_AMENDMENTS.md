@@ -1272,3 +1272,35 @@ committed `evidence/` inventory keep their recorded versions; they are dated
 records and are regenerated only with a release identity. This change adds no
 runtime dependency, changes no SQL and no application code, and qualifies
 nothing: the hash-checked install and the suites run in this change's CI.
+
+## R35 — Background-result ownership and success evidence (13 November 2026)
+
+Migration 017 replaces only `worker_call()` on schema 5. With 016, a released
+background owner/until pair is NULL. A record operation omitting worker_id but
+supplying the current generation could make the lease condition NULL, so PL/pgSQL
+continued into the write. The three affected operations are record_reconciliation,
+record_host_check and record_host_inventory. With a live lease, reconciliation
+could also record state ok with absent/null completion_evidence: NOT IN evaluated
+NULL and failed to refuse it. These are authority/evidence checks, not proof of
+an external duplicate send.
+
+017 requires worker_id for those operations, explicitly refuses NULL ownership,
+generation input and expiry, and compares expiry to clock_timestamp after locking.
+It coalesces absent completion evidence before the read-evidence allowlist check.
+The action-before-instance lock order, delivery-in-flight refusal and all prior
+uncertainty, effect, expiry and primary-action predicates are preserved. No grant
+is broadened, schema stays 5, no existing evidence row is changed, and re-sealing
+remains a separate installer action. Previously recorded results need separate
+review; this migration does not silently repair history.
+
+`tests/postgres/test_background_result_fencing.py` reproduces 016's counterexamples
+in rolled-back fixtures and exercises refusal/no-mutation, live-owner success,
+release, migration preconditions, retained populated rows, resealing and caller
+permissions for both fresh 017 and a populated 016-function upgrade. The latter
+restores 016's routine on schema 5, not a complete historical service installation.
+It is in the native postgres phase. Local WASM results must remain labelled
+single-backend SQL evidence, with native authentication/concurrency unverified.
+
+The planned action-sync migration is now 018; R33's 017 was its earlier planned
+number. Both active design documents carry 018. Shipped 001–016 bytes stay immutable.
+This unpublished local successor grants no push, CI, merge, release or deployment.

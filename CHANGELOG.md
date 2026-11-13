@@ -2,6 +2,11 @@
 
 ## 0.2.0a2 — 2026-11-08 (development candidate, unpublished)
 
+- Forward migration 017 refuses background result writes without an identified,
+  live owner and rejects reconciliation success without allowed read evidence.
+  Schema stays 5, existing rows are retained, and explicit resealing is required.
+  Planned action-sync migration moves to 018; earlier migrations are unchanged.
+
 - Invalid acknowledgement notes, including JSON strings with unpaired Unicode
   surrogates, now fail with `zabalack_note_invalid` before signing. This avoids
   Alerta suppressing a generic encoding error and continuing the status hook.

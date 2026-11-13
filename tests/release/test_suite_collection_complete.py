@@ -1,53 +1,68 @@
-"""Every database-backed test file is collected by at least one CI suite.
-
-`tests/postgres/test_source_binding.py` (F1, migration 015) merged without being in
-`tools/native_ci.PHASES` or the `postgres-wasm` group of `tools/run_reference_suite.py`,
-so CI never ran it. These lists are explicit by design; this check makes a file that is
-in neither of them fail the release suite instead of passing unnoticed.
-"""
+"""CI coverage follows executable phase plans, never comments or quoted examples."""
+from importlib import import_module
 from pathlib import Path
+import sys
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-DATABASE_TEST_DIRS = ("tests/postgres", "tests/alerta", "tests/performance")
+sys.path.insert(0, str(ROOT / 'tools'))
+native_ci = import_module('native_ci')
+run_reference_suite = import_module('run_reference_suite')
+
+DATABASE_TEST_DIRS = ('tests/postgres', 'tests/alerta', 'tests/performance')
 
 
-def listed_targets() -> set[str]:
-    text = (ROOT / "tools/native_ci.py").read_text() + (ROOT / "tools/run_reference_suite.py").read_text()
-    return {path for directory in DATABASE_TEST_DIRS
-            for path in (p.relative_to(ROOT).as_posix() for p in (ROOT / directory).glob("test_*.py"))
-            if f"'{path}'" in text}
+def pytest_targets(command):
+    """Understand only the two explicit Python pytest command forms we run."""
+    assert command[0] == sys.executable
+    if command[1:3] == ['-m', 'pytest']:
+        arguments = command[3:]
+    else:
+        assert command[1:7] == ['lab/pglite_exec.py', '--isolated-lab', '--', sys.executable, '-m', 'pytest']
+        arguments = command[7:]
+    return {arg for arg in arguments if arg.startswith('tests/')}
+
+
+def listed_targets():
+    targets = {target for group in native_ci.PHASES.values() for target in group}
+    for _, _, command in run_reference_suite.phase_commands(True):
+        targets.update(pytest_targets(command))
+    return targets
 
 
 def test_every_database_test_file_is_in_a_ci_suite():
     present = {p.relative_to(ROOT).as_posix() for directory in DATABASE_TEST_DIRS
-               for p in (ROOT / directory).glob("test_*.py")}
-    assert present, "no database test files found: the directory layout changed"
-    assert sorted(present - listed_targets()) == []
-
-
-def test_the_f1_sql_tests_run_natively_and_on_wasm():
-    import sys
-    sys.path.insert(0, str(ROOT / "tools"))
-    import native_ci
-    assert "tests/postgres/test_source_binding.py" in native_ci.PHASES["postgres"]
-    suite = (ROOT / "tools/run_reference_suite.py").read_text()
-    wasm_line = next(line for line in suite.splitlines() if "('postgres-wasm', [" in line)
-    assert "'tests/postgres/test_source_binding.py'" in wasm_line
+               for p in (ROOT / directory).glob('test_*.py')}
+    assert present
+    assert not present - listed_targets()
 
 
 def test_every_test_directory_is_named_by_a_ci_suite():
-    """A new tests/<dir> must be named in native_ci.py or run_reference_suite.py
-    (the database directories are checked file by file above)."""
-    text = (ROOT / "tools/native_ci.py").read_text() + (ROOT / "tools/run_reference_suite.py").read_text()
-    directories = sorted(p.parent.relative_to(ROOT).as_posix() for p in (ROOT / "tests").glob("*/test_*.py"))
-    assert directories, "no test directories found: the layout changed"
-    unnamed = {d for d in directories if d not in DATABASE_TEST_DIRS and f"'{d}'" not in text}
-    assert sorted(unnamed) == []
+    directories = {p.parent.relative_to(ROOT).as_posix() for p in (ROOT / 'tests').glob('*/test_*.py')}
+    assert directories
+    assert not (directories - set(DATABASE_TEST_DIRS) - listed_targets())
 
 
-def test_the_ambiguous_api_migration_tests_run_natively():
-    import sys
-    sys.path.insert(0, str(ROOT / "tools"))
-    import native_ci
-    assert "tests/postgres/test_ambiguous_api_migration.py" in native_ci.PHASES["postgres"]
+@pytest.mark.parametrize('target', ['tests/postgres/test_source_binding.py',
+                                  'tests/postgres/test_ambiguous_api_migration.py',
+                                  'tests/postgres/test_background_result_fencing.py'])
+def test_fencing_and_migration_cases_run_natively_and_on_wasm(target):
+    assert target in native_ci.PHASES['postgres']
+    wasm = next(command for name, _, command in run_reference_suite.phase_commands(True) if name == 'postgres-wasm')
+    assert target in pytest_targets(wasm)
+    assert 'postgres-wasm' not in {name for name, _, _ in run_reference_suite.phase_commands(False)}
 
+
+@pytest.mark.parametrize('command', [
+    ['echo', sys.executable, '-m', 'pytest', 'tests/postgres/test_fake.py'],
+    [sys.executable, '-c', "print('tests/postgres/test_fake.py')"],
+    [sys.executable, 'unrelated.py', '-m', 'pytest', 'tests/postgres/test_fake.py'],
+])
+def test_inert_command_text_cannot_satisfy_executable_coverage(command):
+    with pytest.raises(AssertionError):
+        pytest_targets(command)
+
+
+def test_a_comment_or_step_description_is_not_a_selected_test():
+    assert not pytest_targets([sys.executable, '-m', 'pytest', '# tests/postgres/test_fake.py'])
