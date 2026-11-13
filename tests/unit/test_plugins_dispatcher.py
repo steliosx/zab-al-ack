@@ -692,3 +692,12 @@ def test_a_final_check_that_fails_internally_stops_the_transition_with_alerta_ex
         context.signer.status_change(alert, "ack", note)
     assert error.value.code == 503
 
+
+
+@pytest.mark.parametrize("key", ["zabbix_ack_sync_intent\n", "plain\n", "x\ny", "\nplain"])
+def test_T40_an_attribute_key_with_a_newline_is_not_a_plain_name(key):
+    """`$` also matches before a trailing newline, so `<key>\\n` passed as a
+    plain name that is not the restricted one. It is unsupported syntax."""
+    from zabalack import query_guard
+    assert query_guard._attribute_selector_refusal(["attributes", key]) == query_guard.REFUSAL
+    assert query_guard._attribute_selector_refusal(["attributes", "plain"]) is None
