@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections import Counter
+import re
 from threading import Lock
 from typing import Any
 
@@ -19,17 +19,39 @@ def log_event(event: str, **fields: Any) -> None:
     LOG.info(json.dumps(record, sort_keys=True, separators=(",", ":")))
 
 
+_CODE = re.compile(r"[a-z_]{1,96}")
+_ACTION_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
+
+
+def capture_disposition(outcome: Any) -> dict[str, str]:
+    """What the database did with a capture, from verify_complete's own answer.
+
+    The worker's signature and policy checks passing is not the result: the
+    database decides again (the cohort can change in between) and may refuse
+    without raising. Only fixed codes and the action id leave here; nothing
+    else of the answer is copied.
+    """
+    if isinstance(outcome, dict):
+        action_id, state, reason = outcome.get("action_id"), outcome.get("state"), outcome.get("reason")
+        if (isinstance(action_id, str) and _ACTION_ID.fullmatch(action_id)
+                and isinstance(state, str) and _CODE.fullmatch(state) and outcome.get("replay") in (None, True)):
+            # reason carries the action's state: authorised, held, expired, ...
+            return {"result": "verified_replay" if outcome.get("replay") else "verified",
+                    "action_id": action_id, "reason": state}
+        if (action_id is None and state == "failed" and "replay" not in outcome
+                and isinstance(reason, str) and _CODE.fullmatch(reason)):
+            return {"result": "refused", "reason": reason}
+    return {"result": "unknown", "reason": "unexpected_database_result"}
+
+
 class Metrics:
-    """Counters plus incident de-duplication; scrape stdout or export the snapshot."""
+    """Incident de-duplication for one process. Counts are not kept here: the
+    ledger holds them (`status`, exported by prometheus_text) and each result
+    is one log_event line."""
 
     def __init__(self) -> None:
-        self._counters: Counter[tuple[str, str, str]] = Counter()
         self._incidents: set[tuple[str, str]] = set()
         self._lock = Lock()
-
-    def increment(self, name: str, instance: str = "unknown", reason: str = "") -> None:
-        with self._lock:
-            self._counters[(name, instance, reason)] += 1
 
     def incident(self, instance: str, failure_class: str) -> bool:
         """One incident per instance/class per process; SQL is cross-process authority."""
@@ -44,11 +66,6 @@ class Metrics:
     def clear_incident(self, instance: str, failure_class: str) -> None:
         with self._lock:
             self._incidents.discard((instance, failure_class))
-
-    def snapshot(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [{"metric": k[0], "instance": k[1], "reason": k[2], "value": v}
-                    for k, v in sorted(self._counters.items())]
 
 
 def capture_health_ok(health: dict[str, Any], settings: Any) -> bool:
