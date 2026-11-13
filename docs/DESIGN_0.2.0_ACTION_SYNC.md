@@ -1,13 +1,14 @@
 # Design amendment — 0.2.0 action synchronisation (Alerta → Zabbix)
 
-Local numbering update (13 November 2026): planned action-sync is now 018;
-017 is the background-result fencing correction (R35). Earlier design reviews
+Local numbering update (13 November 2026): planned action-sync is now 019;
+017 is the background-result fencing correction (R35), and 018 is the primary-only
+retry correction (R36). Earlier design reviews
 remain tied to their original bytes; this update does not qualify either migration.
 
 Status: ADOPTED at r9 (PR #48, merged 12 October 2026 as main bbdb462d). r11 (1 November 2026)
 is a numbering amendment only. Forward migrations 013 and 014 have shipped as ledger fixes
 (0.1.0b3, 0.1.0b4), the F1 source-binding migration is 015, so this design's migration,
-written as "013" through r10, and "016" until 8 November 2026, is now **018** (016 became the claim-path correction, R33; 017 is the background-result fence, R35). Its superseded-predicate list also gains 013
+written as "013" through r10, and "016" until 8 November 2026, is now **019** (016 became the claim-path correction, R33; 017 is the background-result fence, R35; 018 is the primary-only retry correction, R36). Its superseded-predicate list also gains 013
 and 014, which carry the same `ack`-only predicate. No other content changes.
 
 r10 is an amendment
@@ -212,7 +213,7 @@ intent of kind `note`.
 Existing signed intents are `version 1`, kind `ack`, and carry **no** message flag (exact-head
 `crypto.py` `INTENT_KEYS`, lines 50-51). The companion-message choice is the bound cohort
 revision's `comment_enabled` (`worker.py:153-154`, validated in `policy.py:66-81`). Migration
-018 therefore derives each legacy row's `zabbix_action` from the **immutable bound cohort
+019 therefore derives each legacy row's `zabbix_action` from the **immutable bound cohort
 revision** (`cohort_revision` in the signed intent → `zabalack.cohorts` row): 6 if
 `comment_enabled`, else 2; where an attempt was already sent, the recorded attempt wire
 parameters take precedence and must agree, otherwise the row is marked `HOLD:
@@ -221,22 +222,22 @@ legacy_binding_missing` and is never defaulted, re-signed, rebound or replayed; 
 bytes, MAC, attempt shape and uncertainty are preserved. Legacy rows receive `event_seq` in
 `issued_at` order per event (ties by `action_id`), all below any new row. (R3) New intents are `version 2` with the §3 tuple; the verifier accepts
 version 1 only for kind `ack` and version 2 for every kind. SQL rejects NULL in the new columns.
-Mixed-version fencing: the worker reads a capability row written by 018; until it is present,
+Mixed-version fencing: the worker reads a capability row written by 019; until it is present,
 version 2 intents are refused at admission (`skipped: schema_capability_missing`) and nothing
 is staged for new kinds.
 
-## 5. Ledger changes — migration 018, forward-only (r2: D2, D4)
+## 5. Ledger changes — migration 019, forward-only (r2: D2, D4)
 
 - `actions` gains `kind text NOT NULL`, `zabbix_action integer NOT NULL`, `params jsonb NOT NULL`,
-  `actor_type text NOT NULL`, `event_seq bigint NOT NULL`; 018 backfills existing rows as in
+  `actor_type text NOT NULL`, `event_seq bigint NOT NULL`; 019 backfills existing rows as in
   §4.5 (no blanket defaults) and adds `CHECK` constraints against a new `action_kinds` reference
   table (kind, zabbix_action, requires_message, requires_suppress_until, allowed_actor_types).
   In 0.2.0 the `shelve`, `unshelve` and `timeout_unshelve` rows carry no deliverable
   `zabbix_action`; their only reachable outcome is `skipped: suppression_fence_unavailable`.
 - Every predicate of the form `i->>'action'<>'ack'` in 003, 006, 008, 009, 010, 011, 012, 013, 014 is
-  superseded in 018 by kind-aware functions; shipped migration bytes and checksums stay
-  immutable; 018 replaces the functions forward-only. Installer, worker and reader grants stay
-  separate; the rollback script for 018 preserves pending evidence (rows are never deleted).
+  superseded in 019 by kind-aware functions; shipped migration bytes and checksums stay
+  immutable; 019 replaces the functions forward-only. Installer, worker and reader grants stay
+  separate; the rollback script for 019 preserves pending evidence (rows are never deleted).
 - **Operation identity and order (D2, R4).** Every captured operation keeps its own
   `action_id`. There is no cross-kind coalescing. Ordering invariant: every capture for an
   alert runs inside Alerta's UPDATE of that `public.alerts` row, which holds the row lock
@@ -382,7 +383,7 @@ model reopen → diagnostic capture `skipped: source_binding_unavailable_at_inge
 Zabbix call, for `mirror_model_transitions` true, false, absent and invalid (F1 design §3.5);
 `mirror_system_transitions` at its default (true) → unack on an ack-timeout, and with the cohort
 opt-out (false) → `skipped: mirror_disabled`; mutated actor/kind/mask/params → verifier refusal.
-Native-lab SQL cases for migration 018 and the kind-aware fences. Coexistence profile:
+Native-lab SQL cases for migration 019 and the kind-aware fences. Coexistence profile:
 a Voalack-owned alert receiving each kind → Zabalack makes no write and raises nothing.
 
 ## 9. Owner decisions (12 October 2026, recorded in the Zabalack session)
@@ -404,7 +405,7 @@ These decisions are design inputs. They do not authorise implementation, release
    `docs/DESIGN_0.2.0_F1_SOURCE_BINDING.md`.
 2. alerta-ack-core shared install (3b) for the hooks this design adds (housekeeping-path
    `take_action`, ingestion-path `status_change`).
-3. Then migration 018, RPC, plugin, projection, lab cases, release 0.2.0.
+3. Then migration 019, RPC, plugin, projection, lab cases, release 0.2.0.
 
 ## 11. Zabalack's own coexistence invariants (Voalack session, 11 October 2026)
 

@@ -2,10 +2,17 @@
 
 ## 0.2.0a2 — 2026-11-08 (development candidate, unpublished)
 
+- Forward migration 018 refuses retry of a coalesced secondary action and names
+  the existing primary action. It does not redirect, extend a deadline, settle an
+  unknown result or bypass a delivery lease/circuit. Schema stays 5; reseal explicitly.
+- Malformed-state regressions confirm that a matching seal from trigger installation
+  does not bypass the separate capture-health checks; no seal privilege change.
+
 - Forward migration 017 refuses background result writes without an identified,
   live owner and rejects reconciliation success without allowed read evidence.
   Schema stays 5, existing rows are retained, and explicit resealing is required.
-  Planned action-sync migration moves to 018; earlier migrations are unchanged.
+  Planned action-sync migration moves to 019 after the retry correction below;
+  earlier migrations are unchanged.
 
 - Invalid acknowledgement notes, including JSON strings with unpaired Unicode
   surrogates, now fail with `zabalack_note_invalid` before signing. This avoids

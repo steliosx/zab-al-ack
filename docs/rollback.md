@@ -220,3 +220,17 @@ then run `13_reseal.sql` separately. Readiness remains unhealthy until resealed.
 results recorded before this correction are not retroactively reclassified.
 Prefer a forward correction: restoring the older function reopens the NULL gap.
 Do not remove ledger rows, reset lease generations or replay external effects.
+
+
+## Migration 018: primary-only retry
+
+Apply through the checksum migration runner after 017, with acknowledgements
+fenced as above, then run the approved `13_reseal.sql` workflow. Schema remains 5;
+no existing rows or history are rewritten and the migration never reseals itself.
+Secondary retry now raises with the primary action UUID instead of recording a
+misleading successful retry. Older clients receive an explicit SQL refusal.
+
+If correction is needed, keep outbound writes fenced and add a reviewed forward
+migration. Do not edit 001–018, remove ledger rows, reset checksums or manufacture
+a replacement action. A reported primary UUID is for inspection, not permission
+to replay it. Existing uncertainty, lifetime, circuit and lease gates still apply.

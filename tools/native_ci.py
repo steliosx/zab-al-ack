@@ -22,7 +22,7 @@ PHASES = {
                  'tests/postgres/test_late_response.py', 'tests/postgres/test_stateful_ledger.py', 'tests/postgres/test_settled_expiry.py',
                  'tests/postgres/test_generation_fence.py', 'tests/postgres/test_native_generation_fence.py',
                  'tests/postgres/test_source_binding.py', 'tests/postgres/test_ambiguous_api_migration.py',
-                 'tests/postgres/test_background_result_fencing.py'],
+                 'tests/postgres/test_background_result_fencing.py', 'tests/postgres/test_primary_retry.py', 'tests/postgres/test_reseal_boundary.py'],
     'delivery_faults': ['tests/postgres/test_native_delivery_faults.py'],
     'worker': ['tests/postgres/test_worker_path.py'],
     'alerta': ['tests/alerta/test_postgres_http.py', 'tests/alerta/test_health_postgres.py', 'tests/alerta/test_docs_walkthrough.py',

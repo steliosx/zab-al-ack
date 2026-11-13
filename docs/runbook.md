@@ -53,6 +53,12 @@ zabalack --config /reviewed/operator.json retry --action 00000000-0000-4000-8000
 zabalack --config /reviewed/operator.json repair --action 00000000-0000-4000-8000-000000000001 --owner OPERATOR_REFERENCE --change-ref CHANGE_REFERENCE
 ```
 
+Retry names the primary action for its shared source effect. With migration 018,
+a secondary/coalesced action is refused with `primary_action_id=<UUID>` and neither
+action is changed. Inspect that primary before submitting a separate retry; there
+is no automatic redirect. A terminal or expired primary still refuses, and retry
+never settles uncertainty, clears an instance circuit or bypasses a live lease.
+
 The UUID above is a synthetic placeholder. Use the recorded action UUID, never mint a replacement for a retry. Inspect the command's `--help` in the exact package version for guarded enable/disable/circuit-reset controls; no resume or retry is a substitute for permission repair, cohort revision approval or expiry review.
 
 An unresolved remote attempt cannot be retried merely because a reference is absent. After independently verifying that the old sender is fenced, remote processing is complete and exact-event state/history show no effect, the authorised operator may use `settle-unknown --action UUID --disposition no-effect-confirmed --evidence-ref REVIEWED_EVIDENCE_REFERENCE --confirmation REMOTE_ATTEMPT_FENCED_AND_SETTLED --owner OPERATOR_REFERENCE --change-ref CHANGE_REFERENCE`. This records an audited operator assertion, not a software proof of remote cessation, and sends nothing. An unexpired action then requires a separate retry; an expired action remains expired and needs a new explicit human action. See `WORKER_IMPLEMENTATION.md` for the full evidence procedure.

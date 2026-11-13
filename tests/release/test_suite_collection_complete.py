@@ -46,7 +46,7 @@ def test_every_test_directory_is_named_by_a_ci_suite():
 
 @pytest.mark.parametrize('target', ['tests/postgres/test_source_binding.py',
                                   'tests/postgres/test_ambiguous_api_migration.py',
-                                  'tests/postgres/test_background_result_fencing.py'])
+                                  'tests/postgres/test_background_result_fencing.py', 'tests/postgres/test_primary_retry.py', 'tests/postgres/test_reseal_boundary.py'])
 def test_fencing_and_migration_cases_run_natively_and_on_wasm(target):
     assert target in native_ci.PHASES['postgres']
     wasm = next(command for name, _, command in run_reference_suite.phase_commands(True) if name == 'postgres-wasm')

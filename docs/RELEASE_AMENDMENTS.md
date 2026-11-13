@@ -1304,3 +1304,45 @@ single-backend SQL evidence, with native authentication/concurrency unverified.
 The planned action-sync migration is now 018; R33's 017 was its earlier planned
 number. Both active design documents carry 018. Shipped 001–016 bytes stay immutable.
 This unpublished local successor grants no push, CI, merge, release or deployment.
+
+
+## R36 — primary-only operator retry and seal-versus-health regression coverage
+
+**Problem and boundary.** Through 017, `operator_call('retry')` could mark a
+secondary/coalesced action pending and return `recorded: true`, although
+`claim_delivery` selects only the effect's primary action. This is misleading
+operator feedback and projection state, not a demonstrated duplicate-send exploit.
+The negative regression reproduced acceptance on the old routine.
+
+Immutable `018_primary_action_retry.sql` checks the selected action against its
+effect's primary UUID and refuses a secondary with that UUID before mutation.
+There is no implicit redirect. The primary's existing terminal/deadline checks,
+uncertainty state, circuit and delivery-lease guards are unchanged. The effect's
+primary identity is not reassigned. The function retains its owner, grants,
+SECURITY DEFINER boundary and controlled search path. Schema remains 5; apply
+through the migration runner and explicitly reseal. Old migrations remain intact.
+
+Tests cover fresh and populated schema-5/017-routine upgrades, unchanged rows,
+precondition refusals, explicit reseal, secondary refusal, primary terminal states,
+deadline/uncertainty/circuit preservation and actual worker delivery with a mocked
+source. A secondary refusal followed by separately requested primary retry sends
+exactly once; retries while a live lease, unknown outcome or circuit blocks the
+primary send nothing. The populated test restores the shipped operator routine
+on matching schema-5 structures; it does not prove historical native migration
+ledger execution. Both runners collect the new SQL suites.
+
+**Reseal disposition: no runtime change for the tested claim.** Five malformed
+states (extra binding grant, missing binding grant, routine configuration drift,
+duplicate capture trigger and alerts RLS) are exercised via direct sealing and
+via the actual `10_trigger.sql` script as the separate alerts owner. Although the
+resulting manifest matches the live fingerprints, the probe's independent
+`capture_health()` predicates remain unhealthy. `13_reseal.sql` separately refuses
+each malformed state. Every case rolls back and verifies healthy restoration.
+A seal alone remains insufficient evidence; this bounded regression does not
+prove all possible catalog alterations safe or expand installer authority.
+
+Local PostgreSQL WASM results are supplemental; native authentication, concurrency,
+full historical upgrade and deployment qualification remain separate. Existing
+G1–G8 and A2 gates remain. Active future action-sync design numbering is now 019;
+earlier design reviews and R35's historical numbering record retain their original
+scope and do not qualify these later bytes.
