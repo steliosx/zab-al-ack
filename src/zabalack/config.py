@@ -1,6 +1,7 @@
 """Strict inert JSON configuration; secret references are read only when needed."""
 from __future__ import annotations
 import dataclasses
+from datetime import datetime
 import json
 import os
 import stat
@@ -99,6 +100,16 @@ def strict_json_loads(raw: str | bytes | bytearray) -> object:
         raise ConfigError("nonfinite_json_number")
     return json.loads(raw, object_pairs_hook=pairs, parse_constant=no_constant)
 
+def token_expiry(value: object) -> datetime | None:
+    """An endpoint's optional token_expires_at: an ISO 8601 time with an offset, else None."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
 def validate_endpoint(endpoint: dict[str, Any], *, lab_mode: bool = False) -> None:
     allowed = {"url", "token_file", "ca_file", "api_version", "logical_instance", "token_expires_at"}
     if not isinstance(endpoint, dict) or set(endpoint) - allowed:
@@ -114,6 +125,8 @@ def validate_endpoint(endpoint: dict[str, Any], *, lab_mode: bool = False) -> No
             raise ConfigError("endpoint_paths_must_be_absolute")
     if not isinstance(endpoint.get("api_version"), str):
         raise ConfigError("endpoint_reference_version_required")
+    if "token_expires_at" in endpoint and token_expiry(endpoint["token_expires_at"]) is None:
+        raise ConfigError("endpoint_token_expiry_invalid")
     # A registry entry is the only endpoint allowlist; no payload URL is accepted.
 
 def validate_settings(settings: Settings) -> Settings:
