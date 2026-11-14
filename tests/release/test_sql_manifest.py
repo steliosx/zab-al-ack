@@ -132,3 +132,9 @@ def test_release_builder_refuses_foreign_acceptance_report_before_building(tmp_p
                         lambda *args, **kwargs: pytest.fail('Foreign acceptance evidence reached the package builder'))
     assert build_release.main() == 1
     assert not (tmp_path / 'dist').exists()
+
+
+def test_checked_in_sql_manifest_covers_every_shipped_sql_file():
+    # The package job runs the same check, but only after every other job has
+    # passed; a migration added without its manifest entry must fail here first.
+    assert public_audit.sql_manifest_findings(ROOT) == []
