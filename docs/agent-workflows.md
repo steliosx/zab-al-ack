@@ -100,3 +100,12 @@ For candidate export, regenerate acceptance from final runs using
 `python tools/update_acceptance.py`. A focused review does not need to regenerate
 unrelated release evidence. G1–G8, A2 and publication-owner inputs remain open;
 local successful tests do not close deployment or publication gates.
+
+The migration-function diff helper is a restricted review aid, not a SQL parser
+or a replacement for full-file review. It recognises unquoted function names,
+multiline headers and dollar-quoted bodies (including tags containing digits), skipping
+comments and strings when locating statements. It refuses quoted function names,
+non-dollar bodies, duplicate definitions and changed signatures/overloads rather
+than comparing unrelated functions by name. Targets must resolve to a member of
+the selected migration directory. A refusal means review the full migration;
+it does not mean that the migration changes no functions.

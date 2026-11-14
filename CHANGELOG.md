@@ -2,6 +2,44 @@
 
 ## 0.2.0a2 — 2026-11-08 (development candidate, unpublished)
 
+- Forward migration 018 refuses retry of a coalesced secondary action and names
+  the existing primary action. It does not redirect, extend a deadline, settle an
+  unknown result or bypass a delivery lease/circuit. Schema stays 5; reseal explicitly.
+- Malformed-state regressions confirm that a matching seal from trigger installation
+  does not bypass the separate capture-health checks; no seal privilege change.
+
+- Forward migration 017 refuses background result writes without an identified,
+  live owner and rejects reconciliation success without allowed read evidence.
+  Schema stays 5, existing rows are retained, and explicit resealing is required.
+  Planned action-sync migration moves to 019 after the retry correction below;
+  earlier migrations are unchanged.
+
+- Invalid acknowledgement notes, including JSON strings with unpaired Unicode
+  surrogates, now fail with `zabalack_note_invalid` before signing. This avoids
+  Alerta suppressing a generic encoding error and continuing the status hook.
+  Nontext duplicate callbacks also fail through the explicit API boundary.
+  Tests exercise the real dispatcher with mocked persistence; no live delivery
+  or database outcome is inferred.
+- Migration function review ignores declarations inside comments, strings and
+  dollar bodies, accepts multiline headers and tagged dollar quotes, and refuses
+  ambiguous signatures or a same-named file outside the selected directory.
+- Mutation CI retains a separate attempt/source-bound diagnostic summary even
+  after failure. Only validated identifiers, counts and source-known test names
+  are exported; raw logs, parameter values and exception text remain private.
+  Baseline errors still fail the gate. The first PR #87 failure remains unexplained.
+- Dependency-install regression checks inspect actual YAML command steps and
+  execute the pytest version guard, rejecting inert or optional install text.
+
+- Three source corrections carried forward from the unmerged PR #29, each
+  reproduced on main first. (1) Alerta's log context attaches the raw request
+  body, the query arguments and the full URL to every record, and its JSON
+  format prints them; the redactor now blanks the body and arguments and
+  keeps only the path of the URL. (2) The capture-health probe replaced its
+  lock when it first saw a new process id, so two threads could both enter
+  the guarded section and one could release a lock it did not hold; fork
+  detection now runs under a second lock that `check` never replaces.
+  (3) The reader guard's plain-name test used `^…$`, which accepts a
+  trailing newline; it now uses `\A…\Z`, so such a key is refused.
 - Migration `016_claim_delivery_order.sql` replaces `worker_call()` (014's body
   with four changes; schema stays 5; `operator_call` untouched). Found by a
   read-only audit of main `a92c9a68` (amendment R33).
@@ -48,6 +86,9 @@
 - CI: the `Alpha reference checks` and CodeQL concurrency groups include the
   event name, so a push to `main` no longer cancels the scheduled run on the
   same ref (or the reverse).
+- CI: the package job runs `python tools/verify_release.py` on the dist it
+  just built, before uploading the candidate. It does not pass `--candidate`
+  and does not stage signing subjects.
 - `tools/security_scan.py` also queries `requirements-runtime.lock`, the set
   the Ansible install deploys; a runtime pin that drifts from
   `requirements.lock` now fails the scan as a conflict.
@@ -101,6 +142,11 @@
   `verify_complete`: `verified` or `verified_replay` with the action's state,
   `refused` with the database's reason, or `unknown`. A capture the worker
   itself rejects is `rejected`; that line and a refusal carry no instance.
+- Development pins (amendment R34): pytest 9.0.3 -> 9.1.1, wheel 0.46.2 ->
+  0.48.0, psycopg2-binary 2.9.10 -> 2.9.13, each in `pyproject.toml` and the
+  hash lock together. The mutation runner's own pytest pin moves with them. A
+  release test now fails when an exact pin in `pyproject.toml` differs from
+  `requirements.lock`. No runtime dependency changes.
 
 ## 0.2.0a1 — 2026-11-01 (development candidate, unpublished)
 

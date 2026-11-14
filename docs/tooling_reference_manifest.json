@@ -1,9 +1,9 @@
 [
   {
     "name": "pytest",
-    "version": "9.0.3",
-    "sha256": "2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9",
-    "url": "https://files.pythonhosted.org/packages/d4/24/a372aaf5c9b7208e7112038812994107bc65a84cd00e0354a88c2c77a617/pytest-9.0.3-py3-none-any.whl",
+    "version": "9.1.1",
+    "sha256": "37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c",
+    "url": "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl",
     "metadata": [
       "Requires-Python: >=3.10",
       "Requires-Dist: colorama>=0.4; sys_platform == \"win32\"",
@@ -85,14 +85,12 @@
   },
   {
     "name": "wheel",
-    "version": "0.46.2",
-    "sha256": "33ae60725d69eaa249bc1982e739943c23b34b58d51f1cb6253453773aca6e65",
-    "url": "https://files.pythonhosted.org/packages/13/2c/5e079cefe955ae58e5a052fe037c850ce493eb7269dedeb960237e78fb0f/wheel-0.46.2-py3-none-any.whl",
+    "version": "0.48.0",
+    "sha256": "3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab",
+    "url": "https://files.pythonhosted.org/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl",
     "metadata": [
       "Requires-Python: >=3.9",
-      "Requires-Dist: packaging >= 24.0",
-      "Requires-Dist: pytest >= 6.0.0 ; extra == \"test\"",
-      "Requires-Dist: setuptools >= 77 ; extra == \"test\""
+      "Requires-Dist: packaging >= 24.0"
     ],
     "contains_pkg_resources": false
   },

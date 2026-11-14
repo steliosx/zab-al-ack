@@ -77,3 +77,40 @@ def test_migration_016_changes_only_the_reviewed_lines_of_worker_call(capsys):
 def test_every_shipped_migration_parses():
     for path in sorted(mfd.MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
         mfd.functions(path.read_text(encoding="utf-8"))
+
+
+def test_comment_string_and_body_headers_are_not_definitions():
+    text = "-- CREATE FUNCTION fake() AS $$ ignored $$;\n/* outer /* nested */ CREATE FUNCTION hidden() */\n"
+    text += "SELECT 'CREATE FUNCTION text_only() AS $$ no $$;';\n"
+    text += "CREATE\nOR REPLACE\nFUNCTION zabalack.real(\n p int\n) RETURNS int AS $body_42$\n"
+    text += "-- CREATE FUNCTION nested() AS $$ ignored $$;\nSELECT 1;\n$body_42$ LANGUAGE sql;"
+    assert list(mfd.functions(text)) == ['zabalack.real']
+
+
+@pytest.mark.parametrize('text', [
+    'CREATE FUNCTION "quoted"() RETURNS int AS $$ SELECT 1 $$;',
+    'CREATE FUNCTION f() RETURNS int AS \'SELECT 1\';',
+    'CREATE FUNCTION f() RETURNS int AS $$ SELECT 1 $$; CREATE FUNCTION f(x text) RETURNS int AS $$ SELECT 2 $$;',
+    'CREATE FUNCTION f() RETURNS int AS $$ SELECT 1 $$',
+    '/* unfinished CREATE FUNCTION f()',
+])
+def test_unsupported_or_ambiguous_definitions_fail_closed(text):
+    with pytest.raises(mfd.ParseError):
+        mfd.functions(text)
+
+
+def test_cross_file_overload_cannot_be_misreported_as_replacement(tmp_path, capsys):
+    (tmp_path / '001_old.sql').write_text('CREATE FUNCTION f(x int) RETURNS int AS $$ SELECT 1 $$;')
+    (tmp_path / '002_new.sql').write_text('CREATE FUNCTION f(x text) RETURNS int AS $$ SELECT 2 $$;')
+    assert mfd.main(['--dir', str(tmp_path)]) == 2
+    assert 'signature' in capsys.readouterr().err
+
+
+def test_same_basename_outside_selected_directory_is_refused(tmp_path, capsys):
+    inside = tmp_path / 'inside'
+    inside.mkdir()
+    write(inside)
+    foreign = tmp_path / '002_two.sql'
+    foreign.write_text(TWO)
+    assert mfd.main(['--dir', str(inside), str(foreign)]) == 2
+    assert 'not a migration' in capsys.readouterr().err
