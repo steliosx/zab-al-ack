@@ -10,6 +10,10 @@
 - A release test (carried forward from PR #29) requires every action commit in the
   workflows and release templates to be the inspected one recorded in the CI,
   CodeQL and attestation manifests, and the CI manifest to list only used actions.
+- CI actions: setup-node v7.1.0, upload-artifact v7.0.2 and download-artifact
+  v8.0.2, each recorded with its inspected `action.yml` (supersedes Dependabot
+  #4, #6 and #8). A digest mismatch on artifact download now fails the step.
+  checkout and setup-python wait for the Forgehold templates (#5, #7).
 
 - Forward migration 018 refuses retry of a coalesced secondary action and names
   the existing primary action. It does not redirect, extend a deadline, settle an
