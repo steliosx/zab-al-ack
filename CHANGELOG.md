@@ -2,6 +2,12 @@
 
 ## 0.2.0a2 — 2026-11-08 (development candidate, unpublished)
 
+- Release inputs: the SQL identity manifest lists migrations 017 and 018, and the
+  sdist now carries the two `docs/` generator scripts that the source archive
+  already carried (`MANIFEST.in`). Without these, the package job's audit and
+  then `verify_release` refuse the candidate. Release tests now check both on
+  the checked-in tree, so the core suite fails first.
+
 - Forward migration 018 refuses retry of a coalesced secondary action and names
   the existing primary action. It does not redirect, extend a deadline, settle an
   unknown result or bypass a delivery lease/circuit. Schema stays 5; reseal explicitly.

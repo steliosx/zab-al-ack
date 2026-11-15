@@ -169,3 +169,31 @@ def test_sdist_rejects_paths_outside_archive_root(tmp_path):
         archive.addfile(info, io.BytesIO(b'test'))
     with pytest.raises(ValueError, match='Unsafe'):
         normalise_sdist(raw, tmp_path / 'normalised.tar.gz')
+
+
+def test_the_sdist_carries_every_public_file_the_source_archive_carries(tmp_path):
+    # verify_release requires every source-archive file in the sdist with the
+    # same bytes. The two docs/ generator scripts were outside MANIFEST.in from
+    # 1 October, and nothing ran verify_release until the package job did.
+    import os
+    import shutil
+    import subprocess
+    tree = tmp_path / 'tree'
+    expected = {}
+    for path in public_files(ROOT):
+        name = path.relative_to(ROOT).as_posix()
+        if name == '.gitignore':
+            continue
+        expected[name] = path.read_bytes()
+        (tree / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, tree / name)
+    env = dict(os.environ, SOURCE_DATE_EPOCH='315532800', PIP_NO_INDEX='1', PIP_DISABLE_PIP_VERSION_CHECK='1')
+    subprocess.run([sys.executable, '-m', 'build', '--no-isolation', '--sdist', '--outdir', str(tmp_path / 'out')],
+                   cwd=tree, env=env, check=True, timeout=180, capture_output=True)
+    (sdist,) = (tmp_path / 'out').glob('*.tar.gz')
+    with tarfile.open(sdist) as archive:
+        members = {member.name.split('/', 1)[1]: archive.extractfile(member).read()
+                   for member in archive.getmembers() if member.isfile()}
+    missing = sorted(name for name in expected if name not in members)
+    assert missing == []
+    assert sorted(name for name, data in expected.items() if members[name] != data) == []
