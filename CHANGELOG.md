@@ -7,6 +7,9 @@
   already carried (`MANIFEST.in`). Without these, the package job's audit and
   then `verify_release` refuse the candidate. Release tests now check both on
   the checked-in tree, so the core suite fails first.
+- A release test (carried forward from PR #29) requires every action commit in the
+  workflows and release templates to be the inspected one recorded in the CI,
+  CodeQL and attestation manifests, and the CI manifest to list only used actions.
 
 - Forward migration 018 refuses retry of a coalesced secondary action and names
   the existing primary action. It does not redirect, extend a deadline, settle an
