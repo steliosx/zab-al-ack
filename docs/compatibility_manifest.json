@@ -63,8 +63,8 @@
       "deployed": "NOT_VERIFIED"
     },
     "postgresql_native": {
-      "reference": "18.6",
-      "commit": "3d6a828938a5fa0444275d3d2f67b64ec3199eb7",
+      "reference": "18.7",
+      "commit": "f5c41f6681c910b3f69951bf6fb97c6d74605d25",
       "status": "EXECUTED_LOCAL_SOURCE_BUILT_A16",
       "evidence": "evidence/native-run.json",
       "compose_form": "NOT_RUN_A14: Docker Compose unavailable; local native services also not run.",

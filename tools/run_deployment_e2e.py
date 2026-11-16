@@ -21,7 +21,7 @@ from zipfile import BadZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGES = {
-    "postgres": "postgres:18.6-bookworm",
+    "postgres": "postgres:18.7-bookworm@sha256:ece55f7868da684e400f82f1030a050718adbdd65c23aa500c486f6e2950dc0f",
     "zabbix-db": "postgres:16.4-alpine",
     "zabbix-server": "zabbix/zabbix-server-pgsql:alpine-7.0.25",
     "zabbix-web": "zabbix/zabbix-web-nginx-pgsql:alpine-7.0.25",

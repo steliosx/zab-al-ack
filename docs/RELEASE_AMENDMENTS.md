@@ -1346,3 +1346,31 @@ full historical upgrade and deployment qualification remain separate. Existing
 G1–G8 and A2 gates remain. Active future action-sync design numbering is now 019;
 earlier design reviews and R35's historical numbering record retain their original
 scope and do not qualify these later bytes.
+
+## R37 — PostgreSQL reference pin moves to 18.7 (15 November 2026)
+
+PostgreSQL 18.7 was released on 12 November 2026. Under the owner's rule of 11
+October 2026 (R25: the latest 18.x minor release), and on the owner's instruction
+of 15 November 2026, the reference pin moves from 18.6 to 18.7:
+- Source archive `postgresql-18.7.tar.bz2`, SHA-256
+  `441dfae4280cae3e0425e5f876f80559fb0731c140f1aae22b3e5a54d0411bfd` (the published
+  `.sha256` file). `lab/build_postgres.sh` accepts it; 18.0, 18.3 and 18.6 stay
+  accepted so earlier evidence can be reproduced.
+- Docker image `postgres:18.7-bookworm`, pinned by its index digest
+  `sha256:ece55f7868da684e400f82f1030a050718adbdd65c23aa500c486f6e2950dc0f` for the
+  native lab (`lab/compose.postgres.yml`) and the deployment lab. A tag alone can be
+  re-pushed (the 18.6-bookworm tag was re-pushed on 5 November 2026); the digest
+  cannot. The Zabbix images keep their version tags.
+- `docs/compatibility_manifest.json` names 18.7 and its upstream tag commit
+  `f5c41f6681c910b3f69951bf6fb97c6d74605d25` (`REL_18_7`). The field had named
+  `REL_18_0` since 0.1.0a16; R25 changed only the version.
+
+The 18.7 release notes require no dump or restore within 18.x. They list security
+and correctness fixes in areas this project uses: `INSERT ... ON CONFLICT` with views
+and row-level security, privilege checks on casts inside JSON conversion, PL/pgSQL
+record assignment under concurrent rowtype changes, composite-type checks and GIN
+indexes. This amendment claims no result on 18.7. Results recorded on 18.3 and 18.6
+stay bound to their revisions. The first execution is the hosted native CI job on
+the commit that carries this change, and the deployment lab on 18.7 remains NOT_RUN
+until it is dispatched. The PGlite WASM engine stays 18.3. No tag, release or
+deployment is authorized here.
