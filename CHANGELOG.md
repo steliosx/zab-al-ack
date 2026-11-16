@@ -27,6 +27,10 @@
   and six refusals, with public test keys, so another signer (alrust's adapter)
   can be checked byte for byte. A unit test regenerates the file and recomputes
   every HMAC independently.
+- `docs/alrust-integration.md`: Zabalack's read-only review of alrust's hook
+  contract (Z1, Z3, X1 vectors). It finds a lock-order inversion between staging
+  inside alrust's transaction and the projection (a possible deadlock) and
+  recommends a Zabalack forward migration before any adapter is registered.
 
 - Forward migration 018 refuses retry of a coalesced secondary action and names
   the existing primary action. It does not redirect, extend a deadline, settle an
