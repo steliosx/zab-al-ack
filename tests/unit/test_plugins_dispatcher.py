@@ -692,3 +692,49 @@ def test_a_final_check_that_fails_internally_stops_the_transition_with_alerta_ex
         context.signer.status_change(alert, "ack", note)
     assert error.value.code == 503
 
+
+
+@pytest.mark.parametrize("key", ["zabbix_ack_sync_intent\n", "plain\n", "x\ny", "\nplain"])
+def test_T40_an_attribute_key_with_a_newline_is_not_a_plain_name(key):
+    """`$` also matches before a trailing newline, so `<key>\\n` passed as a
+    plain name that is not the restricted one. It is unsupported syntax."""
+    from zabalack import query_guard
+    assert query_guard._attribute_selector_refusal(["attributes", key]) == query_guard.REFUSAL
+    assert query_guard._attribute_selector_refusal(["attributes", "plain"]) is None
+
+
+@pytest.mark.parametrize('note', [None, 42, {}, '[ZABALACK:forged]', '[AcKlInE:forged]',
+                                  'x' * 8193, 'é' * 4097, '\ud800'],
+                         ids=['null', 'number', 'object', 'reserved-current', 'reserved-legacy',
+                              'ascii-too-long', 'utf8-too-long', 'unpaired-surrogate'])
+def test_invalid_note_refuses_final_dispatch_without_a_signed_capture(context, monkeypatch, note):
+    from unittest.mock import Mock
+    import zabalack.plugins as implementation
+    alert, _, _, _ = stage(context)
+    staged_updates = deepcopy(context.updates)
+    sign = Mock(side_effect=AssertionError('invalid note reached signer'))
+    monkeypatch.setattr(implementation, 'sign_intent', sign)
+    with pytest.raises(AlertaException, match='zabalack_note_invalid') as refused:
+        process_status(alert, 'ack', note)
+    assert refused.value.code == 400
+    sign.assert_not_called()
+    assert alert.status == 'open' and context.updates == staged_updates
+    intent_context = next(iter(g.zabalack_context[str(alert.id)].values()))
+    assert intent_context['signed'] is False and 'marker' not in intent_context
+
+
+@pytest.mark.parametrize('note', ['x' * 8192, 'é' * 4096], ids=['ascii-limit', 'utf8-limit'])
+def test_valid_note_at_utf8_limit_still_signs_once(context, note):
+    alert, _, _, _ = stage(context)
+    _, status, signed = process_status(alert, 'ack', note)
+    assert status == 'ack' and signed.startswith(note + '\n[zabalack:v1 ')
+    assert signed.count('[zabalack:v1 ') == 1
+
+
+@pytest.mark.parametrize('note', [None, 42, {}], ids=['null', 'number', 'object'])
+def test_duplicate_signed_callback_with_nontext_note_still_refuses(context, note):
+    alert, _, valid, _ = stage(context)
+    process_status(alert, 'ack', valid)
+    with pytest.raises(AlertaException, match='zabalack_duplicate_callback_conflict') as refused:
+        process_status(alert, 'ack', note)
+    assert refused.value.code == 503

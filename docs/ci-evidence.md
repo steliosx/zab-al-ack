@@ -139,8 +139,13 @@ digests to make old evidence appear current.
 
 After collection, the job regenerates the acceptance mapping, dependency
 inventory and export audit, then builds and compares the wheel, normalized
-sdist and source archive. Real Zabbix has no service in this workflow and gets a
-current, bound `NOT_RUN` record with zero executed counts and no JUnit path.
+sdist and source archive. It then runs `python tools/verify_release.py` on
+that dist, before the upload. That is the unsigned consistency check: the
+default `--dist` is `dist/`. `--candidate` stays on the inactive publish and
+attest templates, where a downloaded candidate must match the current Actions
+run before signing subjects are staged. Real Zabbix has no service in this
+workflow and gets a current, bound `NOT_RUN` record with zero executed counts
+and no JUnit path.
 G1–G8 remain `MANUAL_GATE_PENDING`. Transport manifests are not signed build
 attestations and do not replace review of the workflow or test implementation.
 The workflow uploads candidate artifacts; it does not publish to a package

@@ -12,6 +12,13 @@ python tools/build_release.py
 python tools/verify_release.py
 ```
 
+The CI package job runs that same `python tools/verify_release.py` on the dist
+it just built, before the candidate upload. It does not pass `--candidate`.
+That option is for a downloaded candidate directory: it requires the current
+Actions run and stages signing subjects. The inactive publish and attest
+templates use it. The package job's dist is the in-tree `dist/` the default
+already selects.
+
 The verifier reads archives without extracting or executing them. It rejects
 unsafe paths, links, duplicate members, excessive expanded sizes, changed bytes,
 missing subjects and unreviewed files. It compares the public source archive to

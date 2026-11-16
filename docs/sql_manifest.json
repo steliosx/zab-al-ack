@@ -96,6 +96,14 @@
       "sha256": "3f88cd161dfe433996e480339b7e18caab723d7e7869956cff748c55ae96a235"
     },
     {
+      "path": "sql/migrations/017_background_result_fencing.sql",
+      "sha256": "fbb99bbe665b4e42b2bf95d240387c680cfddb1d9c433df9db72a10c7adcb82a"
+    },
+    {
+      "path": "sql/migrations/018_primary_action_retry.sql",
+      "sha256": "a3a0b4d8e6cf3f25a5a04ba11ad7afb88a94482723e9d135c2a3fe75099ab748"
+    },
+    {
       "path": "sql/rollback/disable_trigger.sql",
       "sha256": "8450b6935e8934d4b74d8aba5b0f914d887ea4ebbc3729150b23703150e5949d"
     },

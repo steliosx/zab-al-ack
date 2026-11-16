@@ -1228,3 +1228,121 @@ the published beta prerelease and is unchanged. No tag, upload, release or
 deployment is authorized by this amendment. Native PostgreSQL results for 016 come
 from CI; local results are PGlite/WASM single backend only.
 
+## R34 — Development pin refresh: pytest, wheel, psycopg2-binary (12 November 2026)
+
+One coherent change replaces four open proposals (PRs #1, #2, #3 and #26). Each
+of those changed `pyproject.toml` alone, or one pin; the hash-checked
+`requirements.lock` would have kept installing the old files.
+
+| Package | Previous pin | New pin | Reason |
+|---|---|---|---|
+| pytest | 9.0.3 | 9.1.1 | Routine refresh. No advisory is claimed for 9.0.3. |
+| wheel | 0.46.2 | 0.48.0 | Upstream release notes for 0.48.0 list a fix for `wheel convert` writing outside the destination directory. This project does not call `wheel convert`; no exploit path here is claimed. |
+| psycopg2-binary | 2.9.10 | 2.9.13 | Routine refresh of the Alerta-side driver. No advisory is claimed for 2.9.10. |
+
+The hashes in `requirements.lock` are those of the official PyPI release JSON,
+read on 12 November 2026: the sdist and the `py3` wheel for pytest and wheel;
+the sdist and the CPython 3.12 manylinux x86_64 and aarch64 wheels for
+psycopg2-binary. The pytest 9.1.1 and wheel 0.48.0 wheels were downloaded and
+their SHA-256 matched (`37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c`,
+`3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab`). Their
+metadata replaces the earlier entries in `tooling_reference_manifest.json`;
+neither contains `pkg_resources`. The requirements of pytest 9.1.1 (iniconfig,
+packaging, pluggy, pygments) and of wheel 0.48.0 (packaging >= 24) are met by
+the existing pins.
+
+Two facts a reader of the Dependabot proposals would not see:
+
+- `tools/run_mutation_checks.py` refuses any pytest other than its pinned
+  version (`mutation_pytest_version_mismatch`). Its pin moves to 9.1.1. In the
+  9.1.1 wheel, `_pytest/hookspec.py` still defines `pytest_collection_modifyitems`,
+  `pytest_runtest_makereport` and `pytest_sessionfinish`, and
+  `_pytest/junitxml.py` still writes a failure message without an
+  exception-type attribute.
+- The psycopg2-binary 2.9.13 aarch64 wheel is tagged `manylinux_2_27` /
+  `manylinux_2_28`. The 2.9.10 aarch64 wheel was `manylinux_2_17`. An ARM64 host
+  with a C library older than glibc 2.27 would need the sdist. The x86_64 wheel
+  remains `manylinux_2_17`.
+
+`tests/release/test_hashed_locks.py` now fails when an exact pin in
+`pyproject.toml` (build system, dependencies, extras) differs from
+`requirements.lock`, and when the mutation runner's pytest pin differs from the
+lock. `docs/compatibility_manifest.json` (the 13 September observation) and the
+committed `evidence/` inventory keep their recorded versions; they are dated
+records and are regenerated only with a release identity. This change adds no
+runtime dependency, changes no SQL and no application code, and qualifies
+nothing: the hash-checked install and the suites run in this change's CI.
+
+## R35 — Background-result ownership and success evidence (13 November 2026)
+
+Migration 017 replaces only `worker_call()` on schema 5. With 016, a released
+background owner/until pair is NULL. A record operation omitting worker_id but
+supplying the current generation could make the lease condition NULL, so PL/pgSQL
+continued into the write. The three affected operations are record_reconciliation,
+record_host_check and record_host_inventory. With a live lease, reconciliation
+could also record state ok with absent/null completion_evidence: NOT IN evaluated
+NULL and failed to refuse it. These are authority/evidence checks, not proof of
+an external duplicate send.
+
+017 requires worker_id for those operations, explicitly refuses NULL ownership,
+generation input and expiry, and compares expiry to clock_timestamp after locking.
+It coalesces absent completion evidence before the read-evidence allowlist check.
+The action-before-instance lock order, delivery-in-flight refusal and all prior
+uncertainty, effect, expiry and primary-action predicates are preserved. No grant
+is broadened, schema stays 5, no existing evidence row is changed, and re-sealing
+remains a separate installer action. Previously recorded results need separate
+review; this migration does not silently repair history.
+
+`tests/postgres/test_background_result_fencing.py` reproduces 016's counterexamples
+in rolled-back fixtures and exercises refusal/no-mutation, live-owner success,
+release, migration preconditions, retained populated rows, resealing and caller
+permissions for both fresh 017 and a populated 016-function upgrade. The latter
+restores 016's routine on schema 5, not a complete historical service installation.
+It is in the native postgres phase. Local WASM results must remain labelled
+single-backend SQL evidence, with native authentication/concurrency unverified.
+
+The planned action-sync migration is now 018; R33's 017 was its earlier planned
+number. Both active design documents carry 018. Shipped 001–016 bytes stay immutable.
+This unpublished local successor grants no push, CI, merge, release or deployment.
+
+
+## R36 — primary-only operator retry and seal-versus-health regression coverage
+
+**Problem and boundary.** Through 017, `operator_call('retry')` could mark a
+secondary/coalesced action pending and return `recorded: true`, although
+`claim_delivery` selects only the effect's primary action. This is misleading
+operator feedback and projection state, not a demonstrated duplicate-send exploit.
+The negative regression reproduced acceptance on the old routine.
+
+Immutable `018_primary_action_retry.sql` checks the selected action against its
+effect's primary UUID and refuses a secondary with that UUID before mutation.
+There is no implicit redirect. The primary's existing terminal/deadline checks,
+uncertainty state, circuit and delivery-lease guards are unchanged. The effect's
+primary identity is not reassigned. The function retains its owner, grants,
+SECURITY DEFINER boundary and controlled search path. Schema remains 5; apply
+through the migration runner and explicitly reseal. Old migrations remain intact.
+
+Tests cover fresh and populated schema-5/017-routine upgrades, unchanged rows,
+precondition refusals, explicit reseal, secondary refusal, primary terminal states,
+deadline/uncertainty/circuit preservation and actual worker delivery with a mocked
+source. A secondary refusal followed by separately requested primary retry sends
+exactly once; retries while a live lease, unknown outcome or circuit blocks the
+primary send nothing. The populated test restores the shipped operator routine
+on matching schema-5 structures; it does not prove historical native migration
+ledger execution. Both runners collect the new SQL suites.
+
+**Reseal disposition: no runtime change for the tested claim.** Five malformed
+states (extra binding grant, missing binding grant, routine configuration drift,
+duplicate capture trigger and alerts RLS) are exercised via direct sealing and
+via the actual `10_trigger.sql` script as the separate alerts owner. Although the
+resulting manifest matches the live fingerprints, the probe's independent
+`capture_health()` predicates remain unhealthy. `13_reseal.sql` separately refuses
+each malformed state. Every case rolls back and verifies healthy restoration.
+A seal alone remains insufficient evidence; this bounded regression does not
+prove all possible catalog alterations safe or expand installer authority.
+
+Local PostgreSQL WASM results are supplemental; native authentication, concurrency,
+full historical upgrade and deployment qualification remain separate. Existing
+G1–G8 and A2 gates remain. Active future action-sync design numbering is now 019;
+earlier design reviews and R35's historical numbering record retain their original
+scope and do not qualify these later bytes.

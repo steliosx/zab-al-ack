@@ -6,10 +6,7 @@ Runtime calls execute as current_user=zabalack_worker, never as the lab admin.
 """
 from __future__ import annotations
 
-import copy
-import os
 import uuid
-from datetime import datetime, timezone
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -275,3 +272,93 @@ async def test_T9_expired_never_sent_effect_allows_later_explicit_action(pg_lab)
     row = (await db.call("inspect", {"action_id": later["action_id"]}))[0]
     assert row["state"] == "authorised", "later explicit human action must not coalesce behind expired effect"
     assert await worker.delivery_once()
+
+
+@pytest.mark.asyncio
+async def test_non_primary_retry_refuses_with_primary_and_cannot_send_twice(pg_lab):
+    """Retry must not pretend to requeue a coalesced secondary action."""
+    primary = seed(pg_lab, "81591")
+    secondary = seed(pg_lab, "81591")
+    db = RoleSelectedLabPostgres(pg_lab["admin_dsn"])
+    client = SourceClient()
+    worker = Worker(Settings(external_writes_enabled=True, cohorts=(COHORT,)), db,
+                    {"lab": KEY}, registry=Registry(), client_factory=lambda _: client)
+    for intent in (primary, secondary):
+        for _ in range(200):
+            if await db.call("inspect", {"action_id": intent["action_id"]}):
+                break
+            assert await worker.verify_once()
+        else:
+            pytest.fail("synthetic capture was not verified")
+    def snapshot():
+        with connect_role(pg_lab, "zabalack_owner") as conn:
+            return {table: conn.execute(f"SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]') FROM zabalack.{table} t").fetchone()[0]
+                    for table in ("actions", "effects", "delivery_leases", "attempts", "outcomes", "audit")}
+    before = snapshot()
+    pair_rows = [a for a in before["actions"] if a["action_id"] in {primary["action_id"], secondary["action_id"]}]
+    assert len({a["effect_id"] for a in pair_rows}) == 1
+    effect = next(e for e in before["effects"] if e["effect_id"] == pair_rows[0]["effect_id"])
+    # Capture timestamps can tie; read the authoritative primary instead of
+    # assuming that fixture insertion order fixes verifier claim order.
+    if effect["primary_action_id"] == secondary["action_id"]:
+        primary, secondary = secondary, primary
+    assert effect["primary_action_id"] == primary["action_id"]
+    assert next(a for a in before["actions"] if a["action_id"] == secondary["action_id"])["reason"] == "shared_source_effect"
+    audit = {"actor_ref": "lab-operator", "change_ref": "LAB-SECONDARY-RETRY"}
+    with pytest.raises(psycopg.Error, match="non-primary action.*" + primary["action_id"]):
+        await db.operator("retry", audit | {"action_id": secondary["action_id"]})
+    assert snapshot() == before, "refusal must not change either action or audit success"
+    assert not client.reads and not client.writes
+    assert await db.call("claim_delivery", {"worker_id": worker.worker_id,
+                                           "action_id": secondary["action_id"]}) is None
+    # Retrying the referenced primary is a separate explicit request and still
+    # goes through the ordinary claim, validation, lease and write machinery.
+    await db.operator("retry", audit | {"action_id": primary["action_id"]})
+    assert await worker.delivery_once()
+    for _ in range(3):
+        assert not await worker.delivery_once()
+    assert client.writes == ["81591"]
+    assert len(client.reads) == 1
+    for intent in (primary, secondary):
+        row = (await db.call("inspect", {"action_id": intent["action_id"]}))[0]
+        assert row["state"] == "ok"
+
+
+@pytest.mark.parametrize('blocker', ['live-lease', 'uncertain', 'circuit'])
+@pytest.mark.asyncio
+async def test_primary_retry_does_not_bypass_delivery_fences(pg_lab, blocker):
+    event = {'live-lease': '81592', 'uncertain': '81593', 'circuit': '81594'}[blocker]
+    intent = seed(pg_lab, event)
+    db = RoleSelectedLabPostgres(pg_lab['admin_dsn'])
+    client = SourceClient()
+    worker = Worker(Settings(external_writes_enabled=True, cohorts=(COHORT,)), db,
+                    {'lab': KEY}, registry=Registry(), client_factory=lambda _: client)
+    for _ in range(200):
+        if await db.call('inspect', {'action_id': intent['action_id']}):
+            break
+        assert await worker.verify_once()
+    else:
+        pytest.fail('synthetic capture was not verified')
+    audit = {'actor_ref': 'lab-operator', 'change_ref': 'LAB-RETRY-FENCES', 'action_id': intent['action_id']}
+    if blocker == 'live-lease':
+        assert await db.call('claim_delivery', {'worker_id': worker.worker_id, 'action_id': intent['action_id']})
+    else:
+        with connect_role(pg_lab, 'zabalack_owner') as conn:
+            if blocker == 'uncertain':
+                conn.execute("UPDATE zabalack.actions SET uncertain=true,state='unknown' WHERE action_id=%s", (intent['action_id'],))
+            else:
+                conn.execute('UPDATE zabalack.instance_control SET circuit_open=true WHERE instance=%s', (COHORT['zabbix_instance'],))
+    try:
+        assert (await db.operator('retry', audit))['recorded']
+        for _ in range(3):
+            assert not await worker.delivery_once()
+        assert not client.reads and not client.writes
+    finally:
+        # Only fixture-owned state; do not leave a shared instance fenced or a
+        # pending action selectable by later tests.
+        with connect_role(pg_lab, 'zabalack_owner') as conn:
+            conn.execute("UPDATE zabalack.actions SET state='failed' WHERE action_id=%s", (intent['action_id'],))
+            conn.execute('DELETE FROM zabalack.delivery_leases WHERE action_id=%s', (intent['action_id'],))
+            conn.execute('DELETE FROM zabalack.delivery_slots WHERE action_id=%s', (intent['action_id'],))
+            if blocker == 'circuit':
+                conn.execute('UPDATE zabalack.instance_control SET circuit_open=false WHERE instance=%s', (COHORT['zabbix_instance'],))

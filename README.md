@@ -587,7 +587,7 @@ the source release matching the wheel when installing migrations. Review
 <summary><strong>Ackline → Zab-al-ack: the a9–a16 development history</strong></summary>
 
 The following paragraphs are retained from the earlier README. They describe
-those historical candidates; the current a17 development position is in
+those historical candidates; the current development position is in
 [Status](#status), [the alpha report](ALPHA_REPORT.md) and
 [beta readiness](docs/BETA_READINESS.md).
 
