@@ -106,12 +106,24 @@ def positive(name: str, description: str, intent: dict[str, Any], kid: str, key_
     return vector
 
 
-def negative(name: str, description: str, intent: dict[str, Any], kid: str, key_length: int) -> dict[str, Any]:
+def negative(name: str, description: str, intent: dict[str, Any], kid: str, key_length: int,
+             as_text: bool = False) -> dict[str, Any]:
+    """A refused intent; as_text stores it as JSON text, for input a strict parser cannot hold.
+
+    With as_text the file itself stays valid UTF-8 JSON that strict parsers
+    (Rust's serde_json among them) load; only intent_json, parsed on its own,
+    carries the malformed escape.
+    """
     try:
         sign_intent(intent, kid, test_key(key_length))
     except (BindingError, KeyUnavailable) as error:
-        return {'name': name, 'description': description, 'intent': intent, 'kid': kid,
-                'key_length': key_length, 'refusal': f'{type(error).__name__}:{error}'}
+        entry: dict[str, Any] = {'name': name, 'description': description}
+        if as_text:
+            entry['intent_json'] = json.dumps(intent, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+        else:
+            entry['intent'] = intent
+        entry.update(kid=kid, key_length=key_length, refusal=f'{type(error).__name__}:{error}')
+        return entry
     raise AssertionError(f'{name} was accepted')
 
 
@@ -143,10 +155,11 @@ def generate() -> dict[str, Any]:
         negative('kid-invalid', 'A kid outside [A-Za-z0-9_.-]{1,32} is refused.', base_intent(), 'bad kid', 32),
         negative('customers-not-canonical', 'Actor customers that are not sorted and unique are refused.',
                  base_intent(actor__customers=['b', 'a']), 'lab', 32),
-        negative('unpaired-surrogate', 'An unpaired UTF-16 surrogate (written here as the JSON escape '
-                 '\\ud800) cannot be encoded as UTF-8 and is refused. A Rust String cannot hold it, so an '
-                 'implementation that parses this file may report a parse error instead.',
-                 base_intent(actor__login='op-\ud800'), 'lab', 32),
+        negative('unpaired-surrogate', 'The login holds an unpaired UTF-16 surrogate, written as the JSON '
+                 'escape \\ud800 inside intent_json. This file loads in strict parsers because the malformed '
+                 'input is only in that string. Parsing intent_json must fail (Rust serde_json rejects the '
+                 'escape) or, where a parser accepts it (Python), signing refuses it as invalid_string.',
+                 base_intent(actor__login='op-\ud800'), 'lab', 32, as_text=True),
     ]
     return {
         'format': 'zabalack-signing-vectors', 'format_version': 1,

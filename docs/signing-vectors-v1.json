@@ -653,34 +653,8 @@
     },
     {
       "name": "unpaired-surrogate",
-      "description": "An unpaired UTF-16 surrogate (written here as the JSON escape \\ud800) cannot be encoded as UTF-8 and is refused. A Rust String cannot hold it, so an implementation that parses this file may report a parse error instead.",
-      "intent": {
-        "version": 1,
-        "action_id": "9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
-        "alert_id": "3f6c2a0e-8d1b-4c5e-9a7f-1b2c3d4e5f60",
-        "customer": "customer-a",
-        "source": {
-          "zabbix_instance": "zbx-prod.example:1",
-          "zabbix_event_id": "4012345",
-          "zabbix_trigger_id": "23456"
-        },
-        "actor": {
-          "login": "op-\ud800",
-          "customers": [
-            "customer-a",
-            "customer-b"
-          ],
-          "admin": false,
-          "auth_type": "user"
-        },
-        "route": "/alert/3f6c2a0e-8d1b-4c5e-9a7f-1b2c3d4e5f60/action",
-        "action": "ack",
-        "cohort_revision": "cohort-r7",
-        "policy_revision": "policy-r3",
-        "issued_at": "2026-11-15T12:00:00.000000Z",
-        "capture_expires_at": "2026-11-15T12:01:00.000000Z",
-        "execution_expires_at": "2026-11-15T16:00:00.000000Z"
-      },
+      "description": "The login holds an unpaired UTF-16 surrogate, written as the JSON escape \\ud800 inside intent_json. This file loads in strict parsers because the malformed input is only in that string. Parsing intent_json must fail (Rust serde_json rejects the escape) or, where a parser accepts it (Python), signing refuses it as invalid_string.",
+      "intent_json": "{\"action\":\"ack\",\"action_id\":\"9b8a7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d\",\"actor\":{\"admin\":false,\"auth_type\":\"user\",\"customers\":[\"customer-a\",\"customer-b\"],\"login\":\"op-\\ud800\"},\"alert_id\":\"3f6c2a0e-8d1b-4c5e-9a7f-1b2c3d4e5f60\",\"capture_expires_at\":\"2026-11-15T12:01:00.000000Z\",\"cohort_revision\":\"cohort-r7\",\"customer\":\"customer-a\",\"execution_expires_at\":\"2026-11-15T16:00:00.000000Z\",\"issued_at\":\"2026-11-15T12:00:00.000000Z\",\"policy_revision\":\"policy-r3\",\"route\":\"/alert/3f6c2a0e-8d1b-4c5e-9a7f-1b2c3d4e5f60/action\",\"source\":{\"zabbix_event_id\":\"4012345\",\"zabbix_instance\":\"zbx-prod.example:1\",\"zabbix_trigger_id\":\"23456\"},\"version\":1}",
       "kid": "lab",
       "key_length": 32,
       "refusal": "BindingError:invalid_string"

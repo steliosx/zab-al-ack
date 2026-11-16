@@ -58,9 +58,32 @@ def test_the_limit_vectors_sit_exactly_at_and_one_byte_over_the_payload_limit():
 @pytest.mark.parametrize('refusal', DATA['refusals'], ids=[r['name'] for r in DATA['refusals']])
 def test_each_refusal_is_refused_with_its_stable_reason(refusal):
     kind, reason = refusal['refusal'].split(':', 1)
+    intent = json.loads(refusal['intent_json']) if 'intent_json' in refusal else refusal['intent']
     with pytest.raises((BindingError, KeyUnavailable)) as refused:
-        sign_intent(refusal['intent'], refusal['kid'], key(refusal['key_length']))
+        sign_intent(intent, refusal['kid'], key(refusal['key_length']))
     assert (type(refused.value).__name__, str(refused.value)) == (kind, reason)
+
+
+def _strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key_name, item in value.items():
+            yield key_name
+            yield from _strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _strings(item)
+
+
+def test_the_file_holds_no_unpaired_surrogate_so_strict_parsers_load_it():
+    # A strict parser (Rust's serde_json) refuses the whole file on one lone
+    # surrogate escape; only the inner intent_json text may carry one.
+    for text in _strings(DATA):
+        text.encode('utf-8')
+    surrogate = next(r for r in DATA['refusals'] if r['name'] == 'unpaired-surrogate')
+    assert 'intent' not in surrogate and '\\ud800' in surrogate['intent_json']
+    assert json.loads(surrogate['intent_json'])['actor']['login'] == 'op-\ud800'
 
 
 def test_the_file_is_ascii_and_names_its_keys_as_public_test_material():
