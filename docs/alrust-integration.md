@@ -4,12 +4,25 @@ Status: **review, 16 November 2026. Read only; nothing here ran against
 alrust.** This page answers the three items that alrust's integration hook
 contract assigns to Zabalack: `spec/integration-hooks.md`, sections 7 and 8, in
 [`steliosx/alrust`](https://github.com/steliosx/alrust) at `main`
-`b3df6928f29e1ca9958ea480c34008c461af54c6`. It is not a qualification. Zabalack
-and alrust do not work together yet: alrust registers no Zabalack adapter, and
-alrust has no human operators (owner question A1), so every acknowledgement
-through alrust would be skipped today.
+`b3df6928f29e1ca9958ea480c34008c461af54c6`. It is not a qualification.
 
-Sources: Zabalack at the commit that carries this page (parent `7f08123d`);
+**Where alrust is at that head.** Zabalack and alrust do not work together
+yet:
+- alrust registers no Zabalack adapter, so no request reaches a Zabalack hook
+  and nothing is captured.
+- The request side of operator authentication is implemented. alrust verifies
+  an operator Bearer token and passes the user id, login, verified auth type
+  and customers to the hooks (`crates/alrust-api/src/lib.rs`:
+  `Caller::from_bearer`, `facts()`, `bearer_caller`; settings in
+  `crates/alrust-server/src/bearer_settings.rs`).
+- The provider login flow (stage L of `spec/oidc-caller-facts.md`) is not
+  implemented.
+- alrust's decision record holds the owner's answers that the hook spec asked
+  for: DECISIONS Y44 (A1 to A3, and the X1 custody model) and Y50 and Y51
+  (operator tokens). They are that project's records. This page uses them only
+  as context; they grant this project no access.
+
+Sources: Zabalack at the commit that carries this page (on `main` `633b0c5d`);
 alrust at `b3df6928`. alrust's spec cites Zabalack at `eaf2acf0`. Four later
 commits changed `src/zabalack/plugins.py`, so the current line numbers are
 given below.
@@ -96,12 +109,24 @@ F1 is fixed on one side.**
 ### F2. Health probe: run it before the row lock
 
 The plugin's health check (`plugins.py:435`, called at `527`) uses a separate
-autocommit connection with a 500 ms statement timeout (`src/zabalack/health.py`).
-`capture_health()` takes no row locks, so this cannot deadlock. But in alrust's
-phase order the gate runs after the row lock, so the probe would hold the alert
-row for up to its timeout and use a second connection. Under Alerta the probe
-runs before any lock. Recommendation: alrust runs the Zabalack health probe
-(or reads its cached result) before it locks the alert row.
+autocommit connection (`src/zabalack/health.py`): `BEGIN READ ONLY`, then
+`SET LOCAL statement_timeout` (500 ms) for the `SELECT`, then `COMMIT`. A
+cached result can be up to `cache_seconds` old (default 5). The 500 ms bound
+covers only that `SELECT`. The probe as a whole also waits for its state lock
+(`acquisition_timeout`, default 0.5 s, at most 1 s) and has an overall refresh
+bound (`overall_timeout`, default 1.5 s, at most 5 s).
+
+`capture_health()` takes no explicit row locks and no advisory locks; its SQL
+still takes ordinary relation locks. So the probe cannot be part of the F1
+cycle. But in alrust's phase order the gate runs after the row lock, so a probe
+there would hold the alert row for up to the acquisition and overall bounds,
+and would use a second connection. Under Alerta the probe runs before any
+lock.
+
+Recommendation: alrust runs the Zabalack health probe (or reads its cached
+result) before it locks the alert row. It applies the result only after
+`claims` and the eligibility checks, as the plugin does today, so an unhealthy
+probe never refuses an alert that Zabalack does not own.
 
 ### F3. Rollback
 
@@ -142,9 +167,10 @@ should use one too.
 
 ### What Z1 needs before it is complete
 
-The F1 fix and its native tests; then, once alrust registers the adapter and
-has human operators, Zabalack's capture tests run against alrust (spec
-section 7, A1). That is Zabalack's CI work. It does not run before then.
+The F1 fix and its native tests. Then, once alrust registers the adapter and
+an operator can get a token through the login flow (stage L), Zabalack's
+capture tests run against alrust (spec section 7). That is Zabalack's CI work.
+It does not run before then.
 
 ## 4. Signing test vectors (X1)
 
@@ -160,12 +186,20 @@ While generating them, Zabalack found and fixed one defect: an unpaired
 surrogate in a signed string raised a raw `UnicodeEncodeError` instead of the
 stable `invalid_string` reason. The plugin's HTTP result was already a 503.
 
-Where the signing keys live on alrust (X1) is an owner decision. The vectors
-do not depend on it.
+The file loads in Rust's `serde_json`. The one malformed input (an unpaired
+surrogate) is stored as JSON text in `intent_json`, so only that string fails
+to parse. A local Rust check with `serde_json` 1.0.154 and `hmac`/`sha2`
+reproduced all seven vectors byte for byte. That check is not part of this
+repository.
+
+alrust's DECISIONS Y44 records the owner's X1 custody model: the adapter signs
+in Rust from Zabalack's key files, readable only by alrust's service account,
+and is checked against vectors like these. The exact file placement, access
+and mounts still need a reviewed change. The vectors do not depend on them.
 
 ## 5. Not covered here
 
-- Owner decisions A1 to A3 (human operators, customer membership, API-key
-  acknowledgements) and X1 (key placement).
-- alrust's adapter code. It is alrust's work, from its spec.
+- alrust's recorded owner decisions (Y44, Y50, Y51) beyond what is cited above,
+  and the open part of X1: key placement, access and mounts.
+- alrust's adapter code and login flow. They are alrust's work, from its specs.
 - Any execution against alrust: NOT_RUN.
