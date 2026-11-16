@@ -211,27 +211,51 @@ upload-artifact v6.0.0 and download-artifact v7.0.0 (commits and fetched
 workflows pass exists in the new versions; upload-artifact's `action.yml`
 differs from v4.6.2 only in its runtime.
 
+On 2026-11-15 three of those pins moved again, superseding Dependabot pull
+requests #4, #6 and #8: setup-node v7.1.0, upload-artifact v7.0.2 and
+download-artifact v8.0.2. Each commit was resolved from its official tag, and
+each new `action.yml` still declares `runs.using: node24`. The sources at the
+old and new commits were compared for the inputs these workflows pass:
+- setup-node drops the unused `always-auth` input. Its automatic npm cache
+  starts only when the workspace `package.json` names npm as its package
+  manager; this repository has no top-level `package.json`, so no cache step
+  is added.
+- upload-artifact adds an `archive` input. Its default (`true`) keeps the
+  zipped upload these workflows already use.
+- download-artifact adds `skip-decompress` (default `false`) and
+  `digest-mismatch` (default `error`); its download layout code is unchanged.
+- Both artifact actions move together from `@actions/artifact` 5.0.1 to
+  6.3.1, so every producer and consumer in a run uses the same client.
+
+checkout and setup-python stay at v5.1.0 and v6.3.0 (Dependabot #7 and #5).
+They are also pinned in `forgehold-lane.yml` and `forgehold-smoke.yml`, which
+are byte-for-byte copies of the Forgehold session's templates; those pins
+change there first, not here (see "Forgehold lane" and "Forgehold smoke").
+
 The download action is pinned to
-[`actions/download-artifact` v7.0.0](https://github.com/actions/download-artifact/tree/37930b1c2abaa49bbe596cd826c3c89aef350131),
-commit `37930b1c2abaa49bbe596cd826c3c89aef350131`, inspected from the official Git
-repository on 2026-10-09 (v4.3.0, commit `d3f86a106a0bac45b974a628896c90dbdf5c8093`,
-was inspected on 2026-09-11). `action.yml` and `src/download-artifact.ts` establish
+[`actions/download-artifact` v8.0.2](https://github.com/actions/download-artifact/tree/9000827ccba6bdab643e8b6fd33ac0654aef8333),
+commit `9000827ccba6bdab643e8b6fd33ac0654aef8333`, inspected from the official Git
+repository on 2026-11-15 (v7.0.0, commit `37930b1c2abaa49bbe596cd826c3c89aef350131`,
+was inspected on 2026-10-09, and v4.3.0, commit
+`d3f86a106a0bac45b974a628896c90dbdf5c8093`, on 2026-09-11). `action.yml` and
+`src/download-artifact.ts` establish
 that omitting `github-token` selects the current workflow run; `pattern`
 filters artifact names and `merge-multiple: false` retains separate directories
-when more than one artifact matches. The one source change from v4.3.0 is that a
+when more than one artifact matches. The one layout change since v4.3.0 is that a
 pattern matching a single artifact now extracts it directly into `path`; the
 collector requires exactly the four named evidence directories, so that layout
 is refused rather than accepted.
-The implementation warns about artifact-service digest mismatches, so the
-collector independently requires matching manifest byte hashes and refuses a
-mismatch. The workflow retains `contents: read` and does not supply a token for
+Since v8 an artifact-service digest mismatch fails the download step
+(`digest-mismatch` defaults to `error`; v7 only warned). The collector still
+independently requires matching manifest byte hashes and refuses a mismatch.
+The workflow retains `contents: read` and does not supply a token for
 cross-run or cross-repository downloads.
 
-| Inspected file | SHA-256 |
+| Inspected file (v8.0.2) | SHA-256 |
 |---|---|
-| `action.yml` | `834f2e0884ebc4b61150ecb61b3538786ee2f9e9910740a74463246268db3bd2` |
-| `src/download-artifact.ts` | `f14131bb3c2023b678a13ae75a76523cd945eb58d18154817fd84ea9422b1916` |
-| `README.md` | `9925d2eeb338b5462202a2babc074a5becdfd2d4e736c6cd4604dd8b0ed4c286` |
+| `action.yml` | `e98559b7a31ba31be4709f20d22102dc2737fa630f69a339eb89981151e505fe` |
+| `src/download-artifact.ts` | `665dccdfa36cc93c7d75515fd93a9f97b8dee937b9b5517a15ba77d2a48f6934` |
+| `README.md` | `3c2ed3a17c8d87820ba42981b9703be715a8ce99984a1926d4e144bc0afffb41` |
 
 `tests/release/test_ci_collection.py` exercises synthetic artifacts and checks
 the workflow dependency/collection order. These are unit tests of the evidence

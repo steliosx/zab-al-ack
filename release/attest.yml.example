@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: '3.12'
       # No token or cross-run selector. Reusable CI and signing share this run.
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: zabalack-candidate-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/sign-input/
@@ -62,7 +62,7 @@ jobs:
           subject-path: build/attestation-subjects/*
           push-to-registry: false
           create-storage-record: false
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: zabalack-attestation-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
