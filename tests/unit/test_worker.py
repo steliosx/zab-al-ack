@@ -990,7 +990,11 @@ async def test_F6_stale_health_cannot_keep_delivery_open(monkeypatch):
     import zabalack.worker as worker_module
     w = health_worker(dict(HEALTHY_DOCTOR))
     assert await w.health_once()
-    checked = w._last_health
+    # Pin the health time to a value with an exact float sum. With the real
+    # clock reading, (checked + 180) - checked can round above 180 (for
+    # checked = 400.0000001 it is 180.00000000000006), which closed the gate at
+    # the boundary and failed this test at random on fresh CI runners.
+    checked = w._last_health = 1000.0
     monkeypatch.setattr(worker_module.time, "monotonic", lambda: checked + 3 * 60)
     assert w.delivery_gate_open()
     monkeypatch.setattr(worker_module.time, "monotonic", lambda: checked + 3 * 60 + 1)
