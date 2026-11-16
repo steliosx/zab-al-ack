@@ -74,6 +74,21 @@ def test_unknown_extra_signed_field_is_rejected(packet):
     capture["intent"]["callback"]="https://outside.invalid/"
     with pytest.raises(BindingError,match="intent_shape"):canonical_bytes(capture["intent"])
 
+@pytest.mark.parametrize("path", [("actor", "login"), ("customer",), ("cohort_revision",), ("policy_revision",),
+                                  ("actor", "customers", 0)])
+def test_unpaired_surrogate_in_a_signed_string_is_a_redacted_binding_error(packet, path):
+    # A lone surrogate cannot be encoded as UTF-8. It must give the stable
+    # reason code, not a UnicodeEncodeError whose text quotes the character.
+    capture, _ = packet
+    intent = deepcopy(capture["intent"])
+    target = intent
+    for step in path[:-1]:
+        target = target[step]
+    target[path[-1]] = "op-\ud800"
+    with pytest.raises(BindingError) as refused:
+        canonical_bytes(intent)
+    assert str(refused.value) == "invalid_string"
+
 def test_key_unavailability_is_hold_not_forgery(packet):
     capture,_=packet
     with pytest.raises(KeyUnavailable):verify_capture(capture,{})

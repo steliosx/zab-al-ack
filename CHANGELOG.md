@@ -17,6 +17,11 @@
 - PostgreSQL reference pin: 18.7 (released 12 November 2026), with the source
   archive SHA-256 and the `postgres:18.7-bookworm` image pinned by digest for the
   native and deployment labs (R37). No result on 18.7 is claimed until CI runs it.
+- An unpaired UTF-16 surrogate in a signed intent string (login, customer,
+  revision) now fails with the stable `invalid_string` reason. Before, the
+  validator raised a `UnicodeEncodeError` whose text quoted the character; the
+  plugin already turned it into 503 `zabalack_intent_invalid`, so the HTTP result
+  does not change.
 
 - Forward migration 018 refuses retry of a coalesced secondary action and names
   the existing primary action. It does not redirect, extend a deadline, settle an

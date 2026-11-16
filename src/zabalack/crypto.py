@@ -96,7 +96,14 @@ def _uuid(value: object) -> None:
         raise BindingError("invalid_uuid") from None
 
 def _bounded(value: object, limit: int = 128) -> None:
-    if not isinstance(value, str) or not 1 <= len(value.encode("utf-8")) <= limit or any(ord(c) < 32 for c in value):
+    if not isinstance(value, str):
+        raise BindingError("invalid_string")
+    try:
+        size = len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        # An unpaired surrogate: keep the stable reason code, not text quoting it.
+        raise BindingError("invalid_string") from None
+    if not 1 <= size <= limit or any(ord(c) < 32 for c in value):
         raise BindingError("invalid_string")
 
 def validate_intent(intent: object) -> Intent:
