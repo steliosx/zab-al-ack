@@ -19,7 +19,7 @@ classifiers = [
  "Programming Language :: Python :: 3.12",
  "Topic :: System :: Monitoring",
 ]
-dependencies = ["psycopg[binary]==3.2.10", "httpx==0.28.1"]
+dependencies = ["psycopg[binary]==3.3.9", "httpx==0.28.1"]
 
 [project.urls]
 Repository = "https://github.com/steliosx/zab-al-ack"
